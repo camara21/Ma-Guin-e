@@ -1,75 +1,147 @@
 import 'package:flutter/material.dart';
-import 'package:ma_guinee/models/annonce_model.dart';
+import '../models/annonce_model.dart';
 
 class AnnonceGridCard extends StatelessWidget {
   final AnnonceModel annonce;
   final VoidCallback? onTap;
+  final VoidCallback? onToggleFavori;
 
   const AnnonceGridCard({
     super.key,
     required this.annonce,
     this.onTap,
+    this.onToggleFavori,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final String? imageUrl = (annonce.images != null && annonce.images.isNotEmpty)
+        ? annonce.images.first
+        : null;
+
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
           color: Colors.white,
-          boxShadow: const [
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
             BoxShadow(
-              color: Colors.black12,
-              blurRadius: 3,
-              offset: Offset(0, 2),
+              color: Colors.grey.withOpacity(0.07),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 📷 Image principale
+            // Photo principale
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              child: annonce.images.isNotEmpty
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(18),
+                topRight: Radius.circular(18),
+              ),
+              child: imageUrl != null
                   ? Image.network(
-                      annonce.images.first,
+                      imageUrl,
                       width: double.infinity,
                       height: 110,
                       fit: BoxFit.cover,
                     )
                   : Container(
-                      height: 110,
                       width: double.infinity,
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image, size: 40),
+                      height: 110,
+                      color: Colors.grey.shade100,
+                      child: const Icon(Icons.image_outlined, size: 40, color: Colors.grey),
                     ),
             ),
-
-            // 📄 Texte
+            // Titre
             Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    annonce.titre,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+              padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
+              child: Text(
+                annonce.titre,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15.5,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            // Prix
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 5, 12, 0),
+              child: Text(
+                '${annonce.prix ?? ""} ${annonce.devise ?? "GNF"}',
+                style: const TextStyle(
+                  color: Color(0xFF113CFC),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            // Catégorie, Ville et favori en bas
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Infos à gauche
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            annonce.categorie ?? "",
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 12.7,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            annonce.ville ?? "",
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    annonce.ville,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
+                    // Bouton favori à droite
+                    GestureDetector(
+                      onTap: onToggleFavori,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        margin: const EdgeInsets.only(left: 4, bottom: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black12,
+                              blurRadius: 3,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          annonce.estFavori == true
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: annonce.estFavori == true
+                              ? Colors.red
+                              : Colors.grey.shade600,
+                          size: 21,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

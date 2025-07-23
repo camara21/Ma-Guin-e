@@ -1,47 +1,51 @@
 class PrestataireModel {
-  final String nom;
-  final String specialite;
+  final String id;
+  final String userId;
+  final String metier;
+  final String category;
   final String ville;
-  final String image;
-  final String categorie;
-  final String telephone;
-  final String? whatsapp;
-  final double? note;
+  final String phone;
+  final String description;
+  final String photoUrl;
+  final double? noteMoyenne; // si tu l’utilises
 
   PrestataireModel({
-    required this.nom,
-    required this.specialite,
+    required this.id,
+    required this.userId,
+    required this.metier,
+    required this.category,
     required this.ville,
-    required this.image,
-    required this.categorie,
-    required this.telephone,
-    this.whatsapp,
-    this.note,
+    required this.phone,
+    required this.description,
+    required this.photoUrl,
+    this.noteMoyenne,
   });
 
   factory PrestataireModel.fromJson(Map<String, dynamic> json) {
     return PrestataireModel(
-      nom: json['nom'],
-      specialite: json['specialite'],
-      ville: json['ville'],
-      image: json['image'],
-      categorie: json['categorie'],
-      telephone: json['telephone'],
-      whatsapp: json['whatsapp'],
-      note: (json['note'] as num?)?.toDouble(),
+      id: (json['id'] ?? '').toString(),
+      userId: (json['user_id'] ?? '').toString(),
+      metier: (json['metier'] ?? json['job'] ?? '').toString(),
+      category: (json['category'] ?? '').toString(),
+      ville: (json['ville'] ?? '').toString(),
+      phone: (json['phone'] ?? json['telephone'] ?? '').toString(),
+      description: (json['description'] ?? '').toString(),
+      photoUrl: (json['photo_url'] ?? json['image'] ?? '').toString(),
+      noteMoyenne: json['note_moyenne'] == null
+          ? null
+          : (json['note_moyenne'] as num).toDouble(),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'nom': nom,
-      'specialite': specialite,
-      'ville': ville,
-      'image': image,
-      'categorie': categorie,
-      'telephone': telephone,
-      'whatsapp': whatsapp,
-      'note': note,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'user_id': userId,
+        'metier': metier,
+        'category': category,
+        'ville': ville,
+        'phone': phone,
+        'description': description,
+        'photo_url': photoUrl,
+        'note_moyenne': noteMoyenne,
+      };
 }

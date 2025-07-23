@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/prestataire_model.dart';
+import '../providers/prestataires_provider.dart';
+import 'inscription_prestataire_page.dart';
 import 'prestataire_detail_page.dart';
+import 'prestataires_par_metier_page.dart'; // optionnel
 
 class ProPage extends StatefulWidget {
   const ProPage({super.key});
@@ -9,225 +14,227 @@ class ProPage extends StatefulWidget {
 }
 
 class _ProPageState extends State<ProPage> {
+  final Map<String, List<String>> categories = {
+    'Artisans & BTP': [
+      'Maçon','Plombier','Électricien','Soudeur','Charpentier','Couvreur','Peintre en bâtiment',
+      'Mécanicien','Menuisier','Vitrier','Tôlier','Carreleur','Poseur de fenêtres/portes','Ferrailleur',
+    ],
+    'Beauté & Bien-être': [
+      'Coiffeur / Coiffeuse','Esthéticienne','Maquilleuse','Barbier','Masseuse','Spa thérapeute',
+      'Onglerie / Prothésiste ongulaire',
+    ],
+    'Couture & Mode': [
+      'Couturier / Couturière','Styliste / Modéliste','Brodeur / Brodeuse','Teinturier','Designer textile',
+    ],
+    'Alimentation': [
+      'Cuisinier','Traiteur','Boulanger','Pâtissier','Vendeur de fruits/légumes','Marchand de poisson','Restaurateur',
+    ],
+    'Transport & Livraison': [
+      'Chauffeur particulier','Taxi-moto','Taxi-brousse','Livreur','Transporteur',
+    ],
+    'Services domestiques': [
+      'Femme de ménage','Nounou','Agent d’entretien','Gardiennage','Blanchisserie',
+    ],
+    'Services professionnels': [
+      'Secrétaire','Traducteur','Comptable','Consultant','Notaire',
+    ],
+    'Éducation & formation': [
+      'Enseignant','Tuteur','Formateur','Professeur particulier','Coach scolaire',
+    ],
+    'Santé & Bien-être': [
+      'Infirmier','Docteur','Kinésithérapeute','Psychologue','Pharmacien',
+    ],
+  };
+
   String selectedCategory = 'Tous';
-  String searchText = '';
+  String selectedJob = 'Tous';
+  String searchQuery = '';
 
-  final List<String> categories = [
-    'Tous',
-    'Artisanat',
-    'Bâtiment',
-    'Services',
-    'Transport',
-    'Éducation',
-    'Santé',
-    'Mode',
-    'Beauté',
-    'Électronique',
-    'Agroalimentaire',
-  ];
-
-  final List<Map<String, dynamic>> prestataires = [
-    {
-      'nom': 'Alpha Coiffure',
-      'specialite': 'Coiffure homme',
-      'ville': 'Matoto',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.cut,
-      'categorie': 'Beauté',
-    },
-    {
-      'nom': 'Fatou Plomberie',
-      'specialite': 'Plomberie générale',
-      'ville': 'Dixinn',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.plumbing,
-      'categorie': 'Bâtiment',
-    },
-    {
-      'nom': 'Issa Électricité',
-      'specialite': 'Installation électrique',
-      'ville': 'Ratoma',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.electrical_services,
-      'categorie': 'Bâtiment',
-    },
-    {
-      'nom': 'Mamadou Couture',
-      'specialite': 'Couturier traditionnel',
-      'ville': 'Kaloum',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.checkroom,
-      'categorie': 'Mode',
-    },
-    {
-      'nom': 'Aïssatou Tresses',
-      'specialite': 'Tresse africaine',
-      'ville': 'Nongo',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.face_retouching_natural,
-      'categorie': 'Beauté',
-    },
-    {
-      'nom': 'Kaba Menuiserie',
-      'specialite': 'Menuisier bois et alu',
-      'ville': 'Kipé',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.chair,
-      'categorie': 'Artisanat',
-    },
-    {
-      'nom': 'Diallo Taxi',
-      'specialite': 'Chauffeur privé',
-      'ville': 'Lambanyi',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.local_taxi,
-      'categorie': 'Transport',
-    },
-    {
-      'nom': 'Thierno Informatique',
-      'specialite': 'Dépannage PC',
-      'ville': 'Cosa',
-      'image': 'https://via.placeholder.com/150',
-      'icone': Icons.computer,
-      'categorie': 'Électronique',
-    },
-  ];
-
-  List<Map<String, dynamic>> get prestatairesFiltres {
-    final data = selectedCategory == 'Tous'
-        ? prestataires
-        : prestataires.where((p) => p['categorie'] == selectedCategory).toList();
-
-    if (searchText.isEmpty) return data;
-
-    return data.where((p) =>
-      p['nom'].toLowerCase().contains(searchText.toLowerCase()) ||
-      p['specialite'].toLowerCase().contains(searchText.toLowerCase())
-    ).toList();
-  }
-
-  void _showCategoryModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (BuildContext context) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          shrinkWrap: true,
-          children: categories.map((cat) {
-            return ListTile(
-              leading: selectedCategory == cat
-                  ? const Icon(Icons.check, color: Colors.green)
-                  : null,
-              title: Text(cat),
-              onTap: () {
-                setState(() {
-                  selectedCategory = cat;
-                });
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-        );
-      },
-    );
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() =>
+        context.read<PrestatairesProvider>().loadPrestataires());
   }
 
   @override
   Widget build(BuildContext context) {
+    final prov = context.watch<PrestatairesProvider>();
+    final all = prov.prestataires;
+
+    // Filtres
+    List<PrestataireModel> list = all;
+    if (selectedCategory != 'Tous') {
+      list = list.where((p) => p.category == selectedCategory).toList();
+    }
+    if (selectedJob != 'Tous') {
+      list = list.where((p) => p.metier == selectedJob).toList();
+    }
+    if (searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.toLowerCase();
+      list = list.where((p) {
+        return p.metier.toLowerCase().contains(q) ||
+            p.ville.toLowerCase().contains(q) ||
+            p.category.toLowerCase().contains(q);
+      }).toList();
+    }
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Prestataires'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        title: const Text(
+          'Prestataires par métier',
+          style: TextStyle(
+            color: Color(0xFF113CFC),
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      ),
-      body: Column(
-        children: [
-          // 🔍 Recherche
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              onChanged: (value) {
-                setState(() {
-                  searchText = value;
-                });
-              },
-              decoration: InputDecoration(
-                hintText: 'Rechercher un prestataire...',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-
-          // 🔽 Bouton menu catégories
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Catégorie : $selectedCategory'),
-                IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => _showCategoryModal(context),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          // 📋 Liste des prestataires
-          Expanded(
-            child: prestatairesFiltres.isEmpty
-                ? const Center(child: Text("Aucun prestataire trouvé."))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: prestatairesFiltres.length,
-                    itemBuilder: (context, index) {
-                      final pro = prestatairesFiltres[index];
-                      return Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        elevation: 2,
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: NetworkImage(pro['image']),
-                            radius: 26,
-                          ),
-                          title: Text(
-                            pro['nom'],
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text('${pro['specialite']} • ${pro['ville']}'),
-                          trailing: Icon(pro['icone'], color: const Color(0xFFCE1126)),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PrestataireDetailPage(prestataire: pro),
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  ),
+        backgroundColor: Colors.white,
+        elevation: 0.7,
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
+              );
+            },
+            icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF113CFC)),
+            label: const Text("S'inscrire", style: TextStyle(color: Color(0xFF113CFC))),
           ),
         ],
       ),
+      body: prov.loading
+          ? const Center(child: CircularProgressIndicator())
+          : prov.error != null
+              ? Center(child: Text('Erreur: ${prov.error}'))
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Column(
+                    children: [
+                      // Bannière
+                      Container(
+                        width: double.infinity,
+                        height: 80,
+                        margin: const EdgeInsets.only(bottom: 18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFCE1126), Color(0xFFFCD116)],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              "Trouvez un professionnel\ndans tous les métiers",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Filtres lignes
+                      Row(
+                        children: [
+                          DropdownButton<String>(
+                            value: selectedCategory,
+                            items: <DropdownMenuItem<String>>[
+                              const DropdownMenuItem(
+                                  value: 'Tous', child: Text('Domaines de métiers')),
+                              ...categories.keys.map(
+                                (c) => DropdownMenuItem(value: c, child: Text(c)),
+                              )
+                            ],
+                            onChanged: (v) {
+                              setState(() {
+                                selectedCategory = v!;
+                                selectedJob = 'Tous';
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 10),
+                          if (selectedCategory != 'Tous')
+                            DropdownButton<String>(
+                              value: selectedJob,
+                              items: [
+                                const DropdownMenuItem(value: 'Tous', child: Text('Tous')),
+                                ...categories[selectedCategory]!.map(
+                                  (job) => DropdownMenuItem(value: job, child: Text(job)),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() => selectedJob = v!),
+                            ),
+                        ],
+                      ),
+
+                      // Recherche
+                      TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Rechercher un métier, une ville...',
+                          prefixIcon: const Icon(Icons.search, color: Color(0xFF113CFC)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          filled: true,
+                          fillColor: const Color(0xFFF8F6F9),
+                        ),
+                        onChanged: (v) => setState(() => searchQuery = v),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Liste
+                      Expanded(
+                        child: list.isEmpty
+                            ? const Center(child: Text("Aucun prestataire trouvé."))
+                            : ListView.builder(
+                                itemCount: list.length,
+                                itemBuilder: (_, i) {
+                                  final p = list[i];
+                                  return GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              PrestataireDetailPage(data: p.toJson()),
+                                        ),
+                                      );
+                                    },
+                                    child: Card(
+                                      color: Colors.white,
+                                      elevation: 2,
+                                      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16)),
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: Colors.indigo.shade50,
+                                          backgroundImage: p.photoUrl.isNotEmpty
+                                              ? NetworkImage(p.photoUrl)
+                                              : const AssetImage('assets/avatar.png') as ImageProvider,
+                                        ),
+                                        title: Text(
+                                          p.metier,
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        subtitle: Text('${p.category} • ${p.ville}'),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
     );
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../components/custom_card.dart';
 import '../providers/user_provider.dart';
 
 class HomePage extends StatefulWidget {
@@ -11,20 +10,75 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(Duration.zero, () {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      if (!userProvider.estConnecte) {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
-    });
+  // ⛔️ SUPPRIME le initState : pas de redirection ici !
+
+  // Fonction pour l’icône messages stylée
+  Widget buildStyledMessageIcon() {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFCE1126), // Rouge
+            Color(0xFFFCD116), // Jaune
+            Color(0xFF009460), // Vert
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: const Icon(
+        Icons.forum_rounded,
+        color: Colors.white,
+        size: 34,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final utilisateur = Provider.of<UserProvider>(context).utilisateur;
+
+    if (utilisateur == null) {
+      // ✅ Redirection unique ici (ça suffit largement)
+      Future.microtask(() => Navigator.pushReplacementNamed(context, '/login'));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    Widget buildIcon(IconData iconData, Color color) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.shade300,
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Icon(iconData, color: color, size: 38),
+      );
+    }
+
+    // Responsive grid setup
+    final width = MediaQuery.of(context).size.width;
+    int crossAxisCount = 3;
+    double childAspectRatio = 1;
+    if (width > 600) {
+      crossAxisCount = 6;
+      childAspectRatio = 1.1;
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -32,7 +86,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          "Bienvenue ${utilisateur?.prenom ?? 'Utilisateur'} 👋",
+          "Bienvenue ${utilisateur.prenom} 👋",
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -41,43 +95,21 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: PopupMenuButton<String>(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              offset: const Offset(0, 50),
-              onSelected: (value) {
-                if (value == 'profile') {
-                  Navigator.pushNamed(context, '/profil');
-                } else if (value == 'logout') {
-                  Navigator.pushReplacementNamed(context, '/login');
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'profile',
-                  child: ListTile(
-                    leading: Icon(Icons.person),
-                    title: Text('Mon profil'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'logout',
-                  child: ListTile(
-                    leading: Icon(Icons.logout),
-                    title: Text('Se déconnecter'),
-                  ),
-                ),
-              ],
-              child: CircleAvatar(
-                backgroundColor: Colors.grey.shade200,
-                radius: 18,
-                backgroundImage: utilisateur?.photoUrl != null
-                    ? NetworkImage(utilisateur!.photoUrl!)
-                    : const AssetImage('assets/default_avatar.png') as ImageProvider,
-              ),
-            ),
+          // Icône notification
+          IconButton(
+            icon: const Icon(Icons.notifications, color: Color(0xFFCE1126)),
+            onPressed: () {
+              Navigator.pushNamed(context, '/notifications');
+            },
           ),
+          // Icône point d'interrogation
+          IconButton(
+            icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
+            onPressed: () {
+              Navigator.pushNamed(context, '/aide');
+            },
+          ),
+          const SizedBox(width: 6),
         ],
       ),
       body: SingleChildScrollView(
@@ -85,146 +117,271 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔶 Bannière
+            // Nouvelle bannière Ma Guinée
             Container(
+              margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
-              height: 120,
+              height: 142,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.10),
+                    blurRadius: 18,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
                 gradient: const LinearGradient(
                   colors: [Color(0xFFCE1126), Color(0xFFFCD116)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
               child: Stack(
                 children: [
-                  const Positioned(
+                  // Effet lumière
+                  Positioned(
+                    right: 10,
+                    top: -30,
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.white.withOpacity(0.17),
+                            Colors.transparent,
+                          ],
+                          radius: 0.83,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Carte de la Guinée + badge
+                  Positioned(
+                    right: 18,
                     top: 20,
-                    left: 20,
+                    child: Stack(
+                      alignment: Alignment.topRight,
+                      children: [
+                        Image.asset(
+                          'assets/guinee_map.png',
+                          height: 90,
+                          fit: BoxFit.contain,
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black12,
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                            child: const Text(
+                              "Guinée",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFCE1126),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Titre
+                  const Positioned(
+                    top: 29,
+                    left: 26,
                     child: Text(
                       "Ma Guinée",
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: 34,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black26,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                  // Sous-titre
                   const Positioned(
-                    top: 55,
-                    left: 20,
+                    top: 75,
+                    left: 26,
                     child: Text(
                       "Tous les services à portée de main",
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 16,
                         color: Colors.white,
+                        fontWeight: FontWeight.w400,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black12,
+                            blurRadius: 6,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 10,
-                    top: 15,
-                    child: Image.asset(
-                      'assets/guinee_map.png',
-                      height: 80,
-                      fit: BoxFit.contain,
-                    ),
-                  )
                 ],
               ),
             ),
 
-            const SizedBox(height: 20),
-
-            // 🧩 Grille de services
+            // Grille de services
             GridView.count(
-              crossAxisCount: 3,
-              childAspectRatio: 0.95,
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: childAspectRatio,
               shrinkWrap: true,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                CustomCard(
-                  icon: Icons.campaign,
-                  label: "Annonces",
-                  backgroundColor: const Color(0xFFCE1126),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/annonces'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.campaign, const Color(0xFFCE1126)),
+                      const SizedBox(height: 6),
+                      const Text("Annonces", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.engineering,
-                  label: "Prestataires",
-                  backgroundColor: const Color(0xFFFCD116),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/prestataires'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.engineering, const Color(0xFFFCD116)),
+                      const SizedBox(height: 6),
+                      const Text("Prestataires", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.account_balance,
-                  label: "Services Admin",
-                  backgroundColor: const Color(0xFF009460),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/administratif'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.account_balance, const Color(0xFF009460)),
+                      const SizedBox(height: 6),
+                      const Text("Services Admin", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.restaurant,
-                  label: "Restaurants",
-                  backgroundColor: const Color(0xFFFCD116),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/restos'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.restaurant, const Color(0xFFFCD116)),
+                      const SizedBox(height: 6),
+                      const Text("Restaurants", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.mosque,
-                  label: "Lieux de culte",
-                  backgroundColor: const Color(0xFF009460),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/culte'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.mosque, const Color(0xFF009460)),
+                      const SizedBox(height: 6),
+                      const Text("Lieux de culte", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.theaters,
-                  label: "Divertissement",
-                  backgroundColor: const Color(0xFFCE1126),
-                  onTap: () => Navigator.pushNamed(context, '/divertissement'), // ✅ corrigé ici
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, '/divertissement'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.theaters, const Color(0xFFCE1126)),
+                      const SizedBox(height: 6),
+                      const Text("Divertissement", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.museum,
-                  label: "Tourisme",
-                  backgroundColor: const Color(0xFF009460),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/tourisme'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.museum, const Color(0xFF009460)),
+                      const SizedBox(height: 6),
+                      const Text("Tourisme", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.local_hospital,
-                  label: "Santé",
-                  backgroundColor: const Color(0xFFFCD116),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/sante'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.local_hospital, const Color(0xFFFCD116)),
+                      const SizedBox(height: 6),
+                      const Text("Santé", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.hotel,
-                  label: "Hôtels",
-                  backgroundColor: const Color(0xFFCE1126),
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/hotels'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.hotel, const Color(0xFFCE1126)),
+                      const SizedBox(height: 6),
+                      const Text("Hôtels", textAlign: TextAlign.center),
+                    ],
+                  ),
                 ),
-                CustomCard(
-                  icon: Icons.star,
-                  label: "Favoris",
-                  backgroundColor: const Color(0xFF009460),
+                // Favoris
+                GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/favoris'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildIcon(Icons.star, const Color(0xFF009460)),
+                      const SizedBox(height: 6),
+                      const Text("Favoris", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+                // Messages stylé (après Favoris)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, '/messages'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildStyledMessageIcon(),
+                      const SizedBox(height: 6),
+                      const Text(
+                        "Messages",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ],
         ),
-      ),
-
-      // 🔻 Navigation inférieure
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
-        selectedItemColor: const Color(0xFFCE1126),
-        onTap: (index) {
-          final routes = ['/', '/carte', '/profil'];
-          Navigator.pushNamed(context, routes[index]);
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Accueil"),
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: "Carte"),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profil"),
-        ],
       ),
     );
   }

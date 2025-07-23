@@ -105,33 +105,56 @@ class _CartePageState extends State<CartePage> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.white, // Fond blanc pour homogénéité
       appBar: AppBar(
-        title: const Text("Carte interactive"),
-        backgroundColor: Colors.green[700],
+        title: const Text(
+          "Carte interactive",
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.4,
+          ),
+        ),
+        elevation: 1.2,
+        backgroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.black),
         actions: [
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _categorieSelectionnee,
-              dropdownColor: Colors.white,
-              items: const [
-                DropdownMenuItem(value: 'tous', child: Text("Tous")),
-                DropdownMenuItem(value: 'hotels', child: Text("Hôtels")),
-                DropdownMenuItem(value: 'sante', child: Text("Santé")),
-                DropdownMenuItem(value: 'restos', child: Text("Restaurants")),
-                DropdownMenuItem(value: 'tourisme', child: Text("Tourisme")),
-                DropdownMenuItem(value: 'culte', child: Text("Lieux de culte")),
-                DropdownMenuItem(value: 'divertissement', child: Text("Divertissement")),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _categorieSelectionnee = val;
-                  });
-                }
-              },
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: DropdownButtonHideUnderline(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F6F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: DropdownButton<String>(
+                  value: _categorieSelectionnee,
+                  icon: const Icon(Icons.expand_more, color: Colors.black),
+                  dropdownColor: Colors.white,
+                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+                  items: const [
+                    DropdownMenuItem(value: 'tous', child: Text("Tous")),
+                    DropdownMenuItem(value: 'hotels', child: Text("Hôtels")),
+                    DropdownMenuItem(value: 'sante', child: Text("Santé")),
+                    DropdownMenuItem(value: 'restos', child: Text("Restaurants")),
+                    DropdownMenuItem(value: 'tourisme', child: Text("Tourisme")),
+                    DropdownMenuItem(value: 'culte', child: Text("Lieux de culte")),
+                    DropdownMenuItem(value: 'divertissement', child: Text("Divertissement")),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _categorieSelectionnee = val;
+                      });
+                    }
+                  },
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
         ],
       ),
       body: Stack(
@@ -139,7 +162,7 @@ class _CartePageState extends State<CartePage> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: const LatLng(9.5412, -13.6773), // Conakry par défaut
+              initialCenter: const LatLng(9.5412, -13.6773), // Conakry
               initialZoom: 12,
             ),
             children: [
@@ -151,12 +174,15 @@ class _CartePageState extends State<CartePage> {
             ],
           ),
           Positioned(
-            bottom: 20,
-            right: 20,
+            bottom: 28,
+            right: 18,
             child: FloatingActionButton(
               onPressed: _centrerSurMaPosition,
               backgroundColor: Colors.blueAccent,
+              elevation: 5,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               child: const Icon(Icons.my_location),
+              tooltip: "Ma position",
             ),
           ),
         ],
@@ -167,11 +193,11 @@ class _CartePageState extends State<CartePage> {
   Widget? _buildDetailPage(String category, Map<String, dynamic> lieu) {
     switch (category) {
       case 'hotels':
-        return HotelDetailPage(hotel: lieu);
+        return HotelDetailPage(hotelId: lieu['id']);
       case 'sante':
-        return SanteDetailPage(centre: lieu);
+        return SanteDetailPage(cliniqueId: lieu['id']);
       case 'restos':
-        return RestoDetailPage(resto: lieu);
+        return RestoDetailPage(restoId: lieu['id']);
       case 'tourisme':
         return TourismeDetailPage(lieu: lieu);
       case 'culte':

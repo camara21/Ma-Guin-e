@@ -19,7 +19,7 @@ class LieuMapPage extends StatefulWidget {
 }
 
 class _LieuMapPageState extends State<LieuMapPage> {
-  late GoogleMapController _mapController;
+  GoogleMapController? _mapController;
   MapType _mapType = MapType.normal;
 
   void _launchGoogleMaps() async {
@@ -28,7 +28,9 @@ class _LieuMapPageState extends State<LieuMapPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      throw 'Impossible d’ouvrir la navigation.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d’ouvrir la navigation.")),
+      );
     }
   }
 
@@ -41,9 +43,14 @@ class _LieuMapPageState extends State<LieuMapPage> {
     );
 
     return Scaffold(
+      backgroundColor: Colors.white, // ✅ Fond blanc comme toutes les pages
       appBar: AppBar(
-        title: Text("Carte - ${widget.nom}"),
+        title: Text(
+          "Carte - ${widget.nom}",
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: const Color(0xFF009460),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             icon: const Icon(Icons.layers),
@@ -57,6 +64,7 @@ class _LieuMapPageState extends State<LieuMapPage> {
             },
           ),
         ],
+        elevation: 1,
       ),
       body: Stack(
         children: [
@@ -72,16 +80,30 @@ class _LieuMapPageState extends State<LieuMapPage> {
             zoomControlsEnabled: true,
           ),
           Positioned(
-            bottom: 20,
+            bottom: 24,
             left: 20,
             right: 20,
-            child: ElevatedButton.icon(
-              onPressed: _launchGoogleMaps,
-              icon: const Icon(Icons.navigation),
-              label: const Text("Itinéraire avec Google Maps"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFCE1126),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _launchGoogleMaps,
+                icon: const Icon(Icons.navigation, color: Colors.white),
+                label: const Text(
+                  "Itinéraire avec Google Maps",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFCE1126),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 3,
+                ),
               ),
             ),
           ),

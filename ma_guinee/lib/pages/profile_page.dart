@@ -1,137 +1,356 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../providers/user_provider.dart';
 import '../models/utilisateur_model.dart';
+import '../providers/user_provider.dart';
+import 'inscription_clinique_page.dart';
+import 'inscription_hotel_page.dart';
+import 'inscription_prestataire_page.dart';
+import 'inscription_resto_page.dart';
+import 'parametre_page.dart';
+import '../routes.dart';
 
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key});
+class ProfilePage extends StatefulWidget {
+  final UtilisateurModel user;
+  const ProfilePage({super.key, required this.user});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  bool _isUploading = false;
+  String? _photoUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _photoUrl = widget.user.photoUrl;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<UserProvider>().chargerUtilisateurConnecte();
+    });
+  }
+
+  Future<void> _pickImageAndUpload() async {
+    if (_isUploading) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = context.read<UserProvider>().utilisateur!.id;
+      final ext = picked.path.split('.').last.toLowerCase();
+      final fileName = 'profile_photo_$userId.$ext';
+      final path = 'profile-photos/$fileName';
+
+      final bytes = await picked.readAsBytes();
+      await supabase.storage
+          .from('profile-photos')
+          .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+
+      final publicUrl = supabase.storage.from('profile-photos').getPublicUrl(path);
+
+      await supabase.from('utilisateurs').update({'photo_url': publicUrl}).eq('id', userId);
+
+      setState(() {
+        _photoUrl = publicUrl;
+        _isUploading = false;
+      });
+
+      await context.read<UserProvider>().chargerUtilisateurConnecte();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo de profil mise à jour !')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur upload: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final utilisateur = context.watch<UserProvider>().utilisateur;
+    final prov = context.watch<UserProvider>();
 
-    if (utilisateur == null) {
-      return const Scaffold(
-        body: Center(child: Text("Aucun utilisateur connecté.")),
-      );
+    if (prov.isLoadingUser || prov.isLoadingAnnonces) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final user = prov.utilisateur ?? widget.user;
+    final annoncesCount = prov.annoncesUtilisateur.length;
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
         title: const Text(
-          "Mon Profil",
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-          ),
+          'Mon compte',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
-        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.power_settings_new),
-            onPressed: () {
-              Navigator.pushReplacementNamed(context, '/login');
-            },
-          ),
-        ],
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        padding: EdgeInsets.zero,
         children: [
-          Center(
+          // HEADER
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 26),
+            color: Colors.grey[50],
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 45,
-                  backgroundColor: Colors.grey.shade200,
-                  backgroundImage: utilisateur.photoUrl != null
-                      ? NetworkImage(utilisateur.photoUrl!)
-                      : const AssetImage('assets/default_avatar.png') as ImageProvider,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  "${utilisateur.prenom} ${utilisateur.nom}",
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+                GestureDetector(
+                  onTap: _pickImageAndUpload,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 37,
+                        backgroundColor: Colors.grey[200],
+                        backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
+                            ? NetworkImage(_photoUrl!)
+                            : const AssetImage('assets/avatar.png') as ImageProvider,
+                        child: (_photoUrl == null || _photoUrl!.isEmpty)
+                            ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                            : null,
+                      ),
+                      if (_isUploading)
+                        const SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        ),
+                    ],
                   ),
                 ),
-                Text(
-                  utilisateur.email,
-                  style: const TextStyle(color: Colors.grey),
+                const SizedBox(height: 10),
+                Text('${user.prenom} ${user.nom}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
+                if (user.telephone.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text(user.telephone,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                  ),
+                if (user.email.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(user.email,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                  ),
+              ],
+            ),
+          ),
+
+          // MES ANNONCES (card cliquable)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            child: InkWell(
+              onTap: () => Navigator.pushNamed(context, AppRoutes.mesAnnonces),
+              borderRadius: BorderRadius.circular(14),
+              child: Card(
+                elevation: 0.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: Stack(
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.campaign, color: Color(0xFFCE1126)),
+                      title: Text('Mes annonces', style: TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text("Voir / modifier / supprimer mes annonces"),
+                    ),
+                    Positioned(
+                      right: 18,
+                      top: 14,
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Colors.red.shade700,
+                        child: Text(
+                          annoncesCount.toString(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // BLOCS PRO
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Column(
+              children: [
+                _blocEspace(
+                  color: Colors.blue.shade50,
+                  icon: Icons.home_repair_service,
+                  iconColor: const Color(0xFF009460),
+                  title: 'Espace prestataire',
+                  subtitle: user.espacePrestataire != null
+                      ? (user.espacePrestataire?['job'] ?? '')
+                      : "Vous n'êtes pas encore inscrit comme prestataire.",
+                  onTap: user.espacePrestataire != null
+                      ? () => Navigator.pushNamed(context, AppRoutes.editPrestataire,
+                          arguments: user.espacePrestataire)
+                      : null,
+                  onButton: user.espacePrestataire == null
+                      ? () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
+                          )
+                      : null,
+                  buttonLabel: user.espacePrestataire == null ? "S'inscrire" : "Modifier",
+                ),
+                _blocEspace(
+                  color: Colors.orange.shade50,
+                  icon: Icons.restaurant,
+                  iconColor: Colors.orange,
+                  title: 'Mon Restaurant',
+                  subtitle: user.resto != null
+                      ? "${user.resto!['nom'] ?? ''} - ${user.resto!['ville'] ?? ''}"
+                      : "Aucun restaurant enregistré.",
+                  onButton: user.resto == null
+                      ? () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const InscriptionRestoPage()),
+                          )
+                      : null,
+                  buttonLabel: user.resto == null ? "S'inscrire" : "Modifier",
+                ),
+                _blocEspace(
+                  color: Colors.purple.shade50,
+                  icon: Icons.hotel,
+                  iconColor: Colors.purple,
+                  title: 'Mon Hôtel',
+                  subtitle: user.hotel != null
+                      ? "${user.hotel!['nom'] ?? ''} - ${user.hotel!['ville'] ?? ''}"
+                      : "Aucun hôtel enregistré.",
+                  onButton: user.hotel == null
+                      ? () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const InscriptionHotelPage()),
+                          )
+                      : null,
+                  buttonLabel: user.hotel == null ? "S'inscrire" : "Modifier",
+                ),
+                _blocEspace(
+                  color: Colors.teal.shade50,
+                  icon: Icons.local_hospital,
+                  iconColor: Colors.teal,
+                  title: 'Ma Clinique',
+                  subtitle: user.clinique != null
+                      ? "${user.clinique!['nom'] ?? ''} - ${user.clinique!['ville'] ?? ''}"
+                      : "Aucune clinique enregistrée.",
+                  onButton: user.clinique == null
+                      ? () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
+                          )
+                      : null,
+                  buttonLabel: user.clinique == null ? "S'inscrire" : "Modifier",
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 30),
-          _buildInfoRow(Icons.public, "Pays", utilisateur.pays),
-          const SizedBox(height: 16),
-          _buildInfoRow(Icons.phone, "Téléphone", utilisateur.telephone),
-          const SizedBox(height: 16),
-          _buildInfoRow(Icons.wc, "Genre", utilisateur.genre ?? "Non précisé"),
-          const SizedBox(height: 40),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pushNamed(context, '/modifier_profil');
-            },
-            icon: const Icon(Icons.edit),
-            label: const Text("Modifier mon profil"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFCE1126),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+
+          // Paramètres
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            child: Card(
+              elevation: 0.5,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              child: ListTile(
+                leading: const Icon(Icons.settings, color: Colors.black),
+                title: const Text('Paramètres', style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.black),
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ParametrePage(user: user)),
+                  );
+                  if (result == true && mounted) {
+                    await context.read<UserProvider>().chargerUtilisateurConnecte();
+                  }
+                },
+              ),
             ),
           ),
-          const SizedBox(height: 30),
-          const Divider(),
+
+          // Déconnexion
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  await context.read<UserProvider>().logout();
+                  if (mounted) {
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  }
+                },
+                icon: const Icon(Icons.logout, color: Colors.black87),
+                label: const Text(
+                  'Me déconnecter',
+                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 17),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[200],
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0.5,
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
-          const Text("Mes Services", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _buildServiceTile(Icons.favorite, "Mes favoris", "/favoris"),
-          _buildServiceTile(Icons.event, "Mes réservations", "/reservations"),
-          _buildServiceTile(Icons.history, "Historique", "/historique"),
-          _buildServiceTile(Icons.campaign, "Mes annonces", "/mes_annonces"),
-          const SizedBox(height: 30),
-          const Divider(),
-          const SizedBox(height: 20),
-          const Text("Paramètres", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _buildServiceTile(Icons.lock, "Modifier mot de passe", "/changer_mot_de_passe"),
-          _buildServiceTile(Icons.delete, "Supprimer mon compte", "/supprimer_compte"),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, color: Colors.grey[700]),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            "$label : $value",
-            style: const TextStyle(fontSize: 16),
+  Widget _blocEspace({
+    required Color color,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    VoidCallback? onTap,
+    VoidCallback? onButton,
+    required String buttonLabel,
+  }) {
+    return Card(
+      color: color,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+      child: ListTile(
+        leading: Icon(icon, color: iconColor, size: 20),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        subtitle: Text(subtitle),
+        trailing: ElevatedButton(
+          onPressed: onButton,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.grey[onButton != null ? 600 : 300],
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
           ),
+          child: Text(buttonLabel),
         ),
-      ],
-    );
-  }
-
-  Widget _buildServiceTile(IconData icon, String label, String route) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: Colors.grey[700]),
-      title: Text(label),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-      onTap: () {
-        // Navigue vers la page associée
-      },
+        onTap: onTap,
+      ),
     );
   }
 }

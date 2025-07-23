@@ -21,59 +21,87 @@ class CulteDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final String nom = lieu['nom'] ?? 'Lieu de culte';
     final String ville = lieu['ville'] ?? 'Ville inconnue';
-    final String? image = lieu['image'];
-    final double latitude = lieu['latitude'] ?? 0.0;
-    final double longitude = lieu['longitude'] ?? 0.0;
+    final List<String> images = (lieu['images'] as List?)?.cast<String>() ?? [];
+    final double latitude = (lieu['latitude'] ?? 0).toDouble();
+    final double longitude = (lieu['longitude'] ?? 0).toDouble();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(nom),
-        backgroundColor: Colors.green[700],
+        backgroundColor: Colors.white,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        title: Text(
+          nom,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            color: Color(0xFF113CFC),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (image != null)
+            // Si plusieurs images, on peut afficher un carousel basique avec PageView
+            if (images.isNotEmpty)
+              SizedBox(
+                height: 190,
+                child: PageView.builder(
+                  itemCount: images.length,
+                  itemBuilder: (context, index) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(17),
+                      child: Image.network(
+                        images[index],
+                        width: double.infinity,
+                        height: 190,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          height: 190,
+                          color: Colors.grey.shade300,
+                          child: const Center(child: Icon(Icons.image_not_supported)),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
+            else
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  image,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    color: Colors.grey.shade300,
-                    child: const Center(child: Icon(Icons.image_not_supported)),
-                  ),
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  height: 190,
+                  color: Colors.grey.shade200,
+                  child: const Center(child: Icon(Icons.place, size: 70, color: Colors.grey)),
                 ),
               ),
-            const SizedBox(height: 20),
-
+            const SizedBox(height: 18),
             Text(
-              nom,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ville,
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              "Localisation :",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.red),
-                const SizedBox(width: 8),
-                Text(ville, style: const TextStyle(fontSize: 16)),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            const Text("Localisation :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 200,
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
+                ],
+              ),
+              height: 190,
               child: FlutterMap(
                 options: MapOptions(
-                  initialCenter: LatLng(latitude, longitude),
-                  initialZoom: 15,
+                  center: LatLng(latitude, longitude),
+                  zoom: 15,
                 ),
                 children: [
                   TileLayer(
@@ -84,28 +112,31 @@ class CulteDetailPage extends StatelessWidget {
                     markers: [
                       Marker(
                         point: LatLng(latitude, longitude),
-                        width: 40,
-                        height: 40,
-                        child: const Icon(Icons.location_on, color: Colors.green, size: 40),
-                      )
+                        width: 44,
+                        height: 44,
+                        child: const Icon(Icons.location_on, color: Color(0xFF009460), size: 40),
+                      ),
                     ],
-                  )
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-
+            const SizedBox(height: 26),
             Center(
               child: ElevatedButton.icon(
                 onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
                 icon: const Icon(Icons.map),
                 label: const Text("Ouvrir dans Google Maps"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[700],
+                  backgroundColor: const Color(0xFF113CFC),
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),

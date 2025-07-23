@@ -5,27 +5,29 @@ class NotificationsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Exemple d'affichage statique, tu peux ensuite connecter à la base pour les vraies notifications
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: const Text("Notifications", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.black),
+        elevation: 0.6,
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: 5, // Tu peux lier avec tes vraies données plus tard
-        separatorBuilder: (_, __) => const Divider(),
-        itemBuilder: (context, index) {
-          return ListTile(
-            leading: const Icon(Icons.notifications),
-            title: Text('Notification ${index + 1}'),
-            subtitle: const Text('Contenu de la notification...'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Action future
-            },
-          );
-        },
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          ListTile(
+            leading: Icon(Icons.info, color: Colors.orange[700]),
+            title: const Text("Bienvenue sur Ma Guinée !"),
+            subtitle: const Text("Merci d'avoir rejoint l'application."),
+          ),
+          ListTile(
+            leading: Icon(Icons.payment, color: Colors.green[700]),
+            title: const Text("Nouveau service ajouté !"),
+            subtitle: const Text("Vous pouvez désormais payer vos factures en ligne."),
+          ),
+          // Ajoute tes vraies notifications ici
+        ],
       ),
     );
   }

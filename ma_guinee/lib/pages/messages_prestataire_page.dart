@@ -1,0 +1,230 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/message_service.dart';
+
+class MessagesPrestatairePage extends StatefulWidget {
+  final String prestataireId;
+  final String prestataireName;
+  final String receiverId;
+  final String senderId;
+
+  const MessagesPrestatairePage({
+    super.key,
+    required this.prestataireId,
+    required this.prestataireName,
+    required this.receiverId,
+    required this.senderId,
+  });
+
+  @override
+  State<MessagesPrestatairePage> createState() => _MessagesPrestatairePageState();
+}
+
+class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final MessageService _messageService = MessageService();
+
+  late final _subscription;
+  List<Map<String, dynamic>> messages = [];
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMessages();
+    _subscribeToMessages();
+  }
+
+  Future<void> _fetchMessages() async {
+    setState(() => loading = true);
+    try {
+      final msgs = await _messageService.fetchMessagesForPrestataire(widget.prestataireId);
+      setState(() {
+        messages = msgs;
+        loading = false;
+      });
+      _scrollDown();
+      // Marquer lus les messages reçus non lus
+      for (var msg in msgs) {
+        if (msg['receiver_id'] == widget.senderId && !(msg['lu'] ?? true)) {
+          await _messageService.markMessageAsRead(msg['id']);
+        }
+      }
+    } catch (e) {
+      setState(() {
+        messages = [];
+        loading = false;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur chargement messages : $e")));
+    }
+  }
+
+  void _subscribeToMessages() {
+    _subscription = _messageService.subscribeToPrestataireMessages(widget.prestataireId, () {
+      _fetchMessages();
+    });
+  }
+
+  void _scrollDown() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    try {
+      await _messageService.sendMessageToPrestataire(
+        senderId: widget.senderId,
+        receiverId: widget.receiverId,
+        prestataireId: widget.prestataireId,
+        contenu: text,
+      );
+      _messageController.clear();
+      _scrollDown();
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur envoi message : $e")));
+    }
+  }
+
+  Widget _buildMessage(Map<String, dynamic> msg) {
+    final bool isMe = msg['sender_id'] == widget.senderId;
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(
+          top: 8,
+          bottom: 4,
+          left: isMe ? 50 : 4,
+          right: isMe ? 4 : 50,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          color: isMe ? const Color(0xFF113CFC) : Colors.grey[200],
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 2),
+            bottomRight: Radius.circular(isMe ? 2 : 16),
+          ),
+          boxShadow: [
+            if (isMe) BoxShadow(color: Colors.blue[100]!, blurRadius: 2, offset: const Offset(1, 2)),
+          ],
+        ),
+        child: Text(
+          msg['contenu'],
+          style: TextStyle(
+            color: isMe ? Colors.white : Colors.black87,
+            fontSize: 15.3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription.unsubscribe();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8FB),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1.4,
+        titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF113CFC)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: const Icon(Icons.engineering, color: Color(0xFF113CFC)),
+            ),
+            const SizedBox(width: 11),
+            Flexible(
+              child: Text(
+                widget.prestataireName,
+                style: const TextStyle(
+                  color: Color(0xFF113CFC),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17.5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
+                      itemCount: messages.length,
+                      itemBuilder: (_, idx) => _buildMessage(messages[idx]),
+                    ),
+                  ),
+                  Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F5FA),
+                              borderRadius: BorderRadius.circular(17),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: TextField(
+                              controller: _messageController,
+                              minLines: 1,
+                              maxLines: 3,
+                              style: const TextStyle(fontSize: 16),
+                              decoration: const InputDecoration(
+                                contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                                hintText: "Écrivez un message...",
+                                border: InputBorder.none,
+                              ),
+                              onSubmitted: (_) => _sendMessage(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        ElevatedButton(
+                          onPressed: _sendMessage,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF113CFC),
+                            shape: const CircleBorder(),
+                            padding: const EdgeInsets.all(12),
+                            elevation: 0,
+                          ),
+                          child: const Icon(Icons.send, color: Colors.white, size: 22),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}

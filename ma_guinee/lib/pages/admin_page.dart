@@ -34,8 +34,18 @@ class AdminPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white, // Fond blanc premium
       appBar: AppBar(
-        title: const Text('Services administratifs'),
+        title: const Text(
+          'Services administratifs',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 1.2,
+        iconTheme: const IconThemeData(color: Colors.black),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -43,37 +53,35 @@ class AdminPage extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // 🔍 Barre de recherche
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Rechercher un service...',
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF113CFC)),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: const Color(0xFFF8F6F9),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide.none,
                 ),
               ),
             ),
           ),
-
-          // 📋 Liste des services
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
               itemCount: services.length,
               itemBuilder: (context, index) {
                 final service = services[index];
                 return Card(
+                  color: Colors.indigo.shade50.withOpacity(0.13),
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  elevation: 2,
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: const Color(0xFFCE1126),
@@ -81,11 +89,18 @@ class AdminPage extends StatelessWidget {
                     ),
                     title: Text(
                       service['titre'],
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
-                    subtitle: Text(service['description']),
+                    subtitle: Text(
+                      service['description'],
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18, color: Color(0xFFCE1126)),
                     onTap: () {
-                      // Tu pourras ouvrir une page avec les détails ou fichiers
+                      // Futur : ouvrir la page de détail ou téléchargement PDF
                     },
                   ),
                 );

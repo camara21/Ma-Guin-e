@@ -1,47 +1,58 @@
 name: ma_guinee
-description: "A new Flutter project."
-publish_to: 'none'
+description: "Plateforme moderne multi-services pour la Guinée."
+publish_to: none
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.8.1
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
-  # 📍 Carte interactive
+  # Carte & géolocalisation
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
-
-  share_plus: ^7.2.1
-
-  # 📡 Géolocalisation
   geolocator: ^11.0.0
+  geocoding: ^3.0.0
 
-  # 🔒 Supabase (optionnel)
-  supabase_flutter: ^1.10.19
-
-  # ✅ Provider
+  # Auth & base de données Supabase
+  supabase_flutter: ^2.3.3
+  realtime_client: ^2.5.1
   provider: ^6.1.1
 
-  # 🌍 Pour ouvrir des liens (Maps, Web, etc.)
+  # Partage et liens externes
+  share_plus: ^7.2.1
   url_launcher: ^6.2.5
 
-  # 📷 Image picker (multi-photo pour annonces)
+  # Sélecteur d'images
   image_picker: ^1.0.4
+
+  # Sélecteur de pays
+  country_picker: ^2.0.20
+
+  # Galeries & recherche rapide
+  photo_view: ^0.14.0
+  flutter_typeahead: ^5.2.0
+
+  # Icônes pro (WhatsApp, réseaux, etc.)
+  font_awesome_flutter: ^10.7.0
+
+  # Pour afficher les images sur Flutter Web
+  universal_html: ^2.2.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^3.0.0
 
 flutter:
-
   uses-material-design: true
 
   assets:
     - assets/guinee_map.png
     - assets/default_avatar.png
+    - assets/logo_guinee.png
+    - assets/nimba.png

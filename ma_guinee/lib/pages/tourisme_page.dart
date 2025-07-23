@@ -45,12 +45,18 @@ class TourismePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Sites touristiques"),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        title: const Text(
+          "Sites touristiques",
+          style: TextStyle(
+            color: Color(0xFF113CFC),
+            fontWeight: FontWeight.bold,
+          ),
         ),
+        backgroundColor: Colors.white,
+        elevation: 0.7,
+        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
       ),
       body: ListView.builder(
         itemCount: lieuxTouristiques.length,
@@ -58,9 +64,10 @@ class TourismePage extends StatelessWidget {
         itemBuilder: (context, index) {
           final lieu = lieuxTouristiques[index];
           return Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
             margin: const EdgeInsets.only(bottom: 16),
-            elevation: 2,
+            color: Colors.blue.shade50.withOpacity(0.12),
             child: ListTile(
               leading: CircleAvatar(
                 backgroundImage: NetworkImage(lieu['image']),
@@ -68,9 +75,13 @@ class TourismePage extends StatelessWidget {
               ),
               title: Text(
                 lieu['nom'],
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
               ),
-              subtitle: Text('${lieu['ville']} • ${lieu['description']}'),
+              subtitle: Text(
+                '${lieu['ville']} • ${lieu['description']}',
+                style: const TextStyle(color: Colors.black87),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF113CFC)),
               onTap: () {
                 Navigator.push(
                   context,
