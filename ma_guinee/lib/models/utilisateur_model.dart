@@ -11,11 +11,10 @@ class UtilisateurModel {
   final DateTime? dateNaissance;
   final List<String> favoris;
 
-  // Extensions pour les espaces gérés :
   final Map<String, dynamic>? espacePrestataire;
-  final Map<String, dynamic>? resto;
-  final Map<String, dynamic>? hotel;
-  final Map<String, dynamic>? clinique;
+  final List<Map<String, dynamic>> restos;
+  final List<Map<String, dynamic>> hotels;
+  final List<Map<String, dynamic>> cliniques;
   final List<Map<String, dynamic>> annonces;
 
   UtilisateurModel({
@@ -31,37 +30,60 @@ class UtilisateurModel {
     this.dateNaissance,
     this.favoris = const [],
     this.espacePrestataire,
-    this.resto,
-    this.hotel,
-    this.clinique,
+    this.restos = const [],
+    this.hotels = const [],
+    this.cliniques = const [],
     this.annonces = const [],
   });
 
   factory UtilisateurModel.fromJson(Map<String, dynamic> json) {
+    print("🧩 Données reçues du backend :");
+    print(json);
+
+    List<Map<String, dynamic>> extractList(String key) {
+      final list = json[key];
+      if (list is List) {
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return [];
+    }
+
+    final prestataire = json['espacePrestataire'];
+    final restos = extractList('restos');
+    final hotels = extractList('hotels');
+    final cliniques = extractList('cliniques');
+
+    print("📦 Prestataire : $prestataire");
+    print("🍽️ Restos : $restos");
+    print("🏨 Hotels : $hotels");
+    print("🏥 Cliniques : $cliniques");
+
     return UtilisateurModel(
-      id: json['id'] ?? '',
-      nom: json['nom'] ?? '',
-      prenom: json['prenom'] ?? '',
-      email: json['email'] ?? '',
-      pays: json['pays'] ?? '',
-      telephone: json['telephone'] ?? '',
-      genre: json['genre'] ?? '',
-      photoUrl: json['photo_url'],
+      id: json['id'] as String? ?? '',
+      nom: json['nom'] as String? ?? '',
+      prenom: json['prenom'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      pays: json['pays'] as String? ?? '',
+      telephone: json['telephone'] as String? ?? '',
+      genre: json['genre'] as String? ?? '',
+      photoUrl: json['photo_url'] as String?,
       dateInscription: json['date_inscription'] != null
-          ? DateTime.tryParse(json['date_inscription'])
+          ? DateTime.tryParse(json['date_inscription'] as String)
           : null,
       dateNaissance: json['date_naissance'] != null
-          ? DateTime.tryParse(json['date_naissance'])
+          ? DateTime.tryParse(json['date_naissance'] as String)
           : null,
       favoris: (json['favoris'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      espacePrestataire: json['espace_prestataire'] as Map<String, dynamic>?,
-      resto: json['resto'] as Map<String, dynamic>?,
-      hotel: json['hotel'] as Map<String, dynamic>?,
-      clinique: json['clinique'] as Map<String, dynamic>?,
-      annonces: (json['annonces'] as List?)
-              ?.map((e) => Map<String, dynamic>.from(e))
-              .toList() ??
-          [],
+      espacePrestataire: prestataire != null
+          ? Map<String, dynamic>.from(prestataire)
+          : null,
+      restos: restos,
+      hotels: hotels,
+      cliniques: cliniques,
+      annonces: extractList('annonces'),
     );
   }
 
@@ -78,10 +100,10 @@ class UtilisateurModel {
       'date_inscription': dateInscription?.toIso8601String(),
       'date_naissance': dateNaissance?.toIso8601String(),
       'favoris': favoris,
-      'espace_prestataire': espacePrestataire,
-      'resto': resto,
-      'hotel': hotel,
-      'clinique': clinique,
+      'espacePrestataire': espacePrestataire,
+      'restos': restos,
+      'hotels': hotels,
+      'cliniques': cliniques,
       'annonces': annonces,
     };
   }

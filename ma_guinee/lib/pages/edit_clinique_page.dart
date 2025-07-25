@@ -1,12 +1,15 @@
-import 'dart:io';
+import 'dart:io' show File;
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 
 class EditCliniquePage extends StatefulWidget {
-  final Map<String, dynamic> clinique;
-  const EditCliniquePage({super.key, required this.clinique});
+  final Map<String, dynamic>? clinique;
+  const EditCliniquePage({super.key, this.clinique});
 
   @override
   State<EditCliniquePage> createState() => _EditCliniquePageState();
@@ -18,28 +21,29 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   late TextEditingController descriptionController;
   late TextEditingController telephoneController;
   late TextEditingController whatsappController;
-  List<File> newFiles = [];
-  List<String> imagesUrls = [];
 
+  List<XFile> newFiles = [];
+  List<String> imagesUrls = [];
   bool loading = false;
 
   @override
   void initState() {
     super.initState();
-    nomController = TextEditingController(text: widget.clinique['nom'] ?? '');
-    villeController = TextEditingController(text: widget.clinique['ville'] ?? '');
-    descriptionController = TextEditingController(text: widget.clinique['description'] ?? '');
-    telephoneController = TextEditingController(text: widget.clinique['tel'] ?? '');
-    whatsappController = TextEditingController(text: widget.clinique['whatsapp'] ?? '');
-    imagesUrls = (widget.clinique['images'] as List?)?.cast<String>() ?? [];
+    final clinique = widget.clinique ?? {};
+    nomController = TextEditingController(text: clinique['nom'] ?? '');
+    villeController = TextEditingController(text: clinique['ville'] ?? '');
+    descriptionController = TextEditingController(text: clinique['description'] ?? '');
+    telephoneController = TextEditingController(text: clinique['tel'] ?? '');
+    whatsappController = TextEditingController(text: clinique['whatsapp'] ?? '');
+    imagesUrls = (clinique['images'] as List?)?.cast<String>() ?? [];
   }
 
   Future<void> _pickImages() async {
     final picker = ImagePicker();
-    final pickedFiles = await picker.pickMultiImage(imageQuality: 75);
-    if (pickedFiles.isNotEmpty) {
+    final picked = await picker.pickMultiImage(imageQuality: 75);
+    if (picked.isNotEmpty) {
       setState(() {
-        newFiles.addAll(pickedFiles.map((x) => File(x.path)));
+        newFiles.addAll(picked);
       });
     }
   }
@@ -47,131 +51,172 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   Future<List<String>> _uploadImages() async {
     final storage = Supabase.instance.client.storage.from('clinique-photos');
     List<String> urls = [];
+
     for (var file in newFiles) {
       final filename = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      await storage.upload(filename, file);
-      urls.add(storage.getPublicUrl(filename));
+
+      try {
+        final fileData = kIsWeb
+            ? await file.readAsBytes()
+            : File(file.path);
+
+        await storage.upload(
+          filename,
+          fileData,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+        final publicUrl = storage.getPublicUrl(filename);
+        urls.add(publicUrl);
+      } catch (e) {
+        debugPrint("Erreur lors de l'upload de l’image : $e");
+      }
     }
+
     return urls;
   }
 
   Future<void> _save() async {
     setState(() => loading = true);
 
-    // Upload new files, keep the existing urls
-    final uploaded = await _uploadImages();
-    final allImages = [...imagesUrls, ...uploaded];
+    final newUrls = await _uploadImages();
+    final allImages = [...imagesUrls, ...newUrls];
 
     final data = {
-      'nom': nomController.text,
-      'ville': villeController.text,
-      'description': descriptionController.text,
-      'tel': telephoneController.text,
-      'whatsapp': whatsappController.text,
+      'nom': nomController.text.trim(),
+      'ville': villeController.text.trim(),
+      'description': descriptionController.text.trim(),
+      'tel': telephoneController.text.trim(),
+      'whatsapp': whatsappController.text.trim(),
       'images': allImages,
     };
 
-    await Supabase.instance.client
-        .from('cliniques')
-        .update(data)
-        .eq('id', widget.clinique['id']);
+    final id = widget.clinique?['id'];
 
-    setState(() => loading = false);
+    try {
+      if (id != null) {
+        await Supabase.instance.client
+            .from('cliniques')
+            .update(data)
+            .eq('id', id);
+      } else {
+        await Supabase.instance.client.from('cliniques').insert(data);
+      }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Clinique modifiée !")),
-      );
-      Navigator.pop(context, {...widget.clinique, ...data});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Clinique enregistrée avec succès.")),
+        );
+        Navigator.pop(context, {...?widget.clinique, ...data});
+      }
+    } catch (e) {
+      debugPrint("Erreur d'enregistrement : $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Erreur lors de l'enregistrement.")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
-  void _delete() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Supprimer cette clinique ?"),
-        content: const Text("Cette action est irréversible."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await Supabase.instance.client
-                  .from('cliniques')
-                  .delete()
-                  .eq('id', widget.clinique['id']);
-              if (mounted) {
-                Navigator.pop(context, null);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Clinique supprimée.")),
-                );
-              }
-            },
-            child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("Supprimer cette clinique ?"),
+            content: const Text("Cette action est irréversible."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Annuler"),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ) ??
+        false;
+
+    if (confirm && widget.clinique?['id'] != null) {
+      try {
+        await Supabase.instance.client
+            .from('cliniques')
+            .delete()
+            .eq('id', widget.clinique!['id']);
+
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Clinique supprimée.")),
+          );
+        }
+      } catch (e) {
+        debugPrint("Erreur de suppression : $e");
+      }
+    }
   }
 
   void _removeImage(int index) {
-    setState(() {
-      imagesUrls.removeAt(index);
-    });
+    setState(() => imagesUrls.removeAt(index));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Modifier ma clinique"),
-        backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.teal),
+        title: const Text("Modifier la clinique"),
         actions: [
-          IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: _delete),
+          if (widget.clinique != null)
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: _delete,
+            ),
         ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
               children: [
-                // Multi-photo existantes
-                const Text("Photos actuelles :", style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text("Images actuelles"),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    for (int i = 0; i < imagesUrls.length; i++)
-                      Stack(
+                    ...imagesUrls.asMap().entries.map(
+                      (entry) => Stack(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(imagesUrls[i], width: 70, height: 70, fit: BoxFit.cover),
+                            child: Image.network(
+                              entry.value,
+                              width: 70,
+                              height: 70,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                           Positioned(
-                            top: 2, right: 2,
+                            top: 0,
+                            right: 0,
                             child: GestureDetector(
-                              onTap: () => _removeImage(i),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.8),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.close, color: Colors.white, size: 18),
-                              ),
+                              onTap: () => _removeImage(entry.key),
+                              child: const Icon(Icons.cancel, color: Colors.red, size: 20),
                             ),
                           ),
                         ],
                       ),
-                    for (var file in newFiles)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(file, width: 70, height: 70, fit: BoxFit.cover),
-                      ),
+                    ),
+                    ...newFiles.map((x) => ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: kIsWeb
+                              ? Image.network(x.path, width: 70, height: 70, fit: BoxFit.cover)
+                              : Image.file(File(x.path), width: 70, height: 70, fit: BoxFit.cover),
+                        )),
                     InkWell(
                       onTap: _pickImages,
                       child: Container(
@@ -180,46 +225,47 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                         decoration: BoxDecoration(
                           color: Colors.grey[200],
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
                         ),
-                        child: const Icon(Icons.add_a_photo, size: 30, color: Colors.orange),
+                        child: const Icon(Icons.add_a_photo, size: 30),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-
+                const SizedBox(height: 20),
                 TextField(
                   controller: nomController,
-                  decoration: const InputDecoration(labelText: "Nom de la clinique", border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: "Nom", border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
                   controller: villeController,
                   decoration: const InputDecoration(labelText: "Ville", border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
                   controller: telephoneController,
                   decoration: const InputDecoration(labelText: "Téléphone", border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
                   controller: whatsappController,
                   decoration: const InputDecoration(labelText: "WhatsApp", border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
                   controller: descriptionController,
                   maxLines: 3,
                   decoration: const InputDecoration(labelText: "Description", border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 ElevatedButton.icon(
                   onPressed: _save,
                   icon: const Icon(Icons.save),
                   label: const Text("Enregistrer"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ],
             ),

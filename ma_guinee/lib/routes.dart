@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
 
-// Pages
+// Pages principales
 import 'pages/splash_screen.dart';
 import 'pages/welcome_page.dart';
 import 'pages/home_page.dart';
@@ -28,19 +28,27 @@ import 'pages/parametre_page.dart';
 import 'pages/aide_page.dart';
 import 'pages/messages_page.dart';
 import 'pages/mes_annonces_page.dart';
+import 'pages/mes_prestations_page.dart';
+import 'pages/mes_restaurants_page.dart' as resto_page;
+import 'pages/mes_hotels_page.dart' as hotel_page;
+import 'pages/mes_cliniques_page.dart';
 import 'pages/annonce_detail_page.dart';
+import 'pages/resto_detail_page.dart';
+import 'pages/hotel_detail_page.dart';
 
-// Edition
+// Edition & Inscription
 import 'pages/edit_prestataire_page.dart';
 import 'pages/edit_hotel_page.dart';
 import 'pages/edit_resto_page.dart';
-import 'pages/edit_clinique_page.dart';
 import 'pages/edit_annonce_page.dart';
+import 'pages/edit_clinique_page.dart';
+import 'pages/inscription_resto_page.dart';
+import 'pages/inscription_prestataire_page.dart';
+import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
 class AppRoutes {
-  // ------- NOMS DES ROUTES -------
   static const String splash = '/';
   static const String welcome = '/welcome';
   static const String mainNav = '/main';
@@ -64,16 +72,25 @@ class AppRoutes {
   static const String aide = '/aide';
   static const String messages = '/messages';
   static const String mesAnnonces = '/mes_annonces';
-  static const String annonceDetail = '/annonce_detail';
+  static const String mesPrestations = '/mes_prestations';
+  static const String mesRestaurants = '/mesRestaurants';
+  static const String mesHotels = '/mesHotels';
+  static const String mesCliniques = '/mesCliniques';
 
-  // Edition
+  static const String inscriptionResto = '/inscriptionResto';
+  static const String inscriptionHotel = '/inscriptionHotel';
+  static const String inscriptionClinique = '/inscriptionClinique';
+
+  static const String annonceDetail = '/annonce_detail';
+  static const String restoDetail = '/resto_detail';
+  static const String hotelDetail = '/hotel_detail';
+
   static const String editPrestataire = '/edit_prestataire';
   static const String editHotel = '/edit_hotel';
   static const String editResto = '/edit_resto';
-  static const String editClinique = '/edit_clinique';
   static const String editAnnonce = '/edit_annonce';
+  static const String editClinique = '/edit_clinique';
 
-  // ------- GENERATE ROUTE -------
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       case splash:
@@ -84,7 +101,6 @@ class AppRoutes {
         return _page(const MainNavigationPage());
       case home:
         return _page(const HomePage());
-
       case annonces:
         return _page(const AnnoncesPage());
       case pro:
@@ -113,54 +129,93 @@ class AppRoutes {
         return _page(const HotelPage());
       case notifications:
         return _page(const NotificationsPage());
+      case profil:
+        return _userProtected((u) => ProfilePage(user: u));
+      case parametre:
+        return _userProtected((u) => ParametrePage(user: u));
       case aide:
         return _page(const AidePage());
       case messages:
         return _page(const MessagesPage());
-
-      case parametre:
-        return _userProtected((u) => ParametrePage(user: u));
-
-      case profil:
-        return _userProtected((u) => ProfilePage(user: u));
-
       case mesAnnonces:
         return _userProtected((_) => const MesAnnoncesPage());
-
+      case mesPrestations:
+        return _userProtected((u) {
+          final prestations = u.espacePrestataire != null
+              ? [u.espacePrestataire!]
+              : <Map<String, dynamic>>[];
+          return MesPrestationsPage(prestations: prestations);
+        });
+      case mesRestaurants:
+        return _userProtected((u) {
+          final restos = u.restos ?? [];
+          return resto_page.MesRestaurantsPage(restaurants: restos);
+        });
+      case mesHotels:
+        return _userProtected((u) {
+          final hotels = u.hotels ?? [];
+          return hotel_page.MesHotelsPage(hotels: hotels);
+        });
+      case mesCliniques:
+        return _page(const MesCliniquesPage());
+      case inscriptionResto:
+        final resto = settings.arguments;
+        if (resto == null || resto is Map<String, dynamic>) {
+          return _page(InscriptionRestoPage(
+              restaurant: resto as Map<String, dynamic>?));
+        }
+        return _error("Argument invalide pour /inscriptionResto");
+      case inscriptionHotel:
+        final hotel = settings.arguments;
+        if (hotel == null || hotel is Map<String, dynamic>) {
+          return _page(InscriptionHotelPage(
+              hotel: hotel as Map<String, dynamic>?));
+        }
+        return _error("Argument invalide pour /inscriptionHotel");
+      case inscriptionClinique:
+        final clinique = settings.arguments;
+        if (clinique == null || clinique is Map<String, dynamic>) {
+          return _page(EditCliniquePage(
+              clinique: clinique as Map<String, dynamic>?));
+        }
+        return _error("Argument invalide pour /inscriptionClinique");
       case annonceDetail:
         final arg = settings.arguments;
         if (arg is AnnonceModel) {
           return _page(AnnonceDetailPage(annonce: arg));
         }
         return _error("Argument invalide pour /annonce_detail");
-
-      // ---------- EDIT ----------
+      case restoDetail:
+        final id = settings.arguments;
+        if (id is int) {
+          return _page(RestoDetailPage(restoId: id));
+        }
+        return _error("ID invalide pour /resto_detail");
+      case hotelDetail:
+        final id = settings.arguments;
+        if (id is int) {
+          return _page(HotelDetailPage(hotelId: id));
+        }
+        return _error("ID invalide pour /hotel_detail");
       case editPrestataire:
         final argsP = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditPrestatairePage(prestataire: argsP));
-
       case editHotel:
         final argsH = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditHotelPage(hotelId: argsH['id']));
-
       case editResto:
         final argsR = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditRestoPage(resto: argsR));
-
-      case editClinique:
-        final argsC = settings.arguments as Map<String, dynamic>? ?? {};
-        return _page(EditCliniquePage(clinique: argsC));
-
       case editAnnonce:
         final argsA = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditAnnoncePage(annonce: argsA));
-
+      case editClinique:
+        final argsC = settings.arguments as Map<String, dynamic>? ?? {};
+        return _page(EditCliniquePage(clinique: argsC));
       default:
         return _error('Page non trouvée : ${settings.name}');
     }
   }
-
-  // ------- HELPERS -------
 
   static MaterialPageRoute _page(Widget child) =>
       MaterialPageRoute(builder: (_) => child);
@@ -172,7 +227,6 @@ class AppRoutes {
         ),
       );
 
-  /// Protège une route : si l'utilisateur est null, on pousse /login.
   static MaterialPageRoute _userProtected(
     Widget Function(UtilisateurModel) builder,
   ) {
@@ -181,7 +235,6 @@ class AppRoutes {
         final user =
             Provider.of<UserProvider>(context, listen: false).utilisateur;
         if (user == null) {
-          // éviter d'empiler plusieurs fois par frame
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (ModalRoute.of(context)?.settings.name != login) {
               Navigator.pushNamed(context, login);

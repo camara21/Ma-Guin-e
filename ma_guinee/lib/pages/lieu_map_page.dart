@@ -27,11 +27,18 @@ class _LieuMapPageState extends State<LieuMapPage> {
         'https://www.google.com/maps/dir/?api=1&destination=${widget.latitude},${widget.longitude}');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Impossible d’ouvrir la navigation.")),
       );
     }
+  }
+
+  void _toggleMapType() {
+    setState(() {
+      _mapType =
+          _mapType == MapType.normal ? MapType.satellite : MapType.normal;
+    });
   }
 
   @override
@@ -43,11 +50,12 @@ class _LieuMapPageState extends State<LieuMapPage> {
     );
 
     return Scaffold(
-      backgroundColor: Colors.white, // ✅ Fond blanc comme toutes les pages
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
           "Carte - ${widget.nom}",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.bold),
         ),
         backgroundColor: const Color(0xFF009460),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -55,13 +63,7 @@ class _LieuMapPageState extends State<LieuMapPage> {
           IconButton(
             icon: const Icon(Icons.layers),
             tooltip: "Changer la vue",
-            onPressed: () {
-              setState(() {
-                _mapType = _mapType == MapType.normal
-                    ? MapType.satellite
-                    : MapType.normal;
-              });
-            },
+            onPressed: _toggleMapType,
           ),
         ],
         elevation: 1,

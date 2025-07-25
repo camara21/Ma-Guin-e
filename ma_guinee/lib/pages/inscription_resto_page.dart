@@ -10,7 +10,9 @@ import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InscriptionRestoPage extends StatefulWidget {
-  const InscriptionRestoPage({super.key});
+  final Map<String, dynamic>? restaurant; // 🔧 ajout pour l’édition
+
+  const InscriptionRestoPage({super.key, this.restaurant});
 
   @override
   State<InscriptionRestoPage> createState() => _InscriptionRestoPageState();
@@ -20,7 +22,6 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
 
-  // Champs
   String nom = '';
   String ville = '';
   String telephone = '';
@@ -28,49 +29,49 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
   double? latitude;
   double? longitude;
   String adresse = '';
-
-  // UI state
   bool _gettingLocation = false;
   bool _loading = false;
-
-  // Images sélectionnées
   final List<XFile> _pickedImages = [];
-
-  // Bucket
   static const String _bucket = 'restaurant-photos';
 
-  // ---------------- LOCATION ----------------
+  @override
+  void initState() {
+    super.initState();
+    if (widget.restaurant != null) {
+      final resto = widget.restaurant!;
+      nom = resto['nom'] ?? '';
+      ville = resto['ville'] ?? '';
+      telephone = resto['tel'] ?? '';
+      description = resto['description'] ?? '';
+      latitude = resto['latitude'];
+      longitude = resto['longitude'];
+      adresse = resto['adresse'] ?? '';
+      // Pas besoin de charger les images dans ce fichier (gestion simplifiée)
+    }
+  }
+
   Future<void> _detectLocation() async {
     setState(() => _gettingLocation = true);
     try {
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) {
-          throw 'Permission refusée';
-        }
+        if (perm == LocationPermission.denied) throw 'Permission refusée';
       }
-
-      final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       latitude = pos.latitude;
       longitude = pos.longitude;
-
       final placemarks = await placemarkFromCoordinates(latitude!, longitude!);
       final place = placemarks.first;
-      adresse =
-          "${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}";
+      adresse = "${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}";
       setState(() {});
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur localisation : $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur localisation : $e')));
     } finally {
       setState(() => _gettingLocation = false);
     }
   }
 
-  // ---------------- IMAGES ----------------
   Future<void> _pickImages() async {
     final res = await _picker.pickMultiImage(imageQuality: 75);
     if (res.isEmpty) return;
@@ -95,16 +96,14 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(snap.data!,
-                width: 70, height: 70, fit: BoxFit.cover),
+            child: Image.memory(snap.data!, width: 70, height: 70, fit: BoxFit.cover),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.file(File(file.path),
-            width: 70, height: 70, fit: BoxFit.cover),
+        child: Image.file(File(file.path), width: 70, height: 70, fit: BoxFit.cover),
       );
     }
   }
@@ -112,32 +111,24 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
   Future<List<String>> _uploadImages(String uid) async {
     final storage = Supabase.instance.client.storage.from(_bucket);
     final List<String> urls = [];
-
     for (final img in _pickedImages) {
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
       final objectPath = '$uid/$fileName';
-
       if (kIsWeb) {
         final bytes = await img.readAsBytes();
-        await storage.uploadBinary(objectPath, bytes,
-            fileOptions: const FileOptions(upsert: true));
+        await storage.uploadBinary(objectPath, bytes, fileOptions: const FileOptions(upsert: true));
       } else {
-        await storage.upload(objectPath, File(img.path),
-            fileOptions: const FileOptions(upsert: true));
+        await storage.upload(objectPath, File(img.path), fileOptions: const FileOptions(upsert: true));
       }
-
       urls.add(storage.getPublicUrl(objectPath));
     }
     return urls;
   }
 
-  // ---------------- SAVE ----------------
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Clique sur "Détecter ma position" d\'abord.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clique sur "Détecter ma position" d\'abord.')));
       return;
     }
 
@@ -147,14 +138,9 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
     try {
       final supa = Supabase.instance.client;
       final uid = supa.auth.currentUser?.id;
-      if (uid == null) {
-        throw 'Utilisateur non connecté';
-      }
-
-      // Upload images
+      if (uid == null) throw 'Utilisateur non connecté';
       final imageUrls = await _uploadImages(uid);
 
-      // Insert
       final data = {
         'nom': nom,
         'ville': ville,
@@ -163,26 +149,28 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
         'latitude': latitude,
         'longitude': longitude,
         'adresse': adresse,
-        'images': imageUrls, // ARRAY dans Postgres
+        'images': imageUrls,
         'user_id': uid,
-        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
       };
 
-      await supa.from('restaurants').insert(data);
+      if (widget.restaurant != null) {
+        await supa.from('restaurants').update(data).eq('id', widget.restaurant!['id']);
+      } else {
+        data['created_at'] = DateTime.now().toIso8601String();
+        await supa.from('restaurants').insert(data);
+      }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Restaurant enregistré avec succès !')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enregistré avec succès.')));
       Navigator.pop(context, true);
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -201,17 +189,13 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                 key: _formKey,
                 child: ListView(
                   children: [
-                    const Text(
-                      "Placez-vous dans votre établissement pour enregistrer sa position exacte.",
-                      style: TextStyle(color: Colors.blueGrey, fontSize: 13.5),
-                    ),
+                    const Text("Placez-vous dans votre établissement pour enregistrer sa position exacte.",
+                        style: TextStyle(color: Colors.blueGrey, fontSize: 13.5)),
                     const SizedBox(height: 9),
                     ElevatedButton.icon(
                       onPressed: _gettingLocation ? null : _detectLocation,
                       icon: const Icon(Icons.location_on),
-                      label: Text(_gettingLocation
-                          ? 'Recherche en cours…'
-                          : 'Détecter ma position'),
+                      label: Text(_gettingLocation ? 'Recherche en cours…' : 'Détecter ma position'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         foregroundColor: Colors.white,
@@ -224,43 +208,33 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                       Text("Adresse : $adresse"),
                     ],
                     const SizedBox(height: 16),
-
-                    // NOM
                     TextFormField(
-                      decoration:
-                          const InputDecoration(labelText: 'Nom du restaurant'),
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      initialValue: nom,
+                      decoration: const InputDecoration(labelText: 'Nom du restaurant'),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => nom = v ?? '',
                     ),
-                    // VILLE
                     TextFormField(
+                      initialValue: ville,
                       decoration: const InputDecoration(labelText: 'Ville'),
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => ville = v ?? '',
                     ),
-                    // TEL
                     TextFormField(
-                      decoration:
-                          const InputDecoration(labelText: 'Téléphone'),
+                      initialValue: telephone,
+                      decoration: const InputDecoration(labelText: 'Téléphone'),
                       keyboardType: TextInputType.phone,
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => telephone = v ?? '',
                     ),
-                    // DESCRIPTION
                     TextFormField(
-                      decoration:
-                          const InputDecoration(labelText: 'Description'),
+                      initialValue: description,
+                      decoration: const InputDecoration(labelText: 'Description'),
                       maxLines: 3,
                       onSaved: (v) => description = v ?? '',
                     ),
                     const SizedBox(height: 20),
-
-                    // IMAGES
-                    const Text('Photos du restaurant',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Photos du restaurant', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -278,8 +252,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close,
-                                        size: 14, color: Colors.white),
+                                    child: Icon(Icons.close, size: 14, color: Colors.white),
                                   ),
                                 ),
                               ),
@@ -293,18 +266,14 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                             decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(8),
-                              border:
-                                  Border.all(color: Colors.grey.shade300),
+                              border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: const Icon(Icons.add_a_photo,
-                                size: 30, color: Colors.orange),
+                            child: const Icon(Icons.add_a_photo, size: 30, color: Colors.orange),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 24),
-
-                    // SAVE
                     ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.save),
@@ -313,8 +282,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                         backgroundColor: Colors.orange,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
                   ],

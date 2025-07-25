@@ -1,3 +1,5 @@
+// lib/pages/login_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
@@ -18,19 +20,17 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
 
-  bool _obscurePassword = true; // 👁 pour voir/masquer le mdp
-
-  Future<Map<String, dynamic>?> recupererProfilUtilisateur() async {
+  Future<Map<String, dynamic>?> _recupererProfilUtilisateur() async {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     if (user == null) return null;
-    final data = await supabase
+    return await supabase
         .from('utilisateurs')
         .select()
         .eq('id', user.id)
         .maybeSingle();
-    return data;
   }
 
   Future<void> _seConnecter() async {
@@ -39,7 +39,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final supabase = Supabase.instance.client;
-      final email = _emailController.text.trim().toLowerCase(); // ✅ conversion en minuscule
+      final email = _emailController.text.trim().toLowerCase();
       final res = await supabase.auth.signInWithPassword(
         email: email,
         password: _passwordController.text,
@@ -49,19 +49,16 @@ class _LoginPageState extends State<LoginPage> {
         throw AuthException("Email ou mot de passe incorrect");
       }
 
-      final profilData = await recupererProfilUtilisateur();
+      // IMPORTANT : on recharge l'utilisateur + espaces + annonces
+      await context.read<UserProvider>().chargerUtilisateurConnecte();
 
-      if (profilData != null) {
-        final profil = UtilisateurModel.fromJson(profilData);
-        if (mounted) {
-          context.read<UserProvider>().setUtilisateur(profil);
-
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRoutes.mainNav,
-            (_) => false,
-          );
-        }
+      final user = context.read<UserProvider>().utilisateur;
+      if (user != null && mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AppRoutes.mainNav,
+          (_) => false,
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Profil utilisateur introuvable.")),
@@ -111,7 +108,6 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
-                // Titre
                 const Text(
                   "Bienvenue sur Ma Guinée !",
                   style: TextStyle(
@@ -122,8 +118,6 @@ class _LoginPageState extends State<LoginPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 22),
-
-                // Email
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -132,7 +126,8 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: "Email",
                     filled: true,
                     fillColor: Colors.white,
-                    prefixIcon: const Icon(Icons.email, color: Color(0xFFCE1126)),
+                    prefixIcon:
+                        const Icon(Icons.email, color: Color(0xFFCE1126)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
@@ -141,8 +136,6 @@ class _LoginPageState extends State<LoginPage> {
                       val == null || !val.contains('@') ? "Email invalide" : null,
                 ),
                 const SizedBox(height: 18),
-
-                // Mot de passe avec icône œil
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -151,10 +144,13 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: "Mot de passe",
                     filled: true,
                     fillColor: Colors.white,
-                    prefixIcon: const Icon(Icons.lock, color: Color(0xFF009460)),
+                    prefixIcon:
+                        const Icon(Icons.lock, color: Color(0xFF009460)),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                         color: Colors.grey,
                       ),
                       onPressed: () =>
@@ -168,12 +164,11 @@ class _LoginPageState extends State<LoginPage> {
                       val == null || val.length < 6 ? "Mot de passe trop court" : null,
                 ),
                 const SizedBox(height: 6),
-
-                // Mot de passe oublié
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Navigator.pushNamed(context, '/reset_password'),
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/reset_password'),
                     child: const Text(
                       "Mot de passe oublié ?",
                       style: TextStyle(
@@ -185,8 +180,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // Bouton connexion dégradé
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : SizedBox(
@@ -198,15 +191,15 @@ class _LoginPageState extends State<LoginPage> {
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
                                 colors: [
-                                  Color(0xFFCE1126), // Rouge
-                                  Color(0xFFFCD116), // Jaune
-                                  Color(0xFF009460), // Vert
+                                  Color(0xFFCE1126),
+                                  Color(0xFFFCD116),
+                                  Color(0xFF009460),
                                 ],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
                               ),
                               borderRadius: BorderRadius.circular(28),
-                              boxShadow: [
+                              boxShadow: const [
                                 BoxShadow(
                                   color: Colors.black12,
                                   blurRadius: 5,
@@ -228,15 +221,13 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                       ),
-
                 const SizedBox(height: 22),
-
-                // Bouton créer un compte (outline transparent)
                 OutlinedButton(
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.register),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(
-                      color: Color(0xFFCE1126), // Rouge
+                      color: Color(0xFFCE1126),
                       width: 2,
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 14),

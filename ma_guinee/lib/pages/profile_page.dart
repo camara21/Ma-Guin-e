@@ -28,21 +28,19 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _photoUrl = widget.user.photoUrl;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<UserProvider>().chargerUtilisateurConnecte();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<UserProvider>().chargerUtilisateurConnecte();
+      setState(() {});
     });
   }
 
   Future<void> _pickImageAndUpload() async {
     if (_isUploading) return;
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked == null) return;
 
     setState(() => _isUploading = true);
-
     try {
       final supabase = Supabase.instance.client;
       final userId = context.read<UserProvider>().utilisateur!.id;
@@ -56,7 +54,6 @@ class _ProfilePageState extends State<ProfilePage> {
           .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
 
       final publicUrl = supabase.storage.from('profile-photos').getPublicUrl(path);
-
       await supabase.from('utilisateurs').update({'photo_url': publicUrl}).eq('id', userId);
 
       setState(() {
@@ -82,7 +79,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<UserProvider>();
-
     if (prov.isLoadingUser || prov.isLoadingAnnonces) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -93,10 +89,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Mon compte',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Mon compte', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
@@ -104,7 +97,6 @@ class _ProfilePageState extends State<ProfilePage> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // HEADER
           Container(
             padding: const EdgeInsets.symmetric(vertical: 26),
             color: Colors.grey[50],
@@ -135,25 +127,22 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text('${user.prenom} ${user.nom}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
+                Text('${user.prenom} ${user.nom}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
                 if (user.telephone.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 5),
-                    child: Text(user.telephone,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                    child: Text(user.telephone, style: TextStyle(color: Colors.grey[700], fontSize: 14)),
                   ),
                 if (user.email.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
-                    child: Text(user.email,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                    child: Text(user.email, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
                   ),
               ],
             ),
           ),
 
-          // MES ANNONCES (card cliquable)
+          // 🔴 Annonces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: InkWell(
@@ -187,7 +176,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          // BLOCS PRO
+          // 🟦 Espaces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Column(
@@ -198,17 +187,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   iconColor: const Color(0xFF009460),
                   title: 'Espace prestataire',
                   subtitle: user.espacePrestataire != null
-                      ? (user.espacePrestataire?['job'] ?? '')
+                      ? user.espacePrestataire!['metier'] ?? ''
                       : "Vous n'êtes pas encore inscrit comme prestataire.",
                   onTap: user.espacePrestataire != null
-                      ? () => Navigator.pushNamed(context, AppRoutes.editPrestataire,
-                          arguments: user.espacePrestataire)
+                      ? () => Navigator.pushNamed(context, AppRoutes.mesPrestations)
                       : null,
                   onButton: user.espacePrestataire == null
-                      ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
-                          )
+                      ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()))
                       : null,
                   buttonLabel: user.espacePrestataire == null ? "S'inscrire" : "Modifier",
                 ),
@@ -216,104 +201,61 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.orange.shade50,
                   icon: Icons.restaurant,
                   iconColor: Colors.orange,
-                  title: 'Mon Restaurant',
-                  subtitle: user.resto != null
-                      ? "${user.resto!['nom'] ?? ''} - ${user.resto!['ville'] ?? ''}"
+                  title: 'Mes Restaurants',
+                  subtitle: user.restos.isNotEmpty
+                      ? "${user.restos.first['nom']} - ${user.restos.first['ville']}"
                       : "Aucun restaurant enregistré.",
-                  onButton: user.resto == null
-                      ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const InscriptionRestoPage()),
-                          )
+                  onTap: user.restos.isNotEmpty
+                      ? () => Navigator.pushNamed(context, AppRoutes.mesRestaurants)
                       : null,
-                  buttonLabel: user.resto == null ? "S'inscrire" : "Modifier",
+                  onButton: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const InscriptionRestoPage()),
+                  ),
+                  buttonLabel: "Ajouter",
                 ),
                 _blocEspace(
                   color: Colors.purple.shade50,
                   icon: Icons.hotel,
                   iconColor: Colors.purple,
-                  title: 'Mon Hôtel',
-                  subtitle: user.hotel != null
-                      ? "${user.hotel!['nom'] ?? ''} - ${user.hotel!['ville'] ?? ''}"
+                  title: 'Mes Hôtels',
+                  subtitle: user.hotels.isNotEmpty
+                      ? "${user.hotels.first['nom']} - ${user.hotels.first['ville']}"
                       : "Aucun hôtel enregistré.",
-                  onButton: user.hotel == null
-                      ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const InscriptionHotelPage()),
-                          )
+                  onTap: user.hotels.isNotEmpty
+                      ? () => Navigator.pushNamed(context, AppRoutes.mesHotels)
                       : null,
-                  buttonLabel: user.hotel == null ? "S'inscrire" : "Modifier",
+                  onButton: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const InscriptionHotelPage()),
+                  ),
+                  buttonLabel: "Ajouter",
                 ),
                 _blocEspace(
                   color: Colors.teal.shade50,
                   icon: Icons.local_hospital,
                   iconColor: Colors.teal,
-                  title: 'Ma Clinique',
-                  subtitle: user.clinique != null
-                      ? "${user.clinique!['nom'] ?? ''} - ${user.clinique!['ville'] ?? ''}"
+                  title: 'Mes Cliniques',
+                  subtitle: user.cliniques.isNotEmpty
+                      ? "${user.cliniques.first['nom']} - ${user.cliniques.first['ville']}"
                       : "Aucune clinique enregistrée.",
-                  onButton: user.clinique == null
-                      ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
-                          )
+                  onTap: user.cliniques.isNotEmpty
+                      ? () => Navigator.pushNamed(
+                          context,
+                          AppRoutes.editClinique,
+                          arguments: user.cliniques.first,
+                        )
                       : null,
-                  buttonLabel: user.clinique == null ? "S'inscrire" : "Modifier",
+                  onButton: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
+                  ),
+                  buttonLabel: user.cliniques.isNotEmpty ? "Modifier" : "S'inscrire",
                 ),
               ],
             ),
           ),
 
-          // Paramètres
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-            child: Card(
-              elevation: 0.5,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              child: ListTile(
-                leading: const Icon(Icons.settings, color: Colors.black),
-                title: const Text('Paramètres', style: TextStyle(fontWeight: FontWeight.bold)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.black),
-                onTap: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => ParametrePage(user: user)),
-                  );
-                  if (result == true && mounted) {
-                    await context.read<UserProvider>().chargerUtilisateurConnecte();
-                  }
-                },
-              ),
-            ),
-          ),
-
-          // Déconnexion
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await context.read<UserProvider>().logout();
-                  if (mounted) {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                  }
-                },
-                icon: const Icon(Icons.logout, color: Colors.black87),
-                label: const Text(
-                  'Me déconnecter',
-                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 17),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0.5,
-                ),
-              ),
-            ),
-          ),
           const SizedBox(height: 20),
         ],
       ),
