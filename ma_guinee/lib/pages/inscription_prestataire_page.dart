@@ -27,36 +27,100 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
   static const String _bucket = 'prestataire-photos';
 
   final Map<String, List<String>> _categories = {
-    'Artisans & BTP': [
-      'Maçon','Plombier','Électricien','Soudeur','Charpentier','Couvreur','Peintre en bâtiment',
-      'Mécanicien','Menuisier','Vitrier','Tôlier','Carreleur','Poseur de fenêtres/portes','Ferrailleur'
-    ],
-    'Beauté & Bien-être': [
-      'Coiffeur / Coiffeuse','Esthéticienne','Maquilleuse','Barbier','Masseuse','Spa thérapeute',
-      'Onglerie / Prothésiste ongulaire'
-    ],
-    'Couture & Mode': [
-      'Couturier / Couturière','Styliste / Modéliste','Brodeur / Brodeuse','Teinturier','Designer textile'
-    ],
-    'Alimentation': [
-      'Cuisinier','Traiteur','Boulanger','Pâtissier','Vendeur de fruits/légumes','Marchand de poisson','Restaurateur'
-    ],
-    'Transport & Livraison': [
-      'Chauffeur particulier','Taxi-moto','Taxi-brousse','Livreur','Transporteur'
-    ],
-    'Services domestiques': [
-      'Femme de ménage','Nounou','Agent d’entretien','Gardiennage','Blanchisserie'
-    ],
-    'Services professionnels': [
-      'Secrétaire','Traducteur','Comptable','Consultant','Notaire'
-    ],
-    'Éducation & formation': [
-      'Enseignant','Tuteur','Formateur','Professeur particulier','Coach scolaire'
-    ],
-    'Santé & Bien-être': [
-      'Infirmier','Docteur','Kinésithérapeute','Psychologue','Pharmacien'
-    ],
-  };
+  'Artisans & BTP': [
+    'Maçon',
+    'Plombier',
+    'Électricien',
+    'Soudeur',
+    'Charpentier',
+    'Couvreur',
+    'Peintre en bâtiment',
+    'Mécanicien',
+    'Menuisier',
+    'Vitrier',
+    'Tôlier',
+    'Carreleur',
+    'Poseur de fenêtres/portes',
+    'Ferrailleur',
+  ],
+  'Beauté & Bien-être': [
+    'Coiffeur / Coiffeuse',
+    'Esthéticienne',
+    'Maquilleuse',
+    'Barbier',
+    'Masseuse',
+    'Spa thérapeute',
+    'Onglerie / Prothésiste ongulaire',
+  ],
+  'Couture & Mode': [
+    'Couturier / Couturière',
+    'Styliste / Modéliste',
+    'Brodeur / Brodeuse',
+    'Teinturier',
+    'Designer textile',
+  ],
+  'Alimentation': [
+    'Cuisinier',
+    'Traiteur',
+    'Boulanger',
+    'Pâtissier',
+    'Vendeur de fruits/légumes',
+    'Marchand de poisson',
+    'Restaurateur',
+  ],
+  'Transport & Livraison': [
+    'Chauffeur particulier',
+    'Taxi-moto',
+    'Taxi-brousse',
+    'Livreur',
+    'Transporteur',
+  ],
+  'Services domestiques': [
+    'Femme de ménage',
+    'Nounou',
+    'Agent d’entretien',
+    'Gardiennage',
+    'Blanchisserie',
+  ],
+  'Services professionnels': [
+    'Secrétaire',
+    'Traducteur',
+    'Comptable',
+    'Consultant',
+    'Notaire',
+  ],
+  'Éducation & formation': [
+    'Enseignant',
+    'Tuteur',
+    'Formateur',
+    'Professeur particulier',
+    'Coach scolaire',
+  ],
+  'Santé & Bien-être': [
+    'Infirmier',
+    'Docteur',
+    'Kinésithérapeute',
+    'Psychologue',
+    'Pharmacien',
+    'Médecine traditionnelle',
+  ],
+  'Technologies & Digital': [
+    'Développeur / Développeuse',
+    'Ingénieur logiciel',
+    'Data Scientist',
+    'Développeur mobile',
+    'Designer UI/UX',
+    'Administrateur systèmes',
+    'Chef de projet IT',
+    'Technicien réseau',
+    'Analyste sécurité',
+    'Community Manager',
+    'Growth Hacker',
+    'Webmaster',
+    'DevOps Engineer',
+  ],
+};
+
 
   String _categoryForJob(String? job) {
     if (job == null) return '';

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
 import 'hotel_detail_page.dart';
 
@@ -17,16 +18,40 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
   @override
   void initState() {
     super.initState();
-    _hotels = widget.hotels;
+    _hotels = List.from(widget.hotels);
   }
 
-  Future<void> _supprimerHotel(int id) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Hôtel supprimé")),
-    );
-    setState(() {
-      _hotels.removeWhere((h) => h['id'] == id);
-    });
+  Future<void> _supprimerHotel(Map<String, dynamic> hotel) async {
+    final supabase = Supabase.instance.client;
+    final id = hotel['id'];
+    final List<String> images = hotel['images'] is List
+        ? List<String>.from(hotel['images'])
+        : [];
+
+    try {
+      // 🔥 Supprimer les images dans le bucket Supabase
+      for (var url in images) {
+        final path = url.split('/object/public/').last;
+        await supabase.storage.from('hotel-photos').remove([path]);
+      }
+
+      // ❌ Supprimer l'hôtel de la base Supabase
+      await supabase.from('hotels').delete().eq('id', id);
+
+      // 🔁 Supprimer localement dans l'app
+      setState(() {
+        _hotels.removeWhere((h) => h['id'] == id);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Hôtel supprimé")),
+      );
+    } catch (e) {
+      debugPrint("Erreur suppression hôtel: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur lors de la suppression")),
+      );
+    }
   }
 
   @override
@@ -61,7 +86,8 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
 
                 return Card(
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   margin: const EdgeInsets.only(bottom: 16),
                   child: ListTile(
                     leading: CircleAvatar(
@@ -77,15 +103,40 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                       style: const TextStyle(color: Colors.grey),
                     ),
                     trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
+                      onSelected: (value) async {
                         if (value == 'modifier') {
-                          Navigator.pushNamed(
+                          await Navigator.pushNamed(
                             context,
                             AppRoutes.inscriptionHotel,
                             arguments: hotel,
-                          ).then((_) => setState(() {}));
+                          );
+                          setState(() {}); // Mise à jour après modification
                         } else if (value == 'supprimer') {
-                          _supprimerHotel(hotel['id']);
+                          final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text("Confirmer la suppression"),
+                                  content: const Text(
+                                      "Voulez-vous vraiment supprimer cet hôtel ?"),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
+                                      child: const Text("Annuler"),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, true),
+                                      child: const Text("Supprimer"),
+                                    ),
+                                  ],
+                                ),
+                              ) ??
+                              false;
+
+                          if (confirm) {
+                            await _supprimerHotel(hotel);
+                          }
                         }
                       },
                       itemBuilder: (context) => [

@@ -40,13 +40,22 @@ class _MessagesPageState extends State<MessagesPage> {
 
       final Map<String, Map<String, dynamic>> mapConv = {};
       for (var msg in data) {
-        final otherId =
-            msg['sender_id'] == user.id ? msg['receiver_id'] : msg['sender_id'];
-        final key =
-            '${msg['contexte'] ?? ''}|$otherId|${msg['annonce_id'] ?? ''}|${msg['prestataire_id'] ?? ''}';
-        if (!mapConv.containsKey(key) ||
-            DateTime.parse(msg['date_envoi'])
-                .isAfter(DateTime.parse(mapConv[key]!['date_envoi']))) {
+        final senderId = msg['sender_id']?.toString() ?? '';
+        final receiverId = msg['receiver_id']?.toString() ?? '';
+        final otherId = senderId == user.id ? receiverId : senderId;
+        final contexte = msg['contexte']?.toString() ?? '';
+        final annonceId = msg['annonce_id']?.toString() ?? '';
+        final prestataireId = msg['prestataire_id']?.toString() ?? '';
+
+        final key = '$contexte|$otherId|$annonceId|$prestataireId';
+        final existing = mapConv[key];
+        final dateEnvoi = DateTime.tryParse(msg['date_envoi']?.toString() ?? '');
+        final existingDate = existing != null
+            ? DateTime.tryParse(existing['date_envoi']?.toString() ?? '')
+            : null;
+
+        if (existing == null ||
+            (dateEnvoi != null && existingDate != null && dateEnvoi.isAfter(existingDate))) {
           mapConv[key] = msg;
         }
       }
@@ -60,16 +69,19 @@ class _MessagesPageState extends State<MessagesPage> {
         _conversations = [];
         _loading = false;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur chargement conversations : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur chargement conversations : $e")),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
     final search = _searchController.text.toLowerCase();
     final filtered = _conversations.where((msg) {
-      return (msg['contenu'] ?? '').toLowerCase().contains(search);
+      return (msg['contenu']?.toString().toLowerCase() ?? '')
+          .contains(search);
     }).toList();
 
     return Scaffold(
@@ -100,7 +112,8 @@ class _MessagesPageState extends State<MessagesPage> {
                 ),
                 filled: true,
                 fillColor: const Color(0xFFF4F4F6),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 0, horizontal: 14),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -117,19 +130,19 @@ class _MessagesPageState extends State<MessagesPage> {
                             const Divider(indent: 80, endIndent: 15, height: 2),
                         itemBuilder: (context, i) {
                           final msg = filtered[i];
-                          final isAnnonce = msg['contexte'] == 'annonce';
-                          final otherId =
-                              msg['sender_id'] == Supabase.instance.client.auth.currentUser!.id
-                                  ? msg['receiver_id']
-                                  : msg['sender_id'];
-
-                          final name = isAnnonce
-                              ? "Annonce"
-                              : (msg['contexte'] == 'prestataire' ? "Prestataire" : "Conversation");
-
-                          final preview = msg['contenu'] ?? '';
-                          final date = msg['date_envoi'] ?? '';
+                          final contexte = msg['contexte']?.toString() ?? '';
+                          final isAnnonce = contexte == 'annonce';
+                          final senderId = msg['sender_id']?.toString() ?? '';
+                          final receiverId = msg['receiver_id']?.toString() ?? '';
+                          final otherId = senderId == user!.id ? receiverId : senderId;
+                          final preview = msg['contenu']?.toString() ?? '';
+                          final dateStr = msg['date_envoi']?.toString() ?? '';
                           final unread = msg['lu'] == false;
+
+                          final title = isAnnonce
+                              ? (msg['annonce_titre']?.toString() ?? 'Annonce')
+                              : (msg['prestataire_name']?.toString() ??
+                                  'Prestataire');
 
                           return ListTile(
                             leading: CircleAvatar(
@@ -137,20 +150,22 @@ class _MessagesPageState extends State<MessagesPage> {
                                   ? const Color(0xFF113CFC)
                                   : const Color(0xFFCE1126),
                               child: Icon(
-                                  isAnnonce ? Icons.campaign : Icons.engineering,
-                                  color: Colors.white),
+                                isAnnonce ? Icons.campaign : Icons.engineering,
+                                color: Colors.white,
+                              ),
                             ),
                             title: Row(
                               children: [
                                 Expanded(
                                   child: Text(
-                                    name,
+                                    title,
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.w600, fontSize: 16),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16),
                                   ),
                                 ),
                                 Text(
-                                  date.split("T").first,
+                                  dateStr.split("T").first,
                                   style: TextStyle(
                                     color: Colors.grey.shade500,
                                     fontSize: 12,
@@ -185,31 +200,36 @@ class _MessagesPageState extends State<MessagesPage> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesAnnoncePage(
-                                      annonceId: msg['annonce_id'],
+                                      annonceId:
+                                          msg['annonce_id']?.toString() ?? '',
+                                      annonceTitre: msg['annonce_titre']
+                                              ?.toString() ??
+                                          'Annonce',
                                       receiverId: otherId,
-                                      senderId:
-                                          Supabase.instance.client.auth.currentUser?.id ?? "",
-                                      annonceTitre: "Annonce",
+                                      senderId: user.id,
                                     ),
                                   ),
                                 );
-                              } else if (msg['contexte'] == 'prestataire') {
+                              } else {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesPrestatairePage(
-                                      prestataireId: msg['prestataire_id'],
+                                      prestataireId:
+                                          msg['prestataire_id']?.toString() ??
+                                              '',
+                                      prestataireName: msg['prestataire_name']
+                                              ?.toString() ??
+                                          'Prestataire',
                                       receiverId: otherId,
-                                      senderId:
-                                          Supabase.instance.client.auth.currentUser?.id ?? "",
-                                      prestataireName: "Prestataire",
+                                      senderId: user.id,
                                     ),
                                   ),
                                 );
                               }
                             },
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 15, vertical: 4),
                             minVerticalPadding: 8,
                           );
                         },

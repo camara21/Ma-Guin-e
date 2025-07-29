@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/prestataire_model.dart';
 import '../providers/prestataires_provider.dart';
 import 'inscription_prestataire_page.dart';
 import 'prestataire_detail_page.dart';
-import 'prestataires_par_metier_page.dart'; // optionnel
 
 class ProPage extends StatefulWidget {
   const ProPage({super.key});
@@ -14,35 +14,99 @@ class ProPage extends StatefulWidget {
 }
 
 class _ProPageState extends State<ProPage> {
-  final Map<String, List<String>> categories = {
+  static const Map<String, List<String>> categories = {
     'Artisans & BTP': [
-      'Maçon','Plombier','Électricien','Soudeur','Charpentier','Couvreur','Peintre en bâtiment',
-      'Mécanicien','Menuisier','Vitrier','Tôlier','Carreleur','Poseur de fenêtres/portes','Ferrailleur',
+      'Maçon',
+      'Plombier',
+      'Électricien',
+      'Soudeur',
+      'Charpentier',
+      'Couvreur',
+      'Peintre en bâtiment',
+      'Mécanicien',
+      'Menuisier',
+      'Vitrier',
+      'Tôlier',
+      'Carreleur',
+      'Poseur de fenêtres/portes',
+      'Ferrailleur',
+      'Verrier', // ajouté
     ],
     'Beauté & Bien-être': [
-      'Coiffeur / Coiffeuse','Esthéticienne','Maquilleuse','Barbier','Masseuse','Spa thérapeute',
+      'Coiffeur / Coiffeuse',
+      'Esthéticienne',
+      'Maquilleuse',
+      'Barbier',
+      'Masseuse',
+      'Spa thérapeute',
       'Onglerie / Prothésiste ongulaire',
     ],
     'Couture & Mode': [
-      'Couturier / Couturière','Styliste / Modéliste','Brodeur / Brodeuse','Teinturier','Designer textile',
+      'Couturier / Couturière',
+      'Styliste / Modéliste',
+      'Brodeur / Brodeuse',
+      'Teinturier',
+      'Designer textile',
     ],
     'Alimentation': [
-      'Cuisinier','Traiteur','Boulanger','Pâtissier','Vendeur de fruits/légumes','Marchand de poisson','Restaurateur',
+      'Cuisinier',
+      'Traiteur',
+      'Boulanger',
+      'Pâtissier',
+      'Vendeur de fruits/légumes',
+      'Marchand de poisson',
+      'Restaurateur',
     ],
     'Transport & Livraison': [
-      'Chauffeur particulier','Taxi-moto','Taxi-brousse','Livreur','Transporteur',
+      'Chauffeur particulier',
+      'Taxi-moto',
+      'Taxi-brousse',
+      'Livreur',
+      'Transporteur',
     ],
     'Services domestiques': [
-      'Femme de ménage','Nounou','Agent d’entretien','Gardiennage','Blanchisserie',
+      'Femme de ménage',
+      'Nounou',
+      'Agent d’entretien',
+      'Gardiennage',
+      'Blanchisserie',
     ],
     'Services professionnels': [
-      'Secrétaire','Traducteur','Comptable','Consultant','Notaire',
+      'Secrétaire',
+      'Traducteur',
+      'Comptable',
+      'Consultant',
+      'Notaire',
     ],
     'Éducation & formation': [
-      'Enseignant','Tuteur','Formateur','Professeur particulier','Coach scolaire',
+      'Enseignant',
+      'Tuteur',
+      'Formateur',
+      'Professeur particulier',
+      'Coach scolaire',
     ],
     'Santé & Bien-être': [
-      'Infirmier','Docteur','Kinésithérapeute','Psychologue','Pharmacien',
+      'Infirmier',
+      'Docteur',
+      'Kinésithérapeute',
+      'Psychologue',
+      'Pharmacien',
+      'Médecine traditionnelle',
+    ],
+    'Technologies & Digital': [
+      'Développeur / Développeuse',
+      'Ingénieur logiciel',
+      'Data Scientist',
+      'Développeur mobile',
+      'Designer UI/UX',
+      'Administrateur systèmes',
+      'Chef de projet IT',
+      'Technicien réseau',
+      'Analyste sécurité',
+      'Community Manager',
+      'Growth Hacker',
+      'Webmaster',
+      'DevOps Engineer',
     ],
   };
 
@@ -53,8 +117,9 @@ class _ProPageState extends State<ProPage> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() =>
-        context.read<PrestatairesProvider>().loadPrestataires());
+    Future.microtask(
+      () => context.read<PrestatairesProvider>().loadPrestataires(),
+    );
   }
 
   @override
@@ -62,7 +127,7 @@ class _ProPageState extends State<ProPage> {
     final prov = context.watch<PrestatairesProvider>();
     final all = prov.prestataires;
 
-    // Filtres
+    // Applique les filtres
     List<PrestataireModel> list = all;
     if (selectedCategory != 'Tous') {
       list = list.where((p) => p.category == selectedCategory).toList();
@@ -93,14 +158,16 @@ class _ProPageState extends State<ProPage> {
         elevation: 0.7,
         actions: [
           TextButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
-              );
-            },
-            icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF113CFC)),
-            label: const Text("S'inscrire", style: TextStyle(color: Color(0xFF113CFC))),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const InscriptionPrestatairePage(),
+              ),
+            ),
+            icon: const Icon(Icons.person_add_alt_1,
+                color: Color(0xFF113CFC)),
+            label: const Text("S'inscrire",
+                style: TextStyle(color: Color(0xFF113CFC))),
           ),
         ],
       ),
@@ -109,7 +176,8 @@ class _ProPageState extends State<ProPage> {
           : prov.error != null
               ? Center(child: Text('Erreur: ${prov.error}'))
               : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
                       // Bannière
@@ -126,7 +194,8 @@ class _ProPageState extends State<ProPage> {
                           ),
                         ),
                         child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 10),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -142,17 +211,18 @@ class _ProPageState extends State<ProPage> {
                         ),
                       ),
 
-                      // Filtres lignes
+                      // Filtres catégorie & métier
                       Row(
                         children: [
                           DropdownButton<String>(
                             value: selectedCategory,
                             items: <DropdownMenuItem<String>>[
                               const DropdownMenuItem(
-                                  value: 'Tous', child: Text('Domaines de métiers')),
-                              ...categories.keys.map(
-                                (c) => DropdownMenuItem(value: c, child: Text(c)),
-                              )
+                                  value: 'Tous',
+                                  child: Text('Domaines de métiers')),
+                              ...categories.keys.map((c) =>
+                                  DropdownMenuItem(
+                                      value: c, child: Text(c))),
                             ],
                             onChanged: (v) {
                               setState(() {
@@ -166,66 +236,81 @@ class _ProPageState extends State<ProPage> {
                             DropdownButton<String>(
                               value: selectedJob,
                               items: [
-                                const DropdownMenuItem(value: 'Tous', child: Text('Tous')),
-                                ...categories[selectedCategory]!.map(
-                                  (job) => DropdownMenuItem(value: job, child: Text(job)),
-                                ),
+                                const DropdownMenuItem(
+                                    value: 'Tous', child: Text('Tous')),
+                                ...categories[selectedCategory]!
+                                    .map((job) => DropdownMenuItem(
+                                        value: job, child: Text(job))),
                               ],
-                              onChanged: (v) => setState(() => selectedJob = v!),
+                              onChanged: (v) =>
+                                  setState(() => selectedJob = v!),
                             ),
                         ],
                       ),
 
-                      // Recherche
+                      // Recherche libre
                       TextField(
                         decoration: InputDecoration(
                           hintText: 'Rechercher un métier, une ville...',
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF113CFC)),
+                          prefixIcon: const Icon(Icons.search,
+                              color: Color(0xFF113CFC)),
                           border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16)),
                           filled: true,
                           fillColor: const Color(0xFFF8F6F9),
                         ),
-                        onChanged: (v) => setState(() => searchQuery = v),
+                        onChanged: (v) =>
+                            setState(() => searchQuery = v),
                       ),
                       const SizedBox(height: 10),
 
-                      // Liste
+                      // Liste des prestataires
                       Expanded(
                         child: list.isEmpty
-                            ? const Center(child: Text("Aucun prestataire trouvé."))
+                            ? const Center(
+                                child:
+                                    Text("Aucun prestataire trouvé."))
                             : ListView.builder(
                                 itemCount: list.length,
                                 itemBuilder: (_, i) {
                                   final p = list[i];
                                   return GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              PrestataireDetailPage(data: p.toJson()),
-                                        ),
-                                      );
-                                    },
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            PrestataireDetailPage(
+                                                data: p.toJson()),
+                                      ),
+                                    ),
                                     child: Card(
                                       color: Colors.white,
                                       elevation: 2,
-                                      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+                                      margin: const EdgeInsets.symmetric(
+                                          horizontal: 2, vertical: 7),
                                       shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16)),
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
                                       child: ListTile(
                                         leading: CircleAvatar(
-                                          backgroundColor: Colors.indigo.shade50,
-                                          backgroundImage: p.photoUrl.isNotEmpty
-                                              ? NetworkImage(p.photoUrl)
-                                              : const AssetImage('assets/avatar.png') as ImageProvider,
+                                          backgroundColor:
+                                              Colors.indigo.shade50,
+                                          backgroundImage:
+                                              p.photoUrl.isNotEmpty
+                                                  ? NetworkImage(
+                                                      p.photoUrl)
+                                                  : const AssetImage(
+                                                          'assets/avatar.png')
+                                                      as ImageProvider,
                                         ),
                                         title: Text(
                                           p.metier,
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                          style: const TextStyle(
+                                              fontWeight:
+                                                  FontWeight.bold),
                                         ),
-                                        subtitle: Text('${p.category} • ${p.ville}'),
+                                        subtitle: Text(
+                                            '${p.category} • ${p.ville}'),
                                       ),
                                     ),
                                   );

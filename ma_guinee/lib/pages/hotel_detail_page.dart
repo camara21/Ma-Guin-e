@@ -37,7 +37,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   }
 
   void _appelerHotel(BuildContext context) async {
-    final numero = hotel?['tel'] ?? "";
+    final numero = hotel?['telephone'] ?? '';
     if (numero.isNotEmpty) {
       final uri = Uri.parse('tel:$numero');
       if (await canLaunchUrl(uri)) {
@@ -54,7 +54,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final latitude = hotel?['latitude'];
     final longitude = hotel?['longitude'];
     if (latitude != null && longitude != null) {
-      final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$latitude,$longitude");
+      final uri = Uri.parse(
+          "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude");
       launchUrl(uri);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +82,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Merci pour votre avis !")),
+      const SnackBar(content: Text("Merci pour votre avis !")),
     );
     setState(() {
       _noteUtilisateur = 0;
@@ -124,18 +125,16 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final String ville = hotel?['ville'] ?? '';
     final String description = hotel?['description'] ?? '';
     final List<String> images = (hotel?['images'] as List?)?.cast<String>() ?? [];
-    final String numero = hotel?['tel'] ?? '';
     final int etoiles = hotel?['etoiles'] ?? 0;
     final String prix = hotel?['prix'] ?? 'Non renseigné';
     final String avis = hotel?['avis'] ?? "Pas d'avis";
-    final bool hasTel = numero.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(nom, style: const TextStyle(
-          color: Color(0xFF113CFC), fontWeight: FontWeight.bold
-        )),
+        title: Text(nom,
+            style: const TextStyle(
+                color: Color(0xFF113CFC), fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0.7,
         iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
@@ -145,7 +144,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image principale ou fallback
             if (images.isNotEmpty)
               SizedBox(
                 height: 220,
@@ -167,7 +165,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                             errorBuilder: (context, error, stackTrace) => Container(
                               height: 220,
                               color: Colors.grey.shade300,
-                              child: const Center(child: Icon(Icons.image_not_supported)),
+                              child: const Center(
+                                  child: Icon(Icons.image_not_supported)),
                             ),
                           ),
                         );
@@ -177,15 +176,17 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                       Positioned(
                         bottom: 10,
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: List.generate(images.length, (index) {
                             return Container(
                               width: _currentImage == index ? 15 : 8,
                               height: 8,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(6),
-                                color: _currentImage == index ? Colors.orange : Colors.white,
+                                color: _currentImage == index
+                                    ? Colors.orange
+                                    : Colors.white,
                                 border: Border.all(color: Colors.black12),
                               ),
                             );
@@ -202,17 +203,26 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   color: Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Center(child: Icon(Icons.hotel, size: 70, color: Colors.grey)),
+                child: const Center(
+                    child: Icon(Icons.hotel,
+                        size: 70, color: Colors.grey)),
               ),
             const SizedBox(height: 22),
 
-            Text(nom, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Color(0xFF113CFC))),
+            Text(nom,
+                style: const TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF113CFC))),
             const SizedBox(height: 9),
             Row(
               children: [
-                const Icon(Icons.location_on, color: Color(0xFFCE1126)),
+                const Icon(Icons.location_on,
+                    color: Color(0xFFCE1126)),
                 const SizedBox(width: 7),
-                Expanded(child: Text(adresse, style: const TextStyle(fontSize: 15))),
+                Expanded(
+                    child: Text(adresse,
+                        style: const TextStyle(fontSize: 15))),
               ],
             ),
             const SizedBox(height: 10),
@@ -220,60 +230,69 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               Row(
                 children: List.generate(
                   etoiles,
-                  (i) => const Icon(Icons.star, color: Colors.amber, size: 20),
+                  (i) => const Icon(Icons.star,
+                      color: Colors.amber, size: 20),
                 ),
               ),
             const SizedBox(height: 20),
 
-            const Text("Prix moyen :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const Text("Prix moyen :",
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Text(prix, style: const TextStyle(fontSize: 15, color: Color(0xFF009460))),
+            Text(prix,
+                style: const TextStyle(
+                    fontSize: 15, color: Color(0xFF009460))),
             const SizedBox(height: 16),
-
-            const Text("Informations :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            if (ville.isNotEmpty)
+            
+            // Affichage uniquement de la ville
+            if (ville.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.location_city, size: 20, color: Colors.black54),
+                  const Icon(Icons.location_city,
+                      size: 20, color: Colors.black54),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(ville, style: const TextStyle(fontSize: 15))),
+                  Text(ville, style: const TextStyle(fontSize: 15)),
                 ],
               ),
-            if (numero.isNotEmpty)
-              Row(
-                children: [
-                  const Icon(Icons.phone, size: 20, color: Colors.black54),
-                  const SizedBox(width: 8),
-                  Text(numero, style: const TextStyle(fontSize: 15)),
-                ],
-              ),
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text("Description :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              Text(description, style: const TextStyle(fontSize: 15)),
+              const SizedBox(height: 22),
             ],
-            const SizedBox(height: 22),
 
-            const Text("Avis client :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            if (description.isNotEmpty) ...[
+              const Text("Description :",
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(description,
+                  style: const TextStyle(fontSize: 15)),
+              const SizedBox(height: 22),
+            ],
+
+            const Text("Avis client :",
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Text(avis, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+            Text(avis,
+                style: const TextStyle(
+                    fontSize: 15, color: Colors.black87)),
             const SizedBox(height: 22),
 
-            const Text("Notez cet hôtel :", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const Text("Notez cet hôtel :",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 9),
             _buildStars(_noteUtilisateur, onTap: (rating) {
               setState(() => _noteUtilisateur = rating);
             }),
             const SizedBox(height: 8),
-
             TextField(
               controller: _avisController,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: "Partagez votre expérience avec cet hôtel...",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                hintText:
+                    "Partagez votre expérience avec cet hôtel...",
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
             ),
             const SizedBox(height: 9),
@@ -284,8 +303,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange[800],
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
             const SizedBox(height: 24),
@@ -297,23 +318,29 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green[700],
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
             const SizedBox(height: 18),
-
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.phone, color: Colors.white),
+                    icon: const Icon(Icons.phone,
+                        color: Colors.white),
                     label: const Text("Contacter"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF009460),
+                      backgroundColor:
+                          const Color(0xFF009460),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14),
                     ),
                     onPressed: () => _appelerHotel(context),
                   ),
@@ -321,20 +348,26 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.calendar_month),
+                    icon: const Icon(
+                        Icons.calendar_month),
                     label: const Text("Réserver"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFCE1126),
+                      backgroundColor:
+                          const Color(0xFFCE1126),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14),
                     ),
                     onPressed: () {
                       showDialog(
                         context: context,
                         builder: (_) => AlertDialog(
                           title: const Text('Réservation'),
-                          content: const Text('La fonction de réservation sera bientôt disponible.'),
+                          content: const Text(
+                              'La fonction de réservation sera bientôt disponible.'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context),

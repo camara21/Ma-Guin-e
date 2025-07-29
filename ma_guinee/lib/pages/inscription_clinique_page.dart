@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class InscriptionCliniquePage extends StatefulWidget {
   final Map<String, dynamic>? clinique;
@@ -25,22 +27,17 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   String description = '';
   String specialites = '';
   String horaires = '';
-  String? latitude;
-  String? longitude;
+  double? latitude;
+  double? longitude;
 
   XFile? _pickedImage;
   String? _uploadedImageUrl;
   bool _isUploading = false;
-
   final String _bucket = 'clinique-photos';
 
   @override
   void initState() {
     super.initState();
-    _initialiserFormulaire();
-  }
-
-  void _initialiserFormulaire() {
     final c = widget.clinique ?? {};
     nom = c['nom'] ?? '';
     adresse = c['adresse'] ?? '';
@@ -49,8 +46,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     description = c['description'] ?? '';
     specialites = c['specialites'] ?? '';
     horaires = c['horaires'] ?? '';
-    latitude = c['latitude']?.toString();
-    longitude = c['longitude']?.toString();
+    latitude = c['latitude'] != null ? double.tryParse('${c['latitude']}') : null;
+    longitude = c['longitude'] != null ? double.tryParse('${c['longitude']}') : null;
     if (c['images'] is List && c['images'].isNotEmpty) {
       _uploadedImageUrl = c['images'][0];
     }
@@ -59,52 +56,40 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   Future<void> _recupererPosition() async {
     try {
       final permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        return;
-      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
 
       final position = await Geolocator.getCurrentPosition();
       setState(() {
-        latitude = position.latitude.toString();
-        longitude = position.longitude.toString();
+        latitude = position.latitude;
+        longitude = position.longitude;
       });
 
-      // Géocodage inverse
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-
+      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
-        final adresseComplete = [
+        adresse = [
           placemark.street,
           placemark.subLocality,
           placemark.locality,
           placemark.administrativeArea,
           placemark.country
         ].where((e) => e != null && e.isNotEmpty).join(", ");
-
-        setState(() {
-          adresse = adresseComplete;
-        });
+        ville = placemark.locality ?? ville;
+        setState(() {});
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Position récupérée. Veuillez vous placer à l’intérieur de l’établissement."),
-          ),
+          const SnackBar(content: Text("Position récupérée. Placez-vous à l’intérieur de l’établissement.")),
         );
       }
     } catch (e) {
-      debugPrint("Erreur géolocalisation/géocodage : $e");
+      debugPrint("Erreur géolocalisation : $e");
     }
   }
 
   Future<void> _choisirImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked != null) {
       setState(() => _pickedImage = picked);
     }
@@ -112,26 +97,31 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
   Future<String?> _uploadImage(XFile imageFile) async {
     try {
-      final ext = imageFile.path.split('.').last;
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.${imageFile.path.split('.').last}';
+      final path = 'cliniques/$fileName';
       final bytes = await imageFile.readAsBytes();
 
-      final path = 'cliniques/$fileName';
       await Supabase.instance.client.storage
           .from(_bucket)
           .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
 
       return Supabase.instance.client.storage.from(_bucket).getPublicUrl(path);
     } catch (e) {
-      debugPrint("Erreur d'upload: $e");
+      debugPrint("Erreur d'upload : $e");
       return null;
     }
   }
 
   Future<void> _enregistrerClinique() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isUploading = true);
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Veuillez définir la position géographique.")),
+      );
+      return;
+    }
 
+    setState(() => _isUploading = true);
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return;
 
@@ -148,28 +138,22 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
       'description': description,
       'specialites': specialites,
       'horaires': horaires,
-      'latitude': latitude != null ? double.tryParse(latitude!) : null,
-      'longitude': longitude != null ? double.tryParse(longitude!) : null,
+      'latitude': latitude,
+      'longitude': longitude,
       'images': imageUrl != null ? [imageUrl] : [],
       'user_id': userId,
     };
 
     try {
       if (widget.clinique != null) {
-        await Supabase.instance.client
-            .from('cliniques')
-            .update(data)
-            .eq('id', widget.clinique!['id']);
+        await Supabase.instance.client.from('cliniques').update(data).eq('id', widget.clinique!['id']);
       } else {
         await Supabase.instance.client.from('cliniques').insert(data);
       }
-
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      debugPrint("Erreur enregistrement: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur lors de l'enregistrement")),
-      );
+      debugPrint("Erreur enregistrement : $e");
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Erreur enregistrement.")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -178,11 +162,10 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.clinique != null;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(enEdition ? "Modifier la clinique" : "Inscription Clinique"),
-        backgroundColor: Colors.purple.shade700,
+        backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -191,45 +174,57 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
           key: _formKey,
           child: Column(
             children: [
-              // Bouton + message + coordonnées
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      "Placez-vous dans votre établissement pour enregistrer sa position exacte.",
-                      style: TextStyle(fontSize: 14, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        elevation: 4,
-                      ),
-                      onPressed: _recupererPosition,
-                      icon: const Icon(Icons.location_on),
-                      label: const Text("Détecter ma position"),
-                    ),
-                    const SizedBox(height: 12),
-                    if (latitude != null && longitude != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Latitude : $latitude", style: const TextStyle(fontSize: 15)),
-                          Text("Longitude : $longitude", style: const TextStyle(fontSize: 15)),
-                          if (adresse.isNotEmpty)
-                            Text("Adresse : $adresse", style: const TextStyle(fontSize: 15)),
-                        ],
-                      ),
-                  ],
+              ElevatedButton.icon(
+                onPressed: _recupererPosition,
+                icon: const Icon(Icons.my_location),
+                label: const Text("Détecter ma position"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
                 ),
               ),
-
-              // Image profil
+              const SizedBox(height: 10),
+              if (latitude != null && longitude != null) ...[
+                Text("Latitude : $latitude"),
+                Text("Longitude : $longitude"),
+                if (adresse.isNotEmpty) Text("Adresse : $adresse"),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 200,
+                  child: FlutterMap(
+                    options: MapOptions(
+                      center: LatLng(latitude!, longitude!),
+                      zoom: 16,
+                      onTap: (tapPosition, point) {
+                        setState(() {
+                          latitude = point.latitude;
+                          longitude = point.longitude;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Position modifiée manuellement")),
+                        );
+                      },
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c'],
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            width: 40,
+                            height: 40,
+                            point: LatLng(latitude!, longitude!),
+                            child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               GestureDetector(
                 onTap: _choisirImage,
                 child: CircleAvatar(
@@ -245,8 +240,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Champs de formulaire
               TextFormField(
                 initialValue: nom,
                 decoration: const InputDecoration(labelText: "Nom"),
@@ -282,8 +275,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               TextFormField(
                 initialValue: description,
                 decoration: const InputDecoration(labelText: "Description"),
-                onChanged: (v) => description = v,
                 maxLines: 3,
+                onChanged: (v) => description = v,
               ),
               const SizedBox(height: 20),
               _isUploading
@@ -292,6 +285,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                       onPressed: _enregistrerClinique,
                       icon: const Icon(Icons.save),
                       label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
                     ),
             ],
           ),

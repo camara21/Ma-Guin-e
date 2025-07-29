@@ -1,10 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
 
-class MesRestaurantsPage extends StatelessWidget {
+class MesRestaurantsPage extends StatefulWidget {
   final List<Map<String, dynamic>> restaurants;
 
   const MesRestaurantsPage({super.key, required this.restaurants});
+
+  @override
+  State<MesRestaurantsPage> createState() => _MesRestaurantsPageState();
+}
+
+class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
+  late List<Map<String, dynamic>> mesRestaurants;
+
+  @override
+  void initState() {
+    super.initState();
+    mesRestaurants = List.from(widget.restaurants); // Copie locale
+  }
+
+  Future<void> supprimerRestaurant(Map<String, dynamic> resto) async {
+    final supabase = Supabase.instance.client;
+    final id = resto['id'];
+    final images = List<String>.from(resto['images'] ?? []);
+
+    try {
+      // 🧹 Supprimer les images du Storage
+      for (var url in images) {
+        final path = url.split('/object/public/').last;
+        await supabase.storage.from('restaurant-photos').remove([path]);
+      }
+
+      // ❌ Supprimer le restaurant
+      await supabase.from('restaurants').delete().eq('id', id);
+
+      // 🔄 Rafraîchir la liste
+      if (mounted) {
+        setState(() {
+          mesRestaurants.removeWhere((r) => r['id'] == id);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Restaurant supprimé')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erreur suppression: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur lors de la suppression")),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,12 +59,12 @@ class MesRestaurantsPage extends StatelessWidget {
         title: const Text('Mes Restaurants'),
         backgroundColor: Colors.deepOrange,
       ),
-      body: restaurants.isEmpty
+      body: mesRestaurants.isEmpty
           ? const Center(child: Text("Aucun restaurant enregistré."))
           : ListView.builder(
-              itemCount: restaurants.length,
+              itemCount: mesRestaurants.length,
               itemBuilder: (context, index) {
-                final resto = restaurants[index];
+                final resto = mesRestaurants[index];
                 final List images = resto['images'] ?? [];
                 final image = images.isNotEmpty ? images.first : null;
 
@@ -77,12 +123,7 @@ class MesRestaurantsPage extends StatelessWidget {
                                 false;
 
                             if (confirmed) {
-                              // 🔜 Supprimer depuis Supabase
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Suppression à implémenter"),
-                                ),
-                              );
+                              await supprimerRestaurant(resto);
                             }
                           },
                         ),

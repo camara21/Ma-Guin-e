@@ -1,8 +1,11 @@
+// lib/pages/annonce_detail_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../models/annonce_model.dart';
 import '../providers/favoris_provider.dart';
@@ -175,7 +178,7 @@ Partagé depuis l'app Ma Guinée 🇬🇳
 
           // Carousel
           Padding(
-            padding: const EdgeInsets.only(left: 18, right: 18, top: 16, bottom: 4),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
             child: Stack(
               children: [
                 ClipRRect(
@@ -195,7 +198,10 @@ Partagé depuis l'app Ma Guinée 🇬🇳
                               width: double.infinity,
                               errorBuilder: (_, __, ___) => Container(
                                 color: Colors.grey[300],
-                                child: const Icon(Icons.image_not_supported, size: 60),
+                                child: const Icon(
+                                  Icons.image_not_supported,
+                                  size: 60,
+                                ),
                               ),
                             ),
                           ),
@@ -204,7 +210,8 @@ Partagé depuis l'app Ma Guinée 🇬🇳
                           height: 210,
                           width: double.infinity,
                           color: Colors.grey[300],
-                          child: const Icon(Icons.image_not_supported, size: 60),
+                          child:
+                              const Icon(Icons.image_not_supported, size: 60),
                         ),
                 ),
 
@@ -236,7 +243,10 @@ Partagé depuis l'app Ma Guinée 🇬🇳
                                   ? const Color(0xFF113CFC)
                                   : Colors.white.withOpacity(0.77),
                               borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: const Color(0xFF113CFC), width: 1),
+                              border: Border.all(
+                                color: const Color(0xFF113CFC),
+                                width: 1,
+                              ),
                             ),
                           ),
                         ),
@@ -270,33 +280,35 @@ Partagé depuis l'app Ma Guinée 🇬🇳
 
           // Infos
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   annonce.titre,
-                  style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   annonce.description,
-                  style: const TextStyle(fontSize: 15.5, color: Colors.black87),
+                  style:
+                      const TextStyle(fontSize: 15.5, color: Colors.black87),
                 ),
                 const SizedBox(height: 20),
 
                 if (annonce.prix > 0)
                   Row(
                     children: [
-                      const Icon(Icons.attach_money, color: Color(0xFF113CFC)),
+                      const Icon(Icons.attach_money,
+                          color: Color(0xFF113CFC)),
                       const SizedBox(width: 8),
                       Text(
                         "Prix : ${annonce.prix.toStringAsFixed(0)} ${annonce.devise.isNotEmpty ? annonce.devise : "GNF"}",
                         style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF113CFC),
-                          fontSize: 16,
-                        ),
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF113CFC),
+                            fontSize: 16),
                       ),
                     ],
                   ),
@@ -308,42 +320,55 @@ Partagé depuis l'app Ma Guinée 🇬🇳
                     const SizedBox(width: 8),
                     Text("Catégorie : ${annonce.categorie}"),
                   ],
-                ),
+                ),                
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.location_on, color: Color(0xFF009460)),
+                    const Icon(Icons.location_on,
+                        color: Color(0xFF009460)),
                     const SizedBox(width: 8),
                     Text("Ville : ${annonce.ville}"),
                   ],
                 ),
                 const SizedBox(height: 22),
 
+                // Actions: Call, WhatsApp, Chat
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.phone, color: Color(0xFF009460)),
+                      icon: const Icon(Icons.phone,
+                          color: Color(0xFF009460)),
                       tooltip: "Appeler",
-                      onPressed: hasTel ? () => _call(annonce.telephone) : null,
+                      onPressed:
+                          hasTel ? () => _call(annonce.telephone) : null,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.message, color: Color(0xFF25D366)),
+                      icon: const FaIcon(FontAwesomeIcons.whatsapp,
+                          color: Color(0xFF25D366)),
                       tooltip: "WhatsApp",
-                      onPressed: hasTel ? () => _whatsapp(annonce.telephone) : null,
+                      onPressed:
+                          hasTel ? () => _whatsapp(annonce.telephone) : null,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton.icon(
-                        icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                        icon: const Icon(Icons.chat_bubble_outline,
+                            size: 20),
                         label: const Text("Échanger"),
                         onPressed: _ouvrirMessagerie,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF113CFC),
+                          backgroundColor:
+                              const Color(0xFF113CFC),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 6),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(14)),
                           elevation: 0,
-                          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -358,8 +383,10 @@ Partagé depuis l'app Ma Guinée 🇬🇳
                     label: const Text("Partager l’annonce"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFCE1126),
-                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 28, vertical: 13),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(17)),
                       foregroundColor: Colors.white,
                       elevation: 0,
                     ),

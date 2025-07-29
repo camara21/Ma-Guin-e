@@ -1,8 +1,11 @@
+// lib/pages/prestataire_detail_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'messages_prestataire_page.dart'; // crée la page si besoin
+import 'messages_prestataire_page.dart';
 
 class PrestataireDetailPage extends StatefulWidget {
   /// data : Map<String,dynamic> (PrestataireModel.toJson())
@@ -27,13 +30,18 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     if (phone == null || phone.isEmpty) return;
     final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
     final uri = Uri.parse('https://wa.me/$clean');
-    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _openChat() {
     final me = Supabase.instance.client.auth.currentUser;
-    final receiverId = widget.data['user_id'] ?? '';
-    if (me == null || receiverId.isEmpty) {
+    final receiverId = widget.data['id']?.toString() ?? '';
+    final prestataireName = widget.data['metier']?.toString() ?? '';
+    final prestataireId = receiverId;
+
+    if (me == null) {
       _snack("Connexion requise.");
       return;
     }
@@ -42,8 +50,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => MessagesPrestatairePage(
-          prestataireId: widget.data['id'],
-          prestataireName: widget.data['metier'] ?? '',
+          prestataireId: prestataireId,
+          prestataireName: prestataireName,
           receiverId: receiverId,
           senderId: me.id,
         ),
@@ -51,7 +59,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
-  void _sendAvis() async {
+  void _sendAvis() {
     if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
       _snack("Note + avis requis.");
       return;
@@ -86,12 +94,17 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final String photo = data['photo_url'] ?? '';
-    final String metier = data['metier'] ?? '';
-    final String category = data['category'] ?? '';
-    final String ville = data['ville'] ?? '';
-    final String description = data['description'] ?? '';
-    final String phone = data['phone'] ?? '';
+    final photo = data['photo_url']?.toString() ?? '';
+    final metier = data['metier']?.toString() ?? '';
+    final category = data['category']?.toString() ?? '';
+    final ville = data['ville']?.toString() ?? '';
+    final description = data['description']?.toString() ?? '';
+    final phone = data['phone']?.toString() ?? '';
+
+    // On cache le bouton "Échanger" si l'utilisateur connecté est ce prestataire
+    final meId = Supabase.instance.client.auth.currentUser?.id;
+    final prestId = data['id']?.toString() ?? '';
+    final isMe = meId != null && meId == prestId;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -163,42 +176,41 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 child: Text(description, style: const TextStyle(fontSize: 16, color: Colors.black87)),
               ),
             ),
-
           const SizedBox(height: 17),
 
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.phone, color: Color(0xFF009460)),
-                tooltip: "Appeler",
-                onPressed: () => _call(phone),
-              ),
-              IconButton(
-                icon: const Icon(Icons.message, color: Color(0xFF25D366)),
-                tooltip: "WhatsApp",
-                onPressed: () => _whatsapp(phone),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.chat_bubble_outline, size: 20),
-                  label: const Text("Échanger"),
-                  onPressed: _openChat,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF113CFC),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                    textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          if (!isMe)
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.phone, color: Color(0xFF009460)),
+                  tooltip: "Appeler",
+                  onPressed: () => _call(phone),
+                ),
+                IconButton(
+                  icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Color(0xFF25D366)),
+                  tooltip: "WhatsApp",
+                  onPressed: () => _whatsapp(phone),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                    label: const Text("Échanger"),
+                    onPressed: _openChat,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF113CFC),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
+                      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 22),
 
-          // Avis
           Card(
             elevation: 0,
             margin: EdgeInsets.zero,

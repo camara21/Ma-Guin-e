@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -46,7 +48,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       nom = h['nom'] ?? '';
       adresse = h['adresse'] ?? '';
       ville = h['ville'] ?? '';
-      telephone = h['telephone'] ?? ''; // corrigé ici
+      telephone = h['telephone'] ?? '';
       description = h['description'] ?? '';
       prix = h['prix'] ?? '';
       etoiles = h['etoiles'] ?? 1;
@@ -139,7 +141,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clique sur "Détecter ma position" avant de valider.')),
+        const SnackBar(content: Text('Clique sur "Détecter ma position" ou choisis manuellement sur la carte.')),
       );
       return;
     }
@@ -218,9 +220,45 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                       Text('Latitude : $latitude'),
                       Text('Longitude : $longitude'),
                       Text('Adresse : $adresse'),
+                      const SizedBox(height: 12),
+                      const Text("Position sur la carte :", style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 200,
+                        child: FlutterMap(
+                          options: MapOptions(
+                            center: LatLng(latitude!, longitude!),
+                            zoom: 16.0,
+                            onTap: (tapPosition, point) {
+                              setState(() {
+                                latitude = point.latitude;
+                                longitude = point.longitude;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Position ajustée manuellement.")),
+                              );
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              subdomains: const ['a', 'b', 'c'],
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  width: 40.0,
+                                  height: 40.0,
+                                  point: LatLng(latitude!, longitude!),
+                                  child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                     ],
-                    const SizedBox(height: 12),
-
                     TextFormField(
                       initialValue: nom,
                       decoration: const InputDecoration(labelText: "Nom de l'hôtel"),

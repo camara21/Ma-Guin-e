@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
 
 class MessagesPrestatairePage extends StatefulWidget {
@@ -17,7 +16,8 @@ class MessagesPrestatairePage extends StatefulWidget {
   });
 
   @override
-  State<MessagesPrestatairePage> createState() => _MessagesPrestatairePageState();
+  State<MessagesPrestatairePage> createState() =>
+      _MessagesPrestatairePageState();
 }
 
 class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
@@ -39,15 +39,18 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   Future<void> _fetchMessages() async {
     setState(() => loading = true);
     try {
-      final msgs = await _messageService.fetchMessagesForPrestataire(widget.prestataireId);
+      final msgs = await _messageService
+          .fetchMessagesForPrestataire(widget.prestataireId);
       setState(() {
         messages = msgs;
         loading = false;
       });
       _scrollDown();
-      // Marquer lus les messages reçus non lus
+
       for (var msg in msgs) {
-        if (msg['receiver_id'] == widget.senderId && !(msg['lu'] ?? true)) {
+        final receiver = msg['receiver_id']?.toString() ?? '';
+        final read = msg['lu'] as bool? ?? true;
+        if (receiver == widget.senderId && !read) {
           await _messageService.markMessageAsRead(msg['id']);
         }
       }
@@ -56,21 +59,24 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         messages = [];
         loading = false;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur chargement messages : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur chargement messages : $e")),
+      );
     }
   }
 
   void _subscribeToMessages() {
-    _subscription = _messageService.subscribeToPrestataireMessages(widget.prestataireId, () {
-      _fetchMessages();
-    });
+    _subscription = _messageService.subscribeToPrestataireMessages(
+      widget.prestataireId,
+      () => _fetchMessages(),
+    );
   }
 
   void _scrollDown() {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        _scrollController
+            .jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
   }
@@ -88,13 +94,14 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       _messageController.clear();
       _scrollDown();
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur envoi message : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur envoi message : $e")),
+      );
     }
   }
 
   Widget _buildMessage(Map<String, dynamic> msg) {
-    final bool isMe = msg['sender_id'] == widget.senderId;
+    final isMe = msg['sender_id']?.toString() == widget.senderId;
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -114,11 +121,16 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
             bottomRight: Radius.circular(isMe ? 2 : 16),
           ),
           boxShadow: [
-            if (isMe) BoxShadow(color: Colors.blue[100]!, blurRadius: 2, offset: const Offset(1, 2)),
+            if (isMe)
+              BoxShadow(
+                color: Colors.blue[100]!,
+                blurRadius: 2,
+                offset: const Offset(1, 2),
+              ),
           ],
         ),
         child: Text(
-          msg['contenu'],
+          msg['contenu']?.toString() ?? '',
           style: TextStyle(
             color: isMe ? Colors.white : Colors.black87,
             fontSize: 15.3,
@@ -152,7 +164,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
           children: [
             CircleAvatar(
               backgroundColor: Colors.blue[100],
-              child: const Icon(Icons.engineering, color: Color(0xFF113CFC)),
+              child:
+                  const Icon(Icons.engineering, color: Color(0xFF113CFC)),
             ),
             const SizedBox(width: 11),
             Flexible(
@@ -177,14 +190,16 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                   Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 18),
                       itemCount: messages.length,
                       itemBuilder: (_, idx) => _buildMessage(messages[idx]),
                     ),
                   ),
                   Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 10),
                     child: Row(
                       children: [
                         Expanded(
@@ -192,7 +207,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFF3F5FA),
                               borderRadius: BorderRadius.circular(17),
-                              border: Border.all(color: Colors.grey[300]!),
+                              border:
+                                  Border.all(color: Colors.grey[300]!),
                             ),
                             child: TextField(
                               controller: _messageController,
@@ -200,7 +216,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                               maxLines: 3,
                               style: const TextStyle(fontSize: 16),
                               decoration: const InputDecoration(
-                                contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 15, vertical: 11),
                                 hintText: "Écrivez un message...",
                                 border: InputBorder.none,
                               ),
@@ -212,12 +229,14 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                         ElevatedButton(
                           onPressed: _sendMessage,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF113CFC),
+                            backgroundColor:
+                                const Color(0xFF113CFC),
                             shape: const CircleBorder(),
                             padding: const EdgeInsets.all(12),
                             elevation: 0,
                           ),
-                          child: const Icon(Icons.send, color: Colors.white, size: 22),
+                          child: const Icon(Icons.send,
+                              color: Colors.white, size: 22),
                         ),
                       ],
                     ),
