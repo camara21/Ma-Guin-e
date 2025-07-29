@@ -24,7 +24,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   Future<void> _loadClinique() async {
     setState(() => loading = true);
     final data = await Supabase.instance.client
-        .from('cliniques') // ou "centres_sante" selon ton projet
+        .from('cliniques')
         .select()
         .eq('id', widget.cliniqueId)
         .maybeSingle();
@@ -85,7 +85,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
 
     final String nom = clinique?['nom'] ?? 'Centre médical';
     final String ville = clinique?['ville'] ?? 'Ville inconnue';
-    final String specialite = clinique?['specialite'] ?? clinique?['description'] ?? 'Spécialité non renseignée';
+    final String specialites = clinique?['specialites'] ?? clinique?['description'] ?? 'Spécialité non renseignée';
     final List<String> images = (clinique?['images'] as List?)?.cast<String>() ?? [];
     final String horaires = clinique?['horaires'] ??
         "Lundi - Vendredi : 8h à 18h\nSamedi : 8h à 13h\nDimanche : Fermé";
@@ -231,7 +231,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              specialite,
+              specialites,
               style: const TextStyle(fontSize: 16, color: Colors.black87),
             ),
 

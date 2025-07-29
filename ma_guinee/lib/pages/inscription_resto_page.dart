@@ -10,7 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InscriptionRestoPage extends StatefulWidget {
-  final Map<String, dynamic>? restaurant; // 🔧 ajout pour l’édition
+  final Map<String, dynamic>? restaurant;
 
   const InscriptionRestoPage({super.key, this.restaurant});
 
@@ -26,12 +26,18 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
   String ville = '';
   String telephone = '';
   String description = '';
+  String specialites = '';
+  String horaires = '';
   double? latitude;
   double? longitude;
   String adresse = '';
   bool _gettingLocation = false;
   bool _loading = false;
+
   final List<XFile> _pickedImages = [];
+  final List<String> _existingImageUrls = [];
+  final List<String> _imagesToDelete = [];
+
   static const String _bucket = 'restaurant-photos';
 
   @override
@@ -43,10 +49,14 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
       ville = resto['ville'] ?? '';
       telephone = resto['tel'] ?? '';
       description = resto['description'] ?? '';
+      specialites = resto['specialites'] ?? '';
+      horaires = resto['horaires'] ?? '';
       latitude = resto['latitude'];
       longitude = resto['longitude'];
       adresse = resto['adresse'] ?? '';
-      // Pas besoin de charger les images dans ce fichier (gestion simplifiée)
+      if (resto['images'] is List) {
+        _existingImageUrls.addAll(List<String>.from(resto['images']));
+      }
     }
   }
 
@@ -80,6 +90,12 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
 
   void _removeImage(int i) {
     setState(() => _pickedImages.removeAt(i));
+  }
+
+  void _removeExistingImage(int i) {
+    final removed = _existingImageUrls.removeAt(i);
+    _imagesToDelete.add(removed);
+    setState(() {});
   }
 
   Widget _imagePreview(XFile file) {
@@ -125,6 +141,19 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
     return urls;
   }
 
+  Future<void> _deleteImagesFromStorage(List<String> urls) async {
+    final storage = Supabase.instance.client.storage.from(_bucket);
+    for (final url in urls) {
+      final uri = Uri.parse(url);
+      final path = uri.pathSegments.skipWhile((v) => v != _bucket).skip(1).join('/');
+      try {
+        await storage.remove([path]);
+      } catch (e) {
+        debugPrint("Erreur suppression image : $e");
+      }
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
@@ -139,17 +168,25 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
       final supa = Supabase.instance.client;
       final uid = supa.auth.currentUser?.id;
       if (uid == null) throw 'Utilisateur non connecté';
-      final imageUrls = await _uploadImages(uid);
+
+      // Supprimer images retirées du formulaire
+      if (_imagesToDelete.isNotEmpty) {
+        await _deleteImagesFromStorage(_imagesToDelete);
+      }
+
+      final newImageUrls = await _uploadImages(uid);
 
       final data = {
         'nom': nom,
         'ville': ville,
         'tel': telephone,
         'description': description,
+        'specialites': specialites,
+        'horaires': horaires,
         'latitude': latitude,
         'longitude': longitude,
         'adresse': adresse,
-        'images': imageUrls,
+        'images': [..._existingImageUrls, ...newImageUrls],
         'user_id': uid,
         'updated_at': DateTime.now().toIso8601String(),
       };
@@ -233,6 +270,16 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                       maxLines: 3,
                       onSaved: (v) => description = v ?? '',
                     ),
+                    TextFormField(
+                      initialValue: specialites,
+                      decoration: const InputDecoration(labelText: 'Spécialités'),
+                      onSaved: (v) => specialites = v ?? '',
+                    ),
+                    TextFormField(
+                      initialValue: horaires,
+                      decoration: const InputDecoration(labelText: 'Horaires d’ouverture'),
+                      onSaved: (v) => horaires = v ?? '',
+                    ),
                     const SizedBox(height: 20),
                     const Text('Photos du restaurant', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
@@ -240,6 +287,28 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        for (int i = 0; i < _existingImageUrls.length; i++)
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(_existingImageUrls[i],
+                                    width: 70, height: 70, fit: BoxFit.cover),
+                              ),
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: () => _removeExistingImage(i),
+                                  child: const CircleAvatar(
+                                    radius: 11,
+                                    backgroundColor: Colors.red,
+                                    child: Icon(Icons.close, size: 14, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         for (int i = 0; i < _pickedImages.length; i++)
                           Stack(
                             children: [

@@ -240,12 +240,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? "${user.cliniques.first['nom']} - ${user.cliniques.first['ville']}"
                       : "Aucune clinique enregistrée.",
                   onTap: user.cliniques.isNotEmpty
-                      ? () => Navigator.pushNamed(
-                          context,
-                          AppRoutes.editClinique,
-                          arguments: user.cliniques.first,
-                        )
-                      : null,
+                  ? () => Navigator.pushNamed(context, AppRoutes.mesCliniques)
+                    : null,
+
                   onButton: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),

@@ -157,7 +157,10 @@ class AppRoutes {
           return hotel_page.MesHotelsPage(hotels: hotels);
         });
       case mesCliniques:
-        return _page(const MesCliniquesPage());
+        return _userProtected((u) {
+          final cliniques = u.cliniques ?? [];
+          return MesCliniquesPage(cliniques: cliniques);
+        });
       case inscriptionResto:
         final resto = settings.arguments;
         if (resto == null || resto is Map<String, dynamic>) {
@@ -168,15 +171,15 @@ class AppRoutes {
       case inscriptionHotel:
         final hotel = settings.arguments;
         if (hotel == null || hotel is Map<String, dynamic>) {
-          return _page(InscriptionHotelPage(
-              hotel: hotel as Map<String, dynamic>?));
+          return _page(
+              InscriptionHotelPage(hotel: hotel as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour /inscriptionHotel");
       case inscriptionClinique:
         final clinique = settings.arguments;
         if (clinique == null || clinique is Map<String, dynamic>) {
-          return _page(EditCliniquePage(
-              clinique: clinique as Map<String, dynamic>?));
+          return _page(
+              EditCliniquePage(clinique: clinique as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour /inscriptionClinique");
       case annonceDetail:

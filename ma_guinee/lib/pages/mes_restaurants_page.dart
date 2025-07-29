@@ -37,41 +37,56 @@ class MesRestaurantsPage extends StatelessWidget {
                     onTap: () {
                       Navigator.pushNamed(
                         context,
-                        AppRoutes.inscriptionResto,
-                        arguments: resto,
+                        AppRoutes.restoDetail,
+                        arguments: resto['id'],
                       );
                     },
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Confirmer la suppression'),
-                                content: const Text('Voulez-vous supprimer ce restaurant ?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('Annuler'),
+                    trailing: Wrap(
+                      spacing: 8,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.inscriptionResto,
+                              arguments: resto,
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Confirmer la suppression'),
+                                    content: const Text('Voulez-vous supprimer ce restaurant ?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('Annuler'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('Supprimer'),
+                                      ),
+                                    ],
                                   ),
-                                  ElevatedButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text('Supprimer'),
-                                  ),
-                                ],
-                              ),
-                            ) ??
-                            false;
+                                ) ??
+                                false;
 
-                        if (confirmed) {
-                          // TODO: Supprimer dans Supabase
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Suppression à implémenter"),
-                            ),
-                          );
-                        }
-                      },
+                            if (confirmed) {
+                              // 🔜 Supprimer depuis Supabase
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Suppression à implémenter"),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 );

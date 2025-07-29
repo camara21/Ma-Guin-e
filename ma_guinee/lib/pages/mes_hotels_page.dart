@@ -40,7 +40,7 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.pushNamed(context, AppRoutes.inscriptionHotel)
-              .then((_) => setState(() {})); // à remplacer par rechargement si nécessaire
+              .then((_) => setState(() {}));
         },
         icon: const Icon(Icons.add),
         label: const Text("Ajouter"),
@@ -103,7 +103,8 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => HotelDetailPage(hotelId: hotel['id']),
+                          builder: (_) =>
+                              HotelDetailPage(hotelId: hotel['id']),
                         ),
                       );
                     },

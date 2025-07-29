@@ -1,31 +1,48 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/user_provider.dart';
-import '../routes.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:ma_guinee/pages/edit_clinique_page.dart';
+import 'package:ma_guinee/pages/sante_detail_page.dart';
 
-class MesCliniquesPage extends StatelessWidget {
-  const MesCliniquesPage({super.key});
+class MesCliniquesPage extends StatefulWidget {
+  const MesCliniquesPage({super.key, required this.cliniques});
+  final List<Map<String, dynamic>> cliniques;
+
+  @override
+  State<MesCliniquesPage> createState() => _MesCliniquesPageState();
+}
+
+class _MesCliniquesPageState extends State<MesCliniquesPage> {
+  List<Map<String, dynamic>> cliniques = [];
+
+  @override
+  void initState() {
+    super.initState();
+    cliniques = widget.cliniques;
+  }
+
+  Future<void> supprimerClinique(int id) async {
+    try {
+      await Supabase.instance.client
+          .from('cliniques')
+          .delete()
+          .match({'id': id});
+
+      setState(() {
+        cliniques.removeWhere((element) => element['id'] == id);
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de la suppression : $e")),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final userProvider = context.watch<UserProvider>();
-    final utilisateur = userProvider.utilisateur;
-    final cliniques = utilisateur?.cliniques ?? [];
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mes Cliniques'),
-        backgroundColor: Colors.red.shade700,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              Navigator.pushNamed(context, AppRoutes.inscriptionClinique)
-                  .then((_) => userProvider.chargerUtilisateurConnecte());
-            },
-          )
-        ],
+        backgroundColor: Colors.teal,
       ),
       body: cliniques.isEmpty
           ? const Center(child: Text("Aucune clinique enregistrée."))
@@ -33,55 +50,58 @@ class MesCliniquesPage extends StatelessWidget {
               itemCount: cliniques.length,
               itemBuilder: (context, index) {
                 final clinique = cliniques[index];
-                final List images = clinique['images'] ?? [];
-                final image = images.isNotEmpty ? images.first : null;
-
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.teal,
-                      backgroundImage: image != null ? NetworkImage(image) : null,
-                      child: image == null
-                          ? const Icon(Icons.local_hospital, color: Colors.white)
-                          : null,
-                    ),
-                    title: Text(clinique['nom'] ?? 'Nom inconnu'),
-                    subtitle: Text(clinique['ville'] ?? 'Ville inconnue'),
-                    onTap: () {
-                      Navigator.pushNamed(
-                        context,
-                        AppRoutes.inscriptionClinique,
-                        arguments: clinique,
-                      ).then((_) => userProvider.chargerUtilisateurConnecte());
-                    },
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Confirmer la suppression'),
-                                content: const Text('Voulez-vous vraiment supprimer cette clinique ?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('Annuler'),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text('Supprimer'),
-                                  ),
-                                ],
-                              ),
-                            ) ?? false;
-
-                        if (confirmed) {
-                          await userProvider.supprimerClinique(clinique['id']);
-                          await userProvider.chargerUtilisateurConnecte();
-                        }
-                      },
-                    ),
+                return ListTile(
+                  leading: const Icon(Icons.local_hospital, color: Colors.teal),
+                  title: Text(clinique['nom'] ?? ''),
+                  subtitle: Text(clinique['ville'] ?? ''),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SanteDetailPage(cliniqueId: clinique['id']),
+                      ),
+                    );
+                  },
+                  trailing: Wrap(
+                    spacing: 12,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EditCliniquePage(clinique: clinique),
+                            ),
+                          ).then((_) => setState(() {})); // rechargement manuel si besoin
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text("Confirmation"),
+                              content: const Text("Supprimer cette clinique ?"),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text("Annuler"),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text("Supprimer"),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            supprimerClinique(clinique['id']);
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 );
               },
