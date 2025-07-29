@@ -237,17 +237,16 @@ class _ProfilePageState extends State<ProfilePage> {
                   iconColor: Colors.teal,
                   title: 'Mes Cliniques',
                   subtitle: user.cliniques.isNotEmpty
-                      ? "${user.cliniques.first['nom']} - ${user.cliniques.first['ville']}"
+                      ? user.cliniques.map((c) => "${c['nom']} - ${c['ville']}").join(', ')
                       : "Aucune clinique enregistrée.",
                   onTap: user.cliniques.isNotEmpty
-                  ? () => Navigator.pushNamed(context, AppRoutes.mesCliniques)
-                    : null,
-
+                      ? () => Navigator.pushNamed(context, AppRoutes.mesCliniques)
+                      : null,
                   onButton: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
                   ),
-                  buttonLabel: user.cliniques.isNotEmpty ? "Modifier" : "S'inscrire",
+                  buttonLabel: "Ajouter",
                 ),
               ],
             ),

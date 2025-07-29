@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HotelDetailPage extends StatefulWidget {
@@ -51,21 +50,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  void _ouvrirWhatsApp(BuildContext context) async {
-    final numero = hotel?['whatsapp'] ?? "";
-    if (numero.isNotEmpty) {
-      final whats = numero.replaceAll(RegExp(r'\D'), '');
-      final url = Uri.parse('https://wa.me/$whats');
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Impossible d'ouvrir WhatsApp.")),
-        );
-      }
-    }
-  }
-
   void _ouvrirCarte(BuildContext context) {
     final latitude = hotel?['latitude'];
     final longitude = hotel?['longitude'];
@@ -89,7 +73,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       return;
     }
 
-    // Sauvegarde dans Supabase (table "hotel_avis" à créer)
     await Supabase.instance.client.from('hotel_avis').insert({
       'hotel_id': widget.hotelId,
       'note': note,
@@ -138,14 +121,14 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
     final String nom = hotel?['nom'] ?? 'Nom inconnu';
     final String adresse = hotel?['adresse'] ?? 'Adresse inconnue';
+    final String ville = hotel?['ville'] ?? '';
+    final String description = hotel?['description'] ?? '';
     final List<String> images = (hotel?['images'] as List?)?.cast<String>() ?? [];
     final String numero = hotel?['tel'] ?? '';
-    final String numeroWhatsapp = hotel?['whatsapp'] ?? '';
     final int etoiles = hotel?['etoiles'] ?? 0;
     final String prix = hotel?['prix'] ?? 'Non renseigné';
     final String avis = hotel?['avis'] ?? "Pas d'avis";
     final bool hasTel = numero.isNotEmpty;
-    final bool hasWhatsApp = numeroWhatsapp.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -162,115 +145,68 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // CARROUSEL D'IMAGES
+            // Image principale ou fallback
             if (images.isNotEmpty)
-              Column(
-                children: [
-                  SizedBox(
-                    height: 220,
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        PageView.builder(
-                          itemCount: images.length,
-                          onPageChanged: (value) {
-                            setState(() => _currentImage = value);
-                          },
-                          itemBuilder: (context, idx) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(15),
-                              child: Image.network(
-                                images[idx],
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  height: 220,
-                                  color: Colors.grey.shade300,
-                                  child: const Center(child: Icon(Icons.image_not_supported)),
-                                ),
+              SizedBox(
+                height: 220,
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    PageView.builder(
+                      itemCount: images.length,
+                      onPageChanged: (value) {
+                        setState(() => _currentImage = value);
+                      },
+                      itemBuilder: (context, idx) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: Image.network(
+                            images[idx],
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              height: 220,
+                              color: Colors.grey.shade300,
+                              child: const Center(child: Icon(Icons.image_not_supported)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    if (images.length > 1)
+                      Positioned(
+                        bottom: 10,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(images.length, (index) {
+                            return Container(
+                              width: _currentImage == index ? 15 : 8,
+                              height: 8,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: _currentImage == index ? Colors.orange : Colors.white,
+                                border: Border.all(color: Colors.black12),
                               ),
                             );
-                          },
-                        ),
-                        if (images.length > 1)
-                          Positioned(
-                            bottom: 10,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(images.length, (index) {
-                                return Container(
-                                  width: _currentImage == index ? 15 : 8,
-                                  height: 8,
-                                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(6),
-                                    color: _currentImage == index
-                                        ? Colors.orange
-                                        : Colors.white,
-                                    border: Border.all(color: Colors.black12),
-                                  ),
-                                );
-                              }),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (images.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 13, bottom: 8),
-                      child: SizedBox(
-                        height: 48,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: images.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 10),
-                          itemBuilder: (context, idx) => GestureDetector(
-                            onTap: () {
-                              setState(() => _currentImage = idx);
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 70,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                      color: _currentImage == idx ? Colors.orange : Colors.grey.shade300, width: 2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Image.network(
-                                  images[idx],
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) => const Icon(Icons.image_not_supported),
-                                ),
-                              ),
-                            ),
-                          ),
+                          }),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            if (images.isEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  height: 220,
-                  color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.hotel, size: 70, color: Colors.grey)),
+                  ],
                 ),
+              )
+            else
+              Container(
+                height: 220,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(child: Icon(Icons.hotel, size: 70, color: Colors.grey)),
               ),
             const SizedBox(height: 22),
 
-            Text(
-              nom,
-              style: const TextStyle(
-                fontSize: 23,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF113CFC),
-              ),
-            ),
+            Text(nom, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Color(0xFF113CFC))),
             const SizedBox(height: 9),
             Row(
               children: [
@@ -294,6 +230,32 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             Text(prix, style: const TextStyle(fontSize: 15, color: Color(0xFF009460))),
             const SizedBox(height: 16),
 
+            const Text("Informations :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            if (ville.isNotEmpty)
+              Row(
+                children: [
+                  const Icon(Icons.location_city, size: 20, color: Colors.black54),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(ville, style: const TextStyle(fontSize: 15))),
+                ],
+              ),
+            if (numero.isNotEmpty)
+              Row(
+                children: [
+                  const Icon(Icons.phone, size: 20, color: Colors.black54),
+                  const SizedBox(width: 8),
+                  Text(numero, style: const TextStyle(fontSize: 15)),
+                ],
+              ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text("Description :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(description, style: const TextStyle(fontSize: 15)),
+            ],
+            const SizedBox(height: 22),
+
             const Text("Avis client :", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             Text(avis, style: const TextStyle(fontSize: 15, color: Colors.black87)),
@@ -306,7 +268,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             }),
             const SizedBox(height: 8),
 
-            // 📝 Saisie de l’avis
             TextField(
               controller: _avisController,
               maxLines: 3,
@@ -327,10 +288,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-
             const SizedBox(height: 24),
 
-            // 🗺️ Localisation
             ElevatedButton.icon(
               onPressed: () => _ouvrirCarte(context),
               icon: const Icon(Icons.map),
@@ -344,40 +303,22 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             ),
             const SizedBox(height: 18),
 
-            // 📞 Contact + WhatsApp + Réserver
             Row(
               children: [
-                if (hasTel) ...[
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.phone, color: Colors.white),
-                      label: const Text("Contacter"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF009460),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      onPressed: () => _appelerHotel(context),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.phone, color: Colors.white),
+                    label: const Text("Contacter"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009460),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
+                    onPressed: () => _appelerHotel(context),
                   ),
-                  const SizedBox(width: 10),
-                ],
-                if (hasWhatsApp)
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white),
-                      label: const Text("WhatsApp"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      onPressed: () => _ouvrirWhatsApp(context),
-                    ),
-                  ),
-                if (hasTel || hasWhatsApp) const SizedBox(width: 10),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.calendar_month),
