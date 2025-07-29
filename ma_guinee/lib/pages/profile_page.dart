@@ -252,7 +252,48 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const Divider(height: 30, thickness: 1),
+
+          // ⚙️ Paramètres
+          ListTile(
+            leading: const Icon(Icons.settings, color: Colors.black),
+            title: const Text("Paramètres", style: TextStyle(fontWeight: FontWeight.w500)),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ParametrePage(user: user)),
+              );
+            },
+          ),
+
+          // 🚪 Déconnexion
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text("Se déconnecter", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
+            onTap: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text("Confirmation"),
+                  content: const Text("Voulez-vous vraiment vous déconnecter ?"),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Annuler")),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text("Se déconnecter", style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                await Supabase.instance.client.auth.signOut();
+                if (context.mounted) {
+                  Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+                }
+              }
+            },
+          ),
         ],
       ),
     );

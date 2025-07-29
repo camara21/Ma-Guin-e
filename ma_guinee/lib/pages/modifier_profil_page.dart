@@ -33,7 +33,7 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
     email = widget.user.email;
     telephone = widget.user.telephone;
     pays = widget.user.pays;
-    genre = widget.user.genre;
+    genre = widget.user.genre.toLowerCase(); // ✅ correction ici
     _photoUrl = widget.user.photoUrl;
   }
 
@@ -52,17 +52,15 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
       final userId = widget.user.id;
       final fileExt = picked.path.split('.').last;
       final fileName = 'avatar_$userId.$fileExt';
-      final filePath = 'profile-photos/$fileName'; // bucket profile-photos
+      final filePath = 'profile-photos/$fileName';
       final bytes = await picked.readAsBytes();
 
-      // Upload ou remplace le fichier dans storage
       await supabase.storage.from('profile-photos').uploadBinary(
         filePath,
         bytes,
         fileOptions: const FileOptions(upsert: true),
       );
 
-      // Récupère l’URL publique de la photo
       final publicUrl = supabase.storage.from('profile-photos').getPublicUrl(filePath);
 
       setState(() {
@@ -111,10 +109,7 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          "Modifier mon profil",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Modifier mon profil", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.black),
         elevation: 0.8,
@@ -125,7 +120,6 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
           key: _formKey,
           child: ListView(
             children: [
-              // Photo de profil avec fallback avatar
               Center(
                 child: Stack(
                   alignment: Alignment.bottomRight,
@@ -152,11 +146,7 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
                             boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
                           ),
                           child: _isUploading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Icon(Icons.edit, size: 17, color: Colors.black),
                         ),
                       ),
@@ -165,7 +155,6 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Form fields
               TextFormField(
                 initialValue: prenom,
                 decoration: const InputDecoration(labelText: "Prénom"),
@@ -202,12 +191,12 @@ class _ModifierProfilPageState extends State<ModifierProfilPage> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: genre.isNotEmpty ? genre : null,
+                value: ['homme', 'femme', 'autre'].contains(genre) ? genre : null,
                 decoration: const InputDecoration(labelText: "Genre"),
                 items: const [
-                  DropdownMenuItem(value: "Homme", child: Text("Homme")),
-                  DropdownMenuItem(value: "Femme", child: Text("Femme")),
-                  DropdownMenuItem(value: "Autre", child: Text("Autre")),
+                  DropdownMenuItem(value: "homme", child: Text("Homme")),
+                  DropdownMenuItem(value: "femme", child: Text("Femme")),
+                  DropdownMenuItem(value: "autre", child: Text("Autre")),
                 ],
                 onChanged: (v) => setState(() => genre = v ?? ""),
                 onSaved: (v) => genre = v ?? "",
