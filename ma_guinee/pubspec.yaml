@@ -13,7 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Carte & géolocalisation
-  flutter_map: ^6.1.0
+  flutter_map: ^6.2.1
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0
@@ -42,6 +42,13 @@ dependencies:
 
   # Pour afficher les images sur Flutter Web
   universal_html: ^2.2.4
+
+  # Image optimisée avec cache (ex: annonces, profils)
+  cached_network_image: ^3.3.1
+
+  # Compatibilité responsive web/mobile
+  flutter_svg: ^2.0.10
+  responsive_framework: ^1.1.1
 
 dev_dependencies:
   flutter_test:

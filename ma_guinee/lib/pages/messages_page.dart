@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
 import 'messages_annonce_page.dart';
@@ -141,8 +141,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final title = isAnnonce
                               ? (msg['annonce_titre']?.toString() ?? 'Annonce')
-                              : (msg['prestataire_name']?.toString() ??
-                                  'Prestataire');
+                              : 'Prestataire';
 
                           return ListTile(
                             leading: CircleAvatar(
@@ -200,32 +199,25 @@ class _MessagesPageState extends State<MessagesPage> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesAnnoncePage(
-                                      annonceId:
-                                          msg['annonce_id']?.toString() ?? '',
-                                      annonceTitre: msg['annonce_titre']
-                                              ?.toString() ??
-                                          'Annonce',
+                                      annonceId: msg['annonce_id']?.toString() ?? '',
+                                      annonceTitre: msg['annonce_titre']?.toString() ?? 'Annonce',
                                       receiverId: otherId,
                                       senderId: user.id,
                                     ),
                                   ),
-                                );
+                                ).then((_) => _loadConversations());
                               } else {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesPrestatairePage(
-                                      prestataireId:
-                                          msg['prestataire_id']?.toString() ??
-                                              '',
-                                      prestataireName: msg['prestataire_name']
-                                              ?.toString() ??
-                                          'Prestataire',
-                                      receiverId: otherId,
-                                      senderId: user.id,
+                                      prestataireId: msg['prestataire_id']?.toString() ?? '',
+                                       prestataireNom: msg['prestataire_name']?.toString() ?? 'Prestataire',
+                                         receiverId: otherId,
+                                          senderId: user.id,
                                     ),
                                   ),
-                                );
+                                ).then((_) => _loadConversations());
                               }
                             },
                             contentPadding: const EdgeInsets.symmetric(

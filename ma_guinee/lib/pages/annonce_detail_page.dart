@@ -1,18 +1,19 @@
-// lib/pages/annonce_detail_page.dart
-
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:ma_guinee/models/annonce_model.dart';
+import 'package:ma_guinee/pages/messages_annonce_page.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../models/annonce_model.dart';
-import '../providers/favoris_provider.dart';
-import 'messages_annonce_page.dart';
 
 class AnnonceDetailPage extends StatefulWidget {
   final AnnonceModel annonce;
+
   const AnnonceDetailPage({super.key, required this.annonce});
 
   @override
@@ -20,379 +21,296 @@ class AnnonceDetailPage extends StatefulWidget {
 }
 
 class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
-  int _currentImage = 0;
-  late final PageController _pageController;
+  int _currentImageIndex = 0;
+  Map<String, dynamic>? vendeur;
+
+  final Color bleuMaGuinee = const Color(0xFF1E3FCF); // ✅ couleur personnalisée
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
+    _chargerInfosVendeur();
   }
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
+  Future<void> _chargerInfosVendeur() async {
+    final data = await Supabase.instance.client
+        .from('utilisateurs')
+        .select()
+        .eq('id', widget.annonce.userId)
+        .maybeSingle();
+    if (mounted) {
+      setState(() => vendeur = data);
+    }
+  }
+
+  void _afficherImagePleine(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(0),
+        child: Stack(
+          children: [
+            PhotoViewGallery.builder(
+              itemCount: widget.annonce.images.length,
+              pageController: PageController(initialPage: index),
+              onPageChanged: (i) => setState(() => _currentImageIndex = i),
+              builder: (context, i) {
+                return PhotoViewGalleryPageOptions(
+                  imageProvider: NetworkImage(widget.annonce.images[i]),
+                  heroAttributes: PhotoViewHeroAttributes(tag: i),
+                );
+              },
+            ),
+            Positioned(
+              top: 40,
+              left: 20,
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageCarousel() {
+    return Stack(
+      children: [
+        GestureDetector(
+          onTap: () => _afficherImagePleine(_currentImageIndex),
+          child: SizedBox(
+            height: 250,
+            child: PageView.builder(
+              itemCount: widget.annonce.images.length,
+              onPageChanged: (index) =>
+                  setState(() => _currentImageIndex = index),
+              itemBuilder: (_, i) => Image.network(
+                widget.annonce.images[i],
+                fit: BoxFit.cover,
+                width: double.infinity,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 40,
+          left: 12,
+          child: CircleAvatar(
+            backgroundColor: Colors.black54,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 40,
+          right: 60,
+          child: CircleAvatar(
+            backgroundColor: Colors.black54,
+            child: IconButton(
+              icon: const Icon(Icons.share, color: Colors.white),
+              onPressed: () =>
+                  Share.share('Consulte cette annonce : ${widget.annonce.titre}'),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 40,
+          right: 12,
+          child: CircleAvatar(
+            backgroundColor: Colors.black54,
+            child: IconButton(
+              icon: Icon(
+                widget.annonce.estFavori
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                color: Colors.white,
+              ),
+              onPressed: () {
+                setState(() =>
+                    widget.annonce.estFavori = !widget.annonce.estFavori);
+              },
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: 12,
+          right: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_currentImageIndex + 1}/${widget.annonce.images.length}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBoutonsContact() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _boutonContact(
+          icon: Icons.message,
+          label: 'Contacter',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MessagesAnnoncePage(
+                  annonceId: widget.annonce.id,
+                  annonceTitre: widget.annonce.titre,
+                  receiverId: widget.annonce.userId,
+                  senderId: Supabase.instance.client.auth.currentUser!.id,
+                ),
+              ),
+            );
+          },
+        ),
+        _boutonContact(
+          icon: Icons.call,
+          label: 'Appeler',
+          onPressed: () =>
+              launchUrl(Uri.parse("tel:${widget.annonce.telephone}")),
+        ),
+        _boutonContact(
+          icon: FontAwesomeIcons.whatsapp,
+          label: 'WhatsApp',
+          onPressed: () =>
+              launchUrl(Uri.parse("https://wa.me/${widget.annonce.telephone}")),
+        ),
+      ],
+    );
+  }
+
+  Widget _boutonContact({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, color: Colors.white),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: bleuMaGuinee,
+        foregroundColor: Colors.white,
+      ),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildCarte() {
+    final hasCoords =
+        widget.annonce.latitude != null && widget.annonce.longitude != null;
+
+    if (!hasCoords) return const SizedBox();
+
+    return SizedBox(
+      height: 200,
+      child: FlutterMap(
+        options: MapOptions(
+          center: LatLng(widget.annonce.latitude!, widget.annonce.longitude!),
+          zoom: 13.0,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            subdomains: const ['a', 'b', 'c'],
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(widget.annonce.latitude!, widget.annonce.longitude!),
+                width: 40,
+                height: 40,
+                child: const Icon(Icons.location_on, color: Colors.red, size: 36),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVendeur() {
+    if (vendeur == null) return const SizedBox.shrink();
+
+    return ListTile(
+      leading: GestureDetector(
+        onTap: () {
+          showDialog(
+            context: context,
+            builder: (_) => Dialog(
+              child: Image.network(
+                vendeur!['photo_url'] ?? 'https://via.placeholder.com/150',
+                fit: BoxFit.cover,
+              ),
+            ),
+          );
+        },
+        child: CircleAvatar(
+          radius: 24,
+          backgroundImage: NetworkImage(
+            vendeur!['photo_url'] ?? 'https://via.placeholder.com/150',
+          ),
+        ),
+      ),
+      title: Text("${vendeur!['prenom']} ${vendeur!['nom']}"),
+      subtitle: Text(widget.annonce.ville),
+    );
+  }
+
+  Widget _buildAnnoncesSimilaires() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Text("Annonces similaires (à implémenter)",
+          style: TextStyle(fontWeight: FontWeight.bold)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final annonce = widget.annonce;
-    final favorisProvider = context.watch<FavorisProvider>();
-    final hasTel = annonce.telephone.isNotEmpty;
-    final isFavori = favorisProvider.estFavori(annonce.id);
-    final images = annonce.images;
-
-    Future<void> _toggleFavori() async {
-      await favorisProvider.toggleFavori(annonce.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            favorisProvider.estFavori(annonce.id)
-                ? "Ajouté aux favoris !"
-                : "Retiré des favoris.",
-          ),
-          duration: const Duration(milliseconds: 1000),
-        ),
-      );
-    }
-
-    Future<void> _call(String numero) async {
-      final uri = Uri.parse('tel:$numero');
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
-    }
-
-    Future<void> _whatsapp(String numero) async {
-      final cleanNumber = numero.replaceAll(RegExp(r'[^0-9+]'), '');
-      final uri = Uri.parse('https://wa.me/$cleanNumber');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    }
-
-    void _shareAnnonce() {
-      final a = annonce;
-      final message = '''
-📢 ${a.titre}
-
-${a.description}
-
-📍 Ville : ${a.ville}
-📂 Catégorie : ${a.categorie}
-📞 Téléphone : ${a.telephone}
-
-Partagé depuis l'app Ma Guinée 🇬🇳
-''';
-      Share.share(message);
-    }
-
-    void _ouvrirMessagerie() {
-      final a = annonce;
-      final currentUser = Supabase.instance.client.auth.currentUser;
-      if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez vous connecter pour échanger.")),
-        );
-        return;
-      }
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MessagesAnnoncePage(
-            annonceId: a.id,
-            receiverId: a.userId,
-            senderId: currentUser.id,
-            annonceTitre: a.titre,
-          ),
-        ),
-      );
-    }
-
-    final double carouselHeight = MediaQuery.of(context).size.width * 0.65;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FB),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
-        title: const Text(
-          "Détail de l'annonce",
-          style: TextStyle(
-            color: Color(0xFF113CFC),
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
-      ),
+      backgroundColor: Colors.grey.shade50,
       body: ListView(
-        padding: EdgeInsets.zero,
         children: [
-          // Bannière
-          Container(
-            width: double.infinity,
-            height: 94,
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(22)),
-              gradient: LinearGradient(
-                colors: [Color(0xFFCE1126), Color(0xFFFCD116)],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-            ),
-            child: Stack(
-              children: [
-                const Positioned(
-                  top: 17,
-                  left: 18,
-                  child: Text(
-                    "Ma Guinée",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-                const Positioned(
-                  top: 48,
-                  left: 18,
-                  child: Text(
-                    "Toutes les annonces, partout.",
-                    style: TextStyle(fontSize: 15, color: Colors.white),
-                  ),
-                ),
-                Positioned(
-                  right: 10,
-                  top: 7,
-                  child: Image.asset(
-                    'assets/guinee_map.png',
-                    height: 68,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Carousel
+          _buildImageCarousel(),
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
-            child: Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: images.isNotEmpty
-                      ? SizedBox(
-                          height: carouselHeight,
-                          width: double.infinity,
-                          child: PageView.builder(
-                            controller: _pageController,
-                            itemCount: images.length,
-                            onPageChanged: (index) =>
-                                setState(() => _currentImage = index),
-                            itemBuilder: (_, index) => Image.network(
-                              images[index],
-                              fit: BoxFit.contain,
-                              width: double.infinity,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey[300],
-                                child: const Icon(
-                                  Icons.image_not_supported,
-                                  size: 60,
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                      : Container(
-                          height: 210,
-                          width: double.infinity,
-                          color: Colors.grey[300],
-                          child:
-                              const Icon(Icons.image_not_supported, size: 60),
-                        ),
-                ),
-
-                if (images.length > 1)
-                  Positioned(
-                    bottom: 13,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        images.length,
-                        (index) => GestureDetector(
-                          onTap: () {
-                            _pageController.animateToPage(
-                              index,
-                              duration: const Duration(milliseconds: 320),
-                              curve: Curves.easeInOut,
-                            );
-                            setState(() => _currentImage = index);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: _currentImage == index ? 19 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _currentImage == index
-                                  ? const Color(0xFF113CFC)
-                                  : Colors.white.withOpacity(0.77),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(
-                                color: const Color(0xFF113CFC),
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                Positioned(
-                  bottom: 14,
-                  right: 14,
-                  child: GestureDetector(
-                    onTap: _toggleFavori,
-                    child: Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 3)],
-                      ),
-                      child: Icon(
-                        isFavori ? Icons.favorite : Icons.favorite_border,
-                        color: isFavori ? Colors.red : Colors.grey.shade600,
-                        size: 26,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Infos
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  annonce.titre,
-                  style: const TextStyle(
-                      fontSize: 21, fontWeight: FontWeight.bold),
-                ),
+                Text(widget.annonce.titre,
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Text(
-                  annonce.description,
-                  style:
-                      const TextStyle(fontSize: 15.5, color: Colors.black87),
-                ),
-                const SizedBox(height: 20),
-
-                if (annonce.prix > 0)
-                  Row(
-                    children: [
-                      const Icon(Icons.attach_money,
-                          color: Color(0xFF113CFC)),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Prix : ${annonce.prix.toStringAsFixed(0)} ${annonce.devise.isNotEmpty ? annonce.devise : "GNF"}",
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF113CFC),
-                            fontSize: 16),
-                      ),
-                    ],
-                  ),
-                if (annonce.prix > 0) const SizedBox(height: 10),
-
-                Row(
-                  children: [
-                    const Icon(Icons.category, color: Color(0xFFFCD116)),
-                    const SizedBox(width: 8),
-                    Text("Catégorie : ${annonce.categorie}"),
-                  ],
-                ),                
+                Text('${widget.annonce.prix.toInt()} ${widget.annonce.devise} • ${widget.annonce.ville}',
+                    style: const TextStyle(fontSize: 16, color: Colors.black54)),
+                const SizedBox(height: 16),
+                Text(widget.annonce.description),
+                const SizedBox(height: 16),
+                _buildBoutonsContact(),
+                const SizedBox(height: 24),
+                const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on,
-                        color: Color(0xFF009460)),
-                    const SizedBox(width: 8),
-                    Text("Ville : ${annonce.ville}"),
-                  ],
-                ),
-                const SizedBox(height: 22),
-
-                // Actions: Call, WhatsApp, Chat
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.phone,
-                          color: Color(0xFF009460)),
-                      tooltip: "Appeler",
-                      onPressed:
-                          hasTel ? () => _call(annonce.telephone) : null,
-                    ),
-                    IconButton(
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp,
-                          color: Color(0xFF25D366)),
-                      tooltip: "WhatsApp",
-                      onPressed:
-                          hasTel ? () => _whatsapp(annonce.telephone) : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.chat_bubble_outline,
-                            size: 20),
-                        label: const Text("Échanger"),
-                        onPressed: _ouvrirMessagerie,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color(0xFF113CFC),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12, horizontal: 6),
-                          shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(14)),
-                          elevation: 0,
-                          textStyle: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
-
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _shareAnnonce,
-                    icon: const Icon(Icons.share),
-                    label: const Text("Partager l’annonce"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFCE1126),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 28, vertical: 13),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(17)),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
+                _buildCarte(),
+                const SizedBox(height: 24),
+                const Text("Vendu par", style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildVendeur(),
+                _buildAnnoncesSimilaires(),
               ],
             ),
           ),

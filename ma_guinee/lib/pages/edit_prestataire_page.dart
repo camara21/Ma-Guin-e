@@ -23,11 +23,11 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
   @override
   void initState() {
     super.initState();
-    jobController = TextEditingController(text: widget.prestataire['job'] ?? '');
-    villeController = TextEditingController(text: widget.prestataire['city'] ?? '');
+    jobController = TextEditingController(text: widget.prestataire['job'] ?? widget.prestataire['metier'] ?? '');
+    villeController = TextEditingController(text: widget.prestataire['city'] ?? widget.prestataire['ville'] ?? '');
     phoneController = TextEditingController(text: widget.prestataire['phone'] ?? '');
     descriptionController = TextEditingController(text: widget.prestataire['description'] ?? '');
-    _imageUrl = widget.prestataire['image'] ?? '';
+    _imageUrl = widget.prestataire['image'] ?? widget.prestataire['photo_url'] ?? '';
   }
 
   @override
@@ -37,6 +37,60 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
     phoneController.dispose();
     descriptionController.dispose();
     super.dispose();
+  }
+
+  String _categoryForJob(String? job) {
+    if (job == null) return '';
+    final Map<String, List<String>> categories = {
+      'Artisans & BTP': [
+        'Maçon', 'Plombier', 'Électricien', 'Soudeur', 'Charpentier',
+        'Couvreur', 'Peintre en bâtiment', 'Mécanicien', 'Menuisier',
+        'Vitrier', 'Tôlier', 'Carreleur', 'Poseur de fenêtres/portes', 'Ferrailleur',
+      ],
+      'Beauté & Bien-être': [
+        'Coiffeur / Coiffeuse', 'Esthéticienne', 'Maquilleuse',
+        'Barbier', 'Masseuse', 'Spa thérapeute', 'Onglerie / Prothésiste ongulaire',
+      ],
+      'Couture & Mode': [
+        'Couturier / Couturière', 'Styliste / Modéliste', 'Brodeur / Brodeuse',
+        'Teinturier', 'Designer textile',
+      ],
+      'Alimentation': [
+        'Cuisinier', 'Traiteur', 'Boulanger', 'Pâtissier',
+        'Vendeur de fruits/légumes', 'Marchand de poisson', 'Restaurateur',
+      ],
+      'Transport & Livraison': [
+        'Chauffeur particulier', 'Taxi-moto', 'Taxi-brousse',
+        'Livreur', 'Transporteur',
+      ],
+      'Services domestiques': [
+        'Femme de ménage', 'Nounou', 'Agent d’entretien',
+        'Gardiennage', 'Blanchisserie',
+      ],
+      'Services professionnels': [
+        'Secrétaire', 'Traducteur', 'Comptable',
+        'Consultant', 'Notaire',
+      ],
+      'Éducation & formation': [
+        'Enseignant', 'Tuteur', 'Formateur',
+        'Professeur particulier', 'Coach scolaire',
+      ],
+      'Santé & Bien-être': [
+        'Infirmier', 'Docteur', 'Kinésithérapeute',
+        'Psychologue', 'Pharmacien', 'Médecine traditionnelle',
+      ],
+      'Technologies & Digital': [
+        'Développeur / Développeuse', 'Ingénieur logiciel', 'Data Scientist',
+        'Développeur mobile', 'Designer UI/UX', 'Administrateur systèmes',
+        'Chef de projet IT', 'Technicien réseau', 'Analyste sécurité',
+        'Community Manager', 'Growth Hacker', 'Webmaster', 'DevOps Engineer',
+      ],
+    };
+
+    for (final e in categories.entries) {
+      if (e.value.contains(job)) return e.key;
+    }
+    return '';
   }
 
   Future<void> _pickImageAndUpload() async {
@@ -58,7 +112,6 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
 
       final bytes = await picked.readAsBytes();
 
-      // Supabase v2 : uploadBinary renvoie l'URL ou lève une exception
       await supabase.storage.from('prestataires').uploadBinary(
         filePath,
         bytes,
@@ -67,7 +120,6 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
 
       final publicUrl = supabase.storage.from('prestataires').getPublicUrl(filePath);
 
-      // Met à jour la photo dans la base de données prestataire
       await supabase
           .from('prestataires')
           .update({'image': publicUrl})
@@ -92,10 +144,12 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
   Future<void> _save() async {
     final supabase = Supabase.instance.client;
     final prestataireId = widget.prestataire['id'];
+    final job = jobController.text.trim();
 
     try {
       await supabase.from('prestataires').update({
-        'job': jobController.text.trim(),
+        'job': job,
+        'category': _categoryForJob(job), // 💡 ajout ici
         'city': villeController.text.trim(),
         'phone': phoneController.text.trim(),
         'description': descriptionController.text.trim(),
@@ -105,7 +159,7 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Profil prestataire mis à jour avec succès !")),
       );
-      Navigator.pop(context, true); // Retourne true pour signaler succès
+      Navigator.pop(context, true);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur lors de la sauvegarde : $e")),
@@ -128,7 +182,7 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
               final prestataireId = widget.prestataire['id'];
               try {
                 await supabase.from('prestataires').delete().eq('id', prestataireId);
-                Navigator.pop(context, true); // Retour succès suppression
+                Navigator.pop(context, true);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Prestataire supprimé.")),
                 );

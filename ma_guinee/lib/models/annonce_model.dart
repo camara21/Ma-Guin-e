@@ -12,6 +12,8 @@ class AnnonceModel {
   final String telephone;
   final List<String> images;
   final String devise;
+  final double? latitude;     // ✅ Ajout latitude
+  final double? longitude;    // ✅ Ajout longitude
   bool estFavori;
 
   AnnonceModel({
@@ -26,16 +28,16 @@ class AnnonceModel {
     required this.telephone,
     required this.images,
     this.devise = 'GNF',
+    this.latitude,
+    this.longitude,
     this.estFavori = false,
   });
 
-  /// Helper pour parser un double
   static double _toDouble(dynamic v, [double fallback = 0]) {
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '') ?? fallback;
-    }
+  }
 
-  /// Helper pour parser une liste d’images
   static List<String> _toImages(dynamic raw) {
     if (raw is List) {
       return raw.map((e) => e.toString()).toList();
@@ -64,6 +66,8 @@ class AnnonceModel {
         telephone: json['telephone'] ?? '',
         images: _toImages(json['images']),
         devise: json['devise'] ?? 'GNF',
+        latitude: json['latitude'] != null ? _toDouble(json['latitude']) : null,      // ✅
+        longitude: json['longitude'] != null ? _toDouble(json['longitude']) : null,   // ✅
         estFavori: json['estFavori'] == true,
       );
 
@@ -79,10 +83,11 @@ class AnnonceModel {
         'telephone': telephone,
         'images': images,
         'devise': devise,
+        'latitude': latitude,
+        'longitude': longitude,
         'estFavori': estFavori,
       };
 
-  /// Copie modifiable
   AnnonceModel copyWith({
     String? id,
     String? userId,
@@ -95,6 +100,8 @@ class AnnonceModel {
     String? telephone,
     List<String>? images,
     String? devise,
+    double? latitude,
+    double? longitude,
     bool? estFavori,
   }) {
     return AnnonceModel(
@@ -109,6 +116,8 @@ class AnnonceModel {
       telephone: telephone ?? this.telephone,
       images: images ?? this.images,
       devise: devise ?? this.devise,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       estFavori: estFavori ?? this.estFavori,
     );
   }
