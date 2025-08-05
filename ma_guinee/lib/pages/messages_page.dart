@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart'; 
+import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
 import 'messages_annonce_page.dart';
@@ -6,223 +7,213 @@ import 'messages_prestataire_page.dart';
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
-
   @override
   State<MessagesPage> createState() => _MessagesPageState();
 }
 
 class _MessagesPageState extends State<MessagesPage> {
-  final TextEditingController _searchController = TextEditingController();
+  final _searchCtrl = TextEditingController();
   final MessageService _messageService = MessageService();
-
   List<Map<String, dynamic>> _conversations = [];
+  Map<String, Map<String, dynamic>> _utilisateurs = {}; // id -> {nom, prenom}
   bool _loading = true;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
     _loadConversations();
+    _listenRealtime();
   }
 
   Future<void> _loadConversations() async {
-    setState(() => _loading = true);
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      setState(() {
-        _conversations = [];
-        _loading = false;
-      });
-      return;
-    }
+    if (user == null) return;
 
-    try {
-      final data = await _messageService.fetchUserConversations(user.id);
+    setState(() => _loading = true);
 
-      final Map<String, Map<String, dynamic>> mapConv = {};
-      for (var msg in data) {
-        final senderId = msg['sender_id']?.toString() ?? '';
-        final receiverId = msg['receiver_id']?.toString() ?? '';
-        final otherId = senderId == user.id ? receiverId : senderId;
-        final contexte = msg['contexte']?.toString() ?? '';
-        final annonceId = msg['annonce_id']?.toString() ?? '';
-        final prestataireId = msg['prestataire_id']?.toString() ?? '';
+    final messages = await _messageService.fetchUserConversations(user.id);
 
-        final key = '$contexte|$otherId|$annonceId|$prestataireId';
-        final existing = mapConv[key];
-        final dateEnvoi = DateTime.tryParse(msg['date_envoi']?.toString() ?? '');
-        final existingDate = existing != null
-            ? DateTime.tryParse(existing['date_envoi']?.toString() ?? '')
-            : null;
+    final Map<String, Map<String, dynamic>> grouped = {};
+    final Set<String> participantIds = {};
+    for (final msg in messages) {
+      final otherId = (msg['sender_id'] == user.id) ? msg['receiver_id'] : msg['sender_id'];
+      final key = [
+        msg['contexte'],
+        msg['annonce_id'] ?? msg['prestataire_id'],
+        otherId,
+      ].join('-');
+      participantIds.add(otherId);
 
-        if (existing == null ||
-            (dateEnvoi != null && existingDate != null && dateEnvoi.isAfter(existingDate))) {
-          mapConv[key] = msg;
-        }
+      final existing = grouped[key];
+      if (existing == null ||
+          DateTime.parse(msg['date_envoi']).isAfter(DateTime.parse(existing['date_envoi']))) {
+        grouped[key] = msg;
       }
-
-      setState(() {
-        _conversations = mapConv.values.toList();
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _conversations = [];
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur chargement conversations : $e")),
-      );
     }
+
+    if (participantIds.isNotEmpty) {
+      final users = await Supabase.instance.client
+          .from('utilisateurs')
+          .select('id, nom, prenom')
+          .inFilter('id', participantIds.toList());
+
+      _utilisateurs = { for (var u in users) u['id']: u };
+    }
+
+    setState(() {
+      _conversations = grouped.values.toList();
+      _loading = false;
+    });
+  }
+
+  void _listenRealtime() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    _channel = Supabase.instance.client
+        .channel('messages_publication')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) {
+            if (mounted) _loadConversations();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) {
+            if (mounted) _loadConversations();
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-    final search = _searchController.text.toLowerCase();
-    final filtered = _conversations.where((msg) {
-      return (msg['contenu']?.toString().toLowerCase() ?? '')
-          .contains(search);
+    final filter = _searchCtrl.text.toLowerCase();
+
+    final list = _conversations.where((m) {
+      final contenu = (m['contenu'] ?? '').toString().toLowerCase();
+      return contenu.contains(filter);
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
       appBar: AppBar(
-        title: const Text(
-          "Messages",
-          style: TextStyle(
-            color: Color(0xFF113CFC),
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text("Messages", style: TextStyle(color: Color(0xFF113CFC))),
         backgroundColor: Colors.white,
-        elevation: 0.7,
         iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        elevation: 1,
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+            padding: const EdgeInsets.all(8),
             child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Rechercher...',
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF113CFC)),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                filled: true,
-                fillColor: const Color(0xFFF4F4F6),
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 0, horizontal: 14),
+              controller: _searchCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Rechercher…',
+                prefixIcon: Icon(Icons.search, color: Color(0xFF113CFC)),
+                border: OutlineInputBorder(),
               ),
               onChanged: (_) => setState(() {}),
             ),
           ),
-          const SizedBox(height: 8),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : filtered.isEmpty
+                : list.isEmpty
                     ? const Center(child: Text("Aucune conversation."))
                     : ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(indent: 80, endIndent: 15, height: 2),
-                        itemBuilder: (context, i) {
-                          final msg = filtered[i];
-                          final contexte = msg['contexte']?.toString() ?? '';
-                          final isAnnonce = contexte == 'annonce';
-                          final senderId = msg['sender_id']?.toString() ?? '';
-                          final receiverId = msg['receiver_id']?.toString() ?? '';
-                          final otherId = senderId == user!.id ? receiverId : senderId;
-                          final preview = msg['contenu']?.toString() ?? '';
-                          final dateStr = msg['date_envoi']?.toString() ?? '';
-                          final unread = msg['lu'] == false;
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemBuilder: (ctx, i) {
+                          final m = list[i];
+                          final isAnnonce = m['contexte'] == 'annonce';
+                          final isUnread = m['lu'] == false &&
+                              m['receiver_id'] == user?.id;
 
-                          final title = isAnnonce
-                              ? (msg['annonce_titre']?.toString() ?? 'Annonce')
-                              : 'Prestataire';
+                          final otherId = (m['sender_id'] == user?.id)
+                              ? m['receiver_id']
+                              : m['sender_id'];
+
+                          final utilisateur = _utilisateurs[otherId];
+                          final title = utilisateur != null
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
+                              : (isAnnonce ? "Annonceur" : "Prestataire");
+
+                          final subtitle = m['contenu'] ?? '';
+                          final date = m['date_envoi']?.toString().split('T').first ?? '';
 
                           return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: isAnnonce
-                                  ? const Color(0xFF113CFC)
-                                  : const Color(0xFFCE1126),
-                              child: Icon(
-                                isAnnonce ? Icons.campaign : Icons.engineering,
-                                color: Colors.white,
-                              ),
-                            ),
-                            title: Row(
+                            leading: Stack(
                               children: [
-                                Expanded(
-                                  child: Text(
-                                    title,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16),
+                                CircleAvatar(
+                                  backgroundColor: isAnnonce
+                                      ? const Color(0xFF113CFC)
+                                      : const Color(0xFFCE1126),
+                                  child: Icon(
+                                    isAnnonce ? Icons.campaign : Icons.engineering,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                Text(
-                                  dateStr.split("T").first,
-                                  style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            subtitle: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (unread)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    width: 9,
-                                    height: 9,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFFCE1126),
-                                      shape: BoxShape.circle,
+                                if (isUnread)
+                                  const Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: CircleAvatar(
+                                      radius: 6,
+                                      backgroundColor: Colors.red,
                                     ),
                                   ),
                               ],
                             ),
-                            onTap: () {
+                            title: Text(title),
+                            subtitle: Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Text(date, style: const TextStyle(fontSize: 12)),
+                            onTap: () async {
                               if (isAnnonce) {
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesAnnoncePage(
-                                      annonceId: msg['annonce_id']?.toString() ?? '',
-                                      annonceTitre: msg['annonce_titre']?.toString() ?? 'Annonce',
+                                      annonceId: m['annonce_id'],
+                                      annonceTitre: title,
                                       receiverId: otherId,
-                                      senderId: user.id,
+                                      senderId: user!.id,
                                     ),
                                   ),
-                                ).then((_) => _loadConversations());
+                                );
                               } else {
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => MessagesPrestatairePage(
-                                      prestataireId: msg['prestataire_id']?.toString() ?? '',
-                                       prestataireNom: msg['prestataire_name']?.toString() ?? 'Prestataire',
-                                         receiverId: otherId,
-                                          senderId: user.id,
+                                      prestataireId: m['prestataire_id'],
+                                      prestataireNom: title,
+                                      receiverId: otherId,
+                                      senderId: user!.id,
                                     ),
                                   ),
-                                ).then((_) => _loadConversations());
+                                );
                               }
+                              _loadConversations();
                             },
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 15, vertical: 4),
-                            minVerticalPadding: 8,
                           );
                         },
                       ),

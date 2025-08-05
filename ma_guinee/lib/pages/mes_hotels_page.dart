@@ -18,15 +18,13 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
   @override
   void initState() {
     super.initState();
-    _hotels = List.from(widget.hotels);
+    _hotels = List<Map<String, dynamic>>.from(widget.hotels);
   }
 
   Future<void> _supprimerHotel(Map<String, dynamic> hotel) async {
     final supabase = Supabase.instance.client;
     final id = hotel['id'];
-    final List<String> images = hotel['images'] is List
-        ? List<String>.from(hotel['images'])
-        : [];
+    final List<String> images = hotel['images'] is List ? List<String>.from(hotel['images']) : [];
 
     try {
       // 🔥 Supprimer les images dans le bucket Supabase
@@ -44,25 +42,34 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Hôtel supprimé")),
+        const SnackBar(content: Text("Hôtel supprimé avec succès !")),
       );
     } catch (e) {
       debugPrint("Erreur suppression hôtel: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur lors de la suppression")),
+        SnackBar(content: Text("Erreur lors de la suppression : $e")),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bleuMaGuinee = const Color(0xFF113CFC);
+    final jauneMaGuinee = const Color(0xFFFCD116);
+    final vertMaGuinee = const Color(0xFF009460);
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Mes hôtels"),
-        backgroundColor: Colors.teal.shade700,
-        foregroundColor: Colors.white,
+        title: const Text("Mes hôtels", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: bleuMaGuinee,
+        elevation: 1,
+        iconTheme: IconThemeData(color: bleuMaGuinee),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: bleuMaGuinee,
+        foregroundColor: Colors.white,
         onPressed: () {
           Navigator.pushNamed(context, AppRoutes.inscriptionHotel)
               .then((_) => setState(() {}));
@@ -71,36 +78,39 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
         label: const Text("Ajouter"),
       ),
       body: _hotels.isEmpty
-          ? const Center(child: Text("Aucun hôtel trouvé."))
+          ? Center(
+              child: Text(
+                "Aucun hôtel trouvé.",
+                style: TextStyle(color: Colors.grey[700], fontSize: 17),
+              ),
+            )
           : ListView.builder(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               itemCount: _hotels.length,
               itemBuilder: (context, index) {
                 final hotel = _hotels[index];
-                final List<String> images = hotel['images'] is List
-                    ? List<String>.from(hotel['images'])
-                    : [];
+                final List<String> images = hotel['images'] is List ? List<String>.from(hotel['images']) : [];
                 final image = images.isNotEmpty
                     ? images.first
                     : 'https://via.placeholder.com/150';
 
                 return Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  color: jauneMaGuinee.withOpacity(0.07),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   margin: const EdgeInsets.only(bottom: 16),
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundImage: NetworkImage(image),
-                      radius: 26,
+                      radius: 27,
+                      backgroundColor: jauneMaGuinee,
                     ),
                     title: Text(
                       hotel['nom'] ?? "Sans nom",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee),
                     ),
                     subtitle: Text(
                       '${hotel['adresse'] ?? "Adresse"} • ${hotel['ville'] ?? "Ville"}',
-                      style: const TextStyle(color: Colors.grey),
+                      style: TextStyle(color: Colors.grey[800]),
                     ),
                     trailing: PopupMenuButton<String>(
                       onSelected: (value) async {
@@ -110,24 +120,22 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                             AppRoutes.inscriptionHotel,
                             arguments: hotel,
                           );
-                          setState(() {}); // Mise à jour après modification
+                          setState(() {});
                         } else if (value == 'supprimer') {
                           final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
-                                  title: const Text("Confirmer la suppression"),
+                                  title: const Text("Confirmation"),
                                   content: const Text(
-                                      "Voulez-vous vraiment supprimer cet hôtel ?"),
+                                      "Voulez-vous vraiment supprimer cet hôtel ?\nCette action est irréversible."),
                                   actions: [
                                     TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, false),
+                                      onPressed: () => Navigator.pop(ctx, false),
                                       child: const Text("Annuler"),
                                     ),
-                                    ElevatedButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, true),
-                                      child: const Text("Supprimer"),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
                                     ),
                                   ],
                                 ),
@@ -140,13 +148,25 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                         }
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'modifier',
-                          child: Text("Modifier"),
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, color: bleuMaGuinee),
+                              const SizedBox(width: 8),
+                              const Text("Modifier"),
+                            ],
+                          ),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'supprimer',
-                          child: Text("Supprimer"),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.delete, color: Colors.red),
+                              const SizedBox(width: 8),
+                              const Text("Supprimer"),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -154,8 +174,7 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              HotelDetailPage(hotelId: hotel['id']),
+                          builder: (_) => HotelDetailPage(hotelId: hotel['id']),
                         ),
                       );
                     },

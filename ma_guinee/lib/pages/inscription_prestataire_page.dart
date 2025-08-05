@@ -79,6 +79,13 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
     return '';
   }
 
+  /// Nettoie le nom du fichier pour Supabase Storage (pas d’espace, accent, etc)
+  String _cleanFileName(String name) {
+    return name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\d\-_\.]'), '_'); // autorise . - _ et alphanum
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final res = await picker.pickImage(source: ImageSource.gallery, imageQuality: 72);
@@ -93,7 +100,9 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
       final supa = Supabase.instance.client;
       final uid = context.read<UserProvider>().utilisateur!.id;
 
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name.replaceAll(' ', '_')}';
+      // Nettoyage du nom de fichier et chemin dossier
+      final cleanFileName = _cleanFileName(file.name);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$cleanFileName';
       final storagePath = '$uid/$fileName';
 
       final storage = supa.storage.from(_bucket);

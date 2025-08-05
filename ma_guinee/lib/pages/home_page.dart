@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/user_provider.dart';
+import 'cgu_bottom_sheet.dart';
+import '../services/message_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -10,36 +13,73 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // ⛔️ SUPPRIME le initState : pas de redirection ici !
+  int _notificationsNonLues = 0;
+  int _messagesNonLus = 0;
 
-  // Fonction pour l’icône messages stylée
-  Widget buildStyledMessageIcon() {
+  @override
+  void initState() {
+    super.initState();
+    _verifierCGU();
+    _ecouterNotifications();
+    _chargerMessagesNonLus();
+  }
+
+  Future<void> _verifierCGU() async {
+    final utilisateur = context.read<UserProvider>().utilisateur;
+    if (utilisateur != null && utilisateur.cguAccepte != true) {
+      Future.delayed(Duration.zero, () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (_) => const CGUBottomSheet(),
+        );
+      });
+    }
+  }
+
+  void _ecouterNotifications() {
+    final user = context.read<UserProvider>().utilisateur;
+    if (user == null) return;
+
+    Supabase.instance.client
+        .from('notifications:utilisateur_id=eq.${user.id}')
+        .stream(primaryKey: ['id'])
+        .listen((data) {
+      final nonLues = data.where((n) => n['lu'] != true).toList();
+      setState(() {
+        _notificationsNonLues = nonLues.length;
+      });
+    });
+  }
+
+  Future<void> _chargerMessagesNonLus() async {
+    final user = context.read<UserProvider>().utilisateur;
+    if (user == null) return;
+
+    final count = await MessageService().getUnreadMessagesCount(user.id);
+    setState(() {
+      _messagesNonLus = count;
+    });
+  }
+
+  Widget buildIcon(IconData iconData, Color color) {
     return Container(
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFFCE1126), // Rouge
-            Color(0xFFFCD116), // Jaune
-            Color(0xFF009460), // Vert
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.18),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.grey.shade300,
+            blurRadius: 7,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
-      child: const Icon(
-        Icons.forum_rounded,
-        color: Colors.white,
-        size: 34,
-      ),
+      padding: const EdgeInsets.all(22),
+      child: Icon(iconData, color: color, size: 44),
     );
   }
 
@@ -48,36 +88,18 @@ class _HomePageState extends State<HomePage> {
     final utilisateur = Provider.of<UserProvider>(context).utilisateur;
 
     if (utilisateur == null) {
-      // ✅ Redirection unique ici (ça suffit largement)
       Future.microtask(() => Navigator.pushReplacementNamed(context, '/login'));
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    Widget buildIcon(IconData iconData, Color color) {
-      return Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.shade300,
-              blurRadius: 6,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Icon(iconData, color: color, size: 38),
-      );
-    }
-
-    // Responsive grid setup
     final width = MediaQuery.of(context).size.width;
     int crossAxisCount = 3;
-    double childAspectRatio = 1;
+    double childAspectRatio = 1.03;
+    double spacing = 6;
     if (width > 600) {
       crossAxisCount = 6;
-      childAspectRatio = 1.1;
+      childAspectRatio = 1.18;
+      spacing = 10;
     }
 
     return Scaffold(
@@ -95,21 +117,49 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
-          // Icône notification
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Color(0xFFCE1126)),
-            onPressed: () {
-              Navigator.pushNamed(context, '/notifications');
-            },
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0, right: 4),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications, color: Color(0xFFCE1126)),
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/notifications');
+                  },
+                ),
+                if (_notificationsNonLues > 0)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        _notificationsNonLues.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          // Icône point d'interrogation
-          IconButton(
-            icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
-            onPressed: () {
-              Navigator.pushNamed(context, '/aide');
-            },
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0, right: 12),
+            child: IconButton(
+              icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
+              onPressed: () {
+                Navigator.pushNamed(context, '/aide');
+              },
+            ),
           ),
-          const SizedBox(width: 6),
         ],
       ),
       body: SingleChildScrollView(
@@ -117,7 +167,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Nouvelle bannière Ma Guinée
+            // Bannière
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -139,7 +189,6 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Stack(
                 children: [
-                  // Effet lumière
                   Positioned(
                     right: 10,
                     top: -30,
@@ -158,7 +207,6 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
-                  // Carte de la Guinée + badge
                   Positioned(
                     right: 18,
                     top: 20,
@@ -166,7 +214,7 @@ class _HomePageState extends State<HomePage> {
                       alignment: Alignment.topRight,
                       children: [
                         Image.asset(
-                          'assets/guinee_map.png',
+                          'assets/logo_guinee.png',
                           height: 90,
                           fit: BoxFit.contain,
                         ),
@@ -179,10 +227,7 @@ class _HomePageState extends State<HomePage> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 6,
-                                ),
+                                BoxShadow(color: Colors.black12, blurRadius: 6),
                               ],
                             ),
                             child: const Text(
@@ -198,7 +243,6 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
-                  // Titre
                   const Positioned(
                     top: 29,
                     left: 26,
@@ -208,17 +252,10 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 34,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black26,
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
+                        shadows: [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
                       ),
                     ),
                   ),
-                  // Sous-titre
                   const Positioned(
                     top: 75,
                     left: 26,
@@ -228,13 +265,7 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 16,
                         color: Colors.white,
                         fontWeight: FontWeight.w400,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black12,
-                            blurRadius: 6,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
+                        shadows: [Shadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 1))],
                       ),
                     ),
                   ),
@@ -242,146 +273,43 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Grille de services
+            // Grille des services
             GridView.count(
               crossAxisCount: crossAxisCount,
               childAspectRatio: childAspectRatio,
               shrinkWrap: true,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/annonces'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.campaign, const Color(0xFFCE1126)),
-                      const SizedBox(height: 6),
-                      const Text("Annonces", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/prestataires'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.engineering, const Color(0xFFFCD116)),
-                      const SizedBox(height: 6),
-                      const Text("Prestataires", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/administratif'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.account_balance, const Color(0xFF009460)),
-                      const SizedBox(height: 6),
-                      const Text("Services Admin", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/restos'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.restaurant, const Color(0xFFFCD116)),
-                      const SizedBox(height: 6),
-                      const Text("Restaurants", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/culte'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.mosque, const Color(0xFF009460)),
-                      const SizedBox(height: 6),
-                      const Text("Lieux de culte", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/divertissement'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.theaters, const Color(0xFFCE1126)),
-                      const SizedBox(height: 6),
-                      const Text("Divertissement", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/tourisme'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.museum, const Color(0xFF009460)),
-                      const SizedBox(height: 6),
-                      const Text("Tourisme", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/sante'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.local_hospital, const Color(0xFFFCD116)),
-                      const SizedBox(height: 6),
-                      const Text("Santé", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/hotels'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.hotel, const Color(0xFFCE1126)),
-                      const SizedBox(height: 6),
-                      const Text("Hôtels", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                // Favoris
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/favoris'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildIcon(Icons.star, const Color(0xFF009460)),
-                      const SizedBox(height: 6),
-                      const Text("Favoris", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-                // Messages stylé (après Favoris)
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/messages'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      buildStyledMessageIcon(),
-                      const SizedBox(height: 6),
-                      const Text(
-                        "Messages",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
+                _serviceTile(Icons.campaign, "Annonces", '/annonces', const Color(0xFFCE1126)),
+                _serviceTile(Icons.engineering, "Prestataires", '/prestataires', const Color(0xFFFCD116)),
+                _serviceTile(Icons.account_balance, "Services Admin", '/administratif', const Color(0xFF009460)),
+                _serviceTile(Icons.restaurant, "Restaurants", '/restos', const Color(0xFFFCD116)),
+                _serviceTile(Icons.mosque, "Lieux de culte", '/culte', const Color(0xFF009460)),
+                _serviceTile(Icons.theaters, "Divertissement", '/divertissement', const Color(0xFFCE1126)),
+                _serviceTile(Icons.museum, "Tourisme", '/tourisme', const Color(0xFF009460)),
+                _serviceTile(Icons.local_hospital, "Santé", '/sante', const Color(0xFFFCD116)),
+                _serviceTile(Icons.hotel, "Hôtels", '/hotels', const Color(0xFFCE1126)),
+                _serviceTile(Icons.star, "Favoris", '/favoris', const Color(0xFF009460)),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _serviceTile(IconData icon, String label, String route, Color color) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildIcon(icon, color),
+          const SizedBox(height: 6),
+          Text(label, textAlign: TextAlign.center),
+        ],
       ),
     );
   }

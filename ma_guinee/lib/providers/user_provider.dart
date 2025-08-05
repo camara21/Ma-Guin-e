@@ -48,6 +48,7 @@ class UserProvider extends ChangeNotifier {
 
       final data = Map<String, dynamic>.from(profil);
 
+      // 🔄 Ajout des espaces liés
       data['espacePrestataire'] = await _getEspace(
         table: 'prestataires',
         fkColumn: 'utilisateur_id',
@@ -72,6 +73,7 @@ class UserProvider extends ChangeNotifier {
         userId: authUser.id,
       );
 
+      // ✅ Création du modèle utilisateur avec CGU
       _utilisateur = UtilisateurModel.fromJson(data);
 
       debugPrint("💡 Restos : ${_utilisateur?.restos}");

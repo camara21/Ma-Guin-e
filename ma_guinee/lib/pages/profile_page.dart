@@ -112,7 +112,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.grey[200],
                         backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
                             ? NetworkImage(_photoUrl!)
-                            : const AssetImage('assets/avatar.png') as ImageProvider,
+                            : const AssetImage('assets/deault_avatar.png') as ImageProvider,
                         child: (_photoUrl == null || _photoUrl!.isEmpty)
                             ? const Icon(Icons.person, size: 40, color: Colors.grey)
                             : null,

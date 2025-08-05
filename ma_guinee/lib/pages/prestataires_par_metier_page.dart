@@ -73,47 +73,38 @@ class PrestatairesParMetierPage extends StatelessWidget {
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFCF7FB),
+      backgroundColor: const Color(0xFFF8F6F9),
       appBar: AppBar(
         title: Text(
           'Prestataires : $metier',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF113CFC)),
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.black87),
+        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
         elevation: 0.8,
       ),
       body: filtres.isEmpty
           ? const Center(child: Text("Aucun prestataire trouvé."))
-          : ListView.builder(
+          : Padding(
               padding: const EdgeInsets.all(12),
-              itemCount: filtres.length,
-              itemBuilder: (_, i) {
-                final p = filtres[i];
-                final nom = (p['nom'] ?? p['name'] ?? '').toString();
-                final ville = (p['ville'] ?? p['city'] ?? '').toString();
-                final photo = (p['photo_url'] ?? p['image'] ?? '').toString();
-                final metier = (p['metier'] ?? '').toString();
-                final category = p['category'] ?? _categoryForJob(metier);
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2, // 1 pour mobile, 2+ pour web/tablette
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.80,
+                ),
+                itemCount: filtres.length,
+                itemBuilder: (_, i) {
+                  final p = filtres[i];
+                  final nom = (p['nom'] ?? p['name'] ?? '').toString();
+                  final ville = (p['ville'] ?? p['city'] ?? '').toString();
+                  final photo = (p['photo_url'] ?? p['image'] ?? '').toString();
+                  final metier = (p['metier'] ?? '').toString();
+                  final category = p['category'] ?? _categoryForJob(metier);
 
-                return Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  color: Colors.purple.shade50,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      radius: 26,
-                      backgroundImage: photo.isNotEmpty
-                          ? NetworkImage(photo)
-                          : const AssetImage('assets/avatar.png') as ImageProvider,
-                    ),
-                    title: Text(
-                      nom.isEmpty ? metier : nom,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text('$category • $ville'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.green),
+                  return GestureDetector(
                     onTap: () {
                       Navigator.push(
                         context,
@@ -122,9 +113,62 @@ class PrestatairesParMetierPage extends StatelessWidget {
                         ),
                       );
                     },
-                  ),
-                );
-              },
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      color: Colors.white,
+                      clipBehavior: Clip.hardEdge,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 11,
+                            child: photo.isNotEmpty
+                                ? Image.network(photo, fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Colors.grey[200],
+                                      alignment: Alignment.center,
+                                      child: const Icon(Icons.person, size: 40, color: Colors.grey),
+                                    ),
+                                  )
+                                : Container(
+                                    color: Colors.grey[200],
+                                    alignment: Alignment.center,
+                                    child: const Icon(Icons.person, size: 40, color: Colors.grey),
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  nom.isEmpty ? metier : nom,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  category,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  ville,
+                                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
     );
   }

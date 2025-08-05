@@ -47,7 +47,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     Future.delayed(Duration.zero, () {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("📍 Veuillez vous placer à l’intérieur de l’établissement pour une meilleure géolocalisation."),
+          content: Text("📍 Placez-vous à l’intérieur de la clinique pour une meilleure géolocalisation."),
           duration: Duration(seconds: 4),
         ),
       );
@@ -65,7 +65,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   Future<List<String>> _uploadImages() async {
     final storage = Supabase.instance.client.storage.from('clinique-photos');
     List<String> urls = [];
-
     for (var file in newFiles) {
       final filename = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       try {
@@ -80,7 +79,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
         debugPrint("Erreur upload image : $e");
       }
     }
-
     return urls;
   }
 
@@ -116,7 +114,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Clinique enregistrée avec succès.")),
+          const SnackBar(content: Text("Clinique enregistrée avec succès !")),
         );
         Navigator.pop(context, {...?widget.clinique, ...data});
       }
@@ -124,7 +122,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
       debugPrint("Erreur enregistrement : $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("❌ Erreur lors de l'enregistrement.")),
+          SnackBar(content: Text("Erreur lors de l'enregistrement : $e")),
         );
       }
     } finally {
@@ -140,7 +138,9 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
             content: const Text("Cette action est irréversible."),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Annuler")),
-              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Supprimer", style: TextStyle(color: Colors.red))),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text("Supprimer", style: TextStyle(color: Colors.red))),
             ],
           ),
         ) ??
@@ -152,7 +152,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
         if (mounted) {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("🗑️ Clinique supprimée.")),
+            const SnackBar(content: Text("Clinique supprimée.")),
           );
         }
       } catch (e) {
@@ -165,20 +165,28 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
 
   @override
   Widget build(BuildContext context) {
+    final bleuMaGuinee = const Color(0xFF113CFC);
+    final jauneMaGuinee = const Color(0xFFFCD116);
+    final vert = const Color(0xFF009460);
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Modifier la clinique"),
+        title: const Text("Modifier la clinique", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: bleuMaGuinee),
         actions: [
           if (widget.clinique != null)
             IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: _delete),
         ],
+        elevation: 1,
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text("Images"),
+                const Text("Photos de la clinique :", style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -195,7 +203,13 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                               right: 0,
                               child: GestureDetector(
                                 onTap: () => _removeImage(entry.key),
-                                child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.85),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 19),
+                                ),
                               ),
                             ),
                           ],
@@ -211,41 +225,56 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                       child: Container(
                         width: 70,
                         height: 70,
-                        decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.add_a_photo, size: 30),
+                        decoration: BoxDecoration(
+                          color: jauneMaGuinee,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Icon(Icons.add_a_photo, size: 30, color: bleuMaGuinee),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                _buildTextField(nomController, "Nom"),
-                _buildTextField(villeController, "Ville"),
-                _buildTextField(adresseController, "Adresse"),
-                _buildTextField(telephoneController, "Téléphone"),
-                _buildTextField(descriptionController, "Description", maxLines: 3),
-                _buildTextField(specialitesController, "Spécialités"),
-                _buildTextField(horairesController, "Horaires"),
-                _buildTextField(latitudeController, "Latitude"),
-                _buildTextField(longitudeController, "Longitude"),
+                _buildTextField(nomController, "Nom de la clinique *", bleuMaGuinee),
+                _buildTextField(villeController, "Ville *", bleuMaGuinee),
+                _buildTextField(adresseController, "Adresse *", bleuMaGuinee),
+                _buildTextField(telephoneController, "Téléphone *", bleuMaGuinee),
+                _buildTextField(descriptionController, "Description", bleuMaGuinee, maxLines: 3),
+                _buildTextField(specialitesController, "Spécialités", bleuMaGuinee),
+                _buildTextField(horairesController, "Horaires", bleuMaGuinee),
+                _buildTextField(latitudeController, "Latitude", bleuMaGuinee),
+                _buildTextField(longitudeController, "Longitude", bleuMaGuinee),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
                   onPressed: _save,
                   icon: const Icon(Icons.save),
                   label: const Text("Enregistrer"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: vert,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, {int maxLines = 1}) {
+  Widget _buildTextField(TextEditingController controller, String label, Color color,
+      {int maxLines = 1}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          labelStyle: TextStyle(color: color),
+        ),
       ),
     );
   }

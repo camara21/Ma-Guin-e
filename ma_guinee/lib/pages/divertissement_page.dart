@@ -37,6 +37,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
   ];
 
   List<Map<String, dynamic>> _filteredLieux = [];
+  String searchQuery = '';
 
   @override
   void initState() {
@@ -45,15 +46,15 @@ class _DivertissementPageState extends State<DivertissementPage> {
   }
 
   void _filterLieux(String query) {
-    final filtered = _allLieux.where((lieu) {
-      final nomLower = lieu['nom'].toString().toLowerCase();
-      final villeLower = lieu['ville'].toString().toLowerCase();
-      final q = query.toLowerCase();
-      return nomLower.contains(q) || villeLower.contains(q);
-    }).toList();
-
+    final q = query.toLowerCase();
     setState(() {
-      _filteredLieux = filtered;
+      searchQuery = query;
+      _filteredLieux = _allLieux.where((lieu) {
+        final nom = (lieu['nom'] ?? '').toLowerCase();
+        final ville = (lieu['ville'] ?? '').toLowerCase();
+        final ambiance = (lieu['ambiance'] ?? '').toLowerCase();
+        return nom.contains(q) || ville.contains(q) || ambiance.contains(q);
+      }).toList();
     });
   }
 
@@ -78,12 +79,42 @@ class _DivertissementPageState extends State<DivertissementPage> {
       ),
       body: Column(
         children: [
+          // Banner
+          Container(
+            width: double.infinity,
+            height: 75,
+            margin: const EdgeInsets.only(left: 14, right: 14, top: 14, bottom: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7B1FA2), Color(0xFF00C9FF)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Bars, clubs, lounges et sorties à Conakry",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Recherche
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'Rechercher un lieu festif...',
-                prefixIcon: Icon(Icons.search, color: primaryColor),
+                hintText: 'Rechercher un lieu, une ambiance, une ville...',
+                prefixIcon: const Icon(Icons.search, color: primaryColor),
                 filled: true,
                 fillColor: Colors.grey[100],
                 border: OutlineInputBorder(
@@ -94,11 +125,19 @@ class _DivertissementPageState extends State<DivertissementPage> {
               onChanged: _filterLieux,
             ),
           ),
+          const SizedBox(height: 10),
+          // Grille de cartes
           Expanded(
             child: _filteredLieux.isEmpty
                 ? const Center(child: Text("Aucun lieu trouvé."))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                : GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 0.77,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     itemCount: _filteredLieux.length,
                     itemBuilder: (context, index) {
                       final lieu = _filteredLieux[index];
@@ -115,44 +154,66 @@ class _DivertissementPageState extends State<DivertissementPage> {
                           );
                         },
                         child: Card(
-                          margin: const EdgeInsets.only(bottom: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 3,
-                          color: Colors.white,
+                          elevation: 2,
+                          clipBehavior: Clip.hardEdge,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ClipRRect(
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                              AspectRatio(
+                                aspectRatio: 16 / 11,
                                 child: firstImage != null
                                     ? Image.network(
                                         firstImage,
-                                        height: 170,
-                                        width: double.infinity,
                                         fit: BoxFit.cover,
                                         errorBuilder: (context, error, stackTrace) => Container(
-                                          height: 170,
                                           color: Colors.grey.shade300,
                                           child: const Icon(Icons.broken_image, size: 50),
                                         ),
                                       )
                                     : Container(
-                                        height: 170,
                                         color: Colors.grey.shade300,
                                         child: const Icon(Icons.broken_image, size: 50),
                                       ),
                               ),
-                              ListTile(
-                                leading: Icon(lieu['icone'], color: primaryColor),
-                                title: Text(
-                                  lieu['nom'],
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      lieu['nom'],
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      lieu['ville'],
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    if ((lieu['ambiance'] ?? '').toString().isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          lieu['ambiance'],
+                                          style: const TextStyle(
+                                            color: Colors.deepPurple,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                subtitle: Text(
-                                  '${lieu['ambiance']} • ${lieu['ville']}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                trailing: Icon(Icons.arrow_forward_ios, size: 18, color: primaryColor),
                               ),
                             ],
                           ),

@@ -10,24 +10,11 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1600),
-      vsync: this,
-    );
-
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
-
-    _controller.forward();
-
-    Timer(const Duration(milliseconds: 2200), _handleRedirect);
+    Timer(const Duration(milliseconds: 5000), _handleRedirect); // 5 secondes
   }
 
   void _handleRedirect() {
@@ -40,62 +27,81 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF2EC4F1), // Identique à Welcome
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF113CFC),
-              Color(0xFF2EC4F1),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: ScaleTransition(
-            scale: _animation,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Glow sous le logo
+            Stack(
+              alignment: Alignment.center,
               children: [
-                // Statue Nimba au centre
+                Container(
+                  width: 210,
+                  height: 210,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.32),
+                        blurRadius: 32,
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                ),
                 Image.asset(
-                  'assets/nimba.png',
-                  height: 100,
-                ),
-                const SizedBox(height: 28),
-                const Text(
-                  "Ma Guinée",
-                  style: TextStyle(
-                    fontSize: 36,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2.0,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  "Là où tout commence,\nlà où tout se trouve !",
-                  style: TextStyle(
-                    fontSize: 17,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 1.1,
-                  ),
-                  textAlign: TextAlign.center,
+                  'assets/logo_guinee.png', // ou ton image uploadée
+                  height: 180,
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 38),
+            // Texte avec glow très contenu
+            Text(
+              "Ma Guinée",
+              style: TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 2,
+                shadows: [
+                  Shadow(
+                    blurRadius: 5, // petit flou = lumière proche
+                    color: Colors.white.withOpacity(0.95),
+                  ),
+                  Shadow(
+                    blurRadius: 8, // deuxième ombre pour renforcer le glow
+                    color: Colors.white.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Là où tout commence",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w400,
+                color: Colors.white.withOpacity(0.92),
+                letterSpacing: 1.1,
+                shadows: [
+                  Shadow(
+                    blurRadius: 3,
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                  Shadow(
+                    blurRadius: 5,
+                    color: Colors.white.withOpacity(0.32),
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );

@@ -84,29 +84,24 @@ class _ProPageState extends State<ProPage> {
     final prov = context.watch<PrestatairesProvider>();
     final all = prov.prestataires;
 
+    // Filtering logic
     List<PrestataireModel> list = all;
     if (selectedCategory != 'Tous') {
       list = list.where((p) {
-        final cat = (p.category.isNotEmpty)
-            ? p.category
-            : _categoryForJob(p.metier);
+        final cat = p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
         return cat == selectedCategory;
       }).toList();
     }
-
     if (selectedJob != 'Tous') {
       list = list.where((p) => p.metier == selectedJob).toList();
     }
-
     if (searchQuery.trim().isNotEmpty) {
       final q = searchQuery.toLowerCase();
       list = list.where((p) {
-        final cat = (p.category.isNotEmpty)
-            ? p.category
-            : _categoryForJob(p.metier);
-        return p.metier.toLowerCase().contains(q) ||
-            p.ville.toLowerCase().contains(q) ||
-            cat.toLowerCase().contains(q);
+        final cat = p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
+        return p.metier.toLowerCase().contains(q)
+            || p.ville.toLowerCase().contains(q)
+            || cat.toLowerCase().contains(q);
       }).toList();
     }
 
@@ -122,7 +117,7 @@ class _ProPageState extends State<ProPage> {
         ),
         backgroundColor: Colors.white,
         elevation: 0.7,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)), // 👈 flèche bleue
+        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
         actions: [
           TextButton.icon(
             onPressed: () => Navigator.push(
@@ -142,6 +137,7 @@ class _ProPageState extends State<ProPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
+                      // Header Banner
                       Container(
                         width: double.infinity,
                         height: 80,
@@ -171,36 +167,45 @@ class _ProPageState extends State<ProPage> {
                         ),
                       ),
 
+                      // Filters
                       Row(
                         children: [
-                          DropdownButton<String>(
-                            value: selectedCategory,
-                            items: <DropdownMenuItem<String>>[
-                              const DropdownMenuItem(value: 'Tous', child: Text('Domaines de métiers')),
-                              ...categories.keys.map((c) =>
+                          Expanded(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: selectedCategory,
+                              items: <DropdownMenuItem<String>>[
+                                const DropdownMenuItem(value: 'Tous', child: Text('Domaines de métiers')),
+                                ...categories.keys.map((c) =>
                                   DropdownMenuItem(value: c, child: Text(c))),
-                            ],
-                            onChanged: (v) {
-                              setState(() {
-                                selectedCategory = v!;
-                                selectedJob = 'Tous';
-                              });
-                            },
+                              ],
+                              onChanged: (v) {
+                                setState(() {
+                                  selectedCategory = v!;
+                                  selectedJob = 'Tous';
+                                });
+                              },
+                            ),
                           ),
                           const SizedBox(width: 10),
                           if (selectedCategory != 'Tous')
-                            DropdownButton<String>(
-                              value: selectedJob,
-                              items: [
-                                const DropdownMenuItem(value: 'Tous', child: Text('Tous')),
-                                ...categories[selectedCategory]!
-                                    .map((job) => DropdownMenuItem(value: job, child: Text(job))),
-                              ],
-                              onChanged: (v) => setState(() => selectedJob = v!),
+                            Expanded(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                value: selectedJob,
+                                items: [
+                                  const DropdownMenuItem(value: 'Tous', child: Text('Tous')),
+                                  ...categories[selectedCategory]!
+                                      .map((job) => DropdownMenuItem(value: job, child: Text(job))),
+                                ],
+                                onChanged: (v) => setState(() => selectedJob = v!),
+                              ),
                             ),
                         ],
                       ),
 
+                      // Search field
+                      const SizedBox(height: 8),
                       TextField(
                         decoration: InputDecoration(
                           hintText: 'Rechercher un métier, une ville...',
@@ -211,16 +216,24 @@ class _ProPageState extends State<ProPage> {
                         ),
                         onChanged: (v) => setState(() => searchQuery = v),
                       ),
+
                       const SizedBox(height: 10),
 
+                      // List of cards
                       Expanded(
                         child: list.isEmpty
                             ? const Center(child: Text("Aucun prestataire trouvé."))
-                            : ListView.builder(
+                            : GridView.builder(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  mainAxisSpacing: 16,
+                                  crossAxisSpacing: 16,
+                                  childAspectRatio: 0.8,
+                                ),
                                 itemCount: list.length,
                                 itemBuilder: (_, i) {
                                   final p = list[i];
-                                  final cat = (p.category.isNotEmpty)
+                                  final cat = p.category.isNotEmpty
                                       ? p.category
                                       : _categoryForJob(p.metier);
 
@@ -232,21 +245,66 @@ class _ProPageState extends State<ProPage> {
                                       ),
                                     ),
                                     child: Card(
-                                      color: Colors.white,
                                       elevation: 2,
-                                      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
                                       shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(16)),
-                                      child: ListTile(
-                                        leading: CircleAvatar(
-                                          backgroundColor: Colors.indigo.shade50,
-                                          backgroundImage: p.photoUrl.isNotEmpty
-                                              ? NetworkImage(p.photoUrl)
-                                              : const AssetImage('assets/avatar.png') as ImageProvider,
-                                        ),
-                                        title: Text(p.metier,
-                                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        subtitle: Text('$cat • ${p.ville}'),
+                                      clipBehavior: Clip.hardEdge,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          // Image
+                                          AspectRatio(
+                                            aspectRatio: 16 / 11,
+                                            child: p.photoUrl.isNotEmpty
+                                                ? Image.network(p.photoUrl, fit: BoxFit.cover)
+                                                : Container(
+                                                    color: Colors.grey[200],
+                                                    alignment: Alignment.center,
+                                                    child: const Icon(
+                                                      Icons.person,
+                                                      size: 40,
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                          ),
+                                          // Info
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 8),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  p.metier,
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  cat,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  p.ville,
+                                                  style: const TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   );

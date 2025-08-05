@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/user_provider.dart'; // Adapte ce chemin si besoin
 import '../data/lieux_data.dart';
 import 'hotel_detail_page.dart';
 import 'sante_detail_page.dart';
@@ -57,8 +59,13 @@ class _CartePageState extends State<CartePage> {
 
   @override
   Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final userPhotoUrl = userProvider.utilisateur?.photoUrl ?? '';
+    final userNom = userProvider.utilisateur?.prenom ?? "Moi";
+
     final List<Marker> marqueurs = [];
 
+    // Marqueurs des lieux par catégorie
     lieuxData.forEach((categorie, lieux) {
       if (_categorieSelectionnee == 'tous' || _categorieSelectionnee == categorie) {
         for (var lieu in lieux) {
@@ -72,11 +79,11 @@ class _CartePageState extends State<CartePage> {
                 height: 40,
                 child: GestureDetector(
                   onTap: () {
-                    final widget = _buildDetailPage(categorie, lieu);
-                    if (widget != null) {
+                    final page = _buildDetailPage(categorie, lieu);
+                    if (page != null) {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => widget),
+                        MaterialPageRoute(builder: (_) => page),
                       );
                     }
                   },
@@ -93,19 +100,60 @@ class _CartePageState extends State<CartePage> {
       }
     });
 
+    // Marqueur utilisateur : photo + badge prénom, sans overflow
     if (_maPosition != null) {
       marqueurs.add(
         Marker(
           point: _maPosition!,
-          width: 40,
-          height: 40,
-          child: const Icon(Icons.my_location, size: 40, color: Colors.blueAccent),
+          width: 80,
+          height: 95,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.blueAccent, width: 3),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    )
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.white,
+                  backgroundImage: (userPhotoUrl.isNotEmpty)
+                      ? NetworkImage(userPhotoUrl)
+                      : null,
+                  child: (userPhotoUrl.isEmpty)
+                      ? const Icon(Icons.person_pin_circle, color: Colors.blueAccent, size: 35)
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  userNom,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.white, // Fond blanc pour homogénéité
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text(
           "Carte interactive",

@@ -1,11 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
+import 'prestataire_detail_page.dart'; // Bien inclus !
 
-class MesPrestationsPage extends StatelessWidget {
+class MesPrestationsPage extends StatefulWidget {
   final List<Map<String, dynamic>> prestations;
-
   const MesPrestationsPage({super.key, required this.prestations});
+
+  @override
+  State<MesPrestationsPage> createState() => _MesPrestationsPageState();
+}
+
+class _MesPrestationsPageState extends State<MesPrestationsPage> {
+  late List<Map<String, dynamic>> _prestations;
+
+  @override
+  void initState() {
+    super.initState();
+    _prestations = List<Map<String, dynamic>>.from(widget.prestations);
+  }
 
   String _categoryForJob(String? job) {
     if (job == null) return '';
@@ -32,26 +45,45 @@ class MesPrestationsPage extends StatelessWidget {
     final supabase = Supabase.instance.client;
     try {
       await supabase.from('prestataires').delete().eq('id', id);
+      setState(() {
+        _prestations.removeWhere((element) => element['id'].toString() == id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Prestataire supprimé avec succès.")),
+        const SnackBar(content: Text("Prestation supprimée avec succès !")),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur suppression : $e")),
+        SnackBar(content: Text("Erreur lors de la suppression : $e")),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bleuMaGuinee = const Color(0xFF113CFC);
+    final jauneMaGuinee = const Color(0xFFFCD116);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Mes prestations')),
-      body: prestations.isEmpty
-          ? const Center(child: Text("Aucune prestation enregistrée."))
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Mes prestations', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: bleuMaGuinee,
+        elevation: 1,
+        iconTheme: IconThemeData(color: bleuMaGuinee),
+      ),
+      body: _prestations.isEmpty
+          ? Center(
+              child: Text(
+                "Aucune prestation enregistrée.",
+                style: TextStyle(color: Colors.grey[700], fontSize: 17),
+              ),
+            )
           : ListView.builder(
-              itemCount: prestations.length,
+              itemCount: _prestations.length,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               itemBuilder: (context, index) {
-                final p = prestations[index];
+                final p = _prestations[index];
                 final id = p['id']?.toString() ?? '';
                 final metier = p['metier'] ?? p['job'] ?? '';
                 final ville = p['ville'] ?? p['city'] ?? '';
@@ -59,24 +91,34 @@ class MesPrestationsPage extends StatelessWidget {
                 final photo = p['photo_url'] ?? p['image'];
 
                 return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  color: jauneMaGuinee.withOpacity(0.09),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  margin: const EdgeInsets.only(bottom: 14),
                   child: ListTile(
                     leading: photo != null && photo != ''
                         ? CircleAvatar(backgroundImage: NetworkImage(photo))
-                        : const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(metier.toString()),
-                    subtitle: Text('$ville • $cat'),
+                        : CircleAvatar(
+                            backgroundColor: bleuMaGuinee.withOpacity(0.13),
+                            child: Icon(Icons.person, color: bleuMaGuinee),
+                          ),
+                    title: Text(
+                      metier.toString(),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee),
+                    ),
+                    subtitle: Text('$ville • $cat', style: const TextStyle(color: Colors.black87)),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          icon: const Icon(Icons.edit, color: Color(0xFF009460)),
                           onPressed: () {
                             Navigator.pushNamed(
                               context,
                               AppRoutes.editPrestataire,
                               arguments: p,
-                            );
+                            ).then((res) {
+                              if (res == true) setState(() {});
+                            });
                           },
                         ),
                         IconButton(
@@ -85,8 +127,8 @@ class MesPrestationsPage extends StatelessWidget {
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (_) => AlertDialog(
-                                title: const Text("Confirmer la suppression"),
-                                content: const Text("Voulez-vous supprimer cette prestation ?"),
+                                title: const Text("Confirmation"),
+                                content: const Text("Voulez-vous supprimer cette prestation ? Cette action est irréversible."),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(context, false),
@@ -94,12 +136,11 @@ class MesPrestationsPage extends StatelessWidget {
                                   ),
                                   TextButton(
                                     onPressed: () => Navigator.pop(context, true),
-                                    child: const Text("Supprimer"),
+                                    child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
                                   ),
                                 ],
                               ),
                             );
-
                             if (confirm == true && id.isNotEmpty) {
                               await _supprimerPrestataire(context, id);
                             }
@@ -108,10 +149,11 @@ class MesPrestationsPage extends StatelessWidget {
                       ],
                     ),
                     onTap: () {
-                      Navigator.pushNamed(
+                      Navigator.push(
                         context,
-                        AppRoutes.editPrestataire,
-                        arguments: p,
+                        MaterialPageRoute(
+                          builder: (_) => PrestataireDetailPage(data: p),
+                        ),
                       );
                     },
                   ),

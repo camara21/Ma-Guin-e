@@ -91,6 +91,9 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
         "Lundi - Vendredi : 8h à 18h\nSamedi : 8h à 13h\nDimanche : Fermé";
     final String tel = clinique?['tel'] ?? '';
 
+    // Responsive : large pour web, normal pour mobile
+    final isWeb = MediaQuery.of(context).size.width > 600;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -105,198 +108,205 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
         iconTheme: const IconThemeData(color: Color(0xFF009460)),
         elevation: 1,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 📸 Carrousel images
-            if (images.isNotEmpty)
-              Column(
-                children: [
-                  SizedBox(
-                    height: 200,
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        PageView.builder(
-                          itemCount: images.length,
-                          onPageChanged: (v) => setState(() => _currentImage = v),
-                          itemBuilder: (context, idx) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.network(
-                                images[idx],
-                                height: 200,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  height: 200,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(child: Icon(Icons.image_not_supported)),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        if (images.length > 1)
-                          Positioned(
-                            bottom: 10,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(images.length, (i) {
-                                return Container(
-                                  width: _currentImage == i ? 15 : 8,
-                                  height: 8,
-                                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(6),
-                                    color: _currentImage == i ? Colors.teal : Colors.white,
-                                    border: Border.all(color: Colors.black12),
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 700),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 📸 Carrousel images
+                if (images.isNotEmpty)
+                  Column(
+                    children: [
+                      SizedBox(
+                        height: isWeb ? 290 : 200,
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            PageView.builder(
+                              itemCount: images.length,
+                              controller: PageController(initialPage: _currentImage),
+                              onPageChanged: (v) => setState(() => _currentImage = v),
+                              itemBuilder: (context, idx) {
+                                return ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.network(
+                                    images[idx],
+                                    height: isWeb ? 290 : 200,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      height: isWeb ? 290 : 200,
+                                      color: Colors.grey.shade200,
+                                      child: const Center(child: Icon(Icons.image_not_supported)),
+                                    ),
                                   ),
                                 );
-                              }),
+                              },
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (images.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: SizedBox(
-                        height: 44,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: images.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 10),
-                          itemBuilder: (context, idx) => GestureDetector(
-                            onTap: () => setState(() => _currentImage = idx),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 65,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: _currentImage == idx ? Colors.teal : Colors.grey.shade300,
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
+                            if (images.length > 1)
+                              Positioned(
+                                bottom: 10,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(images.length, (i) {
+                                    return AnimatedContainer(
+                                      duration: const Duration(milliseconds: 250),
+                                      width: _currentImage == i ? 15 : 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(6),
+                                        color: _currentImage == i ? Colors.teal : Colors.white,
+                                        border: Border.all(color: Colors.black12),
+                                      ),
+                                    );
+                                  }),
                                 ),
-                                child: Image.network(
-                                  images[idx],
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) => const Icon(Icons.image_not_supported),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (images.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: SizedBox(
+                            height: isWeb ? 60 : 44,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: images.length,
+                              separatorBuilder: (_, __) => const SizedBox(width: 10),
+                              itemBuilder: (context, idx) => GestureDetector(
+                                onTap: () => setState(() => _currentImage = idx),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    width: isWeb ? 80 : 65,
+                                    height: isWeb ? 60 : 44,
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: _currentImage == idx ? Colors.teal : Colors.grey.shade300,
+                                        width: 2,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Image.network(
+                                      images[idx],
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => const Icon(Icons.image_not_supported),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                    ],
+                  ),
+                if (images.isEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: 200,
+                      color: Colors.grey.shade200,
+                      child: const Center(child: Icon(Icons.local_hospital, size: 70, color: Colors.grey)),
                     ),
-                ],
-              ),
-            if (images.isEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  height: 200,
-                  color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.local_hospital, size: 70, color: Colors.grey)),
+                  ),
+                const SizedBox(height: 22),
+
+                Text(
+                  nom,
+                  style: TextStyle(
+                    fontSize: isWeb ? 30 : 26,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF113CFC),
+                  ),
                 ),
-              ),
-            const SizedBox(height: 22),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Icon(Icons.location_city, color: Color(0xFFCE1126)),
+                    const SizedBox(width: 8),
+                    Text(ville, style: const TextStyle(fontSize: 17, color: Colors.black)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Spécialités :",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  specialites,
+                  style: const TextStyle(fontSize: 16, color: Colors.black87),
+                ),
 
-            Text(
-              nom,
-              style: const TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF113CFC),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.location_city, color: Color(0xFFCE1126)),
-                const SizedBox(width: 8),
-                Text(ville, style: const TextStyle(fontSize: 17, color: Colors.black)),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "Spécialités :",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              specialites,
-              style: const TextStyle(fontSize: 16, color: Colors.black87),
-            ),
-
-            const SizedBox(height: 18),
-            const Text(
-              "Horaires d’ouverture :",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87),
-            ),
-            const SizedBox(height: 8),
-            Text(horaires, style: const TextStyle(fontSize: 16, color: Colors.black87)),
-            const SizedBox(height: 28),
-            Row(
-              children: [
-                if (tel.isNotEmpty)
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.call),
-                      label: const Text("Contacter"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF009460),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
+                const SizedBox(height: 18),
+                const Text(
+                  "Horaires d’ouverture :",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87),
+                ),
+                const SizedBox(height: 8),
+                Text(horaires, style: const TextStyle(fontSize: 16, color: Colors.black87)),
+                const SizedBox(height: 28),
+                Row(
+                  children: [
+                    if (tel.isNotEmpty)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.call),
+                          label: const Text("Contacter"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF009460),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () => _contacterCentre(tel),
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      onPressed: () => _contacterCentre(tel),
-                    ),
-                  ),
-                if (tel.isNotEmpty) const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.calendar_month),
-                    label: const Text("Rendez-vous"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFCE1126),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
+                    if (tel.isNotEmpty) const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.calendar_month),
+                        label: const Text("Rendez-vous"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFCE1126),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () => _prendreRendezVous(context),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    onPressed: () => _prendreRendezVous(context),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                ElevatedButton.icon(
+                  onPressed: () => _ouvrirCarte(context),
+                  icon: const Icon(Icons.map),
+                  label: const Text("Localiser sur la carte"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFCD116),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 22),
-            ElevatedButton.icon(
-              onPressed: () => _ouvrirCarte(context),
-              icon: const Icon(Icons.map),
-              label: const Text("Localiser sur la carte"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFCD116),
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -9,8 +9,9 @@ class UtilisateurModel {
   final String? photoUrl;
   final DateTime? dateInscription;
   final DateTime? dateNaissance;
-  final List<String> favoris;
+  final bool cguAccepte; // ✅ Nouveau champ
 
+  final List<String> favoris;
   final Map<String, dynamic>? espacePrestataire;
   final List<Map<String, dynamic>> restos;
   final List<Map<String, dynamic>> hotels;
@@ -28,6 +29,7 @@ class UtilisateurModel {
     this.photoUrl,
     this.dateInscription,
     this.dateNaissance,
+    this.cguAccepte = false, // ✅ Par défaut à false
     this.favoris = const [],
     this.espacePrestataire,
     this.restos = const [],
@@ -76,6 +78,7 @@ class UtilisateurModel {
       dateNaissance: json['date_naissance'] != null
           ? DateTime.tryParse(json['date_naissance'] as String)
           : null,
+      cguAccepte: json['cgu_accepte'] == true, // ✅ Conversion booléenne
       favoris: (json['favoris'] as List?)?.map((e) => e.toString()).toList() ?? [],
       espacePrestataire: prestataire != null
           ? Map<String, dynamic>.from(prestataire)
@@ -99,6 +102,7 @@ class UtilisateurModel {
       'photo_url': photoUrl,
       'date_inscription': dateInscription?.toIso8601String(),
       'date_naissance': dateNaissance?.toIso8601String(),
+      'cgu_accepte': cguAccepte, // ✅ Export JSON
       'favoris': favoris,
       'espacePrestataire': espacePrestataire,
       'restos': restos,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DetailPrestationPage extends StatelessWidget {
   final Map<String, dynamic> prestation;
@@ -13,6 +14,25 @@ class DetailPrestationPage extends StatelessWidget {
     final String ville = prestation['ville'] ?? 'Ville non renseignée';
     final String telephone = prestation['telephone'] ?? 'Non renseigné';
     final String? photoUrl = prestation['photo_url'];
+
+    // Fonction pour lancer l’appel
+    Future<void> _callNumber() async {
+      if (telephone == 'Non renseigné' || telephone.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Numéro non disponible")),
+        );
+        return;
+      }
+      final telClean = telephone.replaceAll(RegExp(r'[^0-9+]'), '');
+      final url = Uri.parse('tel:$telClean');
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Impossible de lancer l'appel")),
+        );
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(metier)),
@@ -59,12 +79,7 @@ class DetailPrestationPage extends StatelessWidget {
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.call),
                       label: const Text('Contacter'),
-                      onPressed: () {
-                        // Tu peux implémenter la logique pour appeler ou envoyer un message
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Fonction à implémenter")),
-                        );
-                      },
+                      onPressed: _callNumber,
                     ),
                   ),
                 ],

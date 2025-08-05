@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 
 class EditRestoPage extends StatefulWidget {
-  final Map<String, dynamic> resto; // contient toutes les infos actuelles
+  final Map<String, dynamic> resto;
   const EditRestoPage({super.key, required this.resto});
 
   @override
@@ -30,7 +30,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
   bool loading = false;
 
   List<File> files = [];
-  List<String> urls = []; // URLs existantes déjà sur Supabase
+  List<String> urls = [];
 
   @override
   void initState() {
@@ -62,15 +62,16 @@ class _EditRestoPageState extends State<EditRestoPage> {
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       latitude = pos.latitude;
       longitude = pos.longitude;
-
       List<Placemark> placemarks = await placemarkFromCoordinates(latitude!, longitude!);
       final place = placemarks.first;
       adresse = "${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}";
       setState(() {});
-    } catch (e) {
-      setState(() => _gettingLocation = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur localisation : $e')),
+        const SnackBar(content: Text("Position détectée avec succès !")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de la localisation : $e')),
       );
     }
     setState(() => _gettingLocation = false);
@@ -85,7 +86,6 @@ class _EditRestoPageState extends State<EditRestoPage> {
     }
   }
 
-  // Supprimer une photo existante de la liste et éventuellement du Storage
   void _removeImage(int idx, {bool isNetwork = false}) {
     setState(() {
       if (isNetwork) {
@@ -112,17 +112,15 @@ class _EditRestoPageState extends State<EditRestoPage> {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci de cliquer sur \"Détecter ma position\"")),
+        const SnackBar(content: Text("Merci de cliquer sur « Détecter ma position ».")),
       );
       return;
     }
     setState(() => loading = true);
 
-    // Upload nouvelles images
     final uploadedUrls = await _uploadImages();
     final allUrls = [...urls, ...uploadedUrls];
 
-    // Update la ligne en base
     await Supabase.instance.client
         .from('restaurants')
         .update({
@@ -158,8 +156,17 @@ class _EditRestoPageState extends State<EditRestoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final Color bleuMaGuinee = const Color(0xFF113CFC);
+    final Color orange = const Color(0xFFF39C12);
+    final Color rouge = const Color(0xFFCE1126);
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Modifier Restaurant")),
+      appBar: AppBar(
+        title: const Text("Modifier le restaurant", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: bleuMaGuinee),
+        elevation: 1,
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -169,64 +176,83 @@ class _EditRestoPageState extends State<EditRestoPage> {
                 child: ListView(
                   children: [
                     const Text(
-                      "Si l'adresse est fausse, place-toi dans ton restaurant puis détecte la position :",
-                      style: TextStyle(color: Colors.blueGrey, fontSize: 14),
+                      "Pour plus de précision, placez-vous à l'intérieur du restaurant puis cliquez sur « Détecter ma position ».",
+                      style: TextStyle(color: Colors.blueGrey, fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 9),
                     ElevatedButton.icon(
                       onPressed: _gettingLocation ? null : _detectLocation,
                       icon: const Icon(Icons.location_on),
                       label: _gettingLocation
-                          ? const Text("Recherche en cours…")
+                          ? const Text("Recherche de la position…")
                           : const Text("Détecter ma position"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: orange,
                         foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
                     if (latitude != null && longitude != null)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6.0),
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text("Latitude : $latitude"),
                             Text("Longitude : $longitude"),
-                            Text("Adresse : $adresse"),
+                            Text("Adresse détectée : $adresse"),
                           ],
                         ),
                       ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: nomController,
-                      decoration: const InputDecoration(labelText: "Nom du restaurant"),
-                      validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                      decoration: InputDecoration(
+                        labelText: "Nom du restaurant",
+                        labelStyle: TextStyle(color: bleuMaGuinee),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
+                    const SizedBox(height: 13),
                     TextFormField(
                       controller: villeController,
-                      decoration: const InputDecoration(labelText: "Ville"),
-                      validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                      decoration: InputDecoration(
+                        labelText: "Ville",
+                        labelStyle: TextStyle(color: bleuMaGuinee),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
+                    const SizedBox(height: 13),
                     TextFormField(
                       controller: telController,
-                      decoration: const InputDecoration(labelText: "Téléphone"),
+                      decoration: InputDecoration(
+                        labelText: "Téléphone",
+                        labelStyle: TextStyle(color: bleuMaGuinee),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                       keyboardType: TextInputType.phone,
-                      validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                      validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
+                    const SizedBox(height: 13),
                     TextFormField(
                       controller: descriptionController,
-                      decoration: const InputDecoration(labelText: "Description"),
+                      decoration: InputDecoration(
+                        labelText: "Description",
+                        labelStyle: TextStyle(color: bleuMaGuinee),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                       maxLines: 3,
                     ),
-                    const SizedBox(height: 16),
-
-                    // IMAGES gestion
+                    const SizedBox(height: 18),
                     const Text("Photos du restaurant :", style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        // Images existantes (Supabase)
                         ...List.generate(urls.length, (idx) {
                           final url = urls[idx];
                           return Stack(
@@ -242,7 +268,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                   onTap: () => _removeImage(idx, isNetwork: true),
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.red,
+                                      color: rouge,
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(Icons.close, color: Colors.white, size: 17),
@@ -252,7 +278,6 @@ class _EditRestoPageState extends State<EditRestoPage> {
                             ],
                           );
                         }),
-                        // Nouvelles images locales (non encore uploadées)
                         ...List.generate(files.length, (idx) {
                           final file = files[idx];
                           return Stack(
@@ -268,7 +293,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                   onTap: () => _removeImage(idx),
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.red,
+                                      color: rouge,
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(Icons.close, color: Colors.white, size: 17),
@@ -278,32 +303,31 @@ class _EditRestoPageState extends State<EditRestoPage> {
                             ],
                           );
                         }),
-                        // Ajout
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
                             width: 70,
                             height: 70,
                             decoration: BoxDecoration(
-                              color: Colors.grey[200],
+                              color: Colors.grey[100],
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey.shade300),
+                              border: Border.all(color: bleuMaGuinee),
                             ),
-                            child: const Icon(Icons.add_a_photo, size: 30, color: Colors.orange),
+                            child: Icon(Icons.add_a_photo, size: 32, color: orange),
                           ),
                         ),
                       ],
                     ),
-
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.save),
-                      label: const Text("Enregistrer"),
+                      label: const Text("Enregistrer les modifications"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: bleuMaGuinee,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        textStyle: const TextStyle(fontWeight: FontWeight.bold),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),

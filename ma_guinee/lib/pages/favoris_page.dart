@@ -21,7 +21,7 @@ class _FavorisPageState extends State<FavorisPage> {
     Provider.of<FavorisProvider>(context, listen: false).loadFavoris();
   }
 
-  // Correction SQL compatible partout !
+  // SQL 'IN' propre pour Supabase
   Future<List<Map<String, dynamic>>> fetchFavorisAnnonces(List<String> favorisIds) async {
     if (favorisIds.isEmpty) return [];
     final inValues = favorisIds.join(',');
@@ -40,9 +40,15 @@ class _FavorisPageState extends State<FavorisPage> {
     final width = MediaQuery.of(context).size.width;
     final isMobile = width < 600;
 
+    final bleu = const Color(0xFF113CFC);
+    final rouge = const Color(0xFFCE1126);
+    final vert = const Color(0xFF009460);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes Favoris'),
+        title: const Text('Mes Favoris', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: bleu,
+        foregroundColor: Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -51,6 +57,7 @@ class _FavorisPageState extends State<FavorisPage> {
           IconButton(
             icon: Icon(affichageGrille ? Icons.view_list_rounded : Icons.grid_view_rounded),
             tooltip: affichageGrille ? "Afficher en liste" : "Afficher en grille",
+            color: Colors.white,
             onPressed: () {
               setState(() => affichageGrille = !affichageGrille);
             },
@@ -67,10 +74,17 @@ class _FavorisPageState extends State<FavorisPage> {
                 }
                 final annonces = snapshot.data ?? [];
                 if (annonces.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      "Aucun favori pour l’instant.",
-                      style: TextStyle(fontSize: 16),
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.favorite_border, size: 60, color: Colors.grey),
+                        const SizedBox(height: 10),
+                        Text(
+                          "Aucun favori pour l’instant.",
+                          style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+                        ),
+                      ],
                     ),
                   );
                 }
@@ -107,7 +121,8 @@ class _FavorisPageState extends State<FavorisPage> {
                           ),
                           subtitle: Text(annonce['ville'] ?? ''),
                           trailing: IconButton(
-                            icon: const Icon(Icons.favorite, color: Color(0xFFCE1126)),
+                            icon: Icon(Icons.favorite, color: rouge),
+                            tooltip: "Retirer des favoris",
                             onPressed: () async {
                               await favorisProvider.toggleFavori(annonceId);
                               setState(() {});
@@ -199,8 +214,8 @@ class _FavorisPageState extends State<FavorisPage> {
                                       const SizedBox(height: 4),
                                       Text(
                                         "${annonce['prix'] ?? ''} ${annonce['devise'] ?? 'GNF'}",
-                                        style: const TextStyle(
-                                          color: Color(0xFF009460),
+                                        style: TextStyle(
+                                          color: vert,
                                           fontWeight: FontWeight.w600,
                                           fontSize: 14,
                                         ),
@@ -239,9 +254,9 @@ class _FavorisPageState extends State<FavorisPage> {
                                       ),
                                     ],
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.favorite,
-                                    color: Color(0xFFCE1126),
+                                    color: rouge,
                                     size: 24,
                                   ),
                                 ),

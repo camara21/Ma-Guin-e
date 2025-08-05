@@ -32,7 +32,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
 
   // Images
   List<File> files = []; // Nouvelles à uploader
-  List<String> imageUrls = []; // Celles déjà sur Supabase (et nouvelles après upload)
+  List<String> imageUrls = []; // Déjà sur Supabase (ou uploadées)
   Set<int> _imagesToRemove = {}; // Index des images à supprimer
 
   @override
@@ -86,13 +86,12 @@ class _EditHotelPageState extends State<EditHotelPage> {
     return urls;
   }
 
-  // Enregistrer la modif
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => saving = true);
     _formKey.currentState!.save();
 
-    // Supprime images retirées
+    // On garde seulement les images non supprimées
     List<String> updatedImages = [
       for (var i = 0; i < imageUrls.length; i++) if (!_imagesToRemove.contains(i)) imageUrls[i]
     ];
@@ -103,7 +102,6 @@ class _EditHotelPageState extends State<EditHotelPage> {
       updatedImages.addAll(newUploaded);
     }
 
-    // Mise à jour en base
     final data = {
       'nom': nom,
       'adresse': adresse,
@@ -115,24 +113,39 @@ class _EditHotelPageState extends State<EditHotelPage> {
       'latitude': latitude,
       'longitude': longitude,
       'images': updatedImages,
-      // Pas besoin de changer created_at ici
     };
 
-    await Supabase.instance.client.from('hotels').update(data).eq('id', widget.hotelId);
-
-    setState(() => saving = false);
-    if (mounted) {
+    try {
+      await Supabase.instance.client.from('hotels').update(data).eq('id', widget.hotelId);
+      setState(() => saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Hôtel modifié avec succès !")),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      setState(() => saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Hôtel modifié avec succès !")),
+        SnackBar(content: Text("Erreur lors de la sauvegarde : $e")),
       );
-      Navigator.pop(context, true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bleuMaGuinee = const Color(0xFF113CFC);
+    final jauneMaGuinee = const Color(0xFFFCD116);
+    final vert = const Color(0xFF009460);
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Modifier l'hôtel")),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text("Modifier l'hôtel", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: bleuMaGuinee),
+        elevation: 1,
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : saving
@@ -145,51 +158,78 @@ class _EditHotelPageState extends State<EditHotelPage> {
                       children: [
                         TextFormField(
                           initialValue: nom,
-                          decoration: const InputDecoration(labelText: "Nom de l'hôtel"),
-                          validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                          decoration: InputDecoration(
+                            labelText: "Nom de l'hôtel *",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelStyle: TextStyle(color: bleuMaGuinee),
+                          ),
+                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => nom = v ?? "",
                         ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           initialValue: ville,
-                          decoration: const InputDecoration(labelText: "Ville"),
-                          validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                          decoration: InputDecoration(
+                            labelText: "Ville *",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelStyle: TextStyle(color: bleuMaGuinee),
+                          ),
+                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => ville = v ?? "",
                         ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           initialValue: telephone,
-                          decoration: const InputDecoration(labelText: "Téléphone"),
+                          decoration: InputDecoration(
+                            labelText: "Téléphone *",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelStyle: TextStyle(color: bleuMaGuinee),
+                          ),
                           keyboardType: TextInputType.phone,
-                          validator: (v) => v!.isEmpty ? "Champ requis" : null,
+                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => telephone = v ?? "",
                         ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           initialValue: description,
-                          decoration: const InputDecoration(labelText: "Description"),
+                          decoration: InputDecoration(
+                            labelText: "Description",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelStyle: TextStyle(color: bleuMaGuinee),
+                          ),
                           maxLines: 3,
                           onSaved: (v) => description = v ?? "",
                         ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           initialValue: prix,
-                          decoration: const InputDecoration(labelText: "Prix moyen (ex: 500 000 GNF)"),
+                          decoration: InputDecoration(
+                            labelText: "Prix moyen (ex: 500 000 GNF)",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelStyle: TextStyle(color: bleuMaGuinee),
+                          ),
                           onSaved: (v) => prix = v ?? "",
                         ),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Text("Nombre d'étoiles :"),
-                            const SizedBox(width: 12),
+                            Text("Nombre d'étoiles :", style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee)),
+                            const SizedBox(width: 10),
                             DropdownButton<int>(
                               value: etoiles,
                               onChanged: (val) => setState(() => etoiles = val!),
                               items: [1, 2, 3, 4, 5]
-                                  .map((e) => DropdownMenuItem(value: e, child: Text("$e ⭐")))
+                                  .map((e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text("$e ⭐", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      ))
                                   .toList(),
                             ),
                           ],
                         ),
                         const SizedBox(height: 18),
                         const Text("Photos de l'hôtel :", style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 6),
-                        // Images existantes avec suppression
+                        const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -234,25 +274,26 @@ class _EditHotelPageState extends State<EditHotelPage> {
                                 width: 70,
                                 height: 70,
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[200],
+                                  color: jauneMaGuinee,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(color: Colors.grey.shade300),
                                 ),
-                                child: const Icon(Icons.add_a_photo, size: 30, color: Colors.purple),
+                                child: Icon(Icons.add_a_photo, size: 30, color: bleuMaGuinee),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 24),
                         ElevatedButton.icon(
                           onPressed: _save,
                           icon: const Icon(Icons.save),
                           label: const Text("Enregistrer"),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.purple,
+                            backgroundColor: vert,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            textStyle: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],

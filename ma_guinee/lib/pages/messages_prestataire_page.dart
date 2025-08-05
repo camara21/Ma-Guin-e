@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
@@ -21,114 +22,83 @@ class MessagesPrestatairePage extends StatefulWidget {
 }
 
 class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
-  final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  final MessageService _messageService = MessageService();
-
-  late final _subscription;
-  List<Map<String, dynamic>> messages = [];
-  bool loading = true;
+  final _svc = MessageService();
+  final _ctrl = TextEditingController();
+  final _scroll = ScrollController();
+  List<Map<String, dynamic>> _msgs = [];
+  bool _loading = true;
+  StreamSubscription<List<Map<String, dynamic>>>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _fetchMessages();
-    _subscribeToMessages();
+    _loadMessages();
+    _sub = Supabase.instance.client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .listen((_) => _loadMessages());
   }
 
-  Future<void> _fetchMessages() async {
-    setState(() => loading = true);
-    try {
-      final msgs = await _messageService.fetchMessagesForPrestataire(widget.prestataireId);
-      setState(() {
-        messages = msgs;
-        loading = false;
-      });
-      _scrollDown();
-
-      for (var msg in msgs) {
-        if (msg['receiver_id'] == widget.senderId && !(msg['lu'] ?? true)) {
-          await _messageService.markMessageAsRead(msg['id']);
-        }
+  Future<void> _loadMessages() async {
+    setState(() => _loading = true);
+    final msgs = await _svc.fetchMessagesForPrestataire(widget.prestataireId);
+    for (var m in msgs) {
+      if (m['receiver_id'].toString() == widget.senderId && m['lu'] == false) {
+        await _svc.markMessageAsRead(m['id'].toString());
       }
-    } catch (e) {
-      setState(() {
-        messages = [];
-        loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur chargement messages : $e")),
-      );
     }
-  }
-
-  void _subscribeToMessages() {
-    _subscription = _messageService.subscribeToPrestataireMessages(widget.prestataireId, () {
-      _fetchMessages();
-    });
-  }
-
-  void _scrollDown() {
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
-    final tempMessage = {
-      'sender_id': widget.senderId,
-      'contenu': text,
-    };
     setState(() {
-      messages.add(tempMessage); // Message ajouté localement
+      _msgs = msgs;
+      _loading = false;
     });
-    _scrollDown();
-    _messageController.clear();
-    try {
-      await _messageService.sendMessageToPrestataire(
-        senderId: widget.senderId,
-        receiverId: widget.receiverId,
-        prestataireId: widget.prestataireId,
-        contenu: text,
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur envoi message : $e")),
-      );
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
   }
 
-  Widget _buildMessage(Map<String, dynamic> msg) {
-    final bool isMe = msg['sender_id'] == widget.senderId;
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    _ctrl.clear();
+    setState(() {
+      _msgs.add({
+        'sender_id': widget.senderId,
+        'contenu': text,
+        'lu': true,
+        'id': -1,
+        'date_envoi': DateTime.now().toIso8601String(),
+      });
+    });
+    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+
+    // ENVOI avec le nom du prestataire
+    await _svc.sendMessageToPrestataire(
+      senderId: widget.senderId,
+      receiverId: widget.receiverId,
+      prestataireId: widget.prestataireId,
+      prestataireName: widget.prestataireNom, // <-- INDISPENSABLE pour la table !
+      contenu: text,
+    );
+    // Pas besoin de reload ici, le stream realtime le fera !
+  }
+
+  Widget _bubble(Map<String, dynamic> m) {
+    final me = m['sender_id'] == widget.senderId;
     return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: EdgeInsets.only(
-          top: 8,
-          bottom: 4,
-          left: isMe ? 50 : 4,
-          right: isMe ? 4 : 50,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isMe ? const Color(0xFF113CFC) : Colors.grey[200],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isMe ? 16 : 2),
-            bottomRight: Radius.circular(isMe ? 2 : 16),
-          ),
+          color: me ? const Color(0xFF113CFC) : Colors.grey[200],
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
-          msg['contenu'],
-          style: TextStyle(
-            color: isMe ? Colors.white : Colors.black87,
-            fontSize: 15.3,
-          ),
+          m['contenu'] ?? '',
+          style: TextStyle(color: me ? Colors.white : Colors.black87, fontSize: 15),
         ),
       ),
     );
@@ -136,9 +106,9 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
   @override
   void dispose() {
-    _subscription.unsubscribe();
-    _messageController.dispose();
-    _scrollController.dispose();
+    _ctrl.dispose();
+    _scroll.dispose();
+    _sub?.cancel();
     super.dispose();
   }
 
@@ -148,7 +118,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 1.4,
+        elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF113CFC)),
           onPressed: () => Navigator.pop(context),
@@ -157,16 +127,15 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
             style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold)),
       ),
       body: SafeArea(
-        child: loading
+        child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
                   Expanded(
                     child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
-                      itemCount: messages.length,
-                      itemBuilder: (_, idx) => _buildMessage(messages[idx]),
+                      controller: _scroll,
+                      itemCount: _msgs.length,
+                      itemBuilder: (_, i) => _bubble(_msgs[i]),
                     ),
                   ),
                   _buildInputBar(),
@@ -179,38 +148,37 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   Widget _buildInputBar() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
           Expanded(
             child: Container(
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F5FA),
-                borderRadius: BorderRadius.circular(17),
-                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(24),
               ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
-                controller: _messageController,
-                minLines: 1,
-                maxLines: 3,
+                controller: _ctrl,
                 decoration: const InputDecoration(
-                  hintText: "Écrivez un message...",
+                  hintText: "Écrire un message…",
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 11),
                 ),
-                onSubmitted: (_) => _sendMessage(),
+                minLines: 1,
+                maxLines: 5,
+                onSubmitted: (_) => _send(),
               ),
             ),
           ),
-          const SizedBox(width: 7),
+          const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: _sendMessage,
+            onPressed: _send,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF113CFC),
               shape: const CircleBorder(),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
             ),
-            child: const Icon(Icons.send, color: Colors.white),
+            child: const Icon(Icons.send, color: Colors.white, size: 20),
           ),
         ],
       ),

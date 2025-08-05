@@ -1,132 +1,121 @@
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MessageService {
-  final SupabaseClient supabase = Supabase.instance.client;
+  final _client = Supabase.instance.client;
+
+  Future<List<Map<String, dynamic>>> fetchUserConversations(String userId) async {
+    final raw = await _client
+        .from('messages')
+        .select('''
+          id,
+          sender_id,
+          receiver_id,
+          contenu,
+          contexte,
+          annonce_id,
+          annonce_titre,
+          prestataire_id,
+          prestataire_name,
+          lu,
+          date_envoi
+        ''')
+        .or('sender_id.eq.$userId,receiver_id.eq.$userId')
+        .order('date_envoi', ascending: false);
+
+    return (raw as List).cast<Map<String, dynamic>>();
+  }
 
   Future<List<Map<String, dynamic>>> fetchMessagesForAnnonce(String annonceId) async {
-    if (annonceId.isEmpty) throw Exception("annonceId est vide");
-    final response = await supabase
+    final raw = await _client
         .from('messages')
-        .select()
+        .select('id, sender_id, receiver_id, contenu, lu, date_envoi')
+        .eq('contexte', 'annonce')
         .eq('annonce_id', annonceId)
         .order('date_envoi', ascending: true);
 
-    if (response is List) {
-      return List<Map<String, dynamic>>.from(response);
-    } else {
-      throw Exception("Erreur récupération messages annonce");
-    }
+    return (raw as List).cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> fetchMessagesForPrestataire(String prestataireId) async {
-    if (prestataireId.isEmpty) throw Exception("prestataireId est vide");
-    final response = await supabase
+    final raw = await _client
         .from('messages')
-        .select()
+        .select('id, sender_id, receiver_id, contenu, lu, date_envoi')
+        .eq('contexte', 'prestataire')
         .eq('prestataire_id', prestataireId)
         .order('date_envoi', ascending: true);
 
-    if (response is List) {
-      return List<Map<String, dynamic>>.from(response);
-    } else {
-      throw Exception("Erreur récupération messages prestataire");
-    }
+    return (raw as List).cast<Map<String, dynamic>>();
   }
 
   Future<void> sendMessageToAnnonce({
     required String senderId,
     required String receiverId,
     required String annonceId,
+    required String annonceTitre,
     required String contenu,
   }) async {
-    if ([senderId, receiverId, annonceId, contenu].any((e) => e.isEmpty)) {
-      throw Exception("Tous les champs sont requis pour envoyer un message");
-    }
-    final message = {
+    await _client.from('messages').insert({
       'sender_id': senderId,
       'receiver_id': receiverId,
-      'annonce_id': annonceId,
-      'contenu': contenu,
-      'lu': false,
-      'date_envoi': DateTime.now().toIso8601String(),
       'contexte': 'annonce',
-    };
-    await supabase.from('messages').insert(message);
+      'annonce_id': annonceId,
+      'annonce_titre': annonceTitre,
+      'contenu': contenu,
+      'date_envoi': DateTime.now().toIso8601String(),
+      'lu': false,
+    });
   }
 
   Future<void> sendMessageToPrestataire({
     required String senderId,
     required String receiverId,
     required String prestataireId,
+    required String prestataireName,
     required String contenu,
   }) async {
-    if ([senderId, receiverId, prestataireId, contenu].any((e) => e.isEmpty)) {
-      throw Exception("Tous les champs sont requis pour envoyer un message");
-    }
-    final message = {
+    await _client.from('messages').insert({
       'sender_id': senderId,
       'receiver_id': receiverId,
-      'prestataire_id': prestataireId,
-      'contenu': contenu,
-      'lu': false,
-      'date_envoi': DateTime.now().toIso8601String(),
       'contexte': 'prestataire',
-    };
-    await supabase.from('messages').insert(message);
-  }
-
-  // Abonnement en temps réel sans type explicite
-  subscribeToAnnonceMessages(String annonceId, void Function() onNewMessage) {
-    return supabase
-        .channel('public:messages')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'annonce_id',
-            value: annonceId,
-          ),
-          callback: (payload) => onNewMessage(),
-        )
-        .subscribe();
-  }
-
-  subscribeToPrestataireMessages(String prestataireId, void Function() onNewMessage) {
-    return supabase
-        .channel('public:messages')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'prestataire_id',
-            value: prestataireId,
-          ),
-          callback: (payload) => onNewMessage(),
-        )
-        .subscribe();
-  }
-
-  Future<List<Map<String, dynamic>>> fetchUserConversations(String userId) async {
-    if (userId.isEmpty) throw Exception("userId est vide");
-    final response = await supabase
-        .from('messages')
-        .select()
-        .or('sender_id.eq.$userId,receiver_id.eq.$userId')
-        .order('date_envoi', ascending: false);
-
-    if (response is List) {
-      return List<Map<String, dynamic>>.from(response);
-    } else {
-      throw Exception("Erreur récupération conversations");
-    }
+      'prestataire_id': prestataireId,
+      'prestataire_name': prestataireName,
+      'contenu': contenu,
+      'date_envoi': DateTime.now().toIso8601String(),
+      'lu': false,
+    });
   }
 
   Future<void> markMessageAsRead(String messageId) async {
-    if (messageId.isEmpty) throw Exception("messageId est vide");
-    await supabase.from('messages').update({'lu': true}).eq('id', messageId);
+    await _client
+        .from('messages')
+        .update({'lu': true})
+        .eq('id', messageId);
+  }
+
+  /// Écoute tous les nouveaux messages (Realtime)
+  StreamSubscription<List<Map<String, dynamic>>> subscribeAll(VoidCallback onUpdate) {
+    return _client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .order('date_envoi')
+        .listen((List<Map<String, dynamic>> data) {
+          if (data.isNotEmpty) {
+            onUpdate();
+          }
+        });
+  }
+
+  /// Compte les messages non lus reçus par l'utilisateur
+  Future<int> getUnreadMessagesCount(String userId) async {
+  final result = await _client
+      .from('messages')
+      .select('id')
+      .eq('receiver_id', userId)
+      .eq('lu', false);
+
+  final data = result as List;
+  return data.length;
   }
 }

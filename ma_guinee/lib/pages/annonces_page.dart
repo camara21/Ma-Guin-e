@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ma_guinee/models/annonce_model.dart';
 
@@ -22,27 +23,24 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     'icon': Icons.apps,
     'id': null,
   };
-
   final List<Map<String, dynamic>> _cats = const [
-    {'label': 'Immobilier', 'icon': Icons.home_work_outlined, 'id': 1},
-    {'label': 'Véhicules', 'icon': Icons.directions_car, 'id': 2},
-    {'label': 'Vacances', 'icon': Icons.beach_access, 'id': 3},
-    {'label': 'Emploi', 'icon': Icons.work_outline, 'id': 4},
-    {'label': 'Services', 'icon': Icons.handshake, 'id': 5},
-    {'label': 'Famille', 'icon': Icons.family_restroom, 'id': 6},
-    {'label': 'Électronique', 'icon': Icons.devices_other, 'id': 7},
-    {'label': 'Mode', 'icon': Icons.checkroom, 'id': 8},
-    {'label': 'Loisirs', 'icon': Icons.sports_soccer, 'id': 9},
-    {'label': 'Animaux', 'icon': Icons.pets, 'id': 10},
-    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt, 'id': 11},
-    {'label': 'Matériel pro', 'icon': Icons.build, 'id': 12},
-    {'label': 'Autres', 'icon': Icons.category, 'id': 13},
+    {'label': 'Immobilier',      'icon': Icons.home_work_outlined, 'id': 1},
+    {'label': 'Véhicules',       'icon': Icons.directions_car,       'id': 2},
+    {'label': 'Vacances',        'icon': Icons.beach_access,         'id': 3},
+    {'label': 'Emploi',          'icon': Icons.work_outline,         'id': 4},
+    {'label': 'Services',        'icon': Icons.handshake,            'id': 5},
+    {'label': 'Famille',         'icon': Icons.family_restroom,      'id': 6},
+    {'label': 'Électronique',    'icon': Icons.devices_other,        'id': 7},
+    {'label': 'Mode',            'icon': Icons.checkroom,            'id': 8},
+    {'label': 'Loisirs',         'icon': Icons.sports_soccer,        'id': 9},
+    {'label': 'Animaux',         'icon': Icons.pets,                 'id': 10},
+    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt,            'id': 11},
+    {'label': 'Matériel pro',    'icon': Icons.build,                'id': 12},
+    {'label': 'Autres',          'icon': Icons.category,             'id': 13},
   ];
-
   late final List<Map<String, dynamic>> _allCats;
-
-  int? _selectedCatId;
-  String _selectedLabel = 'Tous';
+  int?    _selectedCatId;
+  String  _selectedLabel = 'Tous';
 
   @override
   void initState() {
@@ -50,21 +48,20 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     _allCats = [_catTous, ..._cats];
   }
 
-  // —————————————————— DATA ——————————————————
+  // —————————————————— Récupération des annonces ——————————————————
   Future<List<Map<String, dynamic>>> _fetchAnnonces() async {
     final raw = await Supabase.instance.client
         .from('annonces')
         .select()
         .order('date_creation', ascending: false);
-
     final list = (raw as List).cast<Map<String, dynamic>>();
 
-    // filtre catégorie
+    // Filtre par catégorie
     final filteredCat = _selectedCatId != null
-        ? list.where((a) => a['categorie_id'] == _selectedCatId).toList()
-        : list;
+      ? list.where((a) => a['categorie_id'] == _selectedCatId).toList()
+      : list;
 
-    // filtre recherche
+    // Filtre texte
     final f = _searchCtrl.text.trim().toLowerCase();
     if (f.isEmpty) return filteredCat;
     return filteredCat.where((a) {
@@ -74,7 +71,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     }).toList();
   }
 
-  // —————————————————— FAVORIS ——————————————————
+  // —————————————————— Favoris ——————————————————
   Future<bool> _isFavori(String annonceId) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return false;
@@ -106,15 +103,13 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     setState(() {});
   }
 
-  // —————————————————— UI HELPERS ——————————————————
+  // —————————————————— UI Helpers ——————————————————
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedCatId = cat['id'];
-          _selectedLabel = cat['label'];
-        });
-      },
+      onTap: () => setState(() {
+        _selectedCatId   = cat['id'];
+        _selectedLabel   = cat['label'];
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 130),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -159,20 +154,43 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         child: Wrap(
           spacing: 8,
           runSpacing: 12,
-          children: _allCats.map((c) {
-            final sel = _selectedLabel == c['label'];
-            return _categoryChip(c, sel);
-          }).toList(),
+          children: _allCats
+              .map((c) => _categoryChip(c, _selectedLabel == c['label']))
+              .toList(),
         ),
       ),
     );
   }
 
-  Widget _annonceCard(Map<String, dynamic> data) {
-    final images = List<String>.from(data['images'] ?? []);
-    final id = data['id']?.toString() ?? '';
-    final prix = data['prix'] ?? 0;
-    final devise = data['devise'] ?? 'GNF';
+  // —————————————————— Carte d’annonce ——————————————————
+  Widget _annonceCard(Map<String, dynamic> data, double cardWidth) {
+    final images     = List<String>.from(data['images'] ?? []);
+    final id         = data['id']?.toString() ?? '';
+    final prix       = data['prix'] ?? 0;
+    final devise     = data['devise'] ?? 'GNF';
+    final ville      = data['ville'] ?? '';
+    final catId      = data['categorie_id'] as int?;
+    final catLabel   = _cats.firstWhere(
+        (c) => c['id'] == catId,
+        orElse: () => {'label': ''})['label'] as String;
+    final rawDate    = data['date_creation'] as String? ?? '';
+    DateTime date;
+    try {
+      date = DateTime.parse(rawDate);
+    } catch (_) {
+      date = DateTime.now();
+    }
+    // format date/heure
+    final now = DateTime.now();
+    String dateText;
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
+      final h = DateFormat.Hm().format(date);
+      dateText = "aujourd'hui $h";
+    } else {
+      dateText = DateFormat('dd/MM/yyyy').format(date);
+    }
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -183,112 +201,127 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
           ),
         ),
       ),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        clipBehavior: Clip.hardEdge,
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image
-                AspectRatio(
-                  aspectRatio: 16 / 11,
-                  child: Image.network(
-                    images.isNotEmpty
-                        ? images.first
-                        : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Colors.grey[200],
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.image_not_supported,
-                          size: 40, color: Colors.grey),
+      child: SizedBox(
+        width: cardWidth,
+        child: Card(
+          elevation: 2,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          clipBehavior: Clip.hardEdge,
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // image
+                  AspectRatio(
+                    aspectRatio: 16 / 11,
+                    child: Image.network(
+                      images.isNotEmpty
+                          ? images.first
+                          : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey[200],
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image_not_supported,
+                            size: 40, color: Colors.grey),
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data['titre'] ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "$prix $devise",
-                        style: const TextStyle(
-                          color: Color(0xFF009460),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // titre
+                        Text(
+                          data['titre'] ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const SizedBox(height: 4),
+                        // prix
+                        Text(
+                          "$prix $devise",
+                          style: const TextStyle(
+                            color: Color(0xFF009460),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // catégorie
+                        if (catLabel.isNotEmpty)
+                          Text(
+                            catLabel,
+                            style: const TextStyle(
+                                color: Colors.black54, fontSize: 12),
+                          ),
+                        // ville
+                        Text(
+                          ville,
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                        // date ou heure
+                        Text(
+                          dateText,
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              // Favori
+              Positioned(
+                top: 10,
+                right: 10,
+                child: FutureBuilder<bool>(
+                  future: _isFavori(id),
+                  builder: (_, snap) {
+                    final fav = snap.data ?? false;
+                    return InkWell(
+                      onTap: () => _toggleFavori(id, fav),
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: Colors.black12, blurRadius: 3),
+                          ],
+                        ),
+                        child: Icon(
+                          fav ? Icons.favorite : Icons.favorite_border,
+                          size: 24,
+                          color: fav ? Colors.red : Colors.grey.shade600,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        data['ville'] ?? '',
-                        style:
-                            const TextStyle(color: Colors.grey, fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              ],
-            ),
-            // Favori
-            Positioned(
-              top: 10,
-              right: 10,
-              child: FutureBuilder<bool>(
-                future: _isFavori(id),
-                builder: (_, snap) {
-                  final fav = snap.data ?? false;
-                  return InkWell(
-                    onTap: () => _toggleFavori(id, fav),
-                    child: Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 3,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        fav ? Icons.favorite : Icons.favorite_border,
-                        size: 24,
-                        color: fav ? Colors.red : Colors.grey.shade600,
-                      ),
-                    ),
-                  );
-                },
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // —————————————————— BUILD ——————————————————
+  // —————————————————— Build ——————————————————
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    // responsive grid
+    // responsive : nb de colonnes & ratio
     int crossAxis = 2;
-    double ratio = 0.72;
+    double ratio  = 0.72;
     if (width >= 1400) {
       crossAxis = 5;
       ratio = 0.78;
@@ -299,6 +332,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       crossAxis = 3;
       ratio = 0.74;
     }
+
+    // calcul largeur carte
+    final totalHSpacing = 12*2 + (crossAxis-1)*16;
+    final cardWidth      = (width - totalHSpacing) / crossAxis;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
@@ -318,27 +355,26 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.favorite_border, color: Color(0xFF113CFC)),
-            onPressed: () =>
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const FavorisPage())),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const FavorisPage())),
           ),
           IconButton(
             icon: const Icon(Icons.post_add, color: Color(0xFF113CFC)),
-            onPressed: () =>
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
           ),
         ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ——— Chips catégories ———
+          // catégories chips
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: LayoutBuilder(
               builder: (_, c) {
                 final isMobile = c.maxWidth < 600;
                 if (isMobile) {
-                  // Scroll limité + bouton "..."
                   return Row(
                     children: [
                       Expanded(
@@ -360,7 +396,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ],
                   );
                 }
-                // Web/Desktop : Wrap auto retour
                 return Wrap(
                   spacing: 6,
                   runSpacing: 8,
@@ -378,14 +413,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
             padding: EdgeInsets.only(left: 18, bottom: 4),
             child: Text(
               'Annonces récentes',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
-                  color: Colors.grey),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.grey),
             ),
           ),
 
-          // ——— Liste des annonces ———
+          // liste des annonces
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _fetchAnnonces(),
@@ -405,17 +438,16 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   );
                 }
-                return GridView.builder(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxis,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: ratio,
+                // On utilise Wrap pour n’avoir aucun « trou » en bas
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: annonces
+                        .map((data) => _annonceCard(data, cardWidth))
+                        .toList(),
                   ),
-                  itemCount: annonces.length,
-                  itemBuilder: (_, i) => _annonceCard(annonces[i]),
                 );
               },
             ),
