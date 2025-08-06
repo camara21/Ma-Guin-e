@@ -25,18 +25,32 @@ class _CultePageState extends State<CultePage> {
   Future<void> _fetchLieux() async {
     setState(() => _loading = true);
     try {
+      // Ne récupère que les lieux avec catégorie/type/culte, insensible à la casse
       final response = await _supabase
-          .from('lieux_culte')
+          .from('lieux')
           .select()
+          .ilike('categorie', 'culte')  // ou bien 'type' si tu préfères
           .order('nom', ascending: true);
 
       if (response == null) {
-        debugPrint('Réponse vide');
         setState(() => _loading = false);
         return;
       }
       final data = response as List<dynamic>;
       _lieux = data.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      // Trier les mosquées en premier, puis le reste par nom
+      _lieux.sort((a, b) {
+        final aMosquee = ((a['type']?.toString().toLowerCase().contains('mosquée') ?? false) ||
+                          (a['sous_categorie']?.toString().toLowerCase().contains('mosquée') ?? false));
+        final bMosquee = ((b['type']?.toString().toLowerCase().contains('mosquée') ?? false) ||
+                          (b['sous_categorie']?.toString().toLowerCase().contains('mosquée') ?? false));
+        if (aMosquee && !bMosquee) return -1;
+        if (!aMosquee && bMosquee) return 1;
+        return (a['nom'] ?? '').toString().toLowerCase()
+            .compareTo((b['nom'] ?? '').toString().toLowerCase());
+      });
+
       _filteredLieux = List.from(_lieux);
     } catch (e) {
       debugPrint('Erreur récupération lieux culte : $e');
@@ -56,10 +70,18 @@ class _CultePageState extends State<CultePage> {
       _filteredLieux = _lieux.where((lieu) {
         final nom = (lieu['nom'] ?? '').toString().toLowerCase();
         final ville = (lieu['ville'] ?? '').toString().toLowerCase();
-        final type = (lieu['type'] ?? '').toString().toLowerCase();
-        return nom.contains(lower) || ville.contains(lower) || type.contains(lower);
+        return nom.contains(lower) || ville.contains(lower);
       }).toList();
     });
+  }
+
+  IconData getIconForLieu(Map<String, dynamic> lieu) {
+    final type = (lieu['type'] ?? '').toString().toLowerCase();
+    final sousCat = (lieu['sous_categorie'] ?? '').toString().toLowerCase();
+    if (type.contains('mosquée') || sousCat.contains('mosquée')) return Icons.mosque;
+    if (type.contains('église') || sousCat.contains('église') || type.contains('cathédrale') || sousCat.contains('cathédrale')) return Icons.church;
+    if (type.contains('sanctuaire') || sousCat.contains('sanctuaire')) return Icons.shield_moon;
+    return Icons.place;
   }
 
   @override
@@ -87,7 +109,7 @@ class _CultePageState extends State<CultePage> {
             padding: const EdgeInsets.all(12),
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'Rechercher un lieu de culte...',
+                hintText: 'Rechercher par nom ou ville...',
                 prefixIcon: const Icon(Icons.search, color: primaryColor),
                 filled: true,
                 fillColor: Colors.grey[100],
@@ -115,48 +137,90 @@ class _CultePageState extends State<CultePage> {
                               ? images[0]
                               : 'https://via.placeholder.com/150';
 
-                          return Card(
-                            elevation: 1,
-                            color: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(17),
-                            ),
-                            margin: const EdgeInsets.only(bottom: 13),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundImage: NetworkImage(firstImage),
-                                radius: 24,
-                                backgroundColor: Colors.grey.shade200,
-                              ),
-                              title: Text(
-                                lieu['nom'] ?? 'Nom inconnu',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16.5,
-                                  color: Colors.black,
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CulteDetailPage(lieu: lieu),
                                 ),
-                              ),
-                              subtitle: Text(
-                                '${lieu['type'] ?? 'Type inconnu'} • ${lieu['ville'] ?? ''}',
-                                style: const TextStyle(color: Colors.black54, fontSize: 14),
-                              ),
-                              trailing: Icon(
-                                lieu['type']?.toLowerCase().contains('mosquée') ?? false
-                                    ? Icons.mosque
-                                    : Icons.church,
-                                color: lieu['type']?.toLowerCase().contains('mosquée') ?? false
-                                    ? const Color(0xFF009460)
-                                    : const Color(0xFFCE1126),
-                                size: 30,
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => CulteDetailPage(lieu: lieu),
+                              );
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(20),
+                                      bottomLeft: Radius.circular(20),
+                                    ),
+                                    child: Image.network(
+                                      firstImage,
+                                      width: 110,
+                                      height: 110,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) =>
+                                          Container(
+                                        width: 110,
+                                        height: 110,
+                                        color: Colors.grey.shade300,
+                                        child: const Icon(Icons.image_not_supported),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            lieu['nom'] ?? 'Nom inconnu',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                              color: Colors.black87,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            '${lieu['type'] ?? 'Type inconnu'} • ${lieu['ville'] ?? ''}',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 16),
+                                    child: Icon(
+                                      getIconForLieu(lieu),
+                                      color: ((lieu['type']?.toString().toLowerCase().contains('mosquée') ?? false) ||
+                                              (lieu['sous_categorie']?.toString().toLowerCase().contains('mosquée') ?? false))
+                                          ? const Color(0xFF009460)
+                                          : const Color(0xFFCE1126),
+                                      size: 32,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },

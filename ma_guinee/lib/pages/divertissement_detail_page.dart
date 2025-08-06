@@ -16,8 +16,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   int _currentImage = 0;
 
   void _callPhone(BuildContext context) async {
-    final phone = widget.lieu['telephone'];
-    if (phone != null && await canLaunchUrl(Uri.parse('tel:$phone'))) {
+    final phone = widget.lieu['contact'] ?? widget.lieu['telephone'];
+    if (phone != null && phone.toString().isNotEmpty && await canLaunchUrl(Uri.parse('tel:$phone'))) {
       await launchUrl(Uri.parse('tel:$phone'));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,18 +60,27 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     });
   }
 
+  List<String> getImages(Map<String, dynamic> lieu) {
+    if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
+      return (lieu['images'] as List).cast<String>();
+    }
+    if (lieu['photo_url'] != null && lieu['photo_url'].toString().isNotEmpty) {
+      return [lieu['photo_url']];
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     final lieu = widget.lieu;
     final horaires = lieu['horaires'] ?? "Non renseigné";
-
-    final List<String> images = (lieu['images'] as List?)?.cast<String>() ?? [];
+    final images = getImages(lieu);
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          lieu['nom'],
+          lieu['nom'] ?? '',
           style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -83,7 +92,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Carrousel d'images multi-photos
+            // Carousel d'images
             if (images.isNotEmpty)
               SizedBox(
                 height: 200,
@@ -140,11 +149,10 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   child: const Center(child: Icon(Icons.image_not_supported, size: 60)),
                 ),
               ),
-
             const SizedBox(height: 20),
 
             Text(
-              lieu['nom'],
+              lieu['nom'] ?? '',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
 

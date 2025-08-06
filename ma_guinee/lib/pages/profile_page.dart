@@ -9,6 +9,8 @@ import 'inscription_clinique_page.dart';
 import 'inscription_hotel_page.dart';
 import 'inscription_prestataire_page.dart';
 import 'inscription_resto_page.dart';
+import 'inscription_lieu_page.dart';         // 👈 Ajoute ceci
+import 'mes_lieux_page.dart';               // 👈 Ajoute ceci
 import 'parametre_page.dart';
 import '../routes.dart';
 
@@ -246,6 +248,28 @@ class _ProfilePageState extends State<ProfilePage> {
                     context,
                     MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
                   ),
+                  buttonLabel: "Ajouter",
+                ),
+
+                // 🟦🟣 NOUVEAU : Mes Lieux
+                _blocEspace(
+                  color: Colors.indigo.shade50,
+                  icon: Icons.place,
+                  iconColor: Colors.indigo,
+                  title: 'Mes Lieux',
+                  subtitle: user.lieux != null && user.lieux.isNotEmpty
+                      ? "${user.lieux.first['nom']} - ${user.lieux.first['ville']}"
+                      : "Aucun lieu enregistré.",
+                  onTap: (user.lieux != null && user.lieux.isNotEmpty)
+                      ? () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const MesLieuxPage()),
+                        )
+                      : null,
+                  onButton: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const InscriptionLieuPage()),
+                      ),
                   buttonLabel: "Ajouter",
                 ),
               ],

@@ -35,7 +35,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
       );
       return;
     }
-    // 🔜 Enregistrement futur dans Supabase ici
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Merci pour votre avis !")),
     );
@@ -45,35 +44,27 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     });
   }
 
-  Widget _buildStars(int rating, {void Function(int)? onTap}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(5, (index) {
-        return IconButton(
-          icon: Icon(
-            index < rating ? Icons.star : Icons.star_border,
-            color: Colors.amber[700],
-          ),
-          onPressed: onTap != null ? () => onTap(index + 1) : null,
-          iconSize: 30,
-          splashRadius: 20,
-        );
-      }),
-    );
+  // Sélectionne toujours la/les images ou le photo_url fallback
+  List<String> getImages(Map<String, dynamic> lieu) {
+    if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
+      return (lieu['images'] as List).cast<String>();
+    }
+    if (lieu['photo_url'] != null && lieu['photo_url'].toString().isNotEmpty) {
+      return [lieu['photo_url']];
+    }
+    return [];
   }
 
   @override
   Widget build(BuildContext context) {
     final lieu = widget.lieu;
-    final List<String> images = lieu['images'] != null
-        ? List<String>.from(lieu['images'])
-        : [lieu['image'] ?? ''];
+    final images = getImages(lieu);
 
     final String nom = lieu['nom'] ?? 'Site touristique';
     final String ville = lieu['ville'] ?? 'Ville inconnue';
     final String description = lieu['description'] ?? 'Aucune description disponible.';
     final String horaires = lieu['horaires'] ?? "Lundi - Dimanche : 08h00 - 18h00";
-    final String numero = lieu['tel'] ?? '';
+    final String numero = lieu['contact'] ?? lieu['tel'] ?? '';
     final String? mapsUrl = lieu['maps_url'];
 
     final bool isWeb = MediaQuery.of(context).size.width > 650;
@@ -161,6 +152,16 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                           ),
                         ),
                     ],
+                  )
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: isWeb ? 340 : 210,
+                      color: Colors.grey.shade200,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_not_supported, size: 60),
+                    ),
                   ),
                 const SizedBox(height: 20),
 
@@ -274,9 +275,19 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                       fontSize: isWeb ? 20 : 16,
                     )),
                 const SizedBox(height: 10),
-                _buildStars(_noteUtilisateur, onTap: (note) {
-                  setState(() => _noteUtilisateur = note);
-                }),
+                Row(
+                  children: List.generate(5, (index) {
+                    return IconButton(
+                      icon: Icon(
+                        index < _noteUtilisateur ? Icons.star : Icons.star_border,
+                        color: Colors.amber[700],
+                      ),
+                      onPressed: () => setState(() => _noteUtilisateur = index + 1),
+                      iconSize: 30,
+                      splashRadius: 20,
+                    );
+                  }),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _avisController,

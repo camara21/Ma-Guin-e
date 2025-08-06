@@ -9,7 +9,7 @@ class UtilisateurModel {
   final String? photoUrl;
   final DateTime? dateInscription;
   final DateTime? dateNaissance;
-  final bool cguAccepte; // ✅ Nouveau champ
+  final bool cguAccepte;
 
   final List<String> favoris;
   final Map<String, dynamic>? espacePrestataire;
@@ -17,6 +17,7 @@ class UtilisateurModel {
   final List<Map<String, dynamic>> hotels;
   final List<Map<String, dynamic>> cliniques;
   final List<Map<String, dynamic>> annonces;
+  final List<Map<String, dynamic>> lieux; // 🟦🟣 AJOUT pour lieux
 
   UtilisateurModel({
     required this.id,
@@ -29,13 +30,14 @@ class UtilisateurModel {
     this.photoUrl,
     this.dateInscription,
     this.dateNaissance,
-    this.cguAccepte = false, // ✅ Par défaut à false
+    this.cguAccepte = false,
     this.favoris = const [],
     this.espacePrestataire,
     this.restos = const [],
     this.hotels = const [],
     this.cliniques = const [],
     this.annonces = const [],
+    this.lieux = const [], // 🟦🟣 Constructeur
   });
 
   factory UtilisateurModel.fromJson(Map<String, dynamic> json) {
@@ -57,11 +59,13 @@ class UtilisateurModel {
     final restos = extractList('restos');
     final hotels = extractList('hotels');
     final cliniques = extractList('cliniques');
+    final lieux = extractList('lieux'); // 🟦🟣
 
     print("📦 Prestataire : $prestataire");
     print("🍽️ Restos : $restos");
     print("🏨 Hotels : $hotels");
     print("🏥 Cliniques : $cliniques");
+    print("📍 Lieux : $lieux"); // 🟦🟣
 
     return UtilisateurModel(
       id: json['id'] as String? ?? '',
@@ -78,7 +82,7 @@ class UtilisateurModel {
       dateNaissance: json['date_naissance'] != null
           ? DateTime.tryParse(json['date_naissance'] as String)
           : null,
-      cguAccepte: json['cgu_accepte'] == true, // ✅ Conversion booléenne
+      cguAccepte: json['cgu_accepte'] == true,
       favoris: (json['favoris'] as List?)?.map((e) => e.toString()).toList() ?? [],
       espacePrestataire: prestataire != null
           ? Map<String, dynamic>.from(prestataire)
@@ -87,6 +91,7 @@ class UtilisateurModel {
       hotels: hotels,
       cliniques: cliniques,
       annonces: extractList('annonces'),
+      lieux: lieux, // 🟦🟣
     );
   }
 
@@ -102,13 +107,14 @@ class UtilisateurModel {
       'photo_url': photoUrl,
       'date_inscription': dateInscription?.toIso8601String(),
       'date_naissance': dateNaissance?.toIso8601String(),
-      'cgu_accepte': cguAccepte, // ✅ Export JSON
+      'cgu_accepte': cguAccepte,
       'favoris': favoris,
       'espacePrestataire': espacePrestataire,
       'restos': restos,
       'hotels': hotels,
       'cliniques': cliniques,
       'annonces': annonces,
+      'lieux': lieux, // 🟦🟣 Export JSON
     };
   }
 }

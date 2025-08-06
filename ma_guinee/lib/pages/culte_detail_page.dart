@@ -21,9 +21,22 @@ class CulteDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final String nom = lieu['nom'] ?? 'Lieu de culte';
     final String ville = lieu['ville'] ?? 'Ville inconnue';
-    final List<String> images = (lieu['images'] as List?)?.cast<String>() ?? [];
-    final double latitude = (lieu['latitude'] ?? 0).toDouble();
-    final double longitude = (lieu['longitude'] ?? 0).toDouble();
+
+    // Correction ici : images + fallback sur photo_url
+    final List<String> images = (lieu['images'] is List && (lieu['images'] as List).isNotEmpty)
+        ? List<String>.from(lieu['images'])
+        : (lieu['photo_url'] != null && lieu['photo_url'].toString().isNotEmpty)
+            ? [lieu['photo_url'].toString()]
+            : [];
+
+    final double latitude = (lieu['latitude'] != null)
+        ? (lieu['latitude'] as num).toDouble()
+        : 0.0;
+    final double longitude = (lieu['longitude'] != null)
+        ? (lieu['longitude'] as num).toDouble()
+        : 0.0;
+
+    int _currentImage = 0;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -45,37 +58,16 @@ class CulteDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Si plusieurs images, on peut afficher un carousel basique avec PageView
             if (images.isNotEmpty)
-              SizedBox(
-                height: 190,
-                child: PageView.builder(
-                  itemCount: images.length,
-                  itemBuilder: (context, index) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(17),
-                      child: Image.network(
-                        images[index],
-                        width: double.infinity,
-                        height: 190,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          height: 190,
-                          color: Colors.grey.shade300,
-                          child: const Center(child: Icon(Icons.image_not_supported)),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              )
+              _ImagesCarousel(images: images)
             else
               ClipRRect(
                 borderRadius: BorderRadius.circular(17),
                 child: Container(
                   height: 190,
                   color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.place, size: 70, color: Colors.grey)),
+                  child: const Center(
+                      child: Icon(Icons.place, size: 70, color: Colors.grey)),
                 ),
               ),
             const SizedBox(height: 18),
@@ -94,7 +86,8 @@ class CulteDetailPage extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(13),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
+                  BoxShadow(
+                      color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
                 ],
               ),
               height: 190,
@@ -114,7 +107,8 @@ class CulteDetailPage extends StatelessWidget {
                         point: LatLng(latitude, longitude),
                         width: 44,
                         height: 44,
-                        child: const Icon(Icons.location_on, color: Color(0xFF009460), size: 40),
+                        child: const Icon(Icons.location_on,
+                            color: Color(0xFF009460), size: 40),
                       ),
                     ],
                   ),
@@ -133,12 +127,80 @@ class CulteDetailPage extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                   textStyle: const TextStyle(fontWeight: FontWeight.bold),
                   elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// --------- Widget pour carousel d’images ---------
+class _ImagesCarousel extends StatefulWidget {
+  final List<String> images;
+  const _ImagesCarousel({required this.images});
+
+  @override
+  State<_ImagesCarousel> createState() => _ImagesCarouselState();
+}
+
+class _ImagesCarouselState extends State<_ImagesCarousel> {
+  int _current = 0;
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 190,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          PageView.builder(
+            itemCount: widget.images.length,
+            onPageChanged: (index) => setState(() => _current = index),
+            itemBuilder: (context, index) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(17),
+                child: Image.network(
+                  widget.images[index],
+                  width: double.infinity,
+                  height: 190,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      Container(
+                        height: 190,
+                        color: Colors.grey.shade300,
+                        child: const Center(
+                            child: Icon(Icons.image_not_supported)),
+                      ),
+                ),
+              );
+            },
+          ),
+          if (widget.images.length > 1)
+            Positioned(
+              bottom: 12,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.images.length, (i) {
+                  return Container(
+                    width: _current == i ? 15 : 8,
+                    height: 8,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: _current == i
+                          ? Colors.orange
+                          : Colors.white,
+                      border: Border.all(color: Colors.black12),
+                    ),
+                  );
+                }),
+              ),
+            ),
+        ],
       ),
     );
   }

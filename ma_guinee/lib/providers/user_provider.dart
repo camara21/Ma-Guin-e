@@ -73,12 +73,20 @@ class UserProvider extends ChangeNotifier {
         userId: authUser.id,
       );
 
-      // ✅ Création du modèle utilisateur avec CGU
+      // 🔵 Ajout des lieux
+      data['lieux'] = await _getEspaces(
+        table: 'lieux',
+        fkColumn: 'user_id',
+        userId: authUser.id,
+      );
+
+      // ✅ Création du modèle utilisateur avec CGU et lieux
       _utilisateur = UtilisateurModel.fromJson(data);
 
       debugPrint("💡 Restos : ${_utilisateur?.restos}");
       debugPrint("🏨 Hotels : ${_utilisateur?.hotels}");
       debugPrint("🏥 Cliniques : ${_utilisateur?.cliniques}");
+      debugPrint("📍 Lieux : ${_utilisateur?.lieux}");
 
       await loadAnnoncesUtilisateur(_utilisateur!.id);
     } catch (e, st) {
@@ -195,6 +203,19 @@ class UserProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e, st) {
       debugPrint("supprimerClinique error: $e\n$st");
+      rethrow;
+    }
+  }
+
+  // 🔵 Supprimer un lieu
+  Future<void> supprimerLieu(String lieuId) async {
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.from('lieux').delete().eq('id', lieuId);
+      _utilisateur?.lieux.removeWhere((l) => l['id'] == lieuId);
+      notifyListeners();
+    } catch (e, st) {
+      debugPrint("supprimerLieu error: $e\n$st");
       rethrow;
     }
   }
