@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/avis_service.dart';
 
 class RestoDetailPage extends StatefulWidget {
-  /// Accepte désormais un int ou un String
   final dynamic restoId;
   const RestoDetailPage({super.key, required this.restoId});
 
@@ -18,16 +17,25 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   Map<String, dynamic>? resto;
   bool loading = true;
 
-  // Avis
   int _noteUtilisateur = 0;
   final _avisController = TextEditingController();
   List<Map<String, dynamic>> _avis = [];
   double _noteMoyenne = 0;
   final _avisService = AvisService();
 
+  // ✅ flag pour éviter de re-préremplir le champ juste après un envoi
+  bool _justSubmitted = false;
+
   final primaryColor = const Color(0xFF113CFC);
 
   String get _id => widget.restoId.toString();
+
+  bool _isUuid(String id) {
+    final uuidRegExp = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegExp.hasMatch(id);
+  }
 
   @override
   void initState() {
@@ -38,11 +46,13 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
   Future<void> _loadResto() async {
     setState(() => loading = true);
+
     final data = await Supabase.instance.client
         .from('restaurants')
         .select()
         .eq('id', _id)
         .maybeSingle();
+
     setState(() {
       resto = data;
       loading = false;
@@ -67,9 +77,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       _noteMoyenne = moyenne;
     });
 
-    // Préremplissage si déjà noté
+    // ✅ on ne préremplit pas si on vient juste d'envoyer
     final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
+    if (user != null && !_justSubmitted) {
       final existing = _avis.firstWhere(
         (a) => a['utilisateur_id'] == user.id,
         orElse: () => {},
@@ -79,22 +89,35 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         _avisController.text = existing['commentaire'] ?? '';
       }
     }
+
+    // ✅ reset du flag après le rechargement
+    _justSubmitted = false;
   }
 
   Future<void> _envoyerAvis() async {
     final user = Supabase.instance.client.auth.currentUser;
+
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
       );
       return;
     }
+
     if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Veuillez noter et commenter.")),
       );
       return;
     }
+
+    if (!_isUuid(_id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur : ID du restaurant invalide.")),
+      );
+      return;
+    }
+
     await _avisService.ajouterOuModifierAvis(
       contexte: 'restaurant',
       cibleId: _id,
@@ -102,9 +125,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       note: _noteUtilisateur,
       commentaire: _avisController.text.trim(),
     );
+
+    // ✅ vider les champs et marquer qu'on vient d'envoyer
     _noteUtilisateur = 0;
     _avisController.clear();
+    _justSubmitted = true;
+    FocusScope.of(context).unfocus(); // optionnel : ferme le clavier
+
     await _loadAvis();
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Merci pour votre avis !")),
     );
@@ -221,7 +250,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ],
           const Divider(height: 30),
 
-          // Avis
           const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
           _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
           TextField(
@@ -241,7 +269,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
           const SizedBox(height: 30),
 
-          // Carte + Google Maps
           if (lat != null && lng != null) ...[
             const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -287,7 +314,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
           const SizedBox(height: 30),
 
-          // Appeler / Réserver
           Row(children: [
             Expanded(
               child: ElevatedButton.icon(
@@ -310,7 +336,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
           const SizedBox(height: 30),
 
-          // Avis existants
           const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           if (_avis.isEmpty)

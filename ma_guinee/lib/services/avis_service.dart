@@ -11,6 +11,14 @@ class AvisService {
     required int note,
     required String commentaire,
   }) async {
+    if (!_isUuid(cibleId)) {
+      throw Exception("❌ Le champ cibleId doit être un UUID valide. Reçu : $cibleId");
+    }
+
+    if (!_isUuid(utilisateurId)) {
+      throw Exception("❌ Le champ utilisateurId doit être un UUID valide. Reçu : $utilisateurId");
+    }
+
     await _supabase.from('avis').upsert({
       'utilisateur_id': utilisateurId,
       'contexte': contexte,
@@ -32,7 +40,7 @@ class AvisService {
         .eq('cible_id', cibleId)
         .order('created_at', ascending: false);
 
-    return response;
+    return List<Map<String, dynamic>>.from(response);
   }
 
   /// Calcule la note moyenne
@@ -61,6 +69,15 @@ class AvisService {
         .eq('cible_id', cibleId)
         .eq('utilisateur_id', utilisateurId)
         .maybeSingle();
+
     return res;
+  }
+
+  /// 🔒 Vérifie si la chaîne est un UUID valide
+  bool _isUuid(String id) {
+    final uuidRegExp = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegExp.hasMatch(id);
   }
 }

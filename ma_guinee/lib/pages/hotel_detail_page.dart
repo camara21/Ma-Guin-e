@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/avis_service.dart';
 
 class HotelDetailPage extends StatefulWidget {
-  final int hotelId;
+  final dynamic hotelId; // ✅ accepte UUID String (ou autre), on le normalise avec _id
   const HotelDetailPage({super.key, required this.hotelId});
 
   @override
@@ -14,10 +14,21 @@ class HotelDetailPage extends StatefulWidget {
 class _HotelDetailPageState extends State<HotelDetailPage> {
   Map<String, dynamic>? hotel;
   bool loading = true;
+
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
   double _noteMoyenne = 0;
   List<Map<String, dynamic>> _avis = [];
+
+  // Pour éviter de re-préremplir immédiatement après un envoi
+  bool _justSubmitted = false;
+
+  String get _id => widget.hotelId.toString();
+
+  bool _isUuid(String id) {
+    final re = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return re.hasMatch(id);
+  }
 
   @override
   void initState() {
@@ -27,10 +38,12 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   }
 
   Future<void> _loadHotel() async {
+    setState(() => loading = true);
+
     final data = await Supabase.instance.client
         .from('hotels')
         .select()
-        .eq('id', widget.hotelId)
+        .eq('id', _id) // ✅ même type que dans la BDD (UUID)
         .maybeSingle();
 
     setState(() {
@@ -42,9 +55,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   Future<void> _loadAvis() async {
     final res = await Supabase.instance.client
         .from('avis')
-        .select('note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
+        .select('id, note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
         .eq('contexte', 'hotel')
-        .eq('cible_id', widget.hotelId)
+        .eq('cible_id', _id) // ✅ filtre sur le même UUID
         .order('created_at', ascending: false);
 
     final notes = res.map((e) => (e['note'] as num).toDouble()).toList();
@@ -54,6 +67,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       _avis = List<Map<String, dynamic>>.from(res);
       _noteMoyenne = moyenne;
     });
+
+    // (optionnel) Si tu veux préremplir quand l'user a déjà noté, enlève le flag _justSubmitted si besoin
+    _justSubmitted = false;
   }
 
   Future<void> _envoyerAvis() async {
@@ -61,24 +77,40 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final note = _noteUtilisateur;
     final user = Supabase.instance.client.auth.currentUser;
 
-    if (user == null || note == 0 || commentaire.isEmpty) {
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
+      );
+      return;
+    }
+    if (note == 0 || commentaire.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Veuillez donner une note et un avis.")),
+      );
+      return;
+    }
+    if (!_isUuid(_id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur : ID de l'hôtel invalide.")),
       );
       return;
     }
 
     await AvisService().ajouterOuModifierAvis(
       contexte: 'hotel',
-      cibleId: widget.hotelId.toString(),
-      utilisateurId: user.id,
+      cibleId: _id,           // ✅ UUID correct
+      utilisateurId: user.id, // UUID Supabase de l'utilisateur
       note: note,
       commentaire: commentaire,
     );
 
+    // Reset UI
     _avisController.clear();
     setState(() => _noteUtilisateur = 0);
-    _loadAvis();
+    _justSubmitted = true;
+    FocusScope.of(context).unfocus();
+
+    await _loadAvis();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Merci pour votre avis !")),
@@ -149,7 +181,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
     return Column(
       children: _avis.map((avis) {
-        final utilisateur = avis['utilisateurs'];
+        final utilisateur = avis['utilisateurs'] ?? {};
         final nom = "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim();
         final note = avis['note'] ?? 0;
         final commentaire = avis['commentaire'] ?? '';
@@ -248,8 +280,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             const SizedBox(height: 8),
             Text("Description :\n${hotel!['description'] ?? 'Aucune description'}"),
             const SizedBox(height: 20),
+
             const Text("Avis client :", style: TextStyle(fontWeight: FontWeight.bold)),
             Text(_avis.isEmpty ? "Pas d'avis" : "${_noteMoyenne.toStringAsFixed(1)} / 5"),
+
             const SizedBox(height: 10),
             const Text("Notez cet hôtel :", style: TextStyle(fontWeight: FontWeight.bold)),
             _buildStars(_noteUtilisateur, onTap: (val) => setState(() => _noteUtilisateur = val)),
@@ -271,8 +305,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 foregroundColor: Colors.black,
               ),
             ),
+
             const SizedBox(height: 20),
             _buildAvisList(),
+
             const SizedBox(height: 30),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
