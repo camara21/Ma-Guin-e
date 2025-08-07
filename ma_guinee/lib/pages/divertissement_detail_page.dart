@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/avis_service.dart'; // Assure-toi que le chemin est correct
 
 class DivertissementDetailPage extends StatefulWidget {
   final Map<String, dynamic> lieu;
@@ -12,8 +14,29 @@ class DivertissementDetailPage extends StatefulWidget {
 
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   int _note = 0;
+  double _noteMoyenne = 0;
   final TextEditingController _avisController = TextEditingController();
   int _currentImage = 0;
+  List<Map<String, dynamic>> _avisList = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvis();
+  }
+
+  Future<void> _loadAvis() async {
+    final avis = await AvisService().recupererAvis(
+      contexte: 'divertissement',
+      cibleId: widget.lieu['id'],
+    );
+    final notes = avis.map((e) => e['note'] as int).toList();
+
+    setState(() {
+      _avisList = avis;
+      _noteMoyenne = notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0;
+    });
+  }
 
   void _callPhone(BuildContext context) async {
     final phone = widget.lieu['contact'] ?? widget.lieu['telephone'];
@@ -38,7 +61,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     }
   }
 
-  void _envoyerAvis() {
+  Future<void> _envoyerAvis() async {
     final avis = _avisController.text.trim();
     if (_note == 0 || avis.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -47,8 +70,21 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       return;
     }
 
-    debugPrint("⭐ Note : $_note");
-    debugPrint("💬 Avis : $avis");
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Veuillez vous connecter pour laisser un avis.")),
+      );
+      return;
+    }
+
+    await AvisService().ajouterOuModifierAvis(
+      contexte: 'divertissement',
+      cibleId: widget.lieu['id'],
+      utilisateurId: user.id,
+      note: _note,
+      commentaire: avis,
+    );
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Merci pour votre avis !")),
@@ -58,6 +94,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       _note = 0;
       _avisController.clear();
     });
+
+    _loadAvis();
   }
 
   List<String> getImages(Map<String, dynamic> lieu) {
@@ -92,7 +130,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Carousel d'images
+            // ---------- Images
             if (images.isNotEmpty)
               SizedBox(
                 height: 200,
@@ -151,6 +189,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               ),
             const SizedBox(height: 20),
 
+            // ---------- Infos générales
             Text(
               lieu['nom'] ?? '',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -163,7 +202,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 style: const TextStyle(fontSize: 15, color: Colors.grey),
               ),
             ],
-
             const SizedBox(height: 18),
 
             Row(
@@ -183,9 +221,26 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 Expanded(child: Text(horaires, style: const TextStyle(fontSize: 15))),
               ],
             ),
-            const SizedBox(height: 26),
+            const SizedBox(height: 20),
 
-            // ⭐ Zone de notation
+            if (_noteMoyenne > 0)
+              Text("⭐ Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} / 5",
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+
+            if (_avisList.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text("Avis des visiteurs :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ..._avisList.map((a) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text("⭐ ${a['note']} - ${a['commentaire']}", style: const TextStyle(fontSize: 14)),
+                  )),
+              const SizedBox(height: 18),
+            ],
+
+            const Divider(height: 30),
+
+            // ---------- Avis
             const Text("Notez ce lieu :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Row(

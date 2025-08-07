@@ -15,6 +15,8 @@ class PrestataireDetailPage extends StatefulWidget {
 class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
+  List<Map<String, dynamic>> _avis = [];
+  double _noteMoyenne = 0;
   List<Map<String, dynamic>> _recommandations = [];
   bool loadingReco = false;
 
@@ -22,23 +24,72 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   void initState() {
     super.initState();
     _loadRecommandations();
+    _loadAvis();
   }
 
-  String _categoryForJob(String? job) {
-    if (job == null) return '';
-    final Map<String, List<String>> categories = {
-      'Technologies & Digital': [
-        'Développeur / Développeuse', 'Ingénieur logiciel', 'Data Scientist',
-        'Développeur mobile', 'Designer UI/UX', 'Administrateur systèmes',
-        'Chef de projet IT', 'Technicien réseau', 'Analyste sécurité',
-        'Community Manager', 'Growth Hacker', 'Webmaster', 'DevOps Engineer',
-      ],
-      // Autres catégories...
-    };
-    for (final e in categories.entries) {
-      if (e.value.contains(job)) return e.key;
+  Future<void> _loadAvis() async {
+    final id = widget.data['id'];
+    final res = await Supabase.instance.client
+        .from('avis')
+        .select('note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
+        .eq('contexte', 'prestataire')
+        .eq('cible_id', id)
+        .order('created_at', ascending: false);
+
+    final notes = res.map((e) => e['note'] as num).toList();
+    final moyenne = notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0;
+
+    setState(() {
+      _avis = List<Map<String, dynamic>>.from(res);
+      _noteMoyenne = moyenne.toDouble(); // ✅ Correction ici
+    });
+  }
+
+  void _sendAvis() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return _snack("Connexion requise.");
+    final commentaire = _avisController.text.trim();
+
+    if (_noteUtilisateur == 0 || commentaire.isEmpty) {
+      return _snack("Note et commentaire requis.");
     }
-    return '';
+
+    final cibleId = widget.data['id'];
+
+    final existing = await Supabase.instance.client
+        .from('avis')
+        .select()
+        .eq('utilisateur_id', user.id)
+        .eq('contexte', 'prestataire')
+        .eq('cible_id', cibleId)
+        .maybeSingle();
+
+    if (existing != null) {
+      await Supabase.instance.client
+          .from('avis')
+          .update({
+            'note': _noteUtilisateur,
+            'commentaire': commentaire,
+          })
+          .eq('id', existing['id']);
+      _snack("Avis mis à jour !");
+    } else {
+      await Supabase.instance.client.from('avis').insert({
+        'utilisateur_id': user.id,
+        'contexte': 'prestataire',
+        'cible_id': cibleId,
+        'note': _noteUtilisateur,
+        'commentaire': commentaire,
+      });
+      _snack("Avis envoyé !");
+    }
+
+    setState(() {
+      _noteUtilisateur = 0;
+      _avisController.clear();
+    });
+
+    _loadAvis();
   }
 
   void _snack(String msg) {
@@ -65,7 +116,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      _snack("WhatsApp non disponible ou numéro invalide");
+      _snack("WhatsApp non disponible");
     }
   }
 
@@ -87,38 +138,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
-  void _sendAvis() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return _snack("Connexion requise.");
-    if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
-      return _snack("Note et avis requis.");
-    }
-
-    await Supabase.instance.client.from('avis').insert({
-      'prestataire_id': widget.data['id'],
-      'utilisateur_id': user.id,
-      'note': _noteUtilisateur,
-      'commentaire': _avisController.text.trim(),
-    });
-
-    setState(() {
-      _noteUtilisateur = 0;
-      _avisController.clear();
-    });
-    _snack("Avis envoyé !");
-  }
-
   void _loadRecommandations() async {
     setState(() => loadingReco = true);
-    final metier = widget.data['metier']?.toString() ?? '';
-    final category = widget.data['category']?.toString() ?? _categoryForJob(metier);
     final ville = widget.data['ville']?.toString() ?? '';
     final id = widget.data['id'];
 
     final res = await Supabase.instance.client
         .from('prestataires')
         .select()
-        .eq('category', category)
         .eq('ville', ville)
         .neq('id', id)
         .limit(6);
@@ -145,15 +172,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final photo = data['photo_url']?.toString() ?? '';
     final metier = data['metier'] ?? '';
     final ville = data['ville'] ?? '';
+    final photo = data['photo_url']?.toString() ?? '';
     final phone = data['phone'] ?? data['telephone'] ?? '';
     final description = data['description'] ?? '';
-    final category = data['category'] ?? _categoryForJob(metier);
     final isMe = Supabase.instance.client.auth.currentUser?.id == data['id'];
-
-    final isWeb = MediaQuery.of(context).size.width > 650;
     final primaryColor = const Color(0xFF113CFC);
 
     return Scaffold(
@@ -162,10 +186,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         backgroundColor: Colors.white,
         elevation: 0.7,
         iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
-        title: Text(
-          metier,
-          style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: isWeb ? 26 : 20),
-        ),
+        title: Text(metier, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
       ),
       body: Center(
         child: Container(
@@ -173,102 +194,41 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              // Image principale cliquable
-              GestureDetector(
-                onTap: () {
-                  if (photo.isNotEmpty) _showImage(photo);
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: photo.isNotEmpty
-                      ? Image.network(photo, height: isWeb ? 260 : 180, fit: BoxFit.cover)
-                      : Container(height: isWeb ? 260 : 180, color: Colors.grey[300], child: const Icon(Icons.person, size: 70, color: Colors.white)),
+              if (photo.isNotEmpty)
+                GestureDetector(
+                  onTap: () => _showImage(photo),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Image.network(photo, height: 200, fit: BoxFit.cover),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-
-              // Bloc nom métier/catégorie/ville
+              const SizedBox(height: 20),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: isWeb ? 37 : 27,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
-                    child: photo.isEmpty ? const Icon(Icons.person, color: Colors.white, size: 28) : null,
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          metier.toString(),
-                          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          category.toString(),
-                          style: const TextStyle(color: Colors.grey, fontSize: 14),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on, color: Color(0xFFCE1126), size: 18),
-                            const SizedBox(width: 3),
-                            Text(ville.toString()),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  const Icon(Icons.location_on, color: Colors.red),
+                  const SizedBox(width: 4),
+                  Text(ville.toString(), style: const TextStyle(fontSize: 16)),
                 ],
               ),
-
-              const SizedBox(height: 16),
-              if (description.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F6F9),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(description, style: const TextStyle(fontSize: 15)),
-                ),
-
-              const SizedBox(height: 22),
-              // Boutons
+              const SizedBox(height: 10),
+              Text(description.toString()),
+              const SizedBox(height: 20),
               if (!isMe)
                 Row(
                   children: [
-                    IconButton(
-                      onPressed: () => _call(phone),
-                      icon: const Icon(Icons.phone, color: Color(0xFF009460)),
-                      tooltip: "Appeler",
-                    ),
-                    IconButton(
-                      onPressed: () => _whatsapp(phone),
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Color(0xFF25D366)),
-                      tooltip: "WhatsApp",
-                    ),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.chat),
-                        label: const Text("Échanger"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                        ),
-                        onPressed: _openChat,
-                      ),
-                    ),
+                    IconButton(onPressed: () => _call(phone), icon: const Icon(Icons.phone, color: Colors.green)),
+                    IconButton(onPressed: () => _whatsapp(phone), icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.green)),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.chat),
+                      label: const Text("Échanger"),
+                      style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                      onPressed: _openChat,
+                    )
                   ],
                 ),
-
-              const SizedBox(height: 24),
-              // Bloc avis
-              const Text("Laisser un avis :", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 6),
+              const Divider(height: 30),
+              const Text("Laisser un avis", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               Row(
                 children: List.generate(5, (i) {
                   return IconButton(
@@ -280,78 +240,35 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               TextField(
                 controller: _avisController,
                 maxLines: 2,
-                decoration: InputDecoration(
-                  hintText: "Écrire un avis...",
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
+                decoration: const InputDecoration(hintText: "Votre avis", border: OutlineInputBorder()),
               ),
               const SizedBox(height: 10),
               ElevatedButton.icon(
                 onPressed: _sendAvis,
                 icon: const Icon(Icons.send),
                 label: const Text("Envoyer"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFCD116),
-                  foregroundColor: Colors.black,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFCD116), foregroundColor: Colors.black),
               ),
-
-              const SizedBox(height: 34),
-              // Suggestions
-              if (loadingReco)
-                const Center(child: CircularProgressIndicator())
-              else if (_recommandations.isNotEmpty) ...[
-                const Text("Prestataires similaires", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 10),
-                GridView.builder(
-                  shrinkWrap: true,
-                  itemCount: _recommandations.length,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.92,
+              const Divider(height: 30),
+              Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ⭐️", style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 8),
+              ..._avis.map((avis) {
+                final user = avis['utilisateurs'] ?? {};
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: user['photo_url'] != null ? NetworkImage(user['photo_url']) : null,
+                    child: user['photo_url'] == null ? const Icon(Icons.person) : null,
                   ),
-                  itemBuilder: (_, i) {
-                    final p = _recommandations[i];
-                    final img = p['photo_url']?.toString() ?? '';
-                    final name = p['metier'] ?? '';
-                    final ville = p['ville'] ?? '';
-                    return GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PrestataireDetailPage(data: p))),
-                      child: Card(
-                        elevation: 1.5,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(height: 9),
-                            CircleAvatar(
-                              backgroundImage: img.isNotEmpty ? NetworkImage(img) : null,
-                              backgroundColor: Colors.grey[200],
-                              radius: 25,
-                              child: img.isEmpty ? const Icon(Icons.person) : null,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              name,
-                              maxLines: 2,
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              ville,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.grey, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ]
+                  title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("${avis['note']} ⭐️"),
+                      if (avis['commentaire'] != null) Text(avis['commentaire']),
+                    ],
+                  ),
+                );
+              }),
             ],
           ),
         ),
