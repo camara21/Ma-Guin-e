@@ -38,13 +38,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   final List<String> _typesLieu = ['divertissement', 'culte', 'tourisme'];
   final Map<String, List<String>> sousCategoriesParType = {
     'divertissement': [
-      'Boîte de nuit', 'Bar', 'Salle de jeux', 'Cinéma', 'Parc d’attraction', 'Club', 'Plage privée'
+      'Boîte de nuit', 'Bar', 'Salle de jeux', 'Cinéma',
+      'Parc d’attraction', 'Club', 'Plage privée'
     ],
-    'culte': [
-      'Mosquée', 'Église', 'Temple', 'Sanctuaire', 'Chapelle'
-    ],
+    'culte': ['Mosquée', 'Église', 'Temple', 'Sanctuaire', 'Chapelle'],
     'tourisme': [
-      'Monument', 'Musée', 'Plage', 'Cascade', 'Parc naturel', 'Site historique', 'Montagne'
+      'Monument', 'Musée', 'Plage', 'Cascade',
+      'Parc naturel', 'Site historique', 'Montagne'
     ],
   };
 
@@ -73,36 +73,64 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   Future<void> _recupererPosition() async {
     try {
-      final permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+      // Message avant détection
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Astuce localisation"),
+          content: const Text(
+              "Pour plus de précision, placez-vous à l’intérieur de l’établissement avant de détecter la position."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
 
-      final position = await Geolocator.getCurrentPosition();
-      setState(() {
-        latitude = position.latitude;
-        longitude = position.longitude;
-      });
-
-      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
-      if (placemarks.isNotEmpty) {
-        final placemark = placemarks.first;
-        adresse = [
-          placemark.street,
-          placemark.subLocality,
-          placemark.locality,
-          placemark.administrativeArea,
-          placemark.country
-        ].where((e) => e != null && e.isNotEmpty).join(", ");
-        ville = placemark.locality ?? ville;
-        setState(() {});
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Permission de localisation refusée.")));
+          return;
+        }
       }
-
-      if (mounted) {
+      if (permission == LocationPermission.deniedForever) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Position récupérée. Placez-vous à l’intérieur de l’établissement.")),
-        );
+            const SnackBar(content: Text("Activez la localisation dans les paramètres.")));
+        return;
       }
+
+      final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+
+      latitude = position.latitude;
+      longitude = position.longitude;
+
+      final placemarks =
+          await placemarkFromCoordinates(position.latitude, position.longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        adresse = [
+          p.street,
+          p.subLocality,
+          p.locality,
+          p.administrativeArea,
+          p.country
+        ].where((e) => e != null && e.isNotEmpty).join(", ");
+        ville = p.locality ?? ville;
+      }
+
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Position détectée avec succès.")));
     } catch (e) {
       debugPrint("Erreur géolocalisation : $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur localisation : $e")));
     }
   }
 
@@ -110,54 +138,37 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     final picker = ImagePicker();
     final picked = await picker.pickMultiImage();
     if (picked.isNotEmpty) {
-      final newPicked = picked.where((img) =>
-        !_pickedImages.any((x) => x.path == img.path)
-        && !_uploadedImages.contains(img.path)).toList();
+      final newPicked = picked
+          .where((img) =>
+              !_pickedImages.any((x) => x.path == img.path) &&
+              !_uploadedImages.contains(img.path))
+          .toList();
       setState(() => _pickedImages.addAll(newPicked));
     }
   }
 
-  void _removePickedImage(XFile img) {
-    setState(() {
-      _pickedImages.remove(img);
-    });
-  }
+  void _removePickedImage(XFile img) =>
+      setState(() => _pickedImages.remove(img));
 
-  void _removeUploadedImage(String url) {
-    setState(() {
-      _uploadedImages.remove(url);
-    });
-  }
+  void _removeUploadedImage(String url) =>
+      setState(() => _uploadedImages.remove(url));
 
-  /// *** CORRECTION POUR LE CHEMIN D’UPLOAD ***
   Future<List<String>> _uploadImages(List<XFile> images) async {
     final urls = <String>[];
     final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Utilisateur non authentifié.")));
-      return [];
-    }
-    for (var imageFile in images) {
+    if (userId == null) return [];
+    for (var img in images) {
       try {
-        final fileName = '${DateTime.now().millisecondsSinceEpoch}_${imageFile.name.replaceAll(RegExp(r'[^\w\-_\.]'), '')}';
-        final path = '$userId/$fileName'; // ← OBLIGATOIRE pour les policies Storage Supabase !
-        final bytes = await imageFile.readAsBytes();
-
+        final fileName =
+            '${DateTime.now().millisecondsSinceEpoch}_${img.name.replaceAll(RegExp(r'[^\w\-_\.]'), '')}';
+        final path = '$userId/$fileName';
+        final bytes = await img.readAsBytes();
         await Supabase.instance.client.storage
             .from(_bucket)
-            .uploadBinary(
-              path,
-              bytes,
-              fileOptions: FileOptions(upsert: true),
-            );
-
-        final publicUrl = Supabase.instance.client.storage.from(_bucket).getPublicUrl(path);
-        urls.add(publicUrl);
-
-        print('Upload OK: $publicUrl');
+            .uploadBinary(path, bytes, fileOptions: FileOptions(upsert: true));
+        urls.add(Supabase.instance.client.storage.from(_bucket).getPublicUrl(path));
       } catch (e) {
         debugPrint("Erreur upload image : $e");
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur upload : $e")));
       }
     }
     return urls;
@@ -167,20 +178,17 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez définir la position géographique.")),
-      );
+          const SnackBar(content: Text("Veuillez détecter la position.")));
       return;
     }
     if (type == null || type!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez choisir le type de lieu.")),
-      );
+          const SnackBar(content: Text("Veuillez choisir un type de lieu.")));
       return;
     }
     if (sousCategorie.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez choisir la sous-catégorie.")),
-      );
+          const SnackBar(content: Text("Veuillez choisir une sous-catégorie.")));
       return;
     }
 
@@ -188,15 +196,12 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return;
 
-    List<String> images = List<String>.from(_uploadedImages);
-
+    List<String> images = List.from(_uploadedImages);
     if (_pickedImages.isNotEmpty) {
       final uploaded = await _uploadImages(_pickedImages);
       images = [...images, ...uploaded];
-      setState(() {
-        _pickedImages.clear();
-        _uploadedImages = images;
-      });
+      _pickedImages.clear();
+      _uploadedImages = images;
     }
 
     final data = {
@@ -217,52 +222,37 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
     try {
       if (widget.lieu != null) {
-        await Supabase.instance.client.from('lieux').update(data).eq('id', widget.lieu!['id']);
+        await Supabase.instance.client
+            .from('lieux')
+            .update(data)
+            .eq('id', widget.lieu!['id']);
       } else {
         await Supabase.instance.client.from('lieux').insert(data);
       }
-      if (mounted) Navigator.pop(context, true);
+
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Succès"),
+          content: Text(widget.lieu != null
+              ? "Lieu mis à jour avec succès ✅"
+              : "Lieu enregistré avec succès ✅"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      Navigator.pop(context, true);
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Erreur enregistrement.")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur : $e")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
-    }
-  }
-
-  Future<void> _supprimerLieu() async {
-    if (widget.lieu == null) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirmer la suppression"),
-        content: const Text("Voulez-vous vraiment supprimer ce lieu ? Cette action est irréversible."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Annuler"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("Supprimer"),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      try {
-        await Supabase.instance.client.from('lieux').delete().eq('id', widget.lieu!['id']);
-        if (mounted) {
-          Navigator.pop(context, "deleted");
-        }
-      } catch (e) {
-        debugPrint("Erreur suppression : $e");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Erreur lors de la suppression.")),
-        );
-      }
     }
   }
 
@@ -271,19 +261,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     final enEdition = widget.lieu != null;
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(enEdition ? "Modifier le lieu" : "Inscription Lieu"),
         backgroundColor: mainColor,
         foregroundColor: Colors.white,
-        actions: [
-          if (enEdition)
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.white),
-              tooltip: "Supprimer ce lieu",
-              onPressed: _supprimerLieu,
-            ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -293,15 +274,15 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
             children: [
               ElevatedButton.icon(
                 onPressed: _recupererPosition,
-                icon: Icon(Icons.my_location, color: green),
+                icon: const Icon(Icons.my_location),
                 label: const Text("Détecter ma position"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: mainColor,
                   foregroundColor: Colors.white,
                 ),
               ),
-              const SizedBox(height: 10),
               if (latitude != null && longitude != null) ...[
+                const SizedBox(height: 10),
                 Text("Latitude : $latitude"),
                 Text("Longitude : $longitude"),
                 if (adresse.isNotEmpty) Text("Adresse : $adresse"),
@@ -318,8 +299,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                           longitude = point.longitude;
                         });
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Position modifiée manuellement")),
-                        );
+                            const SnackBar(content: Text("Position modifiée")));
                       },
                     ),
                     children: [
@@ -340,181 +320,78 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
               ],
+              const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: _choisirImages,
-                icon: Icon(Icons.photo_library, color: yellow),
-                label: const Text("Ajouter des photos (max 10)"),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: mainColor,
-                  side: BorderSide(color: mainColor, width: 2),
-                ),
+                icon: const Icon(Icons.photo_library),
+                label: const Text("Ajouter des photos"),
               ),
-              const SizedBox(height: 5),
-              if (_uploadedImages.isNotEmpty || _pickedImages.isNotEmpty)
-                SizedBox(
-                  height: 90,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      ..._uploadedImages.map(
-                        (url) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: Stack(
-                            alignment: Alignment.topRight,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(url, width: 80, height: 80, fit: BoxFit.cover),
-                              ),
-                              Positioned(
-                                top: 2,
-                                right: 2,
-                                child: GestureDetector(
-                                  onTap: () => _removeUploadedImage(url),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.65),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    padding: const EdgeInsets.all(2),
-                                    child: const Icon(Icons.close, color: Colors.white, size: 18),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      ..._pickedImages.map(
-                        (img) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: Stack(
-                            alignment: Alignment.topRight,
-                            children: [
-                              kIsWeb
-                                  ? Image.network(img.path, width: 80, height: 80, fit: BoxFit.cover)
-                                  : Image.file(File(img.path), width: 80, height: 80, fit: BoxFit.cover),
-                              Positioned(
-                                top: 2,
-                                right: 2,
-                                child: GestureDetector(
-                                  onTap: () => _removePickedImage(img),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.65),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    padding: const EdgeInsets.all(2),
-                                    child: const Icon(Icons.close, color: Colors.white, size: 18),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               TextFormField(
                 initialValue: nom,
-                decoration: InputDecoration(labelText: "Nom du lieu", labelStyle: TextStyle(color: mainColor)),
-                onChanged: (v) => nom = v,
+                decoration: const InputDecoration(labelText: "Nom du lieu"),
                 validator: (v) => v == null || v.isEmpty ? "Champ requis" : null,
+                onChanged: (v) => nom = v,
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 value: type,
-                decoration: InputDecoration(
-                  labelText: "Type de lieu *",
-                  border: const OutlineInputBorder(),
-                  labelStyle: TextStyle(color: mainColor),
-                ),
+                decoration: const InputDecoration(labelText: "Type de lieu"),
                 items: _typesLieu
-                    .map((t) => DropdownMenuItem(
-                          value: t,
-                          child: Text(t[0].toUpperCase() + t.substring(1)),
-                        ))
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                     .toList(),
                 onChanged: (v) => setState(() {
                   type = v;
                   sousCategorie = '';
                 }),
-                validator: (v) => v == null || v.isEmpty ? "Choisissez un type" : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 value: sousCategorie.isNotEmpty ? sousCategorie : null,
-                decoration: InputDecoration(
-                  labelText: "Sous-catégorie *",
-                  border: const OutlineInputBorder(),
-                  labelStyle: TextStyle(color: mainColor),
-                ),
+                decoration: const InputDecoration(labelText: "Sous-catégorie"),
                 items: type != null
                     ? (sousCategoriesParType[type!] ?? [])
-                        .map((cat) => DropdownMenuItem(
-                              value: cat,
-                              child: Text(cat),
-                            ))
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                         .toList()
                     : [],
                 onChanged: (v) => setState(() => sousCategorie = v ?? ''),
-                validator: (v) => v == null || v.isEmpty ? "Choisissez une sous-catégorie" : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               TextFormField(
                 initialValue: adresse,
-                decoration: InputDecoration(labelText: "Adresse", labelStyle: TextStyle(color: mainColor)),
+                decoration: const InputDecoration(labelText: "Adresse"),
                 onChanged: (v) => adresse = v,
               ),
               TextFormField(
                 initialValue: ville,
-                decoration: InputDecoration(labelText: "Ville", labelStyle: TextStyle(color: mainColor)),
+                decoration: const InputDecoration(labelText: "Ville"),
                 onChanged: (v) => ville = v,
               ),
               TextFormField(
                 initialValue: contact,
-                decoration: InputDecoration(labelText: "Contact (téléphone/email)", labelStyle: TextStyle(color: mainColor)),
+                decoration: const InputDecoration(labelText: "Contact"),
                 onChanged: (v) => contact = v,
               ),
               TextFormField(
                 initialValue: description,
-                decoration: InputDecoration(labelText: "Description", labelStyle: TextStyle(color: mainColor)),
+                decoration: const InputDecoration(labelText: "Description"),
                 maxLines: 3,
                 onChanged: (v) => description = v,
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (enEdition)
-                    ElevatedButton.icon(
-                      onPressed: _supprimerLieu,
-                      icon: const Icon(Icons.delete),
-                      label: const Text("Supprimer"),
+              _isUploading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton.icon(
+                      onPressed: _enregistrerLieu,
+                      icon: const Icon(Icons.save),
+                      label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: red,
+                        backgroundColor: mainColor,
                         foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
-                  Expanded(
-                    child: _isUploading
-                        ? const Center(child: CircularProgressIndicator())
-                        : ElevatedButton.icon(
-                            onPressed: _enregistrerLieu,
-                            icon: const Icon(Icons.save),
-                            label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: mainColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                            ),
-                          ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),

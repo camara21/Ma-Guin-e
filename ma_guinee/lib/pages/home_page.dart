@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../providers/user_provider.dart';
 import 'cgu_bottom_sheet.dart';
 import '../services/message_service.dart';
+import '../routes.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,6 +19,8 @@ class _HomePageState extends State<HomePage> {
   int _notificationsNonLues = 0;
   int _messagesNonLus = 0;
 
+  StreamSubscription<List<Map<String, dynamic>>>? _notifSub;
+
   @override
   void initState() {
     super.initState();
@@ -24,10 +29,17 @@ class _HomePageState extends State<HomePage> {
     _chargerMessagesNonLus();
   }
 
+  @override
+  void dispose() {
+    _notifSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _verifierCGU() async {
     final utilisateur = context.read<UserProvider>().utilisateur;
     if (utilisateur != null && utilisateur.cguAccepte != true) {
-      Future.delayed(Duration.zero, () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -44,14 +56,14 @@ class _HomePageState extends State<HomePage> {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
-    Supabase.instance.client
+    _notifSub?.cancel(); // au cas où
+    _notifSub = Supabase.instance.client
         .from('notifications:utilisateur_id=eq.${user.id}')
         .stream(primaryKey: ['id'])
         .listen((data) {
-      final nonLues = data.where((n) => n['lu'] != true).toList();
-      setState(() {
-        _notificationsNonLues = nonLues.length;
-      });
+      final nonLues = data.where((n) => n['lu'] != true).length;
+      if (!mounted) return;
+      setState(() => _notificationsNonLues = nonLues);
     });
   }
 
@@ -60,9 +72,8 @@ class _HomePageState extends State<HomePage> {
     if (user == null) return;
 
     final count = await MessageService().getUnreadMessagesCount(user.id);
-    setState(() {
-      _messagesNonLus = count;
-    });
+    if (!mounted) return;
+    setState(() => _messagesNonLus = count);
   }
 
   Widget buildIcon(IconData iconData, Color color) {
@@ -85,10 +96,14 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final utilisateur = Provider.of<UserProvider>(context).utilisateur;
+    final utilisateur = context.watch<UserProvider>().utilisateur;
 
     if (utilisateur == null) {
-      Future.microtask(() => Navigator.pushReplacementNamed(context, '/login'));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          Navigator.pushReplacementNamed(context, AppRoutes.login);
+        }
+      });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -124,9 +139,7 @@ class _HomePageState extends State<HomePage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.notifications, color: Color(0xFFCE1126)),
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/notifications');
-                  },
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.notifications),
                 ),
                 if (_notificationsNonLues > 0)
                   Positioned(
@@ -155,9 +168,7 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.only(top: 8.0, right: 12),
             child: IconButton(
               icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
-              onPressed: () {
-                Navigator.pushNamed(context, '/aide');
-              },
+              onPressed: () => Navigator.pushNamed(context, AppRoutes.aide),
             ),
           ),
         ],
@@ -226,9 +237,7 @@ class _HomePageState extends State<HomePage> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(14),
-                              boxShadow: [
-                                BoxShadow(color: Colors.black12, blurRadius: 6),
-                              ],
+                              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
                             ),
                             child: const Text(
                               "Guinée",
@@ -282,16 +291,16 @@ class _HomePageState extends State<HomePage> {
               mainAxisSpacing: spacing,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _serviceTile(Icons.campaign, "Annonces", '/annonces', const Color(0xFFCE1126)),
-                _serviceTile(Icons.engineering, "Prestataires", '/prestataires', const Color(0xFFFCD116)),
-                _serviceTile(Icons.account_balance, "Services Admin", '/administratif', const Color(0xFF009460)),
-                _serviceTile(Icons.restaurant, "Restaurants", '/restos', const Color(0xFFFCD116)),
-                _serviceTile(Icons.mosque, "Lieux de culte", '/culte', const Color(0xFF009460)),
-                _serviceTile(Icons.theaters, "Divertissement", '/divertissement', const Color(0xFFCE1126)),
-                _serviceTile(Icons.museum, "Tourisme", '/tourisme', const Color(0xFF009460)),
-                _serviceTile(Icons.local_hospital, "Santé", '/sante', const Color(0xFFFCD116)),
-                _serviceTile(Icons.hotel, "Hôtels", '/hotels', const Color(0xFFCE1126)),
-                _serviceTile(Icons.star, "Favoris", '/favoris', const Color(0xFF009460)),
+                _serviceTile(Icons.campaign, "Annonces", AppRoutes.annonces, const Color(0xFFCE1126)),
+                _serviceTile(Icons.engineering, "Prestataires", AppRoutes.pro, const Color(0xFFFCD116)),
+                _serviceTile(Icons.account_balance, "Services Admin", AppRoutes.admin, const Color(0xFF009460)),
+                _serviceTile(Icons.restaurant, "Restaurants", AppRoutes.resto, const Color(0xFFFCD116)),
+                _serviceTile(Icons.mosque, "Lieux de culte", AppRoutes.culte, const Color(0xFF009460)),
+                _serviceTile(Icons.theaters, "Divertissement", AppRoutes.divertissement, const Color(0xFFCE1126)),
+                _serviceTile(Icons.museum, "Tourisme", AppRoutes.tourisme, const Color(0xFF009460)),
+                _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
+                _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
+                _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
               ],
             ),
           ],

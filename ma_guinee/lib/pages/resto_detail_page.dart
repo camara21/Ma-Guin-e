@@ -3,10 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:photo_view/photo_view_gallery.dart';
+import 'package:photo_view/photo_view.dart';
 import '../services/avis_service.dart';
 
 class RestoDetailPage extends StatefulWidget {
-  final dynamic restoId;
+  final String restoId; // UUID
   const RestoDetailPage({super.key, required this.restoId});
 
   @override
@@ -17,18 +19,20 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   Map<String, dynamic>? resto;
   bool loading = true;
 
-  int _noteUtilisateur = 0;
-  final _avisController = TextEditingController();
+  // Avis
+  int _noteUtilisateur = 0; // jamais prérempli
+  final _avisController = TextEditingController(); // jamais prérempli
   List<Map<String, dynamic>> _avis = [];
   double _noteMoyenne = 0;
   final _avisService = AvisService();
+  bool _userHasExistingReview = false; // info seulement
 
-  // ✅ flag pour éviter de re-préremplir le champ juste après un envoi
-  bool _justSubmitted = false;
+  // Galerie
+  final PageController _pageController = PageController();
+  int _currentIndex = 0;
 
   final primaryColor = const Color(0xFF113CFC);
-
-  String get _id => widget.restoId.toString();
+  String get _id => widget.restoId;
 
   bool _isUuid(String id) {
     final uuidRegExp = RegExp(
@@ -44,54 +48,68 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     _loadAvis();
   }
 
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _avisController.dispose();
+    super.dispose();
+  }
+
+  List<String> _imagesFrom(dynamic raw) {
+    if (raw is List) return raw.map((e) => e.toString()).toList();
+    if (raw is String && raw.trim().isNotEmpty) return [raw];
+    return const [];
+  }
+
   Future<void> _loadResto() async {
     setState(() => loading = true);
-
-    final data = await Supabase.instance.client
-        .from('restaurants')
-        .select()
-        .eq('id', _id)
-        .maybeSingle();
-
-    setState(() {
-      resto = data;
-      loading = false;
-    });
+    try {
+      final data = await Supabase.instance.client
+          .from('restaurants')
+          .select()
+          .eq('id', _id)
+          .maybeSingle();
+      setState(() {
+        resto = (data == null) ? null : Map<String, dynamic>.from(data);
+        loading = false;
+      });
+    } catch (e) {
+      setState(() => loading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur de chargement: $e')));
+    }
   }
 
   Future<void> _loadAvis() async {
-    final res = await Supabase.instance.client
-        .from('avis')
-        .select('*, utilisateurs(*)')
-        .eq('contexte', 'restaurant')
-        .eq('cible_id', _id)
-        .order('created_at', ascending: false);
+    try {
+      final res = await Supabase.instance.client
+          .from('avis')
+          .select('*, utilisateurs(*)')
+          .eq('contexte', 'restaurant')
+          .eq('cible_id', _id)
+          .order('created_at', ascending: false);
 
-    final notes = res.map<int>((e) => e['note'] as int).toList();
-    final moyenne = notes.isNotEmpty
-        ? notes.reduce((a, b) => a + b) / notes.length
-        : 0.0;
+      final list = List<Map<String, dynamic>>.from(res);
+      final notes = list.map<int>((e) => (e['note'] as num?)?.toInt() ?? 0).toList();
+      final moyenne =
+          notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
 
-    setState(() {
-      _avis = List<Map<String, dynamic>>.from(res);
-      _noteMoyenne = moyenne;
-    });
+      // L'utilisateur a-t-il déjà donné un avis ? (juste indicatif)
+      final user = Supabase.instance.client.auth.currentUser;
+      final already = user != null && list.any((a) => a['utilisateur_id'] == user.id);
 
-    // ✅ on ne préremplit pas si on vient juste d'envoyer
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null && !_justSubmitted) {
-      final existing = _avis.firstWhere(
-        (a) => a['utilisateur_id'] == user.id,
-        orElse: () => {},
-      );
-      if (existing.isNotEmpty) {
-        _noteUtilisateur = existing['note'];
-        _avisController.text = existing['commentaire'] ?? '';
-      }
+      setState(() {
+        _avis = list;
+        _noteMoyenne = moyenne;
+        _userHasExistingReview = already;
+        // Ne JAMAIS remplir _noteUtilisateur ou _avisController ici
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur chargement avis: $e')));
     }
-
-    // ✅ reset du flag après le rechargement
-    _justSubmitted = false;
   }
 
   Future<void> _envoyerAvis() async {
@@ -103,14 +121,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       );
       return;
     }
-
     if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Veuillez noter et commenter.")),
       );
       return;
     }
-
     if (!_isUuid(_id)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Erreur : ID du restaurant invalide.")),
@@ -118,30 +134,39 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       return;
     }
 
-    await _avisService.ajouterOuModifierAvis(
-      contexte: 'restaurant',
-      cibleId: _id,
-      utilisateurId: user.id,
-      note: _noteUtilisateur,
-      commentaire: _avisController.text.trim(),
-    );
+    try {
+      // Upsert (ajouter ou modifier l'avis existant)
+      await _avisService.ajouterOuModifierAvis(
+        contexte: 'restaurant',
+        cibleId: _id,
+        utilisateurId: user.id,
+        note: _noteUtilisateur,
+        commentaire: _avisController.text.trim(),
+      );
 
-    // ✅ vider les champs et marquer qu'on vient d'envoyer
-    _noteUtilisateur = 0;
-    _avisController.clear();
-    _justSubmitted = true;
-    FocusScope.of(context).unfocus(); // optionnel : ferme le clavier
+      // On ne cache pas : on nettoie juste les champs après envoi
+      setState(() {
+        _noteUtilisateur = 0;
+        _avisController.clear();
+        _userHasExistingReview = true; // affichera l'info
+      });
+      FocusScope.of(context).unfocus();
 
-    await _loadAvis();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Merci pour votre avis !")),
-    );
+      await _loadAvis();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Merci pour votre avis !")));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de l'envoi de l'avis: $e")),
+      );
+    }
   }
 
   void _reserver() {
-    final lat = resto?['latitude'];
-    final lng = resto?['longitude'];
+    final lat = (resto?['latitude'] as num?)?.toDouble();
+    final lng = (resto?['longitude'] as num?)?.toDouble();
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -173,10 +198,25 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   }
 
   void _appeler() async {
-    final tel = resto?['telephone'] as String? ?? '';
-    if (tel.isNotEmpty) {
-      final uri = Uri.parse('tel:$tel');
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
+    // colonne correcte = 'tel' (fallback 'telephone' si jamais tu l'as aussi)
+    final telRaw =
+        (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
+    final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), ''); // nettoyer
+    if (tel.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Numéro indisponible.")),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: tel);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Impossible d'ouvrir le téléphone pour $tel")),
+      );
     }
   }
 
@@ -195,19 +235,85 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     );
   }
 
+  // --------- PLEIN ÉCRAN (PhotoViewGallery) ----------
+  void _openFullScreenGallery(List<String> images, int initialIndex) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.95),
+      builder: (_) {
+        final controller = PageController(initialPage: initialIndex);
+        int current = initialIndex;
+        return StatefulBuilder(builder: (context, setS) {
+          return Stack(
+            children: [
+              PhotoViewGallery.builder(
+                scrollPhysics: const BouncingScrollPhysics(),
+                itemCount: images.length,
+                pageController: controller,
+                builder: (context, index) {
+                  return PhotoViewGalleryPageOptions(
+                    imageProvider: NetworkImage(images[index]),
+                    minScale: PhotoViewComputedScale.contained,
+                    maxScale: PhotoViewComputedScale.covered * 3,
+                    heroAttributes: PhotoViewHeroAttributes(tag: 'resto_$index'),
+                  );
+                },
+                onPageChanged: (i) => setS(() => current = i),
+                backgroundDecoration: const BoxDecoration(color: Colors.black),
+              ),
+              // Compteur 1/N
+              Positioned(
+                bottom: 24,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${current + 1}/${images.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                ),
+              ),
+              // Fermer
+              Positioned(
+                top: 24,
+                right: 8,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+  // ---------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (resto == null) return const Scaffold(body: Center(child: Text("Introuvable")));
+    if (loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (resto == null) {
+      return const Scaffold(body: Center(child: Text("Introuvable")));
+    }
 
-    final nom = resto!['nom'] as String? ?? '';
-    final ville = resto!['ville'] as String? ?? '';
-    final desc = resto!['description'] as String? ?? '';
-    final spec = resto!['specialites'] as String? ?? '';
-    final horaire = resto!['horaires'] as String? ?? '';
-    final List<String> images = (resto!['images'] as List?)?.cast<String>() ?? [];
-    final lat = resto!['latitude'] as double?;
-    final lng = resto!['longitude'] as double?;
+    final nom = (resto!['nom'] ?? '').toString();
+    final ville = (resto!['ville'] ?? '').toString();
+    final desc = (resto!['description'] ?? '').toString();
+    final spec = (resto!['specialites'] ?? '').toString();
+    final horaire = (resto!['horaires'] ?? '').toString();
+    final images = _imagesFrom(resto!['images']);
+    final lat = (resto!['latitude'] as num?)?.toDouble();
+    final lng = (resto!['longitude'] as num?)?.toDouble();
 
     return Scaffold(
       appBar: AppBar(
@@ -218,31 +324,124 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (images.isNotEmpty)
+          // ---------- CARROUSEL + MINIATURES ----------
+          if (images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(images.first,
-                  height: 200, width: double.infinity, fit: BoxFit.cover),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 230,
+                    width: double.infinity,
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: images.length,
+                      onPageChanged: (i) => setState(() => _currentIndex = i),
+                      itemBuilder: (context, index) => GestureDetector(
+                        onTap: () => _openFullScreenGallery(images, index),
+                        child: Hero(
+                          tag: 'resto_$index',
+                          child: Image.network(
+                            images[index],
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.image_not_supported),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.45),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        '${_currentIndex + 1}/${images.length}',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 68,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final isActive = index == _currentIndex;
+                  return GestureDetector(
+                    onTap: () {
+                      _pageController.animateToPage(
+                        index,
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOut,
+                      );
+                      setState(() => _currentIndex = index);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 90,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isActive ? primaryColor : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: Image.network(
+                        images[index],
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          // ------------------------------------------------
+
           const SizedBox(height: 12),
           Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          if (spec.isNotEmpty) Text(spec, style: const TextStyle(color: Colors.green)),
-          Row(children: [
-            const Icon(Icons.location_on, color: Colors.red),
-            const SizedBox(width: 4),
-            Text(ville),
-          ]),
+          if (spec.isNotEmpty) const SizedBox(height: 2),
+          if (spec.isNotEmpty)
+            Text(spec, style: const TextStyle(color: Colors.green)),
+          Row(
+            children: [
+              const Icon(Icons.location_on, color: Colors.red),
+              const SizedBox(width: 4),
+              Text(ville),
+            ],
+          ),
           if (desc.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(desc),
           ],
           if (horaire.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Row(children: [
-              const Icon(Icons.schedule, size: 20),
-              const SizedBox(width: 4),
-              Text(horaire),
-            ]),
+            Row(
+              children: [
+                const Icon(Icons.schedule, size: 20),
+                const SizedBox(width: 4),
+                Text(horaire),
+              ],
+            ),
           ],
           if (_noteMoyenne > 0) ...[
             const SizedBox(height: 8),
@@ -251,6 +450,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           const Divider(height: 30),
 
           const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
+          if (_userHasExistingReview)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text(
+                "Vous avez déjà donné un avis. Renvoyez pour le mettre à jour.",
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ),
           _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
           TextField(
             controller: _avisController,
@@ -275,7 +482,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             SizedBox(
               height: 200,
               child: FlutterMap(
-                options: MapOptions(center: LatLng(lat, lng), zoom: 15),
+                options: MapOptions(
+                  initialCenter: LatLng(lat, lng),
+                  initialZoom: 15,
+                ),
                 children: [
                   TileLayer(
                     urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -297,8 +507,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () async {
-                final uri = Uri.parse(
-                    "https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+                final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
                 }
@@ -346,17 +555,19 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 final user = a['utilisateurs'] ?? {};
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundImage: user['photo_url'] != null
+                    backgroundImage: (user['photo_url'] != null && user['photo_url'].toString().isNotEmpty)
                         ? NetworkImage(user['photo_url'])
                         : null,
-                    child: user['photo_url'] == null ? const Icon(Icons.person) : null,
+                    child: (user['photo_url'] == null || user['photo_url'].toString().isEmpty)
+                        ? const Icon(Icons.person)
+                        : null,
                   ),
                   title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("${a['note']} ⭐️"),
-                      if (a['commentaire'] != null) Text(a['commentaire']),
+                      if (a['commentaire'] != null) Text(a['commentaire'].toString()),
                     ],
                   ),
                 );

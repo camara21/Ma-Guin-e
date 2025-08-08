@@ -17,16 +17,16 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
   @override
   void initState() {
     super.initState();
-    mesRestaurants = List.from(widget.restaurants); // Copie locale
+    mesRestaurants = List.from(widget.restaurants);
   }
 
   Future<void> supprimerRestaurant(Map<String, dynamic> resto) async {
     final supabase = Supabase.instance.client;
-    final id = resto['id'];
+    final String id = resto['id'];
     final images = List<String>.from(resto['images'] ?? []);
 
     try {
-      // 🧹 Supprimer les images du Storage
+      // 🗑 Supprimer les images du Storage
       for (var url in images) {
         final path = url.split('/object/public/').last;
         await supabase.storage.from('restaurant-photos').remove([path]);
@@ -35,13 +35,13 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
       // ❌ Supprimer le restaurant
       await supabase.from('restaurants').delete().eq('id', id);
 
-      // 🔄 Rafraîchir la liste
+      // 🔄 Mise à jour de la liste locale
       if (mounted) {
         setState(() {
           mesRestaurants.removeWhere((r) => r['id'] == id);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Restaurant supprimé avec succès !')),
+          const SnackBar(content: Text('Restaurant supprimé avec succès !')),
         );
       }
     } catch (e) {
@@ -60,7 +60,10 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Mes Restaurants', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Mes Restaurants',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: bleuMaGuinee,
         elevation: 1,
@@ -88,24 +91,30 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
               padding: const EdgeInsets.all(12),
               itemBuilder: (context, index) {
                 final resto = mesRestaurants[index];
-                final List images = resto['images'] ?? [];
+                final images = resto['images'] ?? [];
                 final image = images.isNotEmpty ? images.first : null;
 
                 return Card(
                   color: jauneMaGuinee.withOpacity(0.09),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   margin: const EdgeInsets.only(bottom: 14),
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: bleuMaGuinee.withOpacity(0.16),
-                      backgroundImage: image != null ? NetworkImage(image) : null,
+                      backgroundImage:
+                          image != null ? NetworkImage(image) : null,
                       child: image == null
                           ? Icon(Icons.restaurant, color: bleuMaGuinee)
                           : null,
                     ),
                     title: Text(
                       resto['nom'] ?? 'Nom inconnu',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: bleuMaGuinee,
+                      ),
                     ),
                     subtitle: Text(
                       resto['ville'] ?? 'Ville inconnue',
@@ -122,7 +131,8 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit, color: Color(0xFF009460)),
+                          icon:
+                              const Icon(Icons.edit, color: Color(0xFF009460)),
                           onPressed: () {
                             Navigator.pushNamed(
                               context,
@@ -138,15 +148,21 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
                                   context: context,
                                   builder: (ctx) => AlertDialog(
                                     title: const Text('Confirmer la suppression'),
-                                    content: const Text('Voulez-vous vraiment supprimer ce restaurant ?'),
+                                    content: const Text(
+                                        'Voulez-vous vraiment supprimer ce restaurant ?'),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
                                         child: const Text('Annuler'),
                                       ),
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, true),
-                                        child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text(
+                                          'Supprimer',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
                                       ),
                                     ],
                                   ),

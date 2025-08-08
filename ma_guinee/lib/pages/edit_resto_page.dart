@@ -86,14 +86,36 @@ class _EditRestoPageState extends State<EditRestoPage> {
     }
   }
 
-  void _removeImage(int idx, {bool isNetwork = false}) {
-    setState(() {
-      if (isNetwork) {
-        urls.removeAt(idx);
-      } else {
-        files.removeAt(idx);
+  /// Suppression locale + Supabase Storage
+  void _removeImage(int idx, {bool isNetwork = false}) async {
+    final storage = Supabase.instance.client.storage.from('restaurant_photos');
+
+    if (isNetwork) {
+      final imageUrl = urls[idx];
+      try {
+        // Récupération du nom du fichier depuis l'URL publique
+        final fileName = imageUrl.split('/').last.split('?').first;
+
+        // Suppression dans Supabase Storage
+        await storage.remove([fileName]);
+
+        setState(() {
+          urls.removeAt(idx);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Image supprimée du serveur.")),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur lors de la suppression : $e")),
+        );
       }
-    });
+    } else {
+      setState(() {
+        files.removeAt(idx);
+      });
+    }
   }
 
   Future<List<String>> _uploadImages() async {
@@ -138,7 +160,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
     setState(() => loading = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Restaurant modifié avec succès !")),
+        const SnackBar(content: Text("Restaurant modifié avec succès !")),
       );
       Navigator.pop(context, {
         ...widget.resto,
@@ -176,7 +198,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
                 child: ListView(
                   children: [
                     const Text(
-                      "Pour plus de précision, placez-vous à l'intérieur du restaurant puis cliquez sur « Détecter ma position ».",
+                      "Pour plus de précision, placez-vous à l'intérieur du restaurant puis cliquez sur « Détecter ma position ». ",
                       style: TextStyle(color: Colors.blueGrey, fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 9),
