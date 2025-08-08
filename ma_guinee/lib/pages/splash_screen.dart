@@ -29,7 +29,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0175C2), // 🔹 Bleu manifest.json
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

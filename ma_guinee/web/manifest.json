@@ -1,11 +1,11 @@
 {
-    "name": "ma_guinee",
-    "short_name": "ma_guinee",
-    "start_url": ".",
+    "name": "Ma Guinée",
+    "short_name": "Ma Guinée",
+    "start_url": "/",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Application multi-services pour la Guinée : annonces, prestataires, restaurants, hôtels et plus.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
