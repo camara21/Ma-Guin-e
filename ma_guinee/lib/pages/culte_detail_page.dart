@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 class CulteDetailPage extends StatelessWidget {
   final Map<String, dynamic> lieu;
-
   const CulteDetailPage({super.key, required this.lieu});
 
   void _ouvrirDansGoogleMaps(double lat, double lng) async {
@@ -22,21 +21,14 @@ class CulteDetailPage extends StatelessWidget {
     final String nom = lieu['nom'] ?? 'Lieu de culte';
     final String ville = lieu['ville'] ?? 'Ville inconnue';
 
-    // Correction ici : images + fallback sur photo_url
     final List<String> images = (lieu['images'] is List && (lieu['images'] as List).isNotEmpty)
         ? List<String>.from(lieu['images'])
         : (lieu['photo_url'] != null && lieu['photo_url'].toString().isNotEmpty)
             ? [lieu['photo_url'].toString()]
             : [];
 
-    final double latitude = (lieu['latitude'] != null)
-        ? (lieu['latitude'] as num).toDouble()
-        : 0.0;
-    final double longitude = (lieu['longitude'] != null)
-        ? (lieu['longitude'] as num).toDouble()
-        : 0.0;
-
-    int _currentImage = 0;
+    final double latitude = (lieu['latitude'] ?? 0).toDouble();
+    final double longitude = (lieu['longitude'] ?? 0).toDouble();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -53,86 +45,96 @@ class CulteDetailPage extends StatelessWidget {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (images.isNotEmpty)
-              _ImagesCarousel(images: images)
-            else
-              ClipRRect(
-                borderRadius: BorderRadius.circular(17),
-                child: Container(
-                  height: 190,
-                  color: Colors.grey.shade200,
-                  child: const Center(
-                      child: Icon(Icons.place, size: 70, color: Colors.grey)),
-                ),
-              ),
-            const SizedBox(height: 18),
-            Text(
-              ville,
-              style: const TextStyle(fontSize: 16, color: Colors.black87),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              "Localisation :",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(13),
-                boxShadow: const [
-                  BoxShadow(
-                      color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
-                ],
-              ),
-              height: 190,
-              child: FlutterMap(
-                options: MapOptions(
-                  center: LatLng(latitude, longitude),
-                  zoom: 15,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    userAgentPackageName: 'com.example.ma_guinee',
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 700),
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (images.isNotEmpty)
+                  _ImagesCarousel(images: images)
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 200,
+                      color: Colors.grey.shade200,
+                      child: const Center(
+                        child: Icon(Icons.place, size: 70, color: Colors.grey),
+                      ),
+                    ),
                   ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: LatLng(latitude, longitude),
-                        width: 44,
-                        height: 44,
-                        child: const Icon(Icons.location_on,
-                            color: Color(0xFF009460), size: 40),
+                const SizedBox(height: 20),
+
+                Text(
+                  ville,
+                  style: const TextStyle(fontSize: 16, color: Colors.black87),
+                ),
+
+                const SizedBox(height: 20),
+                const Text(
+                  "Localisation :",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 10),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(13),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
+                    ],
+                  ),
+                  height: 200,
+                  child: FlutterMap(
+                    options: MapOptions(
+                      center: LatLng(latitude, longitude),
+                      zoom: 15,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        userAgentPackageName: 'com.example.ma_guinee',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(latitude, longitude),
+                            width: 44,
+                            height: 44,
+                            child: const Icon(Icons.location_on,
+                                color: Color(0xFF009460), size: 40),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 26),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
-                icon: const Icon(Icons.map),
-                label: const Text("Ouvrir dans Google Maps"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF113CFC),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
                 ),
-              ),
+
+                const SizedBox(height: 26),
+                Center(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
+                    icon: const Icon(Icons.map),
+                    label: const Text("Ouvrir dans Google Maps"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF113CFC),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -150,10 +152,11 @@ class _ImagesCarousel extends StatefulWidget {
 
 class _ImagesCarouselState extends State<_ImagesCarousel> {
   int _current = 0;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 190,
+      height: 200,
       child: Stack(
         alignment: Alignment.bottomCenter,
         children: [
@@ -166,15 +169,14 @@ class _ImagesCarouselState extends State<_ImagesCarousel> {
                 child: Image.network(
                   widget.images[index],
                   width: double.infinity,
-                  height: 190,
+                  height: 200,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      Container(
-                        height: 190,
-                        color: Colors.grey.shade300,
-                        child: const Center(
-                            child: Icon(Icons.image_not_supported)),
-                      ),
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    color: Colors.grey.shade300,
+                    child: const Center(
+                        child: Icon(Icons.image_not_supported)),
+                  ),
                 ),
               );
             },

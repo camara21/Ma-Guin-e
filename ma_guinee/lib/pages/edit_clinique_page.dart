@@ -1,10 +1,9 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditCliniquePage extends StatefulWidget {
   final Map<String, dynamic>? clinique;
@@ -28,6 +27,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   List<XFile> newFiles = [];
   List<String> imagesUrls = [];
   bool loading = false;
+  final String _bucket = 'clinique-photos';
 
   @override
   void initState() {
@@ -62,24 +62,69 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     }
   }
 
+  String? _storagePathFromPublicUrl(String url) {
+    final marker = '/storage/v1/object/public/$_bucket/';
+    final idx = url.indexOf(marker);
+    if (idx != -1) {
+      return url.substring(idx + marker.length);
+    }
+    final alt = '$_bucket/';
+    final idx2 = url.indexOf(alt);
+    if (idx2 != -1) {
+      return url.substring(idx2 + alt.length);
+    }
+    return null;
+  }
+
   Future<List<String>> _uploadImages() async {
-    final storage = Supabase.instance.client.storage.from('clinique-photos');
+    final storage = Supabase.instance.client.storage.from(_bucket);
     List<String> urls = [];
     for (var file in newFiles) {
       final filename = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       try {
         if (kIsWeb) {
           final bytes = await file.readAsBytes();
-          await storage.uploadBinary(filename, bytes, fileOptions: const FileOptions(upsert: true));
+          await storage.uploadBinary('cliniques/$filename', bytes, fileOptions: const FileOptions(upsert: true));
         } else {
-          await storage.upload(filename, File(file.path), fileOptions: const FileOptions(upsert: true));
+          await storage.upload('cliniques/$filename', File(file.path), fileOptions: const FileOptions(upsert: true));
         }
-        urls.add(storage.getPublicUrl(filename));
+        urls.add(storage.getPublicUrl('cliniques/$filename'));
       } catch (e) {
         debugPrint("Erreur upload image : $e");
       }
     }
     return urls;
+  }
+
+  Future<void> _removeImage(int index) async {
+    // suppression d'une image déjà en base
+    if (index < imagesUrls.length) {
+      final imageUrl = imagesUrls[index];
+      final pathInStorage = _storagePathFromPublicUrl(imageUrl);
+      if (pathInStorage != null) {
+        try {
+          await Supabase.instance.client.storage.from(_bucket).remove([pathInStorage]);
+        } catch (e) {
+          debugPrint("Erreur suppression storage : $e");
+        }
+      }
+      final updated = List<String>.from(imagesUrls)..removeAt(index);
+      imagesUrls = updated;
+      if (widget.clinique?['id'] != null) {
+        try {
+          await Supabase.instance.client.from('cliniques').update({'images': updated}).eq('id', widget.clinique!['id']);
+        } catch (e) {
+          debugPrint("Erreur update DB : $e");
+        }
+      }
+    } else {
+      // suppression locale pour les nouvelles images
+      final newIndex = index - imagesUrls.length;
+      if (newIndex >= 0 && newIndex < newFiles.length) {
+        setState(() => newFiles.removeAt(newIndex));
+      }
+    }
+    setState(() {});
   }
 
   Future<void> _save() async {
@@ -114,7 +159,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Clinique enregistrée avec succès !")),
+          const SnackBar(content: Text("Clinique enregistrée avec succès !")),
         );
         Navigator.pop(context, {...?widget.clinique, ...data});
       }
@@ -160,8 +205,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
       }
     }
   }
-
-  void _removeImage(int index) => setState(() => imagesUrls.removeAt(index));
 
   @override
   Widget build(BuildContext context) {
@@ -214,11 +257,29 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                             ),
                           ],
                         )),
-                    ...newFiles.map((x) => ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: kIsWeb
-                              ? Image.network(x.path, width: 70, height: 70, fit: BoxFit.cover)
-                              : Image.file(File(x.path), width: 70, height: 70, fit: BoxFit.cover),
+                    ...newFiles.asMap().entries.map((entry) => Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: kIsWeb
+                                  ? Image.network(entry.value.path, width: 70, height: 70, fit: BoxFit.cover)
+                                  : Image.file(File(entry.value.path), width: 70, height: 70, fit: BoxFit.cover),
+                            ),
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: GestureDetector(
+                                onTap: () => _removeImage(entry.key + imagesUrls.length),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.85),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 19),
+                                ),
+                              ),
+                            ),
+                          ],
                         )),
                     InkWell(
                       onTap: _pickImages,

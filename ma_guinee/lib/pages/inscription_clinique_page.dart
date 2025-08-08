@@ -30,8 +30,10 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   double? latitude;
   double? longitude;
 
-  XFile? _pickedImage;
-  String? _uploadedImageUrl;
+  // --- MULTI PHOTOS ---
+  final List<XFile> _pickedImages = [];        // nouvelles images non encore uploadées
+  final List<String> _existingImageUrls = [];  // images déjà en base (édition)
+
   bool _isUploading = false;
   final String _bucket = 'clinique-photos';
 
@@ -48,8 +50,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     horaires = c['horaires'] ?? '';
     latitude = c['latitude'] != null ? double.tryParse('${c['latitude']}') : null;
     longitude = c['longitude'] != null ? double.tryParse('${c['longitude']}') : null;
-    if (c['images'] is List && c['images'].isNotEmpty) {
-      _uploadedImageUrl = c['images'][0];
+
+    if (c['images'] is List) {
+      for (final it in (c['images'] as List)) {
+        if (it is String && it.isNotEmpty) _existingImageUrls.add(it);
+      }
     }
   }
 
@@ -88,16 +93,49 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
-  Future<void> _choisirImage() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() => _pickedImage = picked);
+  // --- Sélection MULTI images ---
+  Future<void> _choisirImagesMultiples() async {
+    final picker = ImagePicker();
+    final pickedList = await picker.pickMultiImage();
+    if (pickedList.isNotEmpty) {
+      setState(() {
+        _pickedImages.addAll(pickedList);
+      });
     }
   }
 
+  // (Optionnel) Prendre une photo
+  Future<void> _prendrePhoto() async {
+    final picker = ImagePicker();
+    final shot = await picker.pickImage(source: ImageSource.camera);
+    if (shot != null) {
+      setState(() => _pickedImages.add(shot));
+    }
+  }
+
+  // Util: extraire le "path" Storage depuis une URL publique
+  String? _storagePathFromPublicUrl(String url) {
+    // Format public courant:
+    // https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+    final marker = '/storage/v1/object/public/$_bucket/';
+    final idx = url.indexOf(marker);
+    if (idx != -1) {
+      return url.substring(idx + marker.length);
+    }
+    // fallback: essayer après "<bucket>/"
+    final alt = '$_bucket/';
+    final idx2 = url.indexOf(alt);
+    if (idx2 != -1) {
+      return url.substring(idx2 + alt.length);
+    }
+    return null; // introuvable
+  }
+
+  // Upload d'UNE image -> URL publique
   Future<String?> _uploadImage(XFile imageFile) async {
     try {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.${imageFile.path.split('.').last}';
+      final ext = imageFile.name.split('.').last;
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$ext';
       final path = 'cliniques/$fileName';
       final bytes = await imageFile.readAsBytes();
 
@@ -112,6 +150,33 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
+  Future<void> _supprimerImage(String imageUrl, {required bool isExisting}) async {
+    try {
+      // 1) supprimer du storage si on a une URL publique en base
+      final storagePath = _storagePathFromPublicUrl(imageUrl);
+      if (storagePath != null) {
+        await Supabase.instance.client.storage.from(_bucket).remove([storagePath]);
+      }
+
+      // 2) MAJ UI & base si c'était une image existante
+      if (isExisting && widget.clinique != null) {
+        final updated = List<String>.from(_existingImageUrls)..remove(imageUrl);
+        await Supabase.instance.client
+            .from('cliniques')
+            .update({'images': updated})
+            .eq('id', widget.clinique!['id']);
+        setState(() => _existingImageUrls.remove(imageUrl));
+      }
+    } catch (e) {
+      debugPrint("Erreur suppression image : $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Erreur lors de la suppression de l'image")),
+        );
+      }
+    }
+  }
+
   Future<void> _enregistrerClinique() async {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
@@ -123,11 +188,18 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
     setState(() => _isUploading = true);
     final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null) {
+      if (mounted) setState(() => _isUploading = false);
+      return;
+    }
 
-    String? imageUrl = _uploadedImageUrl;
-    if (_pickedImage != null) {
-      imageUrl = await _uploadImage(_pickedImage!);
+    // 1) On part des images existantes (édition) – déjà nettoyées si suppressions
+    final List<String> finalUrls = List<String>.from(_existingImageUrls);
+
+    // 2) Upload des nouvelles images
+    for (final x in _pickedImages) {
+      final url = await _uploadImage(x);
+      if (url != null) finalUrls.add(url);
     }
 
     final data = {
@@ -140,7 +212,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
       'horaires': horaires,
       'latitude': latitude,
       'longitude': longitude,
-      'images': imageUrl != null ? [imageUrl] : [],
+      'images': finalUrls, // liste d’URLs (ARRAY/TEXT ou JSONB côté DB)
       'user_id': userId,
     };
 
@@ -159,9 +231,82 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
+  // Widget vignette pour une URL existante
+  Widget _thumbFromUrl(String url) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(url, fit: BoxFit.cover),
+          ),
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: InkWell(
+            onTap: () => _supprimerImage(url, isExisting: true),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(2),
+              child: const Icon(Icons.close, color: Colors.white, size: 18),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Widget vignette pour un XFile local (pas encore uploadé)
+  Widget _thumbFromXFile(XFile xf) {
+    final child = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: kIsWeb
+          ? Image.network(xf.path, fit: BoxFit.cover) // blob: URL côté Web
+          : Image.file(File(xf.path), fit: BoxFit.cover),
+    );
+
+    return Stack(
+      children: [
+        Positioned.fill(child: child),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: InkWell(
+            onTap: () {
+              setState(() => _pickedImages.remove(xf)); // juste UI locale
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(2),
+              child: const Icon(Icons.close, color: Colors.white, size: 18),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.clinique != null;
+
+    // Première image pour l'avatar
+    ImageProvider? firstImage;
+    if (_pickedImages.isNotEmpty) {
+      firstImage = kIsWeb
+          ? NetworkImage(_pickedImages.first.path)
+          : FileImage(File(_pickedImages.first.path)) as ImageProvider;
+    } else if (_existingImageUrls.isNotEmpty) {
+      firstImage = NetworkImage(_existingImageUrls.first);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(enEdition ? "Modifier la clinique" : "Inscription Clinique"),
@@ -184,6 +329,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 ),
               ),
               const SizedBox(height: 10),
+
               if (latitude != null && longitude != null) ...[
                 Text("Latitude : $latitude"),
                 Text("Longitude : $longitude"),
@@ -225,20 +371,48 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 ),
                 const SizedBox(height: 10),
               ],
-              GestureDetector(
-                onTap: _choisirImage,
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage: _pickedImage != null
-                      ? (kIsWeb
-                          ? NetworkImage(_pickedImage!.path)
-                          : FileImage(File(_pickedImage!.path)) as ImageProvider)
-                      : (_uploadedImageUrl != null ? NetworkImage(_uploadedImageUrl!) : null),
-                  child: _pickedImage == null && _uploadedImageUrl == null
-                      ? const Icon(Icons.camera_alt, size: 30)
-                      : null,
-                ),
+
+              // Avatar (première image)
+              CircleAvatar(
+                radius: 50,
+                backgroundImage: firstImage,
+                child: firstImage == null ? const Icon(Icons.camera_alt, size: 30) : null,
               ),
+              const SizedBox(height: 10),
+
+              // Boutons d'ajout
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _choisirImagesMultiples,
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text("Ajouter des photos"),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _prendrePhoto,
+                    icon: const Icon(Icons.photo_camera),
+                    label: const Text("Prendre une photo"),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Grille (existantes + nouvelles)
+              if (_existingImageUrls.isNotEmpty || _pickedImages.isNotEmpty)
+                GridView.count(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    ..._existingImageUrls.map(_thumbFromUrl),
+                    ..._pickedImages.map(_thumbFromXFile),
+                  ],
+                ),
+
               const SizedBox(height: 20),
               TextFormField(
                 initialValue: nom,
@@ -279,6 +453,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 onChanged: (v) => description = v,
               ),
               const SizedBox(height: 20),
+
               _isUploading
                   ? const CircularProgressIndicator()
                   : ElevatedButton.icon(
