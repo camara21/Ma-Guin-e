@@ -6,8 +6,8 @@ import '../services/message_service.dart';
 class MessagesPrestatairePage extends StatefulWidget {
   final String prestataireId;
   final String prestataireNom;
-  final String receiverId;
-  final String senderId;
+  final String receiverId; // ID du destinataire
+  final String senderId;   // ID de l’expéditeur (moi)
 
   const MessagesPrestatairePage({
     super.key,
@@ -25,6 +25,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   final _svc = MessageService();
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
+
   List<Map<String, dynamic>> _msgs = [];
   bool _loading = true;
   StreamSubscription<List<Map<String, dynamic>>>? _sub;
@@ -32,60 +33,107 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+    _chargerEtMarquerCommeLu();
+
+    // ✅ On écoute toute la table, pas de .eq() ici (Supabase 2.x)
     _sub = Supabase.instance.client
         .from('messages')
         .stream(primaryKey: ['id'])
-        .listen((_) => _loadMessages());
+        .listen((_) => _chargerEtMarquerCommeLu());
   }
 
-  Future<void> _loadMessages() async {
+  Future<void> _chargerEtMarquerCommeLu() async {
     setState(() => _loading = true);
-    final msgs = await _svc.fetchMessagesForPrestataire(widget.prestataireId);
-    for (var m in msgs) {
-      if (m['receiver_id'].toString() == widget.senderId && m['lu'] == false) {
-        await _svc.markMessageAsRead(m['id'].toString());
+    try {
+      // 1) Charger uniquement les messages de CE prestataire
+      final msgs = await _svc.fetchMessagesForPrestataire(widget.prestataireId);
+
+      // 2) Lister les messages destinés à moi et non lus
+      final idsAValider = <String>[];
+      for (var m in msgs) {
+        final estPourMoi = (m['receiver_id']?.toString() == widget.senderId);
+        final pasEncoreLu = (m['lu'] == false || m['lu'] == null);
+        if (estPourMoi && pasEncoreLu) {
+          final id = m['id']?.toString();
+          if (id != null) idsAValider.add(id);
+        }
       }
+
+      // 3) Marquer comme lus en base
+      if (idsAValider.isNotEmpty) {
+        await Supabase.instance.client
+            .from('messages')
+            .update({'lu': true})
+            .inFilter('id', idsAValider);
+
+        // 🔔 prévenir le badge global (MainNavigationPage)
+        _svc.unreadChanged.add(null);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _msgs = msgs;
+        _loading = false;
+      });
+
+      _defilerEnBas();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      debugPrint('Erreur chargement/lu (prestataire): $e');
     }
-    setState(() {
-      _msgs = msgs;
-      _loading = false;
-    });
+  }
+
+  void _defilerEnBas() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
     });
   }
 
-  Future<void> _send() async {
-    final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
+  Future<void> _envoyer() async {
+    final texte = _ctrl.text.trim();
+    if (texte.isEmpty) return;
+
     _ctrl.clear();
+
+    // Affichage instantané (optimistic UI)
     setState(() {
       _msgs.add({
         'sender_id': widget.senderId,
-        'contenu': text,
+        'receiver_id': widget.receiverId,
+        'contenu': texte,
         'lu': true,
         'id': -1,
         'date_envoi': DateTime.now().toIso8601String(),
       });
     });
-    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    _defilerEnBas();
 
-    // ENVOI avec le nom du prestataire
-    await _svc.sendMessageToPrestataire(
-      senderId: widget.senderId,
-      receiverId: widget.receiverId,
-      prestataireId: widget.prestataireId,
-      prestataireName: widget.prestataireNom, // <-- INDISPENSABLE pour la table !
-      contenu: text,
-    );
-    // Pas besoin de reload ici, le stream realtime le fera !
+    try {
+      // Envoi réel vers Supabase via le service
+      await _svc.sendMessageToPrestataire(
+        senderId: widget.senderId,
+        receiverId: widget.receiverId,
+        prestataireId: widget.prestataireId,
+        prestataireName: widget.prestataireNom,
+        contenu: texte,
+      );
+      // Le stream temps réel mettra à jour la liste
+    } catch (e) {
+      debugPrint('Erreur envoi message (prestataire): $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de l'envoi du message : $e")),
+      );
+    }
   }
 
-  Widget _bubble(Map<String, dynamic> m) {
-    final me = m['sender_id'] == widget.senderId;
+  Widget _bulleMessage(Map<String, dynamic> m) {
+    final moi = m['sender_id'] == widget.senderId;
     return Align(
-      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: moi ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.75,
@@ -93,12 +141,15 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: me ? const Color(0xFF113CFC) : Colors.grey[200],
+          color: moi ? const Color(0xFF113CFC) : Colors.grey[200],
           borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
-          m['contenu'] ?? '',
-          style: TextStyle(color: me ? Colors.white : Colors.black87, fontSize: 15),
+          (m['contenu'] ?? '').toString(),
+          style: TextStyle(
+            color: moi ? Colors.white : Colors.black87,
+            fontSize: 15,
+          ),
         ),
       ),
     );
@@ -123,8 +174,10 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF113CFC)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.prestataireNom,
-            style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold)),
+        title: Text(
+          widget.prestataireNom,
+          style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold),
+        ),
       ),
       body: SafeArea(
         child: _loading
@@ -135,17 +188,17 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                     child: ListView.builder(
                       controller: _scroll,
                       itemCount: _msgs.length,
-                      itemBuilder: (_, i) => _bubble(_msgs[i]),
+                      itemBuilder: (_, i) => _bulleMessage(_msgs[i]),
                     ),
                   ),
-                  _buildInputBar(),
+                  _zoneSaisie(),
                 ],
               ),
       ),
     );
   }
 
-  Widget _buildInputBar() {
+  Widget _zoneSaisie() {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -166,13 +219,13 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                 ),
                 minLines: 1,
                 maxLines: 5,
-                onSubmitted: (_) => _send(),
+                onSubmitted: (_) => _envoyer(),
               ),
             ),
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: _send,
+            onPressed: _envoyer,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF113CFC),
               shape: const CircleBorder(),

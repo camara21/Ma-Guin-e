@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/message_service.dart';
 import 'messages_annonce_page.dart';
 import 'messages_prestataire_page.dart';
@@ -14,9 +15,11 @@ class MessagesPage extends StatefulWidget {
 class _MessagesPageState extends State<MessagesPage> {
   final _searchCtrl = TextEditingController();
   final MessageService _messageService = MessageService();
+
   List<Map<String, dynamic>> _conversations = [];
   Map<String, Map<String, dynamic>> _utilisateurs = {}; // id -> {nom, prenom}
   bool _loading = true;
+
   RealtimeChannel? _channel;
 
   @override
@@ -26,14 +29,24 @@ class _MessagesPageState extends State<MessagesPage> {
     _listenRealtime();
   }
 
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // -------------------- LOAD --------------------
   Future<void> _loadConversations() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
     setState(() => _loading = true);
 
+    // Récupère tous les messages pertinents (via le service)
     final messages = await _messageService.fetchUserConversations(user.id);
 
+    // Grouper par conversation (contexte + cible + autre participant)
     final Map<String, Map<String, dynamic>> grouped = {};
     final Set<String> participantIds = {};
     for (final msg in messages) {
@@ -43,41 +56,43 @@ class _MessagesPageState extends State<MessagesPage> {
         msg['annonce_id'] ?? msg['prestataire_id'],
         otherId,
       ].join('-');
+
       participantIds.add(otherId);
 
       final existing = grouped[key];
       if (existing == null ||
-          DateTime.parse(msg['date_envoi']).isAfter(DateTime.parse(existing['date_envoi']))) {
+          DateTime.parse(msg['date_envoi'])
+              .isAfter(DateTime.parse(existing['date_envoi']))) {
         grouped[key] = msg;
       }
     }
 
+    // Noms/prénoms des participants
     if (participantIds.isNotEmpty) {
       final users = await Supabase.instance.client
           .from('utilisateurs')
           .select('id, nom, prenom')
           .inFilter('id', participantIds.toList());
-
-      _utilisateurs = { for (var u in users) u['id']: u };
+      _utilisateurs = {for (var u in users) u['id']: Map<String, dynamic>.from(u)};
     }
 
     setState(() {
-      _conversations = grouped.values.toList();
+      _conversations = grouped.values.toList()
+        ..sort((a, b) =>
+            DateTime.parse(b['date_envoi']).compareTo(DateTime.parse(a['date_envoi'])));
       _loading = false;
     });
   }
 
+  // -------------------- REALTIME --------------------
   void _listenRealtime() {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
     _channel = Supabase.instance.client
         .channel('messages_publication')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'messages',
-          callback: (payload) {
+          callback: (_) {
             if (mounted) _loadConversations();
           },
         )
@@ -85,20 +100,57 @@ class _MessagesPageState extends State<MessagesPage> {
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'messages',
-          callback: (payload) {
+          callback: (_) {
             if (mounted) _loadConversations();
           },
         )
         .subscribe();
   }
 
-  @override
-  void dispose() {
-    _channel?.unsubscribe();
-    _searchCtrl.dispose();
-    super.dispose();
+  // -------------------- READ FLAG --------------------
+  /// Marque tous les messages **reçus** de ce fil comme lus (dans Supabase),
+  /// puis enlève immédiatement la pastille côté UI et notifie le badge global.
+  Future<void> _markThreadAsRead({
+    required Map<String, dynamic> convo,
+    required String otherId,
+  }) async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final isAnnonce = convo['contexte'] == 'annonce';
+
+      await Supabase.instance.client
+          .from('messages')
+          .update({'lu': true})
+          .eq('contexte', convo['contexte'])
+          .eq(
+            isAnnonce ? 'annonce_id' : 'prestataire_id',
+            isAnnonce ? convo['annonce_id'] : convo['prestataire_id'],
+          )
+          .eq('receiver_id', user.id) // seulement les messages que j'ai reçus
+          .eq('sender_id', otherId)
+          .eq('lu', false);
+
+      // Optimiste: on enlève la pastille tout de suite dans la liste locale
+      final idx = _conversations.indexOf(convo);
+      if (idx != -1 && mounted) {
+        setState(() {
+          _conversations[idx] = {
+            ..._conversations[idx],
+            'lu': true,
+          };
+        });
+      }
+
+      // 🔔 Prévenir le MainNavigationPage pour mettre à jour le badge
+      _messageService.unreadChanged.add(null);
+    } catch (e) {
+      debugPrint('markAsRead error: $e');
+    }
   }
 
+  // -------------------- UI --------------------
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
@@ -106,7 +158,10 @@ class _MessagesPageState extends State<MessagesPage> {
 
     final list = _conversations.where((m) {
       final contenu = (m['contenu'] ?? '').toString().toLowerCase();
-      return contenu.contains(filter);
+      final otherId = (m['sender_id'] == user?.id) ? m['receiver_id'] : m['sender_id'];
+      final u = _utilisateurs[otherId];
+      final nom = ((u?['prenom'] ?? '') + ' ' + (u?['nom'] ?? '')).toLowerCase().trim();
+      return contenu.contains(filter) || nom.contains(filter);
     }).toList();
 
     return Scaffold(
@@ -137,24 +192,26 @@ class _MessagesPageState extends State<MessagesPage> {
                     ? const Center(child: Text("Aucune conversation."))
                     : ListView.separated(
                         itemCount: list.length,
-                        separatorBuilder: (_, __) => const Divider(),
+                        separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (ctx, i) {
                           final m = list[i];
                           final isAnnonce = m['contexte'] == 'annonce';
-                          final isUnread = m['lu'] == false &&
-                              m['receiver_id'] == user?.id;
+                          final isUnread =
+                              m['lu'] == false && m['receiver_id'] == user?.id;
 
                           final otherId = (m['sender_id'] == user?.id)
                               ? m['receiver_id']
                               : m['sender_id'];
 
                           final utilisateur = _utilisateurs[otherId];
-                          final title = utilisateur != null
-                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
+                          final title = (utilisateur != null)
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}"
+                                  .trim()
                               : (isAnnonce ? "Annonceur" : "Prestataire");
 
-                          final subtitle = m['contenu'] ?? '';
-                          final date = m['date_envoi']?.toString().split('T').first ?? '';
+                          final subtitle = m['contenu']?.toString() ?? '';
+                          final date =
+                              m['date_envoi']?.toString().split('T').first ?? '';
 
                           return ListTile(
                             leading: Stack(
@@ -185,8 +242,13 @@ class _MessagesPageState extends State<MessagesPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: Text(date, style: const TextStyle(fontSize: 12)),
+                            trailing:
+                                Text(date, style: const TextStyle(fontSize: 12)),
                             onTap: () async {
+                              // 1) Marquer comme lu immédiatement (optimiste)
+                              await _markThreadAsRead(convo: m, otherId: otherId);
+
+                              // 2) Ouvrir la page de discussion
                               if (isAnnonce) {
                                 await Navigator.push(
                                   context,
@@ -212,6 +274,8 @@ class _MessagesPageState extends State<MessagesPage> {
                                   ),
                                 );
                               }
+
+                              // 3) Au retour, recharge pour être 100% synchro
                               _loadConversations();
                             },
                           );

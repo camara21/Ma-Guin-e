@@ -6,8 +6,8 @@ import '../services/message_service.dart';
 class MessagesAnnoncePage extends StatefulWidget {
   final String annonceId;
   final String annonceTitre;
-  final String receiverId;
-  final String senderId;
+  final String receiverId; // id du destinataire
+  final String senderId;   // mon id (expéditeur)
 
   const MessagesAnnoncePage({
     super.key,
@@ -25,51 +25,94 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   final _svc = MessageService();
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
+
   List<Map<String, dynamic>> _msgs = [];
   bool _loading = true;
+
   StreamSubscription<List<Map<String, dynamic>>>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+    _loadAndMarkRead();
+
+    // ⚠️ Supabase 2.x : on écoute la table sans .eq/.filter/.order ici
     _sub = Supabase.instance.client
         .from('messages')
         .stream(primaryKey: ['id'])
-        .listen((_) => _loadMessages());
+        .listen((_) => _loadAndMarkRead());
   }
 
-  Future<void> _loadMessages() async {
+  Future<void> _loadAndMarkRead() async {
     setState(() => _loading = true);
-    final msgs = await _svc.fetchMessagesForAnnonce(widget.annonceId);
-    for (var m in msgs) {
-      if (m['receiver_id'].toString() == widget.senderId && m['lu'] == false) {
-        await _svc.markMessageAsRead(m['id'].toString());
+    try {
+      // 1) Récupérer uniquement les messages de CETTE annonce via le service
+      final msgs = await _svc.fetchMessagesForAnnonce(widget.annonceId);
+
+      // 2) Marquer comme lus ceux reçus par moi
+      final idsToMark = <String>[];
+      for (final m in msgs) {
+        final isForMe = (m['receiver_id']?.toString() == widget.senderId);
+        final notRead = (m['lu'] == false || m['lu'] == null);
+        if (isForMe && notRead) {
+          final id = m['id']?.toString();
+          if (id != null) idsToMark.add(id);
+        }
       }
+
+      if (idsToMark.isNotEmpty) {
+        await Supabase.instance.client
+            .from('messages')
+            .update({'lu': true})
+            .inFilter('id', idsToMark);
+
+        // 🔔 préviens la nav/badge global(e) qu’il faut recalculer
+        _svc.unreadChanged.add(null);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _msgs = msgs;
+        _loading = false;
+      });
+
+      _scrollToEnd();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      debugPrint('Erreur load/mark read (annonce): $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur de chargement : $e")),
+      );
     }
-    setState(() {
-      _msgs = msgs;
-      _loading = false;
-    });
+  }
+
+  void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
     });
   }
 
   Future<void> _send() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
+
     _ctrl.clear();
+
+    // UI optimiste
     setState(() {
       _msgs.add({
+        'id': -1,
         'sender_id': widget.senderId,
+        'receiver_id': widget.receiverId,
         'contenu': text,
         'lu': true,
-        'id': -1,
         'date_envoi': DateTime.now().toIso8601String(),
       });
     });
-    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    _scrollToEnd();
 
     try {
       await _svc.sendMessageToAnnonce(
@@ -79,7 +122,9 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         annonceTitre: widget.annonceTitre,
         contenu: text,
       );
+      // Le stream realtime rafraîchira la liste
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur lors de l'envoi du message : $e")),
       );
@@ -87,7 +132,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   }
 
   Widget _bubble(Map<String, dynamic> m) {
-    final me = m['sender_id'] == widget.senderId;
+    final me = m['sender_id']?.toString() == widget.senderId;
     return Align(
       alignment: me ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -119,7 +164,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           ],
         ),
         child: Text(
-          m['contenu'] ?? '',
+          (m['contenu'] ?? '').toString(),
           style: TextStyle(
             color: me ? Colors.white : Colors.black87,
             fontSize: 15,
@@ -139,7 +184,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bleuMaGuinee = const Color(0xFF113CFC);
+    const bleuMaGuinee = Color(0xFF113CFC);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
@@ -147,15 +192,18 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         backgroundColor: Colors.white,
         elevation: 1,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF113CFC)),
+          icon: const Icon(Icons.arrow_back, color: bleuMaGuinee),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           widget.annonceTitre,
           style: const TextStyle(
-              color: Color(0xFF113CFC), fontWeight: FontWeight.bold, fontSize: 17),
+            color: bleuMaGuinee,
+            fontWeight: FontWeight.bold,
+            fontSize: 17,
+          ),
         ),
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: bleuMaGuinee),
       ),
       body: SafeArea(
         child: _loading

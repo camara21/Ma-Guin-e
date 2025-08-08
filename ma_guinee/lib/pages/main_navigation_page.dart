@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/user_provider.dart';
 import '../services/message_service.dart';
+
 import 'home_page.dart';
 import 'carte_page.dart';
 import 'messages_page.dart';
@@ -51,15 +53,17 @@ class MainNavigationPage extends StatefulWidget {
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
   int _unreadMessages = 0;
+
   final MessageService _msgService = MessageService();
-  StreamSubscription<List<Map<String, dynamic>>>? _sub;
+  StreamSubscription<List<Map<String, dynamic>>>? _realtimeSub;
+  StreamSubscription<void>? _localUnreadSub; // 👈 nouvel abonnement local
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadUnread();
-      _listenRealtime();
+      _listenRealtimeAndLocal();
     });
   }
 
@@ -70,16 +74,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     if (mounted) setState(() => _unreadMessages = n);
   }
 
-  void _listenRealtime() {
+  void _listenRealtimeAndLocal() {
     final user = Provider.of<UserProvider>(context, listen: false).utilisateur;
     if (user == null) return;
-    _sub?.cancel();
-    _sub = _msgService.subscribeAll(_loadUnread);
+
+    // Realtime (insert/update/delete) -> recalcule le badge
+    _realtimeSub?.cancel();
+    _realtimeSub = _msgService.subscribeAll(_loadUnread);
+
+    // 🔔 Event local déclenché quand on marque lu dans une page de chat
+    _localUnreadSub?.cancel();
+    _localUnreadSub = _msgService.unreadChanged.stream.listen((_) => _loadUnread());
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _realtimeSub?.cancel();
+    _localUnreadSub?.cancel();
     super.dispose();
   }
 
@@ -108,7 +119,11 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         body: _pages[_currentIndex],
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: (index) {
+            setState(() => _currentIndex = index);
+            // Optionnel: quand on ouvre l’onglet Messages, on force une MAJ du badge.
+            if (index == 2) _loadUnread();
+          },
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.home, color: Colors.red),
