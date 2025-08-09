@@ -13,32 +13,35 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
-  # Carte & géolocalisation
+  # 📍 Carte & géolocalisation
   flutter_map: ^6.2.1
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0
 
-  # Supabase
+  # 🗄️ Supabase
   supabase_flutter: ^2.3.3
   realtime_client: ^2.5.1
   provider: ^6.1.1
 
-  # Notifications & Firebase
+  # 🔔 Notifications & Firebase
   firebase_core: ^3.0.0
   firebase_core_web: ^2.10.0
   firebase_messaging: ^15.0.0
   flutter_local_notifications: ^17.0.0
 
-  # Partage & navigation externe
+  # 🔗 Partage & navigation externe
   share_plus: ^7.2.1
   url_launcher: ^6.2.5
 
-  # Sélecteurs (image, pays)
+  # 📸 Sélecteurs (image, pays)
   image_picker: ^1.0.4
   country_picker: ^2.0.20
+  file_picker: ^8.0.3
+  path: ^1.9.0
+  mime: ^1.0.5
 
-  # UI & Composants
+  # 🎨 UI & Composants
   photo_view: ^0.14.0
   carousel_slider: ^4.2.1
   flutter_typeahead: ^5.2.0
@@ -48,6 +51,16 @@ dependencies:
   flutter_svg: ^2.0.10
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1
+
+  # 🎵 Vidéo & Player
+  chewie: ^1.7.1
+  video_player: ^2.9.1
+
+  # 🎟️ QR Code pour billets
+  qr_flutter: ^4.1.0
+
+  # 📷 Scanner QR pour billetterie
+  mobile_scanner: ^6.0.2
 
 dev_dependencies:
   flutter_test:

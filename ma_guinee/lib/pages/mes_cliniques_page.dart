@@ -22,16 +22,10 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
 
   Future<void> supprimerClinique(int id) async {
     try {
-      await Supabase.instance.client
-          .from('cliniques')
-          .delete()
-          .match({'id': id});
-
-      setState(() {
-        cliniques.removeWhere((element) => element['id'] == id);
-      });
+      await Supabase.instance.client.from('cliniques').delete().match({'id': id});
+      setState(() => cliniques.removeWhere((e) => e['id'] == id));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Clinique supprimée avec succès !")),
+        const SnackBar(content: Text("Clinique supprimée avec succès !")),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -44,17 +38,17 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => EditCliniquePage(clinique: clinique),
+        builder: (_) => EditCliniquePage(
+          clinique: clinique,
+          autoAskLocation: false, // édition: pas d’auto-demande
+        ),
       ),
     );
 
-    // Si la clinique a été modifiée ou supprimée, on recharge la liste locale
     if (result != null && result is Map<String, dynamic>) {
       setState(() {
         final idx = cliniques.indexWhere((c) => c['id'] == result['id']);
-        if (idx != -1) {
-          cliniques[idx] = result;
-        }
+        if (idx != -1) cliniques[idx] = result;
       });
     }
   }
@@ -135,7 +129,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                               builder: (ctx) => AlertDialog(
                                 title: const Text("Suppression"),
                                 content: const Text(
-                                  "Voulez-vous vraiment supprimer cette clinique ?\nCette action est irréversible.",
+                                  "Voulez-vous vraiment supprimer cette clinique ?\nCette action est irréversible.",
                                   style: TextStyle(fontSize: 16),
                                 ),
                                 actions: [
@@ -167,12 +161,14 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
         onPressed: () async {
           final result = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const EditCliniquePage()),
+            MaterialPageRoute(
+              builder: (_) => const EditCliniquePage(
+                autoAskLocation: true, // ✅ création: demande auto de localisation
+              ),
+            ),
           );
           if (result != null && result is Map<String, dynamic>) {
-            setState(() {
-              cliniques.add(result);
-            });
+            setState(() => cliniques.add(result));
           }
         },
         icon: const Icon(Icons.add),

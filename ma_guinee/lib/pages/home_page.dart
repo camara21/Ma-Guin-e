@@ -56,7 +56,7 @@ class _HomePageState extends State<HomePage> {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
-    _notifSub?.cancel(); // au cas où
+    _notifSub?.cancel();
     _notifSub = Supabase.instance.client
         .from('notifications:utilisateur_id=eq.${user.id}')
         .stream(primaryKey: ['id'])
@@ -76,6 +76,7 @@ class _HomePageState extends State<HomePage> {
     setState(() => _messagesNonLus = count);
   }
 
+  // Carte d’icône standard (utilisée par toutes les tuiles)
   Widget buildIcon(IconData iconData, Color color) {
     return Container(
       decoration: BoxDecoration(
@@ -83,9 +84,9 @@ class _HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.shade300,
-            blurRadius: 7,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -178,7 +179,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bannière
+            // 🔶 Bannière (cercle flou retiré, logo agrandi)
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -200,56 +201,14 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Stack(
                 children: [
+                  // (supprimé: cercle radial pas net)
                   Positioned(
-                    right: 10,
-                    top: -30,
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Colors.white.withOpacity(0.17),
-                            Colors.transparent,
-                          ],
-                          radius: 0.83,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 18,
-                    top: 20,
-                    child: Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        Image.asset(
-                          'assets/logo_guinee.png',
-                          height: 90,
-                          fit: BoxFit.contain,
-                        ),
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
-                            ),
-                            child: const Text(
-                              "Guinée",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFCE1126),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    right: 12,
+                    top: 10,
+                    child: Image.asset(
+                      'assets/logo_guinee.png',
+                      height: 124, // ← agrandi (était 110)
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const Positioned(
@@ -282,7 +241,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Grille des services
+            // 🧩 Grille des services
             GridView.count(
               crossAxisCount: crossAxisCount,
               childAspectRatio: childAspectRatio,
@@ -301,6 +260,9 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
                 _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
+                _serviceTile(Icons.music_video_rounded, "TalentMusique", AppRoutes.talents, const Color(0xFFCE1126)),
+
+                _serviceTile(Icons.confirmation_num, "Billetterie", AppRoutes.billetterie, const Color(0xFFFCD116)),
               ],
             ),
           ],

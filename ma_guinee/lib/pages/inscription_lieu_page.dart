@@ -1,7 +1,8 @@
-import 'dart:io' show File;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -30,21 +31,37 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   double? latitude;
   double? longitude;
 
-  List<XFile> _pickedImages = [];
+  // Images déjà en ligne (URLs publiques)
   List<String> _uploadedImages = [];
+
+  // Images nouvellement choisies (préviews + fichier)
+  final List<_LocalImage> _localPreviews = [];
+
   bool _isUploading = false;
+
+  // ⚠️ nom du bucket Supabase
   final String _bucket = 'lieux-photos';
 
   final List<String> _typesLieu = ['divertissement', 'culte', 'tourisme'];
   final Map<String, List<String>> sousCategoriesParType = {
     'divertissement': [
-      'Boîte de nuit', 'Bar', 'Salle de jeux', 'Cinéma',
-      'Parc d’attraction', 'Club', 'Plage privée'
+      'Boîte de nuit',
+      'Bar',
+      'Salle de jeux',
+      'Cinéma',
+      'Parc d’attraction',
+      'Club',
+      'Plage privée'
     ],
     'culte': ['Mosquée', 'Église', 'Temple', 'Sanctuaire', 'Chapelle'],
     'tourisme': [
-      'Monument', 'Musée', 'Plage', 'Cascade',
-      'Parc naturel', 'Site historique', 'Montagne'
+      'Monument',
+      'Musée',
+      'Plage',
+      'Cascade',
+      'Parc naturel',
+      'Site historique',
+      'Montagne'
     ],
   };
 
@@ -68,12 +85,9 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   Color get mainColor => const Color(0xFF1E3FCF);
   Color get red => const Color(0xFFCE1126);
-  Color get yellow => const Color(0xFFFFCB05);
-  Color get green => const Color(0xFF009460);
 
   Future<void> _recupererPosition() async {
     try {
-      // Message avant détection
       await showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -99,14 +113,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         }
       }
       if (permission == LocationPermission.deniedForever) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Activez la localisation dans les paramètres.")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Activez la localisation dans les paramètres.")));
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-
+      final position =
+          await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       latitude = position.latitude;
       longitude = position.longitude;
 
@@ -129,103 +142,134 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           const SnackBar(content: Text("Position détectée avec succès.")));
     } catch (e) {
       debugPrint("Erreur géolocalisation : $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erreur localisation : $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur localisation : $e")));
     }
   }
+
+  // ---------- IMAGES ----------
 
   Future<void> _choisirImages() async {
     final picker = ImagePicker();
-    final picked = await picker.pickMultiImage();
-    if (picked.isNotEmpty) {
-      final newPicked = picked
-          .where((img) =>
-              !_pickedImages.any((x) => x.path == img.path) &&
-              !_uploadedImages.contains(img.path))
-          .toList();
-      setState(() => _pickedImages.addAll(newPicked));
+    final picked = await picker.pickMultiImage(imageQuality: 80);
+    if (picked.isEmpty) return;
+
+    // Charger les bytes pour affichage (Web/Mobile)
+    for (final x in picked) {
+      // éviter doublons (par path + nom)
+      final already =
+          _localPreviews.any((e) => e.file.path == x.path) || _uploadedImages.contains(x.path);
+      if (already) continue;
+
+      final bytes = await x.readAsBytes();
+      _localPreviews.add(_LocalImage(file: x, bytes: bytes));
+    }
+    setState(() {});
+  }
+
+  void _removeLocalPreview(_LocalImage img) {
+    setState(() => _localPreviews.remove(img));
+  }
+
+  void _removeUploadedImage(String url) {
+    setState(() => _uploadedImages.remove(url));
+  }
+
+  Future<String?> _uploadOne(Uint8List bytes, String userId) async {
+    try {
+      final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
+      String ext = 'bin';
+      if (mime.contains('jpeg')) ext = 'jpg';
+      else if (mime.contains('png')) ext = 'png';
+      else if (mime.contains('webp')) ext = 'webp';
+      else if (mime.contains('gif')) ext = 'gif';
+
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final objectPath = 'u/$userId/$ts.$ext';
+
+      await Supabase.instance.client.storage
+          .from(_bucket)
+          .uploadBinary(
+            objectPath,
+            bytes,
+            fileOptions: FileOptions(upsert: true, contentType: mime),
+          );
+
+      final publicUrl = Supabase.instance.client.storage
+          .from(_bucket)
+          .getPublicUrl(objectPath);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Erreur upload image: $e');
+      return null;
     }
   }
 
-  void _removePickedImage(XFile img) =>
-      setState(() => _pickedImages.remove(img));
-
-  void _removeUploadedImage(String url) =>
-      setState(() => _uploadedImages.remove(url));
-
-  Future<List<String>> _uploadImages(List<XFile> images) async {
-    final urls = <String>[];
+  Future<List<String>> _uploadImages() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return [];
-    for (var img in images) {
-      try {
-        final fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${img.name.replaceAll(RegExp(r'[^\w\-_\.]'), '')}';
-        final path = '$userId/$fileName';
-        final bytes = await img.readAsBytes();
-        await Supabase.instance.client.storage
-            .from(_bucket)
-            .uploadBinary(path, bytes, fileOptions: FileOptions(upsert: true));
-        urls.add(Supabase.instance.client.storage.from(_bucket).getPublicUrl(path));
-      } catch (e) {
-        debugPrint("Erreur upload image : $e");
-      }
+
+    final urls = <String>[];
+    for (final li in _localPreviews) {
+      final url = await _uploadOne(li.bytes, userId);
+      if (url != null) urls.add(url);
     }
     return urls;
   }
 
+  // ---------- ENREGISTREMENT ----------
+
   Future<void> _enregistrerLieu() async {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez détecter la position.")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Veuillez détecter la position.")));
       return;
     }
     if (type == null || type!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez choisir un type de lieu.")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Veuillez choisir un type de lieu.")));
       return;
     }
     if (sousCategorie.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez choisir une sous-catégorie.")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Veuillez choisir une sous-catégorie.")));
       return;
     }
 
     setState(() => _isUploading = true);
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return;
-
-    List<String> images = List.from(_uploadedImages);
-    if (_pickedImages.isNotEmpty) {
-      final uploaded = await _uploadImages(_pickedImages);
-      images = [...images, ...uploaded];
-      _pickedImages.clear();
-      _uploadedImages = images;
-    }
-
-    final data = {
-      'nom': nom,
-      'adresse': adresse,
-      'ville': ville,
-      'categorie': type,
-      'sous_categorie': sousCategorie,
-      'type': type,
-      'description': description,
-      'contact': contact,
-      'latitude': latitude,
-      'longitude': longitude,
-      'images': images,
-      'photo_url': images.isNotEmpty ? images[0] : null,
-      'user_id': userId,
-    };
-
     try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception("Utilisateur non connecté.");
+      }
+
+      // Upload des nouvelles images si besoin
+      if (_localPreviews.isNotEmpty) {
+        final newUrls = await _uploadImages();
+        _uploadedImages = [..._uploadedImages, ...newUrls];
+        _localPreviews.clear();
+      }
+
+      final data = {
+        'nom': nom,
+        'adresse': adresse,
+        'ville': ville,
+        'categorie': type,
+        'sous_categorie': sousCategorie,
+        'type': type,
+        'description': description,
+        'contact': contact,
+        'latitude': latitude,
+        'longitude': longitude,
+        'images': _uploadedImages,
+        'photo_url': _uploadedImages.isNotEmpty ? _uploadedImages.first : null,
+        'user_id': userId,
+      };
+
       if (widget.lieu != null) {
-        await Supabase.instance.client
-            .from('lieux')
-            .update(data)
-            .eq('id', widget.lieu!['id']);
+        await Supabase.instance.client.from('lieux').update(data).eq('id', widget.lieu!['id']);
       } else {
         await Supabase.instance.client.from('lieux').insert(data);
       }
@@ -239,22 +283,20 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
               ? "Lieu mis à jour avec succès ✅"
               : "Lieu enregistré avec succès ✅"),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
           ],
         ),
       );
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur : $e")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
+
+  // ---------- UI ----------
 
   @override
   Widget build(BuildContext context) {
@@ -322,12 +364,25 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                 ),
               ],
               const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _choisirImages,
-                icon: const Icon(Icons.photo_library),
-                label: const Text("Ajouter des photos"),
+
+              // Choisir des photos
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _choisirImages,
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text("Ajouter des photos"),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
+
+              const SizedBox(height: 12),
+
+              // Grille des photos (déjà en ligne + nouvelles)
+              _buildPhotosGrid(),
+
+              const SizedBox(height: 16),
+
               TextFormField(
                 initialValue: nom,
                 decoration: const InputDecoration(labelText: "Nom du lieu"),
@@ -396,6 +451,89 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPhotosGrid() {
+    final tiles = <Widget>[];
+
+    // Photos déjà uploadées
+    for (final url in _uploadedImages) {
+      tiles.add(_PhotoTile(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.network(url, fit: BoxFit.cover),
+        ),
+        onRemove: () => _removeUploadedImage(url),
+      ));
+    }
+
+    // Nouvelles photos (préviews mémoire)
+    for (final li in _localPreviews) {
+      tiles.add(_PhotoTile(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.memory(li.bytes, fit: BoxFit.cover),
+        ),
+        onRemove: () => _removeLocalPreview(li),
+      ));
+    }
+
+    if (tiles.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text("Aucune photo sélectionnée",
+            style: TextStyle(color: Colors.grey[700])),
+      );
+    }
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: tiles,
+    );
+  }
+}
+
+// --------- Helpers ---------
+
+class _LocalImage {
+  final XFile file;
+  final Uint8List bytes;
+  _LocalImage({required this.file, required this.bytes});
+}
+
+class _PhotoTile extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onRemove;
+  const _PhotoTile({super.key, required this.child, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(
+          width: 84,
+          height: 84,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: Colors.grey[200],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+        Positioned(
+          top: -8,
+          right: -8,
+          child: IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, size: 20, color: Colors.red),
+            splashRadius: 16,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ),
+      ],
     );
   }
 }

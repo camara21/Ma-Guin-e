@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,8 +10,8 @@ import 'inscription_clinique_page.dart';
 import 'inscription_hotel_page.dart';
 import 'inscription_prestataire_page.dart';
 import 'inscription_resto_page.dart';
-import 'inscription_lieu_page.dart';         // 👈 Ajoute ceci
-import 'mes_lieux_page.dart';               // 👈 Ajoute ceci
+import 'inscription_lieu_page.dart';
+import 'mes_lieux_page.dart';
 import 'parametre_page.dart';
 import '../routes.dart';
 
@@ -39,24 +40,57 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _pickImageAndUpload() async {
     if (_isUploading) return;
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70);
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
     if (picked == null) return;
 
     setState(() => _isUploading = true);
     try {
       final supabase = Supabase.instance.client;
       final userId = context.read<UserProvider>().utilisateur!.id;
-      final ext = picked.path.split('.').last.toLowerCase();
-      final fileName = 'profile_photo_$userId.$ext';
-      final path = 'profile-photos/$fileName';
 
+      // Lire les bytes
       final bytes = await picked.readAsBytes();
+
+      // Déduire le MIME
+      final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
+
+      // Déterminer l’extension
+      String ext = 'bin';
+      if (mime.contains('jpeg')) ext = 'jpg';
+      else if (mime.contains('png')) ext = 'png';
+      else if (mime.contains('webp')) ext = 'webp';
+      else if (mime.contains('gif')) ext = 'gif';
+
+      // Chemin objet (sans nom de bucket)
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final objectPath = 'u/$userId/profile_$ts.$ext';
+
+      // Upload
       await supabase.storage
           .from('profile-photos')
-          .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+          .uploadBinary(
+            objectPath,
+            bytes,
+            fileOptions: FileOptions(
+              upsert: true,
+              contentType: mime,
+            ),
+          );
 
-      final publicUrl = supabase.storage.from('profile-photos').getPublicUrl(path);
-      await supabase.from('utilisateurs').update({'photo_url': publicUrl}).eq('id', userId);
+      // URL publique
+      final publicUrl = supabase.storage
+          .from('profile-photos')
+          .getPublicUrl(objectPath);
+
+      // Mettre à jour la BDD
+      await supabase
+          .from('utilisateurs')
+          .update({'photo_url': publicUrl})
+          .eq('id', userId);
 
       setState(() {
         _photoUrl = publicUrl;
@@ -91,7 +125,8 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Mon compte', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text('Mon compte',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
@@ -114,7 +149,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.grey[200],
                         backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
                             ? NetworkImage(_photoUrl!)
-                            : const AssetImage('assets/deault_avatar.png') as ImageProvider,
+                            : const AssetImage('assets/default_avatar.png') as ImageProvider,
                         child: (_photoUrl == null || _photoUrl!.isEmpty)
                             ? const Icon(Icons.person, size: 40, color: Colors.grey)
                             : null,
@@ -129,21 +164,24 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text('${user.prenom} ${user.nom}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
+                Text('${user.prenom} ${user.nom}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 19)),
                 if (user.telephone.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 5),
-                    child: Text(user.telephone, style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                    child: Text(user.telephone,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 14)),
                   ),
                 if (user.email.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
-                    child: Text(user.email, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                    child: Text(user.email,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13)),
                   ),
               ],
             ),
           ),
-
           // 🔴 Annonces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -152,13 +190,16 @@ class _ProfilePageState extends State<ProfilePage> {
               borderRadius: BorderRadius.circular(14),
               child: Card(
                 elevation: 0.5,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
                 child: Stack(
                   children: [
                     const ListTile(
                       leading: Icon(Icons.campaign, color: Color(0xFFCE1126)),
-                      title: Text('Mes annonces', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text("Voir / modifier / supprimer mes annonces"),
+                      title: Text('Mes annonces',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle:
+                          Text("Voir / modifier / supprimer mes annonces"),
                     ),
                     Positioned(
                       right: 18,
@@ -168,7 +209,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.red.shade700,
                         child: Text(
                           annoncesCount.toString(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -177,7 +219,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-
           // 🟦 Espaces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -192,12 +233,17 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? user.espacePrestataire!['metier'] ?? ''
                       : "Vous n'êtes pas encore inscrit comme prestataire.",
                   onTap: user.espacePrestataire != null
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesPrestations)
+                      ? () => Navigator.pushNamed(
+                          context, AppRoutes.mesPrestations)
                       : null,
                   onButton: user.espacePrestataire == null
-                      ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()))
+                      ? () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const InscriptionPrestatairePage()))
                       : null,
-                  buttonLabel: user.espacePrestataire == null ? "S'inscrire" : "Modifier",
+                  buttonLabel:
+                      user.espacePrestataire == null ? "S'inscrire" : "Modifier",
                 ),
                 _blocEspace(
                   color: Colors.orange.shade50,
@@ -208,12 +254,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? "${user.restos.first['nom']} - ${user.restos.first['ville']}"
                       : "Aucun restaurant enregistré.",
                   onTap: user.restos.isNotEmpty
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesRestaurants)
+                      ? () => Navigator.pushNamed(
+                          context, AppRoutes.mesRestaurants)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const InscriptionRestoPage()),
-                  ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const InscriptionRestoPage()),
+                      ),
                   buttonLabel: "Ajouter",
                 ),
                 _blocEspace(
@@ -225,12 +273,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? "${user.hotels.first['nom']} - ${user.hotels.first['ville']}"
                       : "Aucun hôtel enregistré.",
                   onTap: user.hotels.isNotEmpty
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesHotels)
+                      ? () => Navigator.pushNamed(
+                          context, AppRoutes.mesHotels)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const InscriptionHotelPage()),
-                  ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const InscriptionHotelPage()),
+                      ),
                   buttonLabel: "Ajouter",
                 ),
                 _blocEspace(
@@ -239,19 +289,21 @@ class _ProfilePageState extends State<ProfilePage> {
                   iconColor: Colors.teal,
                   title: 'Mes Cliniques',
                   subtitle: user.cliniques.isNotEmpty
-                      ? user.cliniques.map((c) => "${c['nom']} - ${c['ville']}").join(', ')
+                      ? user.cliniques
+                          .map((c) => "${c['nom']} - ${c['ville']}")
+                          .join(', ')
                       : "Aucune clinique enregistrée.",
                   onTap: user.cliniques.isNotEmpty
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesCliniques)
+                      ? () => Navigator.pushNamed(
+                          context, AppRoutes.mesCliniques)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
-                  ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const InscriptionCliniquePage()),
+                      ),
                   buttonLabel: "Ajouter",
                 ),
-
-                // 🟦🟣 NOUVEAU : Mes Lieux
                 _blocEspace(
                   color: Colors.indigo.shade50,
                   icon: Icons.place,
@@ -263,25 +315,26 @@ class _ProfilePageState extends State<ProfilePage> {
                   onTap: (user.lieux != null && user.lieux.isNotEmpty)
                       ? () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const MesLieuxPage()),
+                          MaterialPageRoute(
+                              builder: (_) => const MesLieuxPage()),
                         )
                       : null,
                   onButton: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const InscriptionLieuPage()),
+                        MaterialPageRoute(
+                            builder: (_) => const InscriptionLieuPage()),
                       ),
                   buttonLabel: "Ajouter",
                 ),
               ],
             ),
           ),
-
           const Divider(height: 30, thickness: 1),
-
           // ⚙️ Paramètres
           ListTile(
             leading: const Icon(Icons.settings, color: Colors.black),
-            title: const Text("Paramètres", style: TextStyle(fontWeight: FontWeight.w500)),
+            title: const Text("Paramètres",
+                style: TextStyle(fontWeight: FontWeight.w500)),
             onTap: () {
               Navigator.push(
                 context,
@@ -289,22 +342,27 @@ class _ProfilePageState extends State<ProfilePage> {
               );
             },
           ),
-
           // 🚪 Déconnexion
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("Se déconnecter", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
+            title: const Text("Se déconnecter",
+                style: TextStyle(
+                    fontWeight: FontWeight.w500, color: Colors.red)),
             onTap: () async {
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text("Confirmation"),
-                  content: const Text("Voulez-vous vraiment vous déconnecter ?"),
+                  content:
+                      const Text("Voulez-vous vraiment vous déconnecter ?"),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Annuler")),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text("Annuler")),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text("Se déconnecter", style: TextStyle(color: Colors.red)),
+                      child: const Text("Se déconnecter",
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
@@ -313,7 +371,8 @@ class _ProfilePageState extends State<ProfilePage> {
               if (confirm == true) {
                 await Supabase.instance.client.auth.signOut();
                 if (context.mounted) {
-                  Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+                  Navigator.pushNamedAndRemoveUntil(
+                      context, '/welcome', (route) => false);
                 }
               }
             },
@@ -338,16 +397,20 @@ class _ProfilePageState extends State<ProfilePage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       child: ListTile(
         leading: Icon(icon, color: iconColor, size: 20),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         subtitle: Text(subtitle),
         trailing: ElevatedButton(
           onPressed: onButton,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.grey[onButton != null ? 600 : 300],
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            textStyle: const TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 12),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
             elevation: 0,
           ),
           child: Text(buttonLabel),

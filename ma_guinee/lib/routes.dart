@@ -15,8 +15,8 @@ import 'pages/divertissement_page.dart';
 import 'pages/admin_page.dart';
 
 // ✅ Alias clairs pour éviter les collisions de noms
-import 'pages/resto_page.dart' as resto_pg;        // -> RestoPage (tous les restos)
-import 'pages/register_page.dart' as register_pg;  // -> RegisterPage (inscription)
+import 'pages/resto_page.dart' as resto_pg;
+import 'pages/register_page.dart' as register_pg;
 
 import 'pages/culte_page.dart';
 import 'pages/favoris_page.dart';
@@ -32,7 +32,7 @@ import 'pages/aide_page.dart';
 import 'pages/messages_page.dart';
 import 'pages/mes_annonces_page.dart';
 import 'pages/mes_prestations_page.dart';
-import 'pages/mes_restaurants_page.dart' as myresto_pg; // -> MesRestaurantsPage (mes restos)
+import 'pages/mes_restaurants_page.dart' as myresto_pg;
 import 'pages/mes_hotels_page.dart' as hotel_page;
 import 'pages/mes_cliniques_page.dart';
 import 'pages/annonce_detail_page.dart';
@@ -51,6 +51,13 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
+// ✅ Nouveaux imports pour TalentMusique et Billetterie
+// ⛔️ Ancien: import 'pages/talents_feed_page.dart';
+import 'pages/talents_reels_page.dart'; // ✅ on ouvre directement les Reels
+import 'pages/events_list_page.dart';
+import 'pages/my_tickets_page.dart';
+import 'pages/scanner_page.dart';
+
 class AppRoutes {
   static const String splash = '/';
   static const String welcome = '/welcome';
@@ -62,11 +69,11 @@ class AppRoutes {
   static const String divertissement = '/divertissement';
   static const String admin = '/administratif';
 
-  static const String resto = '/restos'; // Tous les restos (public)
+  static const String resto = '/restos';
   static const String culte = '/culte';
   static const String favoris = '/favoris';
   static const String login = '/login';
-  static const String register = '/register'; // Page d'inscription (réelle)
+  static const String register = '/register';
   static const String tourisme = '/tourisme';
   static const String sante = '/sante';
   static const String hotel = '/hotels';
@@ -78,7 +85,7 @@ class AppRoutes {
 
   static const String mesAnnonces = '/mes_annonces';
   static const String mesPrestations = '/mes_prestations';
-  static const String mesRestaurants = '/mesRestaurants'; // Mes restos (profil)
+  static const String mesRestaurants = '/mesRestaurants';
   static const String mesHotels = '/mesHotels';
   static const String mesCliniques = '/mesCliniques';
 
@@ -95,6 +102,12 @@ class AppRoutes {
   static const String editResto = '/edit_resto';
   static const String editAnnonce = '/edit_annonce';
   static const String editClinique = '/edit_clinique';
+
+  // ✅ Nouvelles routes
+  static const String talents = '/talents';
+  static const String billetterie = '/billetterie';
+  static const String myTickets = '/mes_billets';
+  static const String scanner = '/scanner';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -116,22 +129,16 @@ class AppRoutes {
         return _page(const DivertissementPage());
       case admin:
         return _page(const AdminPage());
-
-      // ✅ Tous les restaurants (public)
       case resto:
         return _page(const resto_pg.RestoPage());
-
       case culte:
         return _page(const CultePage());
       case favoris:
         return _page(const FavorisPage());
       case login:
         return _page(const LoginPage());
-
-      // ✅ Ta vraie page d'inscription (ne change pas)
       case register:
         return _page(const register_pg.RegisterPage());
-
       case tourisme:
         return _page(const TourismePage());
       case sante:
@@ -148,7 +155,6 @@ class AppRoutes {
         return _page(const AidePage());
       case messages:
         return _page(const MessagesPage());
-
       case mesAnnonces:
         return _userProtected((_) => const MesAnnoncesPage());
       case mesPrestations:
@@ -158,26 +164,21 @@ class AppRoutes {
               : <Map<String, dynamic>>[];
           return MesPrestationsPage(prestations: prestations);
         });
-
-      // ✅ Mes restaurants (profil)
       case mesRestaurants:
         return _userProtected((u) {
           final restos = u.restos ?? [];
           return myresto_pg.MesRestaurantsPage(restaurants: restos);
         });
-
       case mesHotels:
         return _userProtected((u) {
           final hotels = u.hotels ?? [];
           return hotel_page.MesHotelsPage(hotels: hotels);
         });
-
       case mesCliniques:
         return _userProtected((u) {
           final cliniques = u.cliniques ?? [];
           return MesCliniquesPage(cliniques: cliniques);
         });
-
       case inscriptionResto:
         final resto = settings.arguments;
         if (resto == null || resto is Map<String, dynamic>) {
@@ -186,7 +187,6 @@ class AppRoutes {
           );
         }
         return _error("Argument invalide pour /inscriptionResto");
-
       case inscriptionHotel:
         final hotelArg = settings.arguments;
         if (hotelArg == null || hotelArg is Map<String, dynamic>) {
@@ -195,7 +195,6 @@ class AppRoutes {
           );
         }
         return _error("Argument invalide pour /inscriptionHotel");
-
       case inscriptionClinique:
         final clinique = settings.arguments;
         if (clinique == null || clinique is Map<String, dynamic>) {
@@ -204,14 +203,12 @@ class AppRoutes {
           );
         }
         return _error("Argument invalide pour /inscriptionClinique");
-
       case annonceDetail:
         final arg = settings.arguments;
         if (arg is AnnonceModel) {
           return _page(AnnonceDetailPage(annonce: arg));
         }
         return _error("Argument invalide pour /annonce_detail");
-
       case restoDetail:
         final argR = settings.arguments;
         final String? restoId = (argR is String) ? argR : argR?.toString();
@@ -219,33 +216,38 @@ class AppRoutes {
           return _error("ID invalide pour /resto_detail");
         }
         return _page(RestoDetailPage(restoId: restoId));
-
       case hotelDetail:
         final id = settings.arguments;
         if (id is int) {
           return _page(HotelDetailPage(hotelId: id));
         }
         return _error("ID invalide pour /hotel_detail");
-
       case editPrestataire:
         final argsP = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditPrestatairePage(prestataire: argsP));
-
       case editHotel:
         final argsH = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditHotelPage(hotelId: argsH['id']));
-
       case editResto:
         final argsR = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditRestoPage(resto: argsR));
-
       case editAnnonce:
         final argsA = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditAnnoncePage(annonce: argsA));
-
       case editClinique:
         final argsC = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditCliniquePage(clinique: argsC));
+
+      // ✅ Route Talents → Reels plein écran
+      case talents:
+        return _page(const TalentsReelsPage());
+
+      case billetterie:
+        return _page(const EventsListPage());
+      case myTickets:
+        return _userProtected((_) => const MyTicketsPage());
+      case scanner:
+        return _userProtected((_) => const ScannerPage());
 
       default:
         return _error('Page non trouvée : ${settings.name}');

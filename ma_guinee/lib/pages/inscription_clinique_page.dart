@@ -30,9 +30,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   double? latitude;
   double? longitude;
 
-  // --- MULTI PHOTOS ---
-  final List<XFile> _pickedImages = [];        // nouvelles images non encore uploadées
-  final List<String> _existingImageUrls = [];  // images déjà en base (édition)
+  final List<XFile> _pickedImages = [];
+  final List<String> _existingImageUrls = [];
 
   bool _isUploading = false;
   final String _bucket = 'clinique-photos';
@@ -93,7 +92,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
-  // --- Sélection MULTI images ---
   Future<void> _choisirImagesMultiples() async {
     final picker = ImagePicker();
     final pickedList = await picker.pickMultiImage();
@@ -104,7 +102,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
-  // (Optionnel) Prendre une photo
   Future<void> _prendrePhoto() async {
     final picker = ImagePicker();
     final shot = await picker.pickImage(source: ImageSource.camera);
@@ -113,25 +110,20 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
-  // Util: extraire le "path" Storage depuis une URL publique
   String? _storagePathFromPublicUrl(String url) {
-    // Format public courant:
-    // https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
     final marker = '/storage/v1/object/public/$_bucket/';
     final idx = url.indexOf(marker);
     if (idx != -1) {
       return url.substring(idx + marker.length);
     }
-    // fallback: essayer après "<bucket>/"
     final alt = '$_bucket/';
     final idx2 = url.indexOf(alt);
     if (idx2 != -1) {
       return url.substring(idx2 + alt.length);
     }
-    return null; // introuvable
+    return null;
   }
 
-  // Upload d'UNE image -> URL publique
   Future<String?> _uploadImage(XFile imageFile) async {
     try {
       final ext = imageFile.name.split('.').last;
@@ -152,13 +144,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
   Future<void> _supprimerImage(String imageUrl, {required bool isExisting}) async {
     try {
-      // 1) supprimer du storage si on a une URL publique en base
       final storagePath = _storagePathFromPublicUrl(imageUrl);
       if (storagePath != null) {
         await Supabase.instance.client.storage.from(_bucket).remove([storagePath]);
       }
 
-      // 2) MAJ UI & base si c'était une image existante
       if (isExisting && widget.clinique != null) {
         final updated = List<String>.from(_existingImageUrls)..remove(imageUrl);
         await Supabase.instance.client
@@ -189,14 +179,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     setState(() => _isUploading = true);
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) {
-      if (mounted) setState(() => _isUploading = false);
+      setState(() => _isUploading = false);
       return;
     }
 
-    // 1) On part des images existantes (édition) – déjà nettoyées si suppressions
     final List<String> finalUrls = List<String>.from(_existingImageUrls);
-
-    // 2) Upload des nouvelles images
     for (final x in _pickedImages) {
       final url = await _uploadImage(x);
       if (url != null) finalUrls.add(url);
@@ -212,26 +199,59 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
       'horaires': horaires,
       'latitude': latitude,
       'longitude': longitude,
-      'images': finalUrls, // liste d’URLs (ARRAY/TEXT ou JSONB côté DB)
+      'images': finalUrls,
+      'photo_url': finalUrls.isNotEmpty ? finalUrls.first : null,
       'user_id': userId,
     };
 
     try {
+      Map<String, dynamic> row;
+
       if (widget.clinique != null) {
-        await Supabase.instance.client.from('cliniques').update(data).eq('id', widget.clinique!['id']);
+        row = await Supabase.instance.client
+            .from('cliniques')
+            .update(data)
+            .eq('id', widget.clinique!['id'])
+            .select()
+            .single();
       } else {
-        await Supabase.instance.client.from('cliniques').insert(data);
+        row = await Supabase.instance.client
+            .from('cliniques')
+            .insert(data)
+            .select()
+            .single();
       }
-      if (mounted) Navigator.pop(context, true);
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Succès"),
+          content: Text(widget.clinique != null
+              ? "Clinique mise à jour avec succès ✅"
+              : "Clinique enregistrée avec succès ✅"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+
+      Navigator.pop(context, row);
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Erreur enregistrement.")));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text("Erreur enregistrement.")));
+      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  // Widget vignette pour une URL existante
   Widget _thumbFromUrl(String url) {
     return Stack(
       children: [
@@ -260,12 +280,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     );
   }
 
-  // Widget vignette pour un XFile local (pas encore uploadé)
   Widget _thumbFromXFile(XFile xf) {
     final child = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: kIsWeb
-          ? Image.network(xf.path, fit: BoxFit.cover) // blob: URL côté Web
+          ? Image.network(xf.path, fit: BoxFit.cover)
           : Image.file(File(xf.path), fit: BoxFit.cover),
     );
 
@@ -277,7 +296,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
           right: 4,
           child: InkWell(
             onTap: () {
-              setState(() => _pickedImages.remove(xf)); // juste UI locale
+              setState(() => _pickedImages.remove(xf));
             },
             child: Container(
               decoration: BoxDecoration(
@@ -297,7 +316,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   Widget build(BuildContext context) {
     final enEdition = widget.clinique != null;
 
-    // Première image pour l'avatar
     ImageProvider? firstImage;
     if (_pickedImages.isNotEmpty) {
       firstImage = kIsWeb
@@ -372,7 +390,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 const SizedBox(height: 10),
               ],
 
-              // Avatar (première image)
               CircleAvatar(
                 radius: 50,
                 backgroundImage: firstImage,
@@ -380,7 +397,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               ),
               const SizedBox(height: 10),
 
-              // Boutons d'ajout
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -399,7 +415,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               ),
               const SizedBox(height: 12),
 
-              // Grille (existantes + nouvelles)
               if (_existingImageUrls.isNotEmpty || _pickedImages.isNotEmpty)
                 GridView.count(
                   crossAxisCount: 3,

@@ -54,7 +54,7 @@ class CulteDetailPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (images.isNotEmpty)
-                  _ImagesCarousel(images: images)
+                  _ImagesCarouselWithThumbs(images: images)
                 else
                   ClipRRect(
                     borderRadius: BorderRadius.circular(17),
@@ -85,8 +85,7 @@ class CulteDetailPage extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(13),
                     boxShadow: const [
-                      BoxShadow(
-                          color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
+                      BoxShadow(color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
                     ],
                   ),
                   height: 200,
@@ -127,8 +126,7 @@ class CulteDetailPage extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       elevation: 2,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
                 ),
@@ -141,69 +139,127 @@ class CulteDetailPage extends StatelessWidget {
   }
 }
 
-/// --------- Widget pour carousel d’images ---------
-class _ImagesCarousel extends StatefulWidget {
+/// --------- Carousel avec miniatures + compteur ---------
+class _ImagesCarouselWithThumbs extends StatefulWidget {
   final List<String> images;
-  const _ImagesCarousel({required this.images});
+  const _ImagesCarouselWithThumbs({required this.images});
 
   @override
-  State<_ImagesCarousel> createState() => _ImagesCarouselState();
+  State<_ImagesCarouselWithThumbs> createState() => _ImagesCarouselWithThumbsState();
 }
 
-class _ImagesCarouselState extends State<_ImagesCarousel> {
+class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
+  final PageController _pageCtrl = PageController();
   int _current = 0;
 
   @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 200,
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          PageView.builder(
-            itemCount: widget.images.length,
-            onPageChanged: (index) => setState(() => _current = index),
-            itemBuilder: (context, index) {
-              return ClipRRect(
+    final total = widget.images.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Image principale + compteur
+        SizedBox(
+          height: 220,
+          child: Stack(
+            children: [
+              ClipRRect(
                 borderRadius: BorderRadius.circular(17),
-                child: Image.network(
-                  widget.images[index],
-                  width: double.infinity,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    color: Colors.grey.shade300,
-                    child: const Center(
-                        child: Icon(Icons.image_not_supported)),
+                child: PageView.builder(
+                  controller: _pageCtrl,
+                  itemCount: widget.images.length,
+                  onPageChanged: (i) => setState(() => _current = i),
+                  itemBuilder: (_, i) => Image.network(
+                    widget.images[i],
+                    width: double.infinity,
+                    height: 220,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey.shade300,
+                      child: const Center(child: Icon(Icons.broken_image)),
+                    ),
+                  ),
+                ),
+              ),
+              // Compteur en haut à droite
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_current + 1}/$total',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // Miniatures
+        SizedBox(
+          height: 70,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: widget.images.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final selected = i == _current;
+              return GestureDetector(
+                onTap: () {
+                  _pageCtrl.animateToPage(
+                    i,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
+                  );
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 100,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected ? const Color(0xFF113CFC) : Colors.transparent,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      if (selected)
+                        BoxShadow(
+                          color: const Color(0xFF113CFC).withOpacity(0.25),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.network(
+                    widget.images[i],
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey.shade300,
+                      child: const Icon(Icons.broken_image),
+                    ),
                   ),
                 ),
               );
             },
           ),
-          if (widget.images.length > 1)
-            Positioned(
-              bottom: 12,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(widget.images.length, (i) {
-                  return Container(
-                    width: _current == i ? 15 : 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      color: _current == i
-                          ? Colors.orange
-                          : Colors.white,
-                      border: Border.all(color: Colors.black12),
-                    ),
-                  );
-                }),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
