@@ -1,3 +1,4 @@
+// lib/services/message_service.dart
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -65,7 +66,7 @@ class MessageService {
   }
 
   /// ---------------------------------
-  /// Envoi message annonce
+  /// Envoi message annonce (inchangé)
   /// ---------------------------------
   Future<void> sendMessageToAnnonce({
     required String senderId,
@@ -88,18 +89,39 @@ class MessageService {
   }
 
   /// ---------------------------------
-  /// Envoi message prestataire
+  /// Envoi message prestataire (corrigé)
   /// ---------------------------------
   Future<void> sendMessageToPrestataire({
     required String senderId,
-    required String receiverId,
+    required String receiverId,     // peut être legacy -> on va le résoudre
     required String prestataireId,
     required String prestataireName,
     required String contenu,
   }) async {
+    // 1) Résoudre le vrai destinataire = owner_user_id (auth.users.id) du prestataire
+    String resolvedReceiver = receiverId;
+    try {
+      final p = await _client
+          .from('prestataires')
+          .select('owner_user_id')
+          .eq('id', prestataireId)
+          .maybeSingle();
+
+      if (p != null && p is Map && p['owner_user_id'] != null) {
+        final owner = p['owner_user_id'].toString();
+        if (owner.isNotEmpty) {
+          resolvedReceiver = owner; // ✅ utilise l'user auth du propriétaire
+        }
+      }
+    } catch (e) {
+      debugPrint('resolve owner_user_id error: $e');
+      // On garde receiverId tel quel si on ne peut pas résoudre
+    }
+
+    // 2) Insert du message (le trigger DB s’occupe de la notification proprement)
     await _client.from('messages').insert({
       'sender_id': senderId,
-      'receiver_id': receiverId,
+      'receiver_id': resolvedReceiver,
       'contexte': 'prestataire',
       'prestataire_id': prestataireId,
       'prestataire_name': prestataireName,
@@ -107,7 +129,8 @@ class MessageService {
       'date_envoi': DateTime.now().toIso8601String(),
       'lu': false,
     });
-    unreadChanged.add(null); // 🔔 mettre à jour le badge
+
+    unreadChanged.add(null);
   }
 
   /// ---------------------------------

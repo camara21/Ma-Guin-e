@@ -17,6 +17,15 @@ class AnnoncesPage extends StatefulWidget {
 class _AnnoncesPageState extends State<AnnoncesPage> {
   final TextEditingController _searchCtrl = TextEditingController();
 
+  // —————————————————— Ajout: format GNF avec points ——————————————————
+  String _fmtGNF(dynamic value) {
+    if (value == null) return '0';
+    final num n = (value is num) ? value : num.tryParse(value.toString()) ?? 0;
+    final int i = n.round();
+    final s = NumberFormat('#,##0', 'en_US').format(i); // 1,234,567
+    return s.replaceAll(',', '.'); // 1.234.567
+  }
+
   // —————————————————— CATEGORIES ——————————————————
   final Map<String, dynamic> _catTous = {
     'label': 'Tous',
@@ -246,7 +255,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         const SizedBox(height: 4),
                         // prix
                         Text(
-                          "$prix $devise",
+                          "${_fmtGNF(prix)} $devise",
                           style: const TextStyle(
                             color: Color(0xFF009460),
                             fontWeight: FontWeight.w600,

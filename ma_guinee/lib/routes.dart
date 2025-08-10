@@ -14,7 +14,7 @@ import 'pages/carte_page.dart';
 import 'pages/divertissement_page.dart';
 import 'pages/admin_page.dart';
 
-// ✅ Alias clairs pour éviter les collisions de noms
+// ✅ Alias clairs
 import 'pages/resto_page.dart' as resto_pg;
 import 'pages/register_page.dart' as register_pg;
 
@@ -51,12 +51,15 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
-// ✅ Nouveaux imports pour TalentMusique et Billetterie
-// ⛔️ Ancien: import 'pages/talents_feed_page.dart';
-import 'pages/talents_reels_page.dart'; // ✅ on ouvre directement les Reels
+// ✅ Nouvelles pages Social/Live
+import 'pages/posts_reels_page.dart';   // <— remplace l’ancien talents_reels_page.dart
 import 'pages/events_list_page.dart';
 import 'pages/my_tickets_page.dart';
 import 'pages/scanner_page.dart';
+
+// Live
+import 'pages/live_page.dart';
+import 'pages/live_room_page.dart'; // ouvrira avec arguments
 
 class AppRoutes {
   static const String splash = '/';
@@ -103,8 +106,12 @@ class AppRoutes {
   static const String editAnnonce = '/edit_annonce';
   static const String editClinique = '/edit_clinique';
 
-  // ✅ Nouvelles routes
-  static const String talents = '/talents';
+  // ✅ Social / Live
+  static const String talents = '/talents';     // garde le nom public, mais ouvre PostsReelsPage
+  static const String live = '/live';
+  static const String liveRoom = '/live/room';
+
+  // Billetterie
   static const String billetterie = '/billetterie';
   static const String myTickets = '/mes_billets';
   static const String scanner = '/scanner';
@@ -159,9 +166,7 @@ class AppRoutes {
         return _userProtected((_) => const MesAnnoncesPage());
       case mesPrestations:
         return _userProtected((u) {
-          final prestations = u.espacePrestataire != null
-              ? [u.espacePrestataire!]
-              : <Map<String, dynamic>>[];
+          final prestations = u.espacePrestataire != null ? [u.espacePrestataire!] : <Map<String, dynamic>>[];
           return MesPrestationsPage(prestations: prestations);
         });
       case mesRestaurants:
@@ -179,49 +184,44 @@ class AppRoutes {
           final cliniques = u.cliniques ?? [];
           return MesCliniquesPage(cliniques: cliniques);
         });
+
       case inscriptionResto:
         final resto = settings.arguments;
         if (resto == null || resto is Map<String, dynamic>) {
-          return _page(
-            InscriptionRestoPage(restaurant: resto as Map<String, dynamic>?),
-          );
+          return _page(InscriptionRestoPage(restaurant: resto as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour /inscriptionResto");
+
       case inscriptionHotel:
         final hotelArg = settings.arguments;
         if (hotelArg == null || hotelArg is Map<String, dynamic>) {
-          return _page(
-            InscriptionHotelPage(hotel: hotelArg as Map<String, dynamic>?),
-          );
+          return _page(InscriptionHotelPage(hotel: hotelArg as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour /inscriptionHotel");
+
       case inscriptionClinique:
         final clinique = settings.arguments;
         if (clinique == null || clinique is Map<String, dynamic>) {
-          return _page(
-            EditCliniquePage(clinique: clinique as Map<String, dynamic>?),
-          );
+          return _page(EditCliniquePage(clinique: clinique as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour /inscriptionClinique");
+
       case annonceDetail:
         final arg = settings.arguments;
-        if (arg is AnnonceModel) {
-          return _page(AnnonceDetailPage(annonce: arg));
-        }
+        if (arg is AnnonceModel) return _page(AnnonceDetailPage(annonce: arg));
         return _error("Argument invalide pour /annonce_detail");
+
       case restoDetail:
         final argR = settings.arguments;
         final String? restoId = (argR is String) ? argR : argR?.toString();
-        if (restoId == null || restoId.isEmpty) {
-          return _error("ID invalide pour /resto_detail");
-        }
+        if (restoId == null || restoId.isEmpty) return _error("ID invalide pour /resto_detail");
         return _page(RestoDetailPage(restoId: restoId));
+
       case hotelDetail:
         final id = settings.arguments;
-        if (id is int) {
-          return _page(HotelDetailPage(hotelId: id));
-        }
+        if (id is int) return _page(HotelDetailPage(hotelId: id));
         return _error("ID invalide pour /hotel_detail");
+
       case editPrestataire:
         final argsP = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditPrestatairePage(prestataire: argsP));
@@ -238,10 +238,25 @@ class AppRoutes {
         final argsC = settings.arguments as Map<String, dynamic>? ?? {};
         return _page(EditCliniquePage(clinique: argsC));
 
-      // ✅ Route Talents → Reels plein écran
-      case talents:
-        return _page(const TalentsReelsPage());
+      // ✅ Social
+      case talents: // garde le nom public existant mais ouvre le nouveau flux
+        return _page(const PostsReelsPage());
 
+      // ✅ Live
+      case live:
+        return _page(const LivePage());
+      case liveRoom:
+        // attend un Map {roomId: String, isHost: bool, title: String?}
+        final args = settings.arguments as Map<String, dynamic>? ?? {};
+        final roomId = args['roomId'] as String?;
+        if (roomId == null || roomId.isEmpty) {
+          return _error('Argument manquant roomId pour $liveRoom');
+        }
+        final isHost = (args['isHost'] as bool?) ?? false;
+        final title = args['title'] as String?;
+        return _page(LiveRoomPage(roomId: roomId, isHost: isHost, initialTitle: title));
+
+      // Billetterie
       case billetterie:
         return _page(const EventsListPage());
       case myTickets:
@@ -269,17 +284,14 @@ class AppRoutes {
   ) {
     return MaterialPageRoute(
       builder: (context) {
-        final user =
-            Provider.of<UserProvider>(context, listen: false).utilisateur;
+        final user = Provider.of<UserProvider>(context, listen: false).utilisateur;
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (ModalRoute.of(context)?.settings.name != login) {
               Navigator.pushNamed(context, login);
             }
           });
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         return builder(user);
       },

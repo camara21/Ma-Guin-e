@@ -6,25 +6,22 @@ import 'package:realtime_client/realtime_client.dart';
 class NotificationService {
   final _client = Supabase.instance.client;
 
-  // Doit être initialisé UNE FOIS dans main.dart
+  static const _channelId = 'messages_channel';
   static final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  /// À mettre dans main() au démarrage de l'app
+  RealtimeChannel? _rtChannel;
+
   static Future<void> initLocalNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const settings = InitializationSettings(
-      android: androidSettings,
-      iOS: DarwinInitializationSettings(),
-    );
+    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const ios = DarwinInitializationSettings();
+    const settings = InitializationSettings(android: android, iOS: ios);
     await flutterLocalNotificationsPlugin.initialize(settings);
   }
 
-  /// Crée un channel Android si pas encore créé (à faire au lancement)
   static Future<void> createAndroidNotificationChannel() async {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'messages_channel', // Même id que dans main.dart
-      'Messages',
+      _channelId, 'Messages',
       description: 'Notifications Ma Guinée',
       importance: Importance.high,
     );
@@ -34,28 +31,21 @@ class NotificationService {
         ?.createNotificationChannel(channel);
   }
 
-  /// À appeler dans main() au démarrage
   static Future<void> globalInit() async {
     await initLocalNotifications();
     await createAndroidNotificationChannel();
   }
 
   Future<void> initializeFCM() async {
-    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    final messaging = FirebaseMessaging.instance;
     await messaging.requestPermission();
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true, badge: true, sound: true,
+    );
 
-    String? token = await messaging.getToken();
-    print("FCM Token: $token");
-
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      final notification = message.notification;
-      if (notification != null) {
-        _showLocal(notification.title ?? 'Nouvelle notification', notification.body ?? '');
-      }
-    });
-
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      print('Notification cliquée: ${message.data}');
+    FirebaseMessaging.onMessage.listen((m) {
+      final n = m.notification;
+      if (n != null) _showLocal(n.title ?? 'Nouvelle notification', n.body ?? '');
     });
   }
 
@@ -66,11 +56,9 @@ class NotificationService {
       body,
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'messages_channel', // Même id que le channel créé
-          'Messages',
+          _channelId, 'Messages',
           channelDescription: 'Notifications Ma Guinée',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.high, priority: Priority.high,
           icon: '@mipmap/ic_launcher',
         ),
         iOS: DarwinNotificationDetails(),
@@ -78,9 +66,12 @@ class NotificationService {
     );
   }
 
-  /// Écoute Supabase Realtime pour les notifications pour un utilisateur donné
+  /// Ecoute les INSERT sur `public.notifications` pour l'utilisateur courant
   void subscribeRealtime(String userId, void Function(Map<String, dynamic>) onNotification) {
-    _client
+    // évite les doublons si on ré-appelle
+    _rtChannel?.unsubscribe();
+
+    _rtChannel = _client
         .channel('public:notifications')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
@@ -88,20 +79,25 @@ class NotificationService {
           table: 'notifications',
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
-            column: 'utilisateur_id',
+            column: 'user_id', // ✅ CORRECTION ICI
             value: userId,
           ),
           callback: (payload) {
             final notif = payload.newRecord;
             if (notif != null) {
               _showLocal(
-                notif['titre'] ?? 'Nouvelle notification',
-                notif['contenu'] ?? '',
+                (notif['titre'] ?? 'Nouvelle notification').toString(),
+                (notif['contenu'] ?? '').toString(),
               );
-              onNotification(notif);
+              onNotification(Map<String, dynamic>.from(notif));
             }
           },
         )
         .subscribe();
+  }
+
+  void unsubscribeRealtime() {
+    _rtChannel?.unsubscribe();
+    _rtChannel = null;
   }
 }

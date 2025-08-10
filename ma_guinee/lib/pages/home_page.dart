@@ -95,6 +95,75 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ===== Icône personnalisée Langni (88x88) avec badge “Bientôt” =====
+  Widget _langniIcon() {
+    final br = BorderRadius.circular(14);
+    return Container(
+      width: 88,
+      height: 88,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: br,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // bandes rouge / jaune / vert
+          ClipRRect(
+            borderRadius: br,
+            child: Row(
+              children: const [
+                Expanded(child: ColoredBox(color: Color(0xFFCE1126))), // rouge
+                Expanded(child: ColoredBox(color: Color(0xFFFCD116))), // jaune
+                Expanded(child: ColoredBox(color: Color(0xFF009460))), // vert
+              ],
+            ),
+          ),
+          // bulle discussion au centre
+          Center(
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.92),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.forum_rounded, size: 26, color: Color(0xFF113CFC)),
+            ),
+          ),
+          // badge "Bientôt"
+          Positioned(
+            top: 6,
+            right: 6,
+            child: _soonBadge(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _soonBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF113CFC),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
+      ),
+      child: const Text(
+        'Bientôt',
+        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final utilisateur = context.watch<UserProvider>().utilisateur;
@@ -179,7 +248,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔶 Bannière (cercle flou retiré, logo agrandi)
+            // 🔶 Bannière
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -201,13 +270,12 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Stack(
                 children: [
-                  // (supprimé: cercle radial pas net)
                   Positioned(
                     right: 12,
                     top: 10,
                     child: Image.asset(
                       'assets/logo_guinee.png',
-                      height: 124, // ← agrandi (était 110)
+                      height: 124,
                       fit: BoxFit.contain,
                     ),
                   ),
@@ -260,9 +328,22 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
                 _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
-                _serviceTile(Icons.music_video_rounded, "TalentMusique", AppRoutes.talents, const Color(0xFFCE1126)),
 
-                _serviceTile(Icons.confirmation_num, "Billetterie", AppRoutes.billetterie, const Color(0xFFFCD116)),
+                // 🔹 Langni (réseau social guinéen – bientôt)
+                _serviceTileFutureCustom(
+                  _langniIcon(),
+                  "Langni",
+                  "Langni, le réseau social guinéen, arrive bientôt. Conçu pour et par les Guinéens.",
+                ),
+
+                // 🔹 Billetterie (bientôt)
+                _serviceTileFuture(
+                  Icons.confirmation_num,
+                  "Billetterie",
+                  const Color(0xFFFCD116),
+                  "Un service de billetterie sera bientôt disponible pour vendre vos billets d’événements "
+                  "avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
+                ),
               ],
             ),
           ],
@@ -271,6 +352,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Tuile d'un service disponible (navigue vers une route existante)
   Widget _serviceTile(IconData icon, String label, String route, Color color) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
@@ -278,6 +360,64 @@ class _HomePageState extends State<HomePage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           buildIcon(icon, color),
+          const SizedBox(height: 6),
+          Text(label, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  /// Tuile d'un service futur (affiche uniquement un message)
+  Widget _serviceTileFuture(IconData icon, String label, Color color, String message) {
+    return GestureDetector(
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(label),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildIcon(icon, color),
+          const SizedBox(height: 6),
+          Text(label, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  /// Tuile d'un service futur avec icône personnalisée (widget)
+  Widget _serviceTileFutureCustom(Widget iconWidget, String label, String message) {
+    return GestureDetector(
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(label),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          iconWidget,
           const SizedBox(height: 6),
           Text(label, textAlign: TextAlign.center),
         ],
