@@ -1,4 +1,4 @@
-import 'dart:async';
+// lib/pages/main_navigation_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,7 +10,7 @@ import 'carte_page.dart';
 import 'messages_page.dart';
 import 'profile_page.dart';
 
-// Badge notification pour l'onglet Messages
+// Pastille du badge (affiche le nombre)
 class Badge extends StatelessWidget {
   final int count;
   final double size;
@@ -18,25 +18,21 @@ class Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (count == 0) return const SizedBox.shrink();
-    return Positioned(
-      right: 0,
-      top: 0,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(size / 2),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          '$count',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-          ),
+    if (count <= 0) return const SizedBox.shrink();
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(size / 2),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
@@ -52,53 +48,18 @@ class MainNavigationPage extends StatefulWidget {
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
-  int _unreadMessages = 0;
-
-  final MessageService _msgService = MessageService();
-  StreamSubscription<List<Map<String, dynamic>>>? _realtimeSub;
-  StreamSubscription<void>? _localUnreadSub; // 👈 nouvel abonnement local
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadUnread();
-      _listenRealtimeAndLocal();
-    });
-  }
-
-  Future<void> _loadUnread() async {
-    final user = Provider.of<UserProvider>(context, listen: false).utilisateur;
-    if (user == null) return;
-    final n = await _msgService.getUnreadMessagesCount(user.id);
-    if (mounted) setState(() => _unreadMessages = n);
-  }
-
-  void _listenRealtimeAndLocal() {
-    final user = Provider.of<UserProvider>(context, listen: false).utilisateur;
-    if (user == null) return;
-
-    // Realtime (insert/update/delete) -> recalcule le badge
-    _realtimeSub?.cancel();
-    _realtimeSub = _msgService.subscribeAll(_loadUnread);
-
-    // 🔔 Event local déclenché quand on marque lu dans une page de chat
-    _localUnreadSub?.cancel();
-    _localUnreadSub = _msgService.unreadChanged.stream.listen((_) => _loadUnread());
-  }
-
-  @override
-  void dispose() {
-    _realtimeSub?.cancel();
-    _localUnreadSub?.cancel();
-    super.dispose();
-  }
+  final _svc = MessageService();
 
   @override
   Widget build(BuildContext context) {
-    final user = Provider.of<UserProvider>(context).utilisateur;
+    final user = context.watch<UserProvider>().utilisateur;
 
-    final List<Widget> _pages = [
+    // ✅ Maintenant on utilise le stream basé sur la table messages
+    final Stream<int> badgeStream = (user == null)
+        ? Stream<int>.value(0)
+        : _svc.unreadCountStream(user.id);
+
+    final pages = <Widget>[
       const HomePage(),
       const CartePage(),
       const MessagesPage(),
@@ -116,14 +77,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         return true;
       },
       child: Scaffold(
-        body: _pages[_currentIndex],
+        body: pages[_currentIndex],
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() => _currentIndex = index);
-            // Optionnel: quand on ouvre l’onglet Messages, on force une MAJ du badge.
-            if (index == 2) _loadUnread();
-          },
+          onTap: (index) => setState(() => _currentIndex = index),
+          selectedItemColor: Colors.red,
+          unselectedItemColor: Colors.grey,
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.home, color: Colors.red),
@@ -134,22 +93,31 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               label: 'Carte',
             ),
             BottomNavigationBarItem(
+              label: 'Messages',
               icon: Stack(
-                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
                   const Icon(Icons.forum_rounded),
-                  Badge(count: _unreadMessages),
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: StreamBuilder<int>(
+                      stream: badgeStream,
+                      initialData: 0,
+                      builder: (context, snapshot) {
+                        final count = snapshot.data ?? 0;
+                        return Badge(count: count);
+                      },
+                    ),
+                  ),
                 ],
               ),
-              label: 'Messages',
             ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.person),
               label: 'Profil',
             ),
           ],
-          selectedItemColor: Colors.red,
-          unselectedItemColor: Colors.grey,
         ),
       ),
     );

@@ -29,37 +29,20 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0175C2), // 🔹 Bleu manifest.json
+      backgroundColor: const Color(0xFF0175C2),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Glow sous le logo
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 210,
-                  height: 210,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withOpacity(0.32),
-                        blurRadius: 32,
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                ),
-                Image.asset(
-                  'assets/logo_guinee.png', // ou ton image uploadée
-                  height: 180,
-                ),
-              ],
+            // Logo SANS glow
+            Image.asset(
+              'assets/logo_guinee.png',
+              height: 180,
             ),
+
             const SizedBox(height: 38),
-            // Texte avec glow très contenu
+
+            // Texte principal AVEC glow
             Text(
               "Ma Guinée",
               style: TextStyle(
@@ -69,18 +52,21 @@ class _SplashScreenState extends State<SplashScreen> {
                 letterSpacing: 2,
                 shadows: [
                   Shadow(
-                    blurRadius: 5, // petit flou = lumière proche
+                    blurRadius: 5,
                     color: Colors.white.withOpacity(0.95),
                   ),
                   Shadow(
-                    blurRadius: 8, // deuxième ombre pour renforcer le glow
+                    blurRadius: 8,
                     color: Colors.white.withOpacity(0.5),
                   ),
                 ],
               ),
               textAlign: TextAlign.center,
             ),
+
             const SizedBox(height: 10),
+
+            // Slogan AVEC glow
             Text(
               "Là où tout commence",
               style: TextStyle(

@@ -1,12 +1,9 @@
-// lib/pages/login_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../routes.dart';
 import '../providers/user_provider.dart';
-import '../models/utilisateur_model.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -21,17 +18,6 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _loading = false;
   bool _obscurePassword = true;
-
-  Future<Map<String, dynamic>?> _recupererProfilUtilisateur() async {
-    final supabase = Supabase.instance.client;
-    final user = supabase.auth.currentUser;
-    if (user == null) return null;
-    return await supabase
-        .from('utilisateurs')
-        .select()
-        .eq('id', user.id)
-        .maybeSingle();
-  }
 
   Future<void> _seConnecter() async {
     if (!_formKey.currentState!.validate()) return;
@@ -49,19 +35,13 @@ class _LoginPageState extends State<LoginPage> {
         throw AuthException("Email ou mot de passe incorrect");
       }
 
-      // IMPORTANT : on recharge l'utilisateur + espaces + annonces
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
-      final user = context.read<UserProvider>().utilisateur;
-      if (user != null && mounted) {
+      if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,
           AppRoutes.mainNav,
           (_) => false,
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profil utilisateur introuvable.")),
         );
       }
     } on AuthException catch (e) {
@@ -108,6 +88,14 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
+                // Logo ajouté
+                Image.asset(
+                  'assets/logo_guinee.png',
+                  height: 80,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 16),
+
                 const Text(
                   "Bienvenue sur Ma Guinée !",
                   style: TextStyle(
@@ -118,6 +106,7 @@ class _LoginPageState extends State<LoginPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 22),
+
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -136,6 +125,7 @@ class _LoginPageState extends State<LoginPage> {
                       val == null || !val.contains('@') ? "Email invalide" : null,
                 ),
                 const SizedBox(height: 18),
+
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -164,6 +154,7 @@ class _LoginPageState extends State<LoginPage> {
                       val == null || val.length < 6 ? "Mot de passe trop court" : null,
                 ),
                 const SizedBox(height: 6),
+
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -180,6 +171,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : SizedBox(
@@ -222,26 +214,22 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                 const SizedBox(height: 22),
-                OutlinedButton(
+
+                // Bouton "Créer un compte" discret
+                TextButton(
                   onPressed: () =>
                       Navigator.pushNamed(context, AppRoutes.register),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Color(0xFFCE1126),
-                      width: 2,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    backgroundColor: Colors.transparent,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: Size.zero,
                   ),
                   child: const Text(
                     "Créer un compte",
                     style: TextStyle(
-                      color: Color(0xFFCE1126),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
+                      color: Colors.grey,
+                      fontSize: 14,
+                      fontWeight: FontWeight.normal,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),

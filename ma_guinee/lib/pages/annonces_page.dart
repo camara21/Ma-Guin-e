@@ -17,39 +17,37 @@ class AnnoncesPage extends StatefulWidget {
 class _AnnoncesPageState extends State<AnnoncesPage> {
   final TextEditingController _searchCtrl = TextEditingController();
 
-  // —————————————————— Ajout: format GNF avec points ——————————————————
   String _fmtGNF(dynamic value) {
     if (value == null) return '0';
     final num n = (value is num) ? value : num.tryParse(value.toString()) ?? 0;
     final int i = n.round();
-    final s = NumberFormat('#,##0', 'en_US').format(i); // 1,234,567
-    return s.replaceAll(',', '.'); // 1.234.567
+    final s = NumberFormat('#,##0', 'en_US').format(i);
+    return s.replaceAll(',', '.');
   }
 
-  // —————————————————— CATEGORIES ——————————————————
   final Map<String, dynamic> _catTous = {
     'label': 'Tous',
     'icon': Icons.apps,
     'id': null,
   };
   final List<Map<String, dynamic>> _cats = const [
-    {'label': 'Immobilier',      'icon': Icons.home_work_outlined, 'id': 1},
-    {'label': 'Véhicules',       'icon': Icons.directions_car,       'id': 2},
-    {'label': 'Vacances',        'icon': Icons.beach_access,         'id': 3},
-    {'label': 'Emploi',          'icon': Icons.work_outline,         'id': 4},
-    {'label': 'Services',        'icon': Icons.handshake,            'id': 5},
-    {'label': 'Famille',         'icon': Icons.family_restroom,      'id': 6},
-    {'label': 'Électronique',    'icon': Icons.devices_other,        'id': 7},
-    {'label': 'Mode',            'icon': Icons.checkroom,            'id': 8},
-    {'label': 'Loisirs',         'icon': Icons.sports_soccer,        'id': 9},
-    {'label': 'Animaux',         'icon': Icons.pets,                 'id': 10},
-    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt,            'id': 11},
-    {'label': 'Matériel pro',    'icon': Icons.build,                'id': 12},
-    {'label': 'Autres',          'icon': Icons.category,             'id': 13},
+    {'label': 'Immobilier', 'icon': Icons.home_work_outlined, 'id': 1},
+    {'label': 'Véhicules', 'icon': Icons.directions_car, 'id': 2},
+    {'label': 'Vacances', 'icon': Icons.beach_access, 'id': 3},
+    {'label': 'Emploi', 'icon': Icons.work_outline, 'id': 4},
+    {'label': 'Services', 'icon': Icons.handshake, 'id': 5},
+    {'label': 'Famille', 'icon': Icons.family_restroom, 'id': 6},
+    {'label': 'Électronique', 'icon': Icons.devices_other, 'id': 7},
+    {'label': 'Mode', 'icon': Icons.checkroom, 'id': 8},
+    {'label': 'Loisirs', 'icon': Icons.sports_soccer, 'id': 9},
+    {'label': 'Animaux', 'icon': Icons.pets, 'id': 10},
+    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt, 'id': 11},
+    {'label': 'Matériel pro', 'icon': Icons.build, 'id': 12},
+    {'label': 'Autres', 'icon': Icons.category, 'id': 13},
   ];
   late final List<Map<String, dynamic>> _allCats;
-  int?    _selectedCatId;
-  String  _selectedLabel = 'Tous';
+  int? _selectedCatId;
+  String _selectedLabel = 'Tous';
 
   @override
   void initState() {
@@ -57,7 +55,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     _allCats = [_catTous, ..._cats];
   }
 
-  // —————————————————— Récupération des annonces ——————————————————
   Future<List<Map<String, dynamic>>> _fetchAnnonces() async {
     final raw = await Supabase.instance.client
         .from('annonces')
@@ -65,12 +62,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         .order('date_creation', ascending: false);
     final list = (raw as List).cast<Map<String, dynamic>>();
 
-    // Filtre par catégorie
     final filteredCat = _selectedCatId != null
-      ? list.where((a) => a['categorie_id'] == _selectedCatId).toList()
-      : list;
+        ? list.where((a) => a['categorie_id'] == _selectedCatId).toList()
+        : list;
 
-    // Filtre texte
     final f = _searchCtrl.text.trim().toLowerCase();
     if (f.isEmpty) return filteredCat;
     return filteredCat.where((a) {
@@ -80,7 +75,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     }).toList();
   }
 
-  // —————————————————— Favoris ——————————————————
   Future<bool> _isFavori(String annonceId) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return false;
@@ -112,12 +106,11 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     setState(() {});
   }
 
-  // —————————————————— UI Helpers ——————————————————
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
       onTap: () => setState(() {
-        _selectedCatId   = cat['id'];
-        _selectedLabel   = cat['label'];
+        _selectedCatId = cat['id'];
+        _selectedLabel = cat['label'];
       }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 130),
@@ -171,30 +164,91 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  // —————————————————— Carte d’annonce ——————————————————
+  /// ✅ Bandeau aux couleurs du thème
+  Widget _sellBanner() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final primary = cs.primary;
+    final onPrimary = cs.onPrimary;
+    final bannerBg = primary.withOpacity(0.08);
+    final bannerBorder = primary.withOpacity(0.12);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: bannerBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: bannerBorder),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "C’est le moment de vendre",
+                    style: theme.textTheme.titleMedium!.copyWith(
+                        fontWeight: FontWeight.w700, color: cs.onSurface),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Touchez des milliers d’acheteurs près de chez vous.",
+                    style: theme.textTheme.bodySmall!.copyWith(
+                        color: cs.onSurface.withOpacity(0.6), height: 1.2),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text("Déposer une annonce"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primary,
+                foregroundColor: onPrimary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                elevation: 0,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CreateAnnoncePage()),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _annonceCard(Map<String, dynamic> data, double cardWidth) {
-    final images     = List<String>.from(data['images'] ?? []);
-    final id         = data['id']?.toString() ?? '';
-    final prix       = data['prix'] ?? 0;
-    final devise     = data['devise'] ?? 'GNF';
-    final ville      = data['ville'] ?? '';
-    final catId      = data['categorie_id'] as int?;
-    final catLabel   = _cats.firstWhere(
+    final images = List<String>.from(data['images'] ?? []);
+    final id = data['id']?.toString() ?? '';
+    final prix = data['prix'] ?? 0;
+    final devise = data['devise'] ?? 'GNF';
+    final ville = data['ville'] ?? '';
+    final catId = data['categorie_id'] as int?;
+    final catLabel = _cats.firstWhere(
         (c) => c['id'] == catId,
         orElse: () => {'label': ''})['label'] as String;
-    final rawDate    = data['date_creation'] as String? ?? '';
+    final rawDate = data['date_creation'] as String? ?? '';
     DateTime date;
     try {
       date = DateTime.parse(rawDate);
     } catch (_) {
       date = DateTime.now();
     }
-    // format date/heure
     final now = DateTime.now();
     String dateText;
-    if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day) {
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
       final h = DateFormat.Hm().format(date);
       dateText = "aujourd'hui $h";
     } else {
@@ -214,15 +268,13 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         width: cardWidth,
         child: Card(
           elevation: 2,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           clipBehavior: Clip.hardEdge,
           child: Stack(
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // image
                   AspectRatio(
                     aspectRatio: 16 / 11,
                     child: Image.network(
@@ -239,12 +291,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // titre
                         Text(
                           data['titre'] ?? '',
                           maxLines: 2,
@@ -253,7 +303,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                               fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         const SizedBox(height: 4),
-                        // prix
                         Text(
                           "${_fmtGNF(prix)} $devise",
                           style: const TextStyle(
@@ -263,31 +312,25 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        // catégorie
                         if (catLabel.isNotEmpty)
                           Text(
                             catLabel,
-                            style: const TextStyle(
-                                color: Colors.black54, fontSize: 12),
+                            style:
+                                const TextStyle(color: Colors.black54, fontSize: 12),
                           ),
-                        // ville
                         Text(
                           ville,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
                         ),
-                        // date ou heure
                         Text(
                           dateText,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              // Favori
               Positioned(
                 top: 10,
                 right: 10,
@@ -302,9 +345,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         decoration: const BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(color: Colors.black12, blurRadius: 3),
-                          ],
+                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 3)],
                         ),
                         child: Icon(
                           fav ? Icons.favorite : Icons.favorite_border,
@@ -323,14 +364,11 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  // —————————————————— Build ——————————————————
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-
-    // responsive : nb de colonnes & ratio
     int crossAxis = 2;
-    double ratio  = 0.72;
+    double ratio = 0.72;
     if (width >= 1400) {
       crossAxis = 5;
       ratio = 0.78;
@@ -342,9 +380,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       ratio = 0.74;
     }
 
-    // calcul largeur carte
-    final totalHSpacing = 12*2 + (crossAxis-1)*16;
-    final cardWidth      = (width - totalHSpacing) / crossAxis;
+    final totalHSpacing = 12 * 2 + (crossAxis - 1) * 16;
+    final cardWidth = (width - totalHSpacing) / crossAxis;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
@@ -364,20 +401,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.favorite_border, color: Color(0xFF113CFC)),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const FavorisPage())),
-          ),
-          IconButton(
-            icon: const Icon(Icons.post_add, color: Color(0xFF113CFC)),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const FavorisPage())),
           ),
         ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // catégories chips
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: LayoutBuilder(
@@ -398,8 +429,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.expand_more,
-                            color: Color(0xFF113CFC)),
+                        icon: const Icon(Icons.expand_more, color: Color(0xFF113CFC)),
                         onPressed: _showCategoriesSheet,
                       )
                     ],
@@ -416,18 +446,16 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
               },
             ),
           ),
-
+          _sellBanner(),
           const SizedBox(height: 8),
           const Padding(
             padding: EdgeInsets.only(left: 18, bottom: 4),
             child: Text(
               'Annonces récentes',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.grey),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold, fontSize: 17, color: Colors.grey),
             ),
           ),
-
-          // liste des annonces
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _fetchAnnonces(),
@@ -447,15 +475,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   );
                 }
-                // On utilise Wrap pour n’avoir aucun « trou » en bas
                 return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Wrap(
                     spacing: 16,
                     runSpacing: 16,
-                    children: annonces
-                        .map((data) => _annonceCard(data, cardWidth))
-                        .toList(),
+                    children:
+                        annonces.map((data) => _annonceCard(data, cardWidth)).toList(),
                   ),
                 );
               },
