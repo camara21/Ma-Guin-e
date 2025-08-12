@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:country_picker/country_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart'; // ⬅️ Pour la locale française
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../routes.dart';
@@ -25,10 +26,17 @@ class _RegisterPageState extends State<RegisterPage> {
   Country? _selectedCountry;
   bool _loading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    initializeDateFormatting('fr'); // ⬅️ Initialise le formatage français
+  }
+
   void _selectDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
+      locale: const Locale('fr'), // ⬅️ calendrier en français
       initialDate: DateTime(now.year - 18),
       firstDate: DateTime(1900),
       lastDate: now,
@@ -74,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
     try {
       final supabase = Supabase.instance.client;
 
-      // 1️⃣ Création du compte Supabase Auth
+      // Création du compte
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
       final signUpResponse = await supabase.auth.signUp(email: email, password: password);
@@ -84,7 +92,7 @@ class _RegisterPageState extends State<RegisterPage> {
         throw Exception("Erreur lors de la création du compte. Email déjà utilisé ?");
       }
 
-      // 2️⃣ Insère le profil dans la table utilisateurs, AVEC L'ID Auth
+      // Insertion dans la table utilisateurs
       await supabase.from('utilisateurs').insert({
         'id': userId,
         'prenom': _prenomController.text.trim(),
@@ -207,7 +215,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   child: Text(
                     _selectedDate == null
                         ? "Sélectionner une date"
-                        : DateFormat('dd/MM/yyyy').format(_selectedDate!),
+                        : DateFormat('dd MMMM yyyy', 'fr').format(_selectedDate!), // ⬅️ Français
                   ),
                 ),
               ),
@@ -239,9 +247,9 @@ class _RegisterPageState extends State<RegisterPage> {
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [
-                                Color(0xFFE53935), // Rouge
-                                Color(0xFFFFEB3B), // Jaune
-                                Color(0xFF43A047), // Vert
+                                Color(0xFFE53935),
+                                Color(0xFFFFEB3B),
+                                Color(0xFF43A047),
                               ],
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,

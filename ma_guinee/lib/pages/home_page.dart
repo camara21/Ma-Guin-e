@@ -52,25 +52,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Écoute la table notifications et filtre côté client (pas de .eq()).
   void _ecouterNotifications() {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
     _notifSub?.cancel();
+
     _notifSub = Supabase.instance.client
-        .from('notifications:utilisateur_id=eq.${user.id}')
+        .from('notifications')
         .stream(primaryKey: ['id'])
-        .listen((data) {
-      final nonLues = data.where((n) => n['lu'] != true).length;
+        .listen((rows) {
       if (!mounted) return;
+
+      final nonLues = rows.where((n) {
+        final uid = n['utilisateur_id']?.toString();
+        final lu = n['lu'] == true; // true si déjà lu
+        return uid == user.id && !lu;
+      }).length;
+
       setState(() => _notificationsNonLues = nonLues);
     });
   }
 
+  /// Charge la valeur initiale (notifications non lues + messages non lus).
   Future<void> _chargerMessagesNonLus() async {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
+    // Valeur initiale pour le badge notifications
+    try {
+      final rows = await Supabase.instance.client
+          .from('notifications')
+          .select('id, utilisateur_id, lu');
+
+      final nonLues = (rows as List).where((n) {
+        final uid = n['utilisateur_id']?.toString();
+        final lu = n['lu'] == true;
+        return uid == user.id && !lu;
+      }).length;
+
+      if (mounted) {
+        setState(() => _notificationsNonLues = nonLues);
+      }
+    } catch (_) {
+      // Optionnel: log/ignore
+    }
+
+    // Compteur de messages non lus (via ton service)
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
@@ -202,6 +231,7 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
+          // Icône Notifications avec badge
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 4),
             child: Stack(
@@ -234,6 +264,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
+          // Icône Aide
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 12),
             child: IconButton(
@@ -329,12 +360,14 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
                 _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
 
-                // 🔹 Langni (réseau social guinéen – bientôt)
-                _serviceTileFutureCustom(
-                  _langniIcon(),
-                  "Langni",
-                  "Langni, le réseau social guinéen, arrive bientôt. Conçu pour et par les Guinéens.",
-                ),
+                // 🔹 Langni (bientôt)
+                      _serviceTileFuture(
+                       Icons.groups_rounded, // Icône plus professionnelle
+                      "Langni",
+                       const Color(0xFF113CFC), // Couleur réseau social (bleu)
+                       "Langni, le réseau social guinéen, arrive bientôt. Conçu pour et par les Guinéens.",
+                      ),
+
 
                 // 🔹 Billetterie (bientôt)
                 _serviceTileFuture(

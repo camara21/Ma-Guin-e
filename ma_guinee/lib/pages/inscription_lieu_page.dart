@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -39,8 +40,19 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   bool _isUploading = false;
 
+  // état localisation
+  bool _detectingPosition = false;
+  bool _modeManuel = false;
+
+  // champs lat/lng pour le mode manuel
+  final TextEditingController _latCtrl = TextEditingController();
+  final TextEditingController _lngCtrl = TextEditingController();
+
   // ⚠️ nom du bucket Supabase
   final String _bucket = 'lieux-photos';
+
+  // Centre par défaut (Conakry)
+  static const LatLng _defaultCenter = LatLng(9.6412, -13.5784);
 
   final List<String> _typesLieu = ['divertissement', 'culte', 'tourisme'];
   final Map<String, List<String>> sousCategoriesParType = {
@@ -78,15 +90,33 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     contact = l['contact'] ?? '';
     latitude = l['latitude'] != null ? double.tryParse('${l['latitude']}') : null;
     longitude = l['longitude'] != null ? double.tryParse('${l['longitude']}') : null;
-    if (l['images'] is List && l['images'].isNotEmpty) {
+    if (l['images'] is List && (l['images'] as List).isNotEmpty) {
       _uploadedImages = List<String>.from(l['images']);
     }
+    _syncLatLngCtrls();
+  }
+
+  @override
+  void dispose() {
+    _latCtrl.dispose();
+    _lngCtrl.dispose();
+    super.dispose();
   }
 
   Color get mainColor => const Color(0xFF1E3FCF);
   Color get red => const Color(0xFFCE1126);
 
+  void _syncLatLngCtrls() {
+    _latCtrl.text = latitude != null ? latitude!.toStringAsFixed(6) : '';
+    _lngCtrl.text = longitude != null ? longitude!.toStringAsFixed(6) : '';
+  }
+
+  // ------------------ Localisation robuste ------------------
+
   Future<void> _recupererPosition() async {
+    if (_detectingPosition) return;
+    setState(() => _detectingPosition = true);
+
     try {
       await showDialog(
         context: context,
@@ -103,48 +133,135 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         ),
       );
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Permission de localisation refusée.")));
-          return;
-        }
+      // 1) Service activé ?
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showError("La localisation est désactivée sur l’appareil. Veuillez l’activer.");
       }
-      if (permission == LocationPermission.deniedForever) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Activez la localisation dans les paramètres.")));
+
+      // 2) Permissions
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied) {
+        _showError("Permission de localisation refusée. Autorisez-la pour détecter votre position.");
+        return;
+      }
+      if (perm == LocationPermission.deniedForever) {
+        _showError("La permission de localisation est bloquée. Ouvrez les réglages pour l’autoriser.");
+        if (!kIsWeb) {
+          unawaited(Geolocator.openAppSettings());
+          unawaited(Geolocator.openLocationSettings());
+        }
         return;
       }
 
-      final position =
-          await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      latitude = position.latitude;
-      longitude = position.longitude;
-
-      final placemarks =
-          await placemarkFromCoordinates(position.latitude, position.longitude);
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        adresse = [
-          p.street,
-          p.subLocality,
-          p.locality,
-          p.administrativeArea,
-          p.country
-        ].where((e) => e != null && e.isNotEmpty).join(", ");
-        ville = p.locality ?? ville;
+      // 3) Position avec timeout + repli
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 8),
+        );
+      } on TimeoutException {
+        position = await Geolocator.getLastKnownPosition();
+        if (position == null) {
+          _showError("Délai dépassé pour obtenir la position. Veuillez réessayer près d’une fenêtre ou activer le GPS.");
+          return;
+        }
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+        if (position == null) {
+          _showError("Impossible d’obtenir la position pour le moment. Veuillez réessayer.");
+          return;
+        }
       }
 
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Position détectée avec succès.")));
-    } catch (e) {
-      debugPrint("Erreur géolocalisation : $e");
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur localisation : $e")));
+      // 4) Reverse geocoding (facultatif)
+      String? adr;
+      String? city;
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          adr = _formatAdresse(p);
+          city = _nonVide(p.locality) ?? _nonVide(p.subAdministrativeArea) ?? _nonVide(p.administrativeArea);
+        }
+      } catch (_) {}
+
+      setState(() {
+        latitude = position?.latitude;
+        longitude = position?.longitude;
+        if (adr != null && adr.trim().isNotEmpty) adresse = adr;
+        if (city != null && city.trim().isNotEmpty) ville = city;
+        _syncLatLngCtrls();
+      });
+
+      _showInfo("Position détectée avec succès.");
+    } catch (_) {
+      _showError("Une erreur est survenue lors de la localisation. Veuillez réessayer.");
+    } finally {
+      if (mounted) setState(() => _detectingPosition = false);
     }
+  }
+
+  Future<void> _reverseGeocodeFromLatLng() async {
+    final lat = latitude;
+    final lng = longitude;
+    if (lat == null || lng == null) {
+      _showError("Veuillez d’abord choisir un point sur la carte ou saisir des coordonnées.");
+      return;
+    }
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        setState(() {
+          adresse = _formatAdresse(p);
+          ville = _nonVide(p.locality) ?? _nonVide(p.subAdministrativeArea) ?? _nonVide(p.administrativeArea) ?? ville;
+        });
+        _showInfo("Adresse déduite à partir des coordonnées.");
+      } else {
+        _showError("Aucune adresse trouvée pour ces coordonnées.");
+      }
+    } catch (_) {
+      _showError("Impossible de déduire l’adresse pour ces coordonnées.");
+    }
+  }
+
+  String _formatAdresse(Placemark p) {
+    final parts = <String>[
+      if (_nonVide(p.street) != null) _nonVide(p.street)!,
+      if (_nonVide(p.postalCode) != null) _nonVide(p.postalCode)!,
+      if (_nonVide(p.locality) != null) _nonVide(p.locality)!,
+      if (_nonVide(p.administrativeArea) != null) _nonVide(p.administrativeArea)!,
+      if (_nonVide(p.country) != null) _nonVide(p.country)!,
+    ];
+    return parts.join(', ');
+  }
+
+  String? _nonVide(String? s) {
+    if (s == null) return null;
+    final t = s.trim();
+    return t.isEmpty ? null : t;
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showInfo(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
   }
 
   // ---------- IMAGES ----------
@@ -154,17 +271,14 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     final picked = await picker.pickMultiImage(imageQuality: 80);
     if (picked.isEmpty) return;
 
-    // Charger les bytes pour affichage (Web/Mobile)
     for (final x in picked) {
-      // éviter doublons (par path + nom)
-      final already =
-          _localPreviews.any((e) => e.file.path == x.path) || _uploadedImages.contains(x.path);
+      final already = _localPreviews.any((e) => e.file.path == x.path) || _uploadedImages.contains(x.path);
       if (already) continue;
 
       final bytes = await x.readAsBytes();
       _localPreviews.add(_LocalImage(file: x, bytes: bytes));
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _removeLocalPreview(_LocalImage img) {
@@ -221,20 +335,19 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   // ---------- ENREGISTREMENT ----------
 
   Future<void> _enregistrerLieu() async {
-    if (!_formKey.currentState!.validate()) return;
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) return;
+
     if (latitude == null || longitude == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Veuillez détecter la position.")));
+      _showError("Veuillez définir la position (détection automatique ou carte).");
       return;
     }
-    if (type == null || type!.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Veuillez choisir un type de lieu.")));
+    if (type == null || (type ?? '').isEmpty) {
+      _showError("Veuillez choisir un type de lieu.");
       return;
     }
     if (sousCategorie.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Veuillez choisir une sous-catégorie.")));
+      _showError("Veuillez choisir une sous-catégorie.");
       return;
     }
 
@@ -268,8 +381,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         'user_id': userId,
       };
 
-      if (widget.lieu != null) {
-        await Supabase.instance.client.from('lieux').update(data).eq('id', widget.lieu!['id']);
+      final existingId = widget.lieu != null ? widget.lieu!['id'] : null;
+
+      if (existingId != null) {
+        await Supabase.instance.client.from('lieux').update(data).eq('id', existingId);
       } else {
         await Supabase.instance.client.from('lieux').insert(data);
       }
@@ -279,7 +394,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text("Succès"),
-          content: Text(widget.lieu != null
+          content: Text(existingId != null
               ? "Lieu mis à jour avec succès ✅"
               : "Lieu enregistré avec succès ✅"),
           actions: [
@@ -290,7 +405,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur : $e")));
+      _showError("Une erreur est survenue lors de l’enregistrement. Veuillez réessayer.");
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -301,6 +416,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.lieu != null;
+
+    final showMap = _modeManuel || latitude != null && longitude != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -314,34 +431,55 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           key: _formKey,
           child: Column(
             children: [
-              ElevatedButton.icon(
-                onPressed: _recupererPosition,
-                icon: const Icon(Icons.my_location),
-                label: const Text("Détecter ma position"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: mainColor,
-                  foregroundColor: Colors.white,
-                ),
+              // Boutons localisation
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _modeManuel ? null : (_detectingPosition ? null : _recupererPosition),
+                      icon: _detectingPosition
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.my_location),
+                      label: Text(_detectingPosition ? "Détection en cours…" : "Détecter ma position"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: mainColor,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              if (latitude != null && longitude != null) ...[
-                const SizedBox(height: 10),
-                Text("Latitude : $latitude"),
-                Text("Longitude : $longitude"),
-                if (adresse.isNotEmpty) Text("Adresse : $adresse"),
-                const SizedBox(height: 10),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                value: _modeManuel,
+                onChanged: (v) => setState(() => _modeManuel = v),
+                title: const Text("Définir la position manuellement"),
+                subtitle: const Text("Touchez la carte pour placer le marqueur"),
+                activeColor: mainColor,
+              ),
+
+              if (showMap) ...[
+                const SizedBox(height: 8),
                 SizedBox(
-                  height: 200,
+                  height: 240,
                   child: FlutterMap(
                     options: MapOptions(
-                      center: LatLng(latitude!, longitude!),
-                      zoom: 16,
+                      center: LatLng(
+                        latitude ?? _defaultCenter.latitude,
+                        longitude ?? _defaultCenter.longitude,
+                      ),
+                      zoom: latitude != null ? 16 : 12,
                       onTap: (tapPosition, point) {
+                        if (!_modeManuel) {
+                          _showInfo("Activez le mode manuel pour déplacer le marqueur.");
+                          return;
+                        }
                         setState(() {
                           latitude = point.latitude;
                           longitude = point.longitude;
+                          _syncLatLngCtrls();
                         });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Position modifiée")));
+                        _showInfo("Position choisie : ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}");
                       },
                     ),
                     children: [
@@ -349,20 +487,67 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                         urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
                       ),
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            width: 40,
-                            height: 40,
-                            point: LatLng(latitude!, longitude!),
-                            child: Icon(Icons.location_on, color: red, size: 40),
-                          ),
-                        ],
-                      ),
+                      if (latitude != null && longitude != null)
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              width: 40,
+                              height: 40,
+                              point: LatLng(latitude!, longitude!),
+                              child: Icon(Icons.location_on, color: red, size: 40),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 10),
+
+                // Saisie manuelle lat/lng
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _latCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                        decoration: const InputDecoration(labelText: 'Latitude'),
+                        onChanged: (v) {
+                          final d = double.tryParse(v.replaceAll(',', '.'));
+                          setState(() => latitude = d);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _lngCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                        decoration: const InputDecoration(labelText: 'Longitude'),
+                        onChanged: (v) {
+                          final d = double.tryParse(v.replaceAll(',', '.'));
+                          setState(() => longitude = d);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _reverseGeocodeFromLatLng,
+                    icon: const Icon(Icons.place),
+                    label: const Text("Déduire l’adresse depuis les coordonnées"),
+                  ),
+                ),
               ],
+
+              if (latitude != null && longitude != null && !_modeManuel) ...[
+                const SizedBox(height: 6),
+                Text("Latitude : ${latitude!.toStringAsFixed(6)}"),
+                Text("Longitude : ${longitude!.toStringAsFixed(6)}"),
+              ],
+
               const SizedBox(height: 10),
 
               // Choisir des photos

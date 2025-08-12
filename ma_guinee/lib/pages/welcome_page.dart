@@ -120,45 +120,81 @@ class WelcomePage extends StatelessWidget {
                     ListView(
                       controller: scrollCtrl,
                       padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
-                      children: [
+                      children: const [
+                        // Grab handle
                         Center(
-                          child: Container(
-                            width: 44,
-                            height: 5,
-                            margin: const EdgeInsets.only(bottom: 14),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.8),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
+                          child: _GrabHandle(),
                         ),
 
                         // Contact
-                        const _SectionTitle("Contact"),
-                        const _Item("Contactez-nous"),
-                        const SizedBox(height: 10),
+                        _SectionTitle("Contact"),
+                        _Item("Contactez-nous"),
+                        SizedBox(height: 10),
 
-                        // Mentions légales
-                        const _SectionTitle("Mentions légales"),
-                        const _LegalAccordion(
+                        // Politiques enrichies
+                        _SectionTitle("Mentions légales & Politiques"),
+
+                        _LegalAccordion(
                           title: "Politique de confidentialité",
-                          body:
-                              "Votre confidentialité est importante. Cette section décrit la collecte, l’utilisation et la conservation de vos données personnelles.",
+                          body: """Nous accordons une importance primordiale à la protection de vos données personnelles. L’application Ma Guinée collecte uniquement les informations strictement nécessaires au bon fonctionnement de ses services : nom, prénom, téléphone, e-mail, ville, photo de profil, ainsi que les contenus que vous publiez (annonces, messages, avis, etc.).
+
+Ces données sont utilisées exclusivement pour :
+• Gérer votre compte et vos interactions sur la plateforme.
+• Fournir des services adaptés (annonces, géolocalisation, messagerie, recommandations).
+• Améliorer l’expérience utilisateur, la sécurité et la qualité du service.
+
+Engagements :
+• Aucune donnée n’est vendue, louée ou partagée avec des tiers sans votre consentement explicite.
+• Les données sont stockées sur des serveurs sécurisés et protégées contre tout accès non autorisé.
+• Vous pouvez à tout moment exercer vos droits (accès, rectification, suppression) en nous écrivant à support@ma-guinee.com.
+
+Durée de conservation :
+• Les données sont conservées pendant la durée strictement nécessaire à l’exécution des services et/ou selon les obligations légales applicables.""",
                         ),
-                        const _LegalAccordion(
+
+                        _LegalAccordion(
                           title: "Mentions légales",
-                          body:
-                              "Informations éditeur, hébergeur, propriété intellectuelle et conditions d’utilisation de l’application.",
+                          body: """L’application Ma Guinée est éditée par Mohamed Camara.
+Siège social : [à compléter]
+Contact : administration@ma-guinee.com
+
+Propriété intellectuelle :
+• Les contenus (textes, images, vidéos, annonces, profils, logos, design, code, etc.) sont protégés par le droit d’auteur et demeurent la propriété de leurs auteurs.
+• Toute reproduction, modification, diffusion ou exploitation non autorisée est strictement interdite.
+
+Responsabilité :
+• L’éditeur n’est pas responsable des contenus publiés par les utilisateurs, mais se réserve le droit de les supprimer s’ils enfreignent la loi ou nos conditions d’utilisation.
+• L’utilisation de l’application implique l’acceptation pleine et entière des présentes mentions légales.""",
                         ),
-                        const _LegalAccordion(
+
+                        _LegalAccordion(
                           title: "Politique de modération",
-                          body:
-                              "Règles de publication, comportements interdits, signalement et sanctions applicables aux contenus.",
+                          body: """Afin de garantir un environnement sûr, respectueux et conforme à la loi, Ma Guinée applique une modération active sur les contenus.
+
+Règles de modération :
+• Suppression de tout contenu illégal, abusif, diffamatoire, haineux, discriminatoire, violent, trompeur ou portant atteinte aux droits d’autrui.
+• Retrait des annonces frauduleuses ou trompeuses sans préavis.
+• Suspension ou blocage des comptes en cas de récidive ou de manquement grave.
+
+Signalement :
+• Vous pouvez signaler un contenu via les boutons dédiés ou par e-mail à signalement@ma-guinee.com.
+• Les signalements sont examinés dans un délai maximal de 48 heures.""",
                         ),
-                        const _LegalAccordion(
+
+                        _LegalAccordion(
                           title: "Charte d’utilisation",
-                          body:
-                              "Bonnes pratiques d’utilisation de Ma Guinée : respect, sécurité, intégrité des informations et respect des lois en vigueur.",
+                          body: """En utilisant Ma Guinée, vous vous engagez à :
+• Fournir des informations exactes, complètes et à jour.
+• Respecter les lois en vigueur en Guinée et à l’international.
+• Ne publier aucun contenu illégal, frauduleux, haineux, violent, diffamatoire, discriminatoire ou offensant.
+• Respecter les autres utilisateurs et ne pas harceler.
+• Ne pas créer de faux comptes ni usurper l’identité d’autrui.
+• Ne pas utiliser la plateforme pour du spam ou des activités commerciales non autorisées.
+
+Sanctions :
+• Suppression immédiate des contenus contraires aux règles.
+• Suspension temporaire ou définitive du compte.
+• Signalement aux autorités compétentes en cas de violation grave de la loi.""",
                         ),
                       ],
                     ),
@@ -284,6 +320,23 @@ class _LegalAccordion extends StatelessWidget {
             style: const TextStyle(color: Colors.white70, height: 1.35),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GrabHandle extends StatelessWidget {
+  const _GrabHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 5,
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(3),
       ),
     );
   }

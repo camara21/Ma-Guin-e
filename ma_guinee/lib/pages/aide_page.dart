@@ -18,6 +18,7 @@ class AidePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: const [
+          // ——— Annonces & Services ———
           ExpansionTile(
             title: Text("Comment publier une annonce ?"),
             children: [
@@ -25,7 +26,7 @@ class AidePage extends StatelessWidget {
                 padding: EdgeInsets.all(8),
                 child: Text(
                   "1. Ouvrez l’onglet Annonces.\n"
-                  "2. Appuyez sur le bouton « Publier ».\n"
+                  "2. Appuyez sur « Publier ».\n"
                   "3. Remplissez le formulaire (catégorie, titre, description, photos, prix, ville).\n"
                   "4. Validez pour mettre en ligne.",
                 ),
@@ -53,8 +54,8 @@ class AidePage extends StatelessWidget {
                 child: Text(
                   "1. Allez dans l’onglet Restaurants.\n"
                   "2. Parcourez la liste ou utilisez la carte interactive.\n"
-                  "3. Sélectionnez un restaurant pour voir son profil et ses avis.\n"
-                  "4. Contactez-le directement pour réserver.",
+                  "3. Ouvrez la fiche pour voir profil et avis.\n"
+                  "4. Contactez le restaurant pour réserver.",
                 ),
               ),
             ],
@@ -66,9 +67,9 @@ class AidePage extends StatelessWidget {
                 padding: EdgeInsets.all(8),
                 child: Text(
                   "1. Rendez-vous dans l’onglet Hôtels.\n"
-                  "2. Explorez les établissements disponibles.\n"
-                  "3. Consultez les détails et photos.\n"
-                  "4. Contactez l’hôtel pour la réservation.",
+                  "2. Explorez les établissements.\n"
+                  "3. Consultez détails et photos.\n"
+                  "4. Contactez l’hôtel pour réserver.",
                 ),
               ),
             ],
@@ -94,7 +95,7 @@ class AidePage extends StatelessWidget {
                 child: Text(
                   "1. Accédez à l’onglet Santé & Bien-être.\n"
                   "2. Sélectionnez « Cliniques ».\n"
-                  "3. Visualisez les coordonnées et spécialités.\n"
+                  "3. Visualisez coordonnées et spécialités.\n"
                   "4. Contactez la clinique directement.",
                 ),
               ),
@@ -107,7 +108,7 @@ class AidePage extends StatelessWidget {
                 padding: EdgeInsets.all(8),
                 child: Text(
                   "1. Dans l’onglet Carte, activez le filtre « Lieux de culte ».\n"
-                  "2. Touchez un marqueur pour voir les détails.\n"
+                  "2. Touchez un marqueur pour les détails.\n"
                   "3. Obtenez l’itinéraire via votre GPS.",
                 ),
               ),
@@ -121,8 +122,8 @@ class AidePage extends StatelessWidget {
                 child: Text(
                   "1. Ouvrez l’onglet Carte.\n"
                   "2. Activez/désactivez les couches (restaurants, hôtels, prestataires…).\n"
-                  "3. Zoomez et déplacez la carte pour explorer votre zone.\n"
-                  "4. Sélectionnez un point pour accéder aux détails.",
+                  "3. Zoomez/déplacez la carte pour explorer.\n"
+                  "4. Sélectionnez un point pour voir les détails.",
                 ),
               ),
             ],
@@ -133,7 +134,7 @@ class AidePage extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.all(8),
                 child: Text(
-                  "1. Pour ajouter aux favoris, appuyez sur l’icône ❤️.\n"
+                  "1. Pour ajouter aux favoris, appuyez sur ❤️.\n"
                   "2. Retrouvez-les dans l’onglet Favoris.\n"
                   "3. Pour retirer, appuyez de nouveau sur ❤️.",
                 ),
@@ -146,7 +147,7 @@ class AidePage extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.all(8),
                 child: Text(
-                  "Toutes vos conversations sont dans l’onglet Messages, sur la barre de navigation.",
+                  "Vos conversations sont dans l’onglet Messages (barre de navigation).",
                 ),
               ),
             ],
@@ -170,7 +171,90 @@ class AidePage extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.all(8),
                 child: Text(
-                  "Dans Profil → Mes annonces, vous pouvez voir, modifier ou supprimer vos annonces.",
+                  "Profil → Mes annonces : voir, modifier ou supprimer vos annonces.",
+                ),
+              ),
+            ],
+          ),
+
+          // ——— Billetterie (NOUVEAU) ———
+          ExpansionTile(
+            title: Text("Billetterie — Comment acheter un billet ?"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "1. Ouvrez l’onglet Événements / Billetterie.\n"
+                  "2. Choisissez un événement et un type de billet.\n"
+                  "3. Validez le panier puis payez (méthodes disponibles affichées).\n"
+                  "4. Recevez votre billet (QR code / code) dans « Mes billets » et par e-mail.",
+                ),
+              ),
+            ],
+          ),
+          ExpansionTile(
+            title: Text("Billetterie — Où retrouver mes billets ?"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "1. Allez dans Profil → Mes billets.\n"
+                  "2. Le billet contient un QR code / code unique à présenter à l’entrée.\n"
+                  "3. Vous pouvez télécharger ou partager votre billet depuis la fiche.",
+                ),
+              ),
+            ],
+          ),
+          ExpansionTile(
+            title: Text("Billetterie — Vendre des billets (organisateurs)"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "1. Demandez l’accès Organisateur : administration@ma-guinee.com.\n"
+                  "2. Créez l’événement (infos, visuel, capacité, catégories de billets, prix, dates).\n"
+                  "3. Suivez les ventes en temps réel et téléchargez la liste d’accès.\n"
+                  "4. Contrôlez les entrées avec le scan QR via l’app.",
+                ),
+              ),
+            ],
+          ),
+          ExpansionTile(
+            title: Text("Billetterie — Annulation & remboursement"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "• Les conditions d’annulation sont définies par l’organisateur et affichées sur la fiche événement.\n"
+                  "• En cas d’événement annulé, un e-mail d’information est envoyé et le remboursement est traité selon le moyen de paiement d’origine.\n"
+                  "• Pour toute demande : support@ma-guinee.com (joindre n° de commande).",
+                ),
+              ),
+            ],
+          ),
+          ExpansionTile(
+            title: Text("Billetterie — Problème de paiement"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "• Vérifiez votre connexion et votre solde / plafond.\n"
+                  "• Réessayez ou essayez un autre moyen de paiement.\n"
+                  "• Si le débit est passé sans billet, contactez support@ma-guinee.com avec le reçu.",
+                ),
+              ),
+            ],
+          ),
+
+          // ——— Support ———
+          ExpansionTile(
+            title: Text("Problème ou suggestion ?"),
+            children: [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  "Contactez-nous : support@ma-guinee.com\n"
+                  "Nous vous répondrons dans les meilleurs délais.",
                 ),
               ),
             ],
@@ -182,77 +266,7 @@ class AidePage extends StatelessWidget {
                 padding: EdgeInsets.all(8),
                 child: Text(
                   "Pour toute question relative à la gestion de la plateforme (signalement, contenu abusif, droits d’accès), "
-                  "contactez l’administrateur à : administration@gmail.com",
-                ),
-              ),
-            ],
-          ),
-          ExpansionTile(
-            title: Text("Problème ou suggestion ?"),
-            children: [
-              Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  "Contactez-nous à : support@gmail.com\n"
-                  "Nous vous répondrons dans les plus brefs délais.",
-                ),
-              ),
-            ],
-          ),
-          Divider(),
-          ExpansionTile(
-            title: Text("Politique de confidentialité"),
-            children: [
-              Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  "Nous collectons les données strictement nécessaires à l’utilisation des services de l'application Ma Guinée, "
-                  "telles que nom, prénom, téléphone, e-mail, ville, ainsi que les contenus publiés par les utilisateurs. "
-                  "Ces données ne sont ni revendues ni partagées à des tiers sans consentement explicite. "
-                  "Elles servent uniquement à l’exploitation de la plateforme (annonces, géolocalisation, messagerie, recommandations). "
-                  "Chaque utilisateur peut demander la suppression de ses données en nous contactant à support@gmail.com."
-                ),
-              ),
-            ],
-          ),
-          ExpansionTile(
-            title: Text("Mentions légales"),
-            children: [
-              Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  "L’application Ma Guinée est éditée par Mohamed Camara. Tous les contenus proposés (textes, images, annonces, profils, etc.) "
-                  "sont soumis à modération et propriété de leurs auteurs respectifs. "
-                  "Toute reproduction ou diffusion sans autorisation est interdite. Pour toute question juridique : administration@gmail.com."
-                ),
-              ),
-            ],
-          ),
-          ExpansionTile(
-            title: Text("Politique de modération"),
-            children: [
-              Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  "Les contenus sont vérifiés par notre équipe afin de garantir le respect des lois et des règles communautaires. "
-                  "Tout contenu abusif, frauduleux, offensant ou contraire aux lois en vigueur sera immédiatement supprimé. "
-                  "Les utilisateurs peuvent signaler un contenu via les boutons prévus à cet effet ou par mail à : signalement@ma-guinee.com."
-                ),
-              ),
-            ],
-          ),
-          ExpansionTile(
-            title: Text("Charte d’utilisation"),
-            children: [
-              Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  "En utilisant l’application Ma Guinée, vous vous engagez à :\n"
-                  "- Fournir des informations exactes et à jour.\n"
-                  "- Ne publier aucun contenu illicite, haineux ou diffamatoire.\n"
-                  "- Respecter les autres utilisateurs et ne pas harceler.\n"
-                  "- Ne pas créer de faux comptes ou d’usurpation d’identité.\n\n"
-                  "Tout manquement pourra entraîner une suspension ou suppression de compte."
+                  "écrivez à : administration@ma-guinee.com",
                 ),
               ),
             ],

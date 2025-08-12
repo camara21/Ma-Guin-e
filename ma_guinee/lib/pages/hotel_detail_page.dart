@@ -193,7 +193,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             ],
           ),
         );
-  }).toList());
+      }).toList(),
+    );
   }
 
   // -------- images helpers ----------
@@ -239,8 +240,15 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                       color: Colors.black.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text('${current + 1}/${images.length}',
-                        style: const TextStyle(color: Colors.white)),
+                    child: Text(
+                      '${current + 1}/${images.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        decoration: TextDecoration.none,
+                        decorationThickness: 0,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -323,7 +331,12 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                       ),
                       child: Text(
                         '${_currentIndex + 1}/${images.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          decoration: TextDecoration.none,
+                          decorationThickness: 0,
+                        ),
                       ),
                     ),
                   ),
