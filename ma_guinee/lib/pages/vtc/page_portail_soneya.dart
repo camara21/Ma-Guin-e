@@ -18,6 +18,7 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
   bool _chargement = true;
   bool _aProfilChauffeur = false; // présence dans `chauffeurs`
   String _onglet = 'client'; // 'client' | 'chauffeur' (sélecteur UI)
+  bool _didAutoRedirect = false; // évite la double navigation
 
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulse;
@@ -35,6 +36,8 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
     _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
+
+    // Lance le chargement + redirection auto
     _chargerEtat();
   }
 
@@ -46,28 +49,50 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
 
   Future<void> _chargerEtat() async {
     final u = _sb.auth.currentUser;
+
+    // Si pas connecté -> login
     if (u == null) {
-      if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.login);
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, AppRoutes.login);
+        });
+      }
       return;
     }
 
     try {
+      // Vérifie s'il a déjà un profil chauffeur
       final ch = await _sb
           .from('chauffeurs')
           .select('id, user_id')
-          .or('id.eq.${u.id},user_id.eq.${u.id}')
+          .eq('user_id', u.id)
           .maybeSingle();
 
       final hasDriver = ch != null;
+
       if (!mounted) return;
       setState(() {
         _aProfilChauffeur = hasDriver;
         _onglet = hasDriver ? 'chauffeur' : 'client';
         _chargement = false;
       });
+
+      // Redirection AUTO côté chauffeur (création silencieuse si besoin)
+      _redirectAutoChauffeur();
     } catch (_) {
       if (mounted) setState(() => _chargement = false);
+      // Même en cas d'erreur, tente la redirection chauffeur
+      _redirectAutoChauffeur();
     }
+  }
+
+  void _redirectAutoChauffeur() {
+    if (_didAutoRedirect || !mounted) return;
+    _didAutoRedirect = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _allerChauffeur();
+    });
   }
 
   Future<void> _allerClient() async {
@@ -78,27 +103,25 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
   Future<void> _allerChauffeur() async {
     final u = _sb.auth.currentUser;
     if (u == null) {
-      if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.login);
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
       return;
     }
     try {
-      // Crée/assure un profil chauffeur minimal en base
+      // Crée/assure un profil chauffeur minimal (silencieux si existe déjà)
       await _sb.from('chauffeurs').upsert(
-        {'user_id': u.id, 'is_online': false},
-        onConflict: 'user_id',
-      );
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, AppRoutes.soneyaChauffeur);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Activation chauffeur indisponible pour le moment.")),
-      );
+            {'user_id': u.id, 'is_online': false},
+            onConflict: 'user_id',
+          );
+    } catch (_) {
+      // On ignore pour ne pas bloquer la navigation
     }
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, AppRoutes.soneyaChauffeur);
   }
 
   // Optionnel : "désactiver" le mode chauffeur sans supprimer la ligne
-  // (utile si tu veux forcer le retour client + offline)
   Future<void> _mettreHorsLigneChauffeur() async {
     final u = _sb.auth.currentUser;
     if (u == null) return;
@@ -106,7 +129,7 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
       await _sb
           .from('chauffeurs')
           .update({'is_online': false})
-          .or('id.eq.${u.id},user_id.eq.${u.id}');
+          .eq('user_id', u.id);
     } catch (_) {}
   }
 
@@ -135,7 +158,11 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
                   height: 280,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [kRed.withOpacity(.75), kYellow.withOpacity(.75), kGreen.withOpacity(.75)],
+                      colors: [
+                        kRed.withOpacity(.75),
+                        kYellow.withOpacity(.75),
+                        kGreen.withOpacity(.75)
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       stops: const [0.0, 0.5, 1.0],
@@ -163,13 +190,13 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _enTeteFuturiste(context),
-
                     const SizedBox(height: 16),
                     _roleSwitcher(context),
-
                     const SizedBox(height: 16),
-                    if (_onglet == 'client') _blocClient(context) else _blocChauffeur(context),
-
+                    if (_onglet == 'client')
+                      _blocClient(context)
+                    else
+                      _blocChauffeur(context),
                     const SizedBox(height: 20),
                     Center(
                       child: Text(
@@ -202,7 +229,10 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: Colors.white.withOpacity(.5), width: 0.8),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(.06), blurRadius: 12, offset: const Offset(0, 4)),
+              BoxShadow(
+                  color: Colors.black.withOpacity(.06),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4)),
             ],
           ),
           child: Row(
@@ -236,7 +266,7 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
                   end: Alignment.centerRight,
                 ),
                 icon: Icons.drive_eta_rounded,
-                disabled: false, // on autorise l’activation à la volée
+                disabled: false,
               ),
             ],
           ),
@@ -266,7 +296,12 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
             color: selected ? null : Colors.white,
             border: Border.all(color: Colors.black12),
             boxShadow: selected
-                ? [BoxShadow(color: Colors.black.withOpacity(.12), blurRadius: 12, offset: const Offset(0, 6))]
+                ? [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6))
+                  ]
                 : [],
           ),
           child: Row(
@@ -315,7 +350,8 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
       subtitle: _aProfilChauffeur
           ? 'Recevoir des demandes, naviguer, consulter vos gains.'
           : 'Active ton espace chauffeur (création rapide).',
-      actionLabel: _aProfilChauffeur ? 'Entrer côté Chauffeur' : 'Activer & entrer',
+      actionLabel:
+          _aProfilChauffeur ? 'Entrer côté Chauffeur' : 'Activer & entrer',
       onAction: _allerChauffeur,
       gradient: const LinearGradient(
         colors: [Color(0xFFE53935), Color(0xFFFFA726)],
@@ -412,12 +448,22 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
               ),
             ],
           ),
-          child: Stack(
-            children: const [
-              Positioned(left: 18, top: 18, child: Text('Soneya',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: .2))),
-              Positioned(left: 18, bottom: 16, right: 120,
-                child: Text('Transport simple et rapide.\nChoisissez votre espace.', style: TextStyle(fontSize: 14))),
+          child: const Stack(
+            children: [
+              Positioned(
+                  left: 18,
+                  top: 18,
+                  child: Text('Soneya',
+                      style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .2))),
+              Positioned(
+                  left: 18,
+                  bottom: 16,
+                  right: 120,
+                  child: Text('Transport simple et rapide.\nChoisissez votre espace.',
+                      style: TextStyle(fontSize: 14))),
               Positioned(right: 18, bottom: 16, child: Icon(Icons.two_wheeler, size: 48)),
               Positioned(right: 68, bottom: 16, child: Icon(Icons.directions_car, size: 28)),
             ],

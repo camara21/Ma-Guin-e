@@ -13,14 +13,15 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../models/utilisateur_model.dart';
 
-// --------- Palette Guinée ----------
-const Color kGuineaRed = Color(0xFFE73B2E);
-const Color kGuineaYellow = Color(0xFFFFD400);
-const Color kGuineaGreen = Color(0xFF1BAA5C);
+// ---------- Identité visuelle ----------
+const Color kBrandBlue = Color(0xFF1976D2);
+const Color kGreyBg   = Color(0xFFEFF1F5);
+const Color kText     = Color(0xFF111111);
+const Color kMuted    = Color(0xFF6B7280);
 
-// --------- Enums ----------
 enum TargetField { depart, arrivee }
 enum _BottomTab { profil, historique, paiement }
+enum MapStyle { satellite, voyager, dark }
 
 class HomeClientVtcPage extends StatefulWidget {
   final UtilisateurModel currentUser;
@@ -30,37 +31,30 @@ class HomeClientVtcPage extends StatefulWidget {
   State<HomeClientVtcPage> createState() => _HomeClientVtcPageState();
 }
 
-class _HomeClientVtcPageState extends State<HomeClientVtcPage>
-    with SingleTickerProviderStateMixin {
+class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
   final _sb = Supabase.instance.client;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // --- Map ---
   final MapController _map = MapController();
   ll.LatLng _center = const ll.LatLng(9.6412, -13.5784); // Conakry
-  double _zoom = 13;
+  double _zoom = 16;
 
-  // --- Points & labels ---
+  // --- Points ---
   ll.LatLng? _depart;
   String? _departLabel;
   ll.LatLng? _arrivee;
   String? _arriveeLabel;
-
-  // Champ actif
-  TargetField _target = TargetField.depart;
+  TargetField _target = TargetField.depart; // par défaut, on saisit Départ
 
   // Saisie
   final _departCtrl = TextEditingController();
   final _arriveeCtrl = TextEditingController();
 
-  // Anim
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulse;
-
-  // Ville (pour Nominatim)
+  // Ville (pour Nominatim local)
   String _city = 'Conakry';
 
-  // Véhicule: 'moto' | 'car'
+  // Véhicule
   String _vehicle = 'moto';
 
   // Itinéraire & estimation
@@ -72,22 +66,23 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
 
   bool _creating = false;
 
-  // --- Profil / Paiements / Historique (dock) ---
+  // Profil / Paiements / Historique
   late UtilisateurModel _user;
   List<Map<String, dynamic>> _lastPayments = [];
   bool _loadingPayments = false;
   List<Map<String, dynamic>> _recent = [];
   bool _loadingRecent = false;
 
+  // Styles de carte
+  MapStyle _mapStyle = MapStyle.satellite;
+
+  // Distances utilitaires
+  final ll.Distance _dist = const ll.Distance();
+
   @override
   void initState() {
     super.initState();
     _user = widget.currentUser;
-
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
-      ..repeat(reverse: true);
-    _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
-
     _refreshUserFromSupabase();
     _loadLastPayments();
     _loadRecent();
@@ -95,19 +90,18 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
     _departCtrl.dispose();
     _arriveeCtrl.dispose();
     super.dispose();
   }
 
-  // =================== TOAST ===================
+  // ---------- Utils ----------
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ============ PROFIL / HISTO / PAIEMENTS ============
+  // ---------- Profil / Paiements / Historique ----------
   Future<void> _refreshUserFromSupabase() async {
     try {
       Map<String, dynamic>? m;
@@ -130,7 +124,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
       }
       if (!mounted || m == null) return;
 
-      final mm = m; // non-null local
+      final mm = m; // non-null hors setState
 
       setState(() {
         _user = UtilisateurModel(
@@ -179,7 +173,36 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
     }
   }
 
-  // ================= LIEUX / SUGGESTIONS =================
+  // ---------- Géoloc ----------
+  Future<bool> _ensureLocationPermission() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) { _toast('Service de localisation désactivé.'); return false; }
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied) { _toast('Permission de localisation refusée.'); return false; }
+    if (perm == LocationPermission.deniedForever) { _toast('Permission refusée (réglages).'); return false; }
+    return true;
+  }
+
+  // Met MA POSITION dans DÉPART (sans déplacer la caméra)
+  Future<void> _useMyLocationAsDepart() async {
+    try {
+      final ok = await _ensureLocationPermission();
+      if (!ok) return;
+      final p = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      final me = ll.LatLng(p.latitude, p.longitude);
+      final label = await _reverseGeocode(me) ?? 'Ma position';
+      setState(() {
+        _target = TargetField.depart;
+        _depart = me; _departLabel = label; _departCtrl.text = label;
+      });
+      if (_depart != null && _arrivee != null) _computeRoute();
+    } catch (e) {
+      _toast('Position indisponible: $e');
+    }
+  }
+
+  // ---------- Recherche lieux ----------
   Future<List<_Lieu>> _searchLieux(String q) async {
     q = q.trim();
     if (q.isEmpty) return [];
@@ -190,10 +213,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
           .ilike('name', '%$q%')
           .limit(15);
       final list = (rows as List).map((e) => _Lieu.fromMap(Map<String, dynamic>.from(e))).toList();
-      if (list.isEmpty) {
-        final ext = await _searchNominatim(q);
-        return ext;
-      }
+      if (list.isEmpty) return _searchNominatim(q);
       return list;
     } catch (_) {
       return _searchNominatim(q);
@@ -231,12 +251,12 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
     }
   }
 
-  // ================= GEOCODAGE INVERSÉ =================
+  // ---------- Geocodage inversé ----------
   Future<String?> _reverseGeocode(ll.LatLng p) async {
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?format=json&lat=${p.latitude}&lon=${p.longitude}&zoom=16&addressdetails=1',
+        '?format=json&lat=${p.latitude}&lon=${p.longitude}&zoom=17&addressdetails=1',
       );
       final r = await http.get(uri, headers: {'User-Agent': 'ma_guinee/1.0'});
       if (r.statusCode != 200) return null;
@@ -250,106 +270,46 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
     }
   }
 
-  // ================= POSITION / ACTIONS =================
+  // ---------- Actions ----------
   void _swap() {
     setState(() {
-      final tPoint = _depart;
-      final tLabel = _departLabel;
-      _depart = _arrivee;
-      _departLabel = _arriveeLabel;
-      _arrivee = tPoint;
-      _arriveeLabel = tLabel;
-
+      final tPoint = _depart; final tLabel = _departLabel;
+      _depart = _arrivee; _departLabel = _arriveeLabel;
+      _arrivee = tPoint;  _arriveeLabel = tLabel;
       final tText = _departCtrl.text;
-      _departCtrl.text = _arriveeCtrl.text;
-      _arriveeCtrl.text = tText;
+      _departCtrl.text = _arriveeCtrl.text; _arriveeCtrl.text = tText;
     });
     if (_depart != null && _arrivee != null) _computeRoute();
   }
 
-  Future<bool> _ensureLocationPermission() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _toast('Service de localisation désactivé.');
-      return false;
-    }
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-    if (perm == LocationPermission.denied) {
-      _toast('Permission de localisation refusée.');
-      return false;
-    }
-    if (perm == LocationPermission.deniedForever) {
-      _toast('Permission refusée définitivement (réglages système).');
-      return false;
-    }
-    return true;
-  }
-
-  Future<void> _myLocation() async {
-    try {
-      final ok = await _ensureLocationPermission();
-      if (!ok) return;
-      final p = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      final me = ll.LatLng(p.latitude, p.longitude);
-      _map.move(me, 16);
-      setState(() {
-        _center = me;
-        if (_target == TargetField.depart) {
-          _depart = me; _departLabel = 'Ma position'; _departCtrl.text = 'Ma position';
-        } else {
-          _arrivee = me; _arriveeLabel = 'Ma position'; _arriveeCtrl.text = 'Ma position';
-        }
-      });
-      if (_depart != null && _arrivee != null) _computeRoute();
-    } catch (e) {
-      _toast('Position indisponible: $e');
-    }
+  // TAP carte -> placer le point sans changer zoom/centre
+  Future<void> _onMapTap(ll.LatLng p) async {
+    final label = await _reverseGeocode(p);
+    setState(() {
+      if (_target == TargetField.depart) {
+        _depart = p; _departLabel = label ?? 'Point de départ'; _departCtrl.text = _departLabel!;
+      } else {
+        _arrivee = p; _arriveeLabel = label ?? 'Point d’arrivée'; _arriveeCtrl.text = _arriveeLabel!;
+      }
+    });
+    if (_depart != null && _arrivee != null) _computeRoute();
   }
 
   Future<void> _applyFreeText({required bool depart}) async {
     final txt = (depart ? _departCtrl.text : _arriveeCtrl.text).trim();
     if (txt.isEmpty) return;
     final results = await _searchLieux(txt);
-    if (results.isEmpty) {
-      _toast("Aucun lieu trouvé pour « $txt ».");
-      return;
-    }
+    if (results.isEmpty) { _toast("Aucun lieu trouvé pour « $txt »."); return; }
     final l = results.first;
     setState(() {
       final p = ll.LatLng(l.lat, l.lng);
-      if (depart) {
-        _depart = p; _departLabel = l.fullLabel; _departCtrl.text = l.fullLabel;
-      } else {
-        _arrivee = p; _arriveeLabel = l.fullLabel; _arriveeCtrl.text = l.fullLabel;
-      }
-    });
-    _map.move(depart ? _depart! : _arrivee!, 15);
-    if (_depart != null && _arrivee != null) _computeRoute();
-  }
-
-  void _commitCenterAsTarget() async {
-    final p = _center;
-    setState(() {
-      if (_target == TargetField.depart) {
-        _depart = p;
-      } else {
-        _arrivee = p;
-      }
-    });
-    final label = await _reverseGeocode(p);
-    if (!mounted) return;
-    setState(() {
-      if (_target == TargetField.depart) {
-        _departLabel = label ?? 'Point de départ'; _departCtrl.text = _departLabel!;
-      } else {
-        _arriveeLabel = label ?? 'Point d’arrivée'; _arriveeCtrl.text = _arriveeLabel!;
-      }
+      if (depart) { _depart = p; _departLabel = l.fullLabel; _departCtrl.text = l.fullLabel; }
+      else { _arrivee = p; _arriveeLabel = l.fullLabel; _arriveeCtrl.text = l.fullLabel; }
     });
     if (_depart != null && _arrivee != null) _computeRoute();
   }
 
-  // ================= ITINÉRAIRE / PRIX =================
+  // ---------- Itinéraire / Prix ----------
   Future<void> _computeRoute() async {
     final a = _depart, b = _arrivee;
     if (a == null || b == null) return;
@@ -387,10 +347,8 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
             }
           }
           setState(() => _routePoints = pts);
-
           _applyEstimation(km, min);
-          _fitMapToBounds(a, b);
-          return;
+          return; // NE PAS déplacer la caméra
         }
       }
       _fallbackDirectEstimation(a, b);
@@ -402,13 +360,11 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
   }
 
   void _fallbackDirectEstimation(ll.LatLng a, ll.LatLng b) {
-    const d = ll.Distance();
-    final km = d.as(ll.LengthUnit.Kilometer, a, b);
+    final km = _dist.as(ll.LengthUnit.Kilometer, a, b);
     final avgSpeedKmh = _vehicle == 'moto' ? 28.0 : 22.0;
     final min = (km / math.max(avgSpeedKmh, 5) * 60).clamp(3, 180).toDouble();
     setState(() => _routePoints = [a, b]);
     _applyEstimation(km, min);
-    _fitMapToBounds(a, b);
   }
 
   void _applyEstimation(double km, double min) {
@@ -421,73 +377,15 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
 
   int _estimatePrice(double km, double min) {
     if (_vehicle == 'moto') {
-      const base = 8000;
-      const perKm = 1500;
-      const perMin = 60;
+      const base = 8000; const perKm = 1500; const perMin = 60;
       return (base + perKm * km + perMin * min).round();
     } else {
-      const base = 12000;
-      const perKm = 2200;
-      const perMin = 80;
+      const base = 12000; const perKm = 2200; const perMin = 80;
       return (base + perKm * km + perMin * min).round();
     }
   }
 
-  void _fitMapToBounds(ll.LatLng a, ll.LatLng b) {
-    final mid = ll.LatLng((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2);
-    _map.move(mid, 13);
-  }
-
-  // ================== CRÉATION COURSE ==================
-  Future<void> _createCourse() async {
-    final a = _depart, b = _arrivee;
-    final km = _distanceKm, min = _durationMin, price = _priceGNF;
-    if (a == null || b == null || km == null || min == null || price == null) {
-      _toast('Sélectionnez départ et destination puis calculez l’estimation.');
-      return;
-    }
-
-    final metres = (km * 1000).round();
-    final seconds = (min * 60).round();
-
-    final departPoint = {'type': 'Point', 'coordinates': [a.longitude, a.latitude]};
-    final arriveePoint = {'type': 'Point', 'coordinates': [b.longitude, b.latitude]};
-
-    setState(() => _creating = true);
-    try {
-      final inserted = await _sb
-          .from('courses')
-          .insert({
-            'client_id': widget.currentUser.id,
-            'vehicule': _vehicle,
-            'depart_adresse': _departLabel ?? _departCtrl.text,
-            'arrivee_adresse': _arriveeLabel ?? _arriveeCtrl.text,
-            'depart_point': departPoint,
-            'arrivee_point': arriveePoint,
-            'depart_lat': a.latitude,
-            'depart_lng': a.longitude,
-            'arrivee_lat': b.latitude,
-            'arrivee_lng': b.longitude,
-            'distance_metres': metres,
-            'duree_secondes_est': seconds,
-            'prix_gnf': price,
-          })
-          .select('id')
-          .single();
-
-      final courseId = (inserted['id'] ?? '').toString();
-      _toast('Demande créée.');
-      if (courseId.isNotEmpty && mounted) {
-        Navigator.pushNamed(context, '/vtc/offres', arguments: {'demandeId': courseId});
-      }
-    } catch (e) {
-      _toast('Erreur lors de la création: $e');
-    } finally {
-      if (mounted) setState(() => _creating = false);
-    }
-  }
-
-  // ================== UI ==================
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     final padTop = MediaQuery.of(context).padding.top;
@@ -495,78 +393,134 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Colors.white,
+      backgroundColor: kGreyBg,
       body: Stack(
         children: [
           // ---- CARTE ----
           Positioned.fill(
-            child: Listener(
-              onPointerUp: (_) => _commitCenterAsTarget(),
-              child: FlutterMap(
-                mapController: _map,
-                options: MapOptions(
-                  initialCenter: _center,
-                  initialZoom: _zoom,
-                  interactionOptions: const InteractionOptions(flags: ~InteractiveFlag.rotate),
-                  onPositionChanged: (pos, _) {
-                    if (pos.center != null) {
-                      _center = pos.center!;
-                      _zoom = pos.zoom ?? _zoom;
-                    }
-                  },
+            child: FlutterMap(
+              mapController: _map,
+              options: MapOptions(
+                initialCenter: _center,
+                initialZoom: _zoom,
+                backgroundColor: const Color(0xFF0B0D10), // neutre
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
-                children: [
+                onTap: (tapPos, latlng) => _onMapTap(latlng),
+                onPositionChanged: (pos, _) {
+                  if (pos.center != null) {
+                    _center = pos.center!;
+                    _zoom = pos.zoom ?? _zoom;
+                  }
+                },
+              ),
+              children: [
+                if (_mapStyle == MapStyle.satellite) ...[
+                  // Imagerie + labels
                   TileLayer(
-                    urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    subdomains: const ['a', 'b', 'c'],
+                    urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                     retinaMode: true,
+                    maxZoom: 19,            // ✅ évite l’écran vide
+                    maxNativeZoom: 19,
                     userAgentPackageName: 'com.ma_guinee.app',
                   ),
-                  if (_routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [Polyline(points: _routePoints, strokeWidth: 5, color: Colors.green)],
-                    ),
-                  MarkerLayer(
-                    markers: [
-                      if (_depart != null)
-                        Marker(
-                          point: _depart!,
-                          width: 40,
-                          height: 40,
-                          child: Icon(Icons.location_pin, color: kGuineaRed, size: 34),
-                        ),
-                      if (_arrivee != null)
-                        Marker(
-                          point: _arrivee!,
-                          width: 40,
-                          height: 40,
-                          child: Icon(Icons.flag, color: kGuineaGreen, size: 30),
-                        ),
-                    ],
+                  TileLayer(
+                    urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+                    subdomains: const ['a', 'b', 'c', 'd'],
+                    retinaMode: true,
+                    maxZoom: 19,
+                    maxNativeZoom: 19,
+                    userAgentPackageName: 'com.ma_guinee.app',
+                  ),
+                ] else if (_mapStyle == MapStyle.voyager) ...[
+                  // Carte claire (moins blanche)
+                  TileLayer(
+                    urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                    subdomains: const ['a', 'b', 'c', 'd'],
+                    retinaMode: true,
+                    maxZoom: 19,
+                    maxNativeZoom: 19,
+                    userAgentPackageName: 'com.ma_guinee.app',
+                  ),
+                ] else if (_mapStyle == MapStyle.dark) ...[
+                  // Mode nuit adouci
+                  TileLayer(
+                    urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
+                    subdomains: const ['a', 'b', 'c', 'd'],
+                    retinaMode: true,
+                    maxZoom: 19,
+                    maxNativeZoom: 19,
+                    userAgentPackageName: 'com.ma_guinee.app',
                   ),
                 ],
-              ),
+
+                // ---- Itinéraire (ligne nette uniquement) ----
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(points: _routePoints, strokeWidth: 6, color: kBrandBlue),
+                    ],
+                  ),
+
+                // ---- Marqueurs ----
+                MarkerLayer(
+                  markers: [
+                    if (_depart != null)
+                      Marker(
+                        point: _depart!,
+                        width: 42, height: 42,
+                        child: const Icon(Icons.location_pin, color: Colors.red, size: 36),
+                      ),
+                    if (_arrivee != null)
+                      Marker(
+                        point: _arrivee!,
+                        width: 40, height: 40,
+                        child: const Icon(Icons.flag, color: Colors.green, size: 30),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
 
-          // ---- Épingle fantôme au centre ----
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: AnimatedBuilder(
-                  animation: _pulse,
-                  builder: (_, __) => Transform.translate(
-                    offset: Offset(0, -6 + (_pulse.value * -2)),
-                    child: Icon(
-                      _target == TargetField.depart ? Icons.place : Icons.flag,
-                      size: 34,
-                      color: _target == TargetField.depart
-                          ? kGuineaRed.withOpacity(.85)
-                          : kGuineaGreen.withOpacity(.85),
-                    ),
-                  ),
+          // Voile léger pour éclaircir le mode nuit (moins sombre)
+          if (_mapStyle == MapStyle.dark)
+            const IgnorePointer(
+              child: ColoredBox(color: Color(0x14FFFFFF)), // blanc 8% pour “délaver” un peu
+            ),
+
+          // ---- Style + Swap (en haut à droite) ----
+          Positioned(
+            right: 12,
+            top: padTop + 12,
+            child: Column(
+              children: [
+                _roundGlass(
+                  icon: _mapStyle == MapStyle.satellite
+                      ? Icons.satellite_alt
+                      : _mapStyle == MapStyle.voyager
+                          ? Icons.map
+                          : Icons.nightlight_round,
+                  onTap: () {
+                    setState(() {
+                      if (_mapStyle == MapStyle.satellite) {
+                        _mapStyle = MapStyle.voyager;
+                      } else if (_mapStyle == MapStyle.voyager) {
+                        _mapStyle = MapStyle.dark;
+                      } else {
+                        _mapStyle = MapStyle.satellite;
+                      }
+                    });
+                  },
                 ),
-              ),
+                const SizedBox(height: 10),
+                // Bouton échanger Départ/Arrivée (devant Destination)
+                _roundGlass(
+                  icon: Icons.swap_vert_rounded,
+                  onTap: _swap,
+                ),
+              ],
             ),
           ),
 
@@ -574,7 +528,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
           Positioned(
             top: padTop + 10,
             left: 12,
-            right: 12,
+            right: 62, // on laisse la place aux boutons à droite
             child: Column(
               children: [
                 Row(
@@ -585,13 +539,14 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                         controller: _departCtrl,
                         selected: _target == TargetField.depart,
                         onTap: () => setState(() => _target = TargetField.depart),
+                        onLeadingTap: _useMyLocationAsDepart, // localisation bleue ici
                         onSelected: (l) {
                           setState(() {
+                            _target = TargetField.depart;
                             _depart = ll.LatLng(l.lat, l.lng);
                             _departLabel = l.fullLabel;
                             _departCtrl.text = l.fullLabel;
                           });
-                          _map.move(_depart!, 16);
                           if (_arrivee != null) _computeRoute();
                         },
                       ),
@@ -609,11 +564,11 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                           PopupMenuItem(value: 'N’Zérékoré', child: Text('N’Zérékoré')),
                         ],
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.location_city, size: 18),
+                              const Icon(Icons.location_city, size: 18, color: kMuted),
                               const SizedBox(width: 6),
                               Text(_city, style: const TextStyle(fontWeight: FontWeight.w600)),
                               const Icon(Icons.arrow_drop_down),
@@ -636,7 +591,6 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                       _arriveeLabel = l.fullLabel;
                       _arriveeCtrl.text = l.fullLabel;
                     });
-                    _map.move(_arrivee!, 16);
                     if (_depart != null) _computeRoute();
                   },
                 ),
@@ -644,25 +598,12 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
             ),
           ),
 
-          // ---- Toggle véhicule + actions floating ----
+          // ---- Choix véhicule ----
           Positioned(
-            right: 12,
-            bottom: 220 + padBot,
-            child: Column(
-              children: [
-                _roundGlass(icon: Icons.my_location, onTap: _myLocation),
-                const SizedBox(height: 10),
-                _roundGlass(icon: Icons.swap_vert_rounded, onTap: _swap),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 210 + padBot,
+            left: 12, right: 12, bottom: 230 + padBot,
             child: _Glass(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -675,7 +616,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                         if (_depart != null && _arrivee != null) _computeRoute();
                       },
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 10),
                     _VehicleToggle(
                       icon: Icons.directions_car_filled_rounded,
                       label: 'Voiture',
@@ -693,9 +634,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
 
           // ---- Estimation ----
           Positioned(
-            left: 12,
-            right: 12,
-            bottom: 160 + padBot,
+            left: 12, right: 12, bottom: 180 + padBot,
             child: _EstimationCard(
               vehicle: _vehicle,
               distanceKm: _distanceKm,
@@ -705,11 +644,9 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
             ),
           ),
 
-          // ---- Boutons Recalculer / Effacer ----
+          // ---- Recalculer / Effacer ----
           Positioned(
-            left: 12,
-            right: 12,
-            bottom: 110 + padBot,
+            left: 12, right: 12, bottom: 132 + padBot,
             child: Row(
               children: [
                 Expanded(
@@ -726,7 +663,9 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                       _depart = null; _arrivee = null;
                       _departLabel = null; _arriveeLabel = null;
                       _departCtrl.clear(); _arriveeCtrl.clear();
-                      _routePoints = []; _distanceKm = null; _durationMin = null; _priceGNF = null;
+                      _routePoints = [];
+                      _distanceKm = null; _durationMin = null; _priceGNF = null;
+                      _target = TargetField.depart;
                     });
                   },
                   icon: const Icon(Icons.clear),
@@ -736,11 +675,29 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
             ),
           ),
 
-          // ---- CONFIRMER (création) ----
+          // ---- Dock ----
           Positioned(
-            left: 12,
-            right: 12,
-            bottom: 60 + padBot,
+            left: 12, right: 12, bottom: 12 + padBot,
+            child: _Glass(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _DockButton(icon: Icons.person, label: 'Moi', onTap: () => _openDock(_BottomTab.profil)),
+                    const _DockDivider(),
+                    _DockButton(icon: Icons.history, label: 'Historique', onTap: () => _openDock(_BottomTab.historique)),
+                    const _DockDivider(),
+                    _DockButton(icon: Icons.account_balance_wallet, label: 'Paiements', onTap: () => _openDock(_BottomTab.paiement)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ---- COMMANDER ----
+          Positioned(
+            left: 24, right: 24, bottom: (12 + padBot) + 64,
             child: SafeArea(
               top: false,
               child: ElevatedButton.icon(
@@ -749,44 +706,13 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  backgroundColor: const Color(0xFF15A05D),
+                  backgroundColor: kBrandBlue,
                   foregroundColor: Colors.white,
+                  elevation: 4,
                 ),
-                label: Text(_creating ? 'Création…' : 'Créer la demande',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              ),
-            ),
-          ),
-
-          // ---- Dock ----
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12 + padBot,
-            child: _Glass(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _DockButton(
-                      icon: Icons.person,
-                      label: 'Moi',
-                      onTap: () => _openDock(_BottomTab.profil),
-                    ),
-                    const _DockDivider(),
-                    _DockButton(
-                      icon: Icons.history,
-                      label: 'Historique',
-                      onTap: () => _openDock(_BottomTab.historique),
-                    ),
-                    const _DockDivider(),
-                    _DockButton(
-                      icon: Icons.account_balance_wallet,
-                      label: 'Paiements',
-                      onTap: () => _openDock(_BottomTab.paiement),
-                    ),
-                  ],
+                label: Text(
+                  _creating ? 'Création…' : 'Commander',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                 ),
               ),
             ),
@@ -796,6 +722,49 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
     );
   }
 
+  // ---------- Création course ----------
+  Future<void> _createCourse() async {
+    final a = _depart, b = _arrivee;
+    final km = _distanceKm, min = _durationMin, price = _priceGNF;
+    if (a == null || b == null || km == null || min == null || price == null) {
+      _toast('Sélectionnez départ et destination puis calculez l’estimation.');
+      return;
+    }
+    final departPoint = {'type': 'Point', 'coordinates': [a.longitude, a.latitude]};
+    final arriveePoint = {'type': 'Point', 'coordinates': [b.longitude, b.latitude]};
+
+    setState(() => _creating = true);
+    try {
+      final inserted = await _sb
+          .from('courses')
+          .insert({
+            'client_id': widget.currentUser.id,
+            'vehicule': _vehicle,
+            'depart_adresse': _departLabel ?? _departCtrl.text,
+            'arrivee_adresse': _arriveeLabel ?? _arriveeCtrl.text,
+            'depart_point': departPoint,
+            'arrivee_point': arriveePoint,
+            'depart_lat': a.latitude, 'depart_lng': a.longitude,
+            'arrivee_lat': b.latitude, 'arrivee_lng': b.longitude,
+            'distance_metres': (km * 1000).round(),
+            'duree_secondes_est': (min * 60).round(),
+            'prix_gnf': price,
+          })
+          .select('id')
+          .single();
+
+      final courseId = (inserted['id'] ?? '').toString();
+      _toast('Demande créée.');
+      if (courseId.isNotEmpty && mounted) {
+        Navigator.pushNamed(context, '/vtc/offres', arguments: {'demandeId': courseId});
+      }
+    } catch (e) {
+      _toast('Erreur lors de la création: $e');
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
   // ---------- Widgets ----------
   Widget _searchPill({
     required String label,
@@ -803,24 +772,30 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
     required bool selected,
     required VoidCallback onTap,
     required void Function(_Lieu) onSelected,
+    VoidCallback? onLeadingTap, // action sur l’icône à gauche
   }) {
+    final bool isDepart = label == 'Départ';
     return _Glass(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                gradient: const LinearGradient(
-                  colors: [kGuineaRed, kGuineaYellow, kGuineaGreen],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
+            InkWell(
+              onTap: onLeadingTap ?? onTap,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(
+                  color: kBrandBlue.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: kBrandBlue.withOpacity(.35)),
+                ),
+                child: Icon(
+                  isDepart ? Icons.my_location : Icons.flag, // localisation bleue
+                  color: kBrandBlue,
+                  size: 20,
                 ),
               ),
-              child: Icon(label == 'Départ' ? Icons.place : Icons.flag, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -839,15 +814,15 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
                       decoration: InputDecoration(
                         isDense: true,
                         border: InputBorder.none,
-                        hintText: label == 'Départ'
+                        hintText: isDepart
                             ? '… (quartier, carrefour, commune, ville)'
                             : 'Destination…',
-                        hintStyle: const TextStyle(color: Colors.black54),
+                        hintStyle: const TextStyle(color: kMuted),
                       ),
                       onTap: onTap,
                       onChanged: (_) => onTap(),
-                      onEditingComplete: () => _applyFreeText(depart: label == 'Départ'),
-                      onSubmitted: (_) => _applyFreeText(depart: label == 'Départ'),
+                      onEditingComplete: () => _applyFreeText(depart: isDepart),
+                      onSubmitted: (_) => _applyFreeText(depart: isDepart),
                     );
                   },
                   itemBuilder: (context, _Lieu l) => ListTile(
@@ -862,10 +837,9 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
             const SizedBox(width: 8),
             AnimatedContainer(
               duration: const Duration(milliseconds: 250),
-              width: 10,
-              height: 10,
+              width: 10, height: 10,
               decoration: BoxDecoration(
-                color: selected ? Colors.black : Colors.black26,
+                color: selected ? kBrandBlue : Colors.black26,
                 shape: BoxShape.circle,
               ),
             ),
@@ -881,14 +855,14 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage>
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Material(
-          color: Colors.white.withOpacity(.75),
+          color: Colors.white.withOpacity(.88),
           shape: const CircleBorder(),
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Icon(icon, size: 22),
+              child: Icon(icon, size: 22, color: kBrandBlue),
             ),
           ),
         ),
@@ -936,11 +910,11 @@ class _Glass extends StatelessWidget {
         filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.78),
+            color: Colors.white.withOpacity(0.88),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withOpacity(0.5), width: 0.8),
+            border: Border.all(color: Colors.black12, width: 0.8),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 4)),
+              BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 4)),
             ],
           ),
           child: child,
@@ -966,7 +940,7 @@ class _DockButton extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20),
+            Icon(icon, size: 20, color: kBrandBlue),
             const SizedBox(height: 4),
             Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
           ],
@@ -992,7 +966,7 @@ class _VehicleToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selColor = selected ? kGuineaGreen : Colors.black87;
+    final selColor = selected ? kBrandBlue : Colors.black87;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1006,7 +980,7 @@ class _VehicleToggle extends StatelessWidget {
             Text(label, style: TextStyle(color: selColor, fontWeight: FontWeight.w600)),
             if (selected) ...[
               const SizedBox(width: 6),
-              const Icon(Icons.check_circle, size: 16, color: kGuineaGreen),
+              const Icon(Icons.check_circle, size: 16, color: kBrandBlue),
             ],
           ],
         ),
@@ -1039,11 +1013,11 @@ class _EstimationCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Row(
           children: [
-            Icon(icon, size: 26, color: kGuineaGreen),
+            Icon(icon, size: 26, color: kBrandBlue),
             const SizedBox(width: 10),
             Expanded(
               child: routing
-                  ? const Text('Calcul de l’itinéraire…')
+                  ? const Text('Calcul de l’itinéraire…', style: TextStyle(color: kMuted))
                   : Text(
                       (distanceKm != null && durationMin != null)
                           ? '~ ${distanceKm!.toStringAsFixed(2)} km • ${durationMin!} min'
@@ -1051,8 +1025,10 @@ class _EstimationCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
             ),
-            Text(priceGNF != null ? '${priceGNF!} GNF' : '—',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Text(
+              priceGNF != null ? '${priceGNF!} GNF' : '—',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
           ],
         ),
       ),
@@ -1064,7 +1040,7 @@ class _EstimationCard extends StatelessWidget {
 class _Lieu {
   final String id;
   final String name;
-  final String type; // quartier / carrefour / commune / ville / lieu
+  final String type;
   final String? city;
   final String? commune;
   final double lat;
@@ -1106,7 +1082,7 @@ class _Lieu {
       );
 }
 
-// ---------- Bottom sheet (profil / historique / paiements) ----------
+// ---------- Bottom sheet ----------
 class _DockSheet extends StatelessWidget {
   final _BottomTab tab;
   final UtilisateurModel user;
@@ -1166,52 +1142,17 @@ class _DockSheet extends StatelessWidget {
           children: [
             _sheetHandle(),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Mon profil',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                ),
-                IconButton(
-                  tooltip: 'Rafraîchir',
-                  onPressed: onRefreshProfile,
-                  icon: const Icon(Icons.refresh),
-                )
-              ],
-            ),
-            const SizedBox(height: 8),
+            const Text('Mon profil', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             ListTile(
               leading: CircleAvatar(
-                backgroundColor: Colors.green.shade100,
-                child: const Icon(Icons.person, color: Colors.black87),
+                backgroundColor: kBrandBlue.withOpacity(.1),
+                child: const Icon(Icons.person, color: kText),
               ),
               title: Text(
-                ('${user.prenom ?? ''} ${user.nom ?? ''}').trim().isEmpty
-                    ? 'Client'
-                    : '${user.prenom ?? ''} ${user.nom ?? ''}',
+                ('${user.prenom ?? ''} ${user.nom ?? ''}').trim().isEmpty ? 'Client' : '${user.prenom ?? ''} ${user.nom ?? ''}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               subtitle: Text(user.email ?? user.telephone ?? '—'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.phone_iphone),
-              title: const Text('Téléphone'),
-              subtitle: Text(user.telephone ?? '—'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: const Text('Email'),
-              subtitle: Text(user.email ?? '—'),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.edit),
-                label: const Text('Modifier mon profil'),
-                onPressed: onEditProfile,
-              ),
             ),
           ],
         );
@@ -1222,42 +1163,11 @@ class _DockSheet extends StatelessWidget {
           children: [
             _sheetHandle(),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Historique récent',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                ),
-                IconButton(
-                  onPressed: onRefreshHistory,
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Actualiser',
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
+            const Text('Historique récent', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             if (loadingRecent)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(),
-                ),
-              )
+              const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
             else if (recent.isEmpty)
-              const Card(child: ListTile(title: Text('Aucune course récente')))
-            else
-              ...recent.map((c) {
-                final prix = c['prix_gnf'];
-                return Card(
-                  elevation: 0,
-                  child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.local_taxi)),
-                    title: Text('${c['depart_adresse'] ?? '-'} → ${c['arrivee_adresse'] ?? '-'}'),
-                    subtitle: Text('Statut: ${c['statut']}'),
-                    trailing: Text(prix != null ? '$prix GNF' : '—'),
-                  ),
-                );
-              }),
+              const Card(child: ListTile(title: Text('Aucune course récente'))),
           ],
         );
 
@@ -1267,27 +1177,9 @@ class _DockSheet extends StatelessWidget {
           children: [
             _sheetHandle(),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Paiements',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                ),
-                IconButton(
-                  tooltip: 'Rafraîchir',
-                  onPressed: onRefreshPayments,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
+            const Text('Paiements', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             if (loadingPayments)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(),
-                ),
-              )
+              const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
             else if (paymentMethods.isEmpty)
               Card(
                 elevation: 0,
@@ -1301,29 +1193,7 @@ class _DockSheet extends StatelessWidget {
                   ),
                   trailing: const Text('—'),
                 ),
-              )
-            else
-              ...paymentMethods.map((m) {
-                final moyen = (m['moyen'] ?? '').toString();
-                final statut = (m['statut'] ?? '').toString();
-                final amount = m['amount_gnf'];
-                final createdAt = (m['created_at'] ?? '').toString();
-                return Card(
-                  elevation: 0,
-                  child: ListTile(
-                    leading: const Icon(Icons.receipt_long),
-                    title: Text('${amount ?? '—'} GNF'),
-                    subtitle: Text('$moyen • $statut\n$createdAt'),
-                    isThreeLine: true,
-                    trailing: const Icon(Icons.chevron_right),
-                  ),
-                );
-              }),
-            const SizedBox(height: 8),
-            const Text(
-              'Astuce : lie Orange Money / MTN / Free pour payer plus vite.',
-              style: TextStyle(color: Colors.black54),
-            ),
+              ),
           ],
         );
     }
@@ -1331,13 +1201,8 @@ class _DockSheet extends StatelessWidget {
 
   Widget _sheetHandle() => Center(
         child: Container(
-          width: 44,
-          height: 5,
-          margin: const EdgeInsets.only(top: 6, bottom: 8),
-          decoration: BoxDecoration(
-            color: Colors.black12,
-            borderRadius: BorderRadius.circular(999),
-          ),
+          width: 44, height: 5, margin: const EdgeInsets.only(top: 6, bottom: 8),
+          decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(999)),
         ),
       );
 }
