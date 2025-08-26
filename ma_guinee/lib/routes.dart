@@ -60,8 +60,8 @@ import 'pages/live_page.dart';
 import 'pages/live_room_page.dart';
 
 // 🚖 VTC / Moto-taxi
-import 'pages/vtc/page_portail_soneya.dart';
-import 'pages/vtc/demande_course_page.dart';
+import 'pages/vtc/page_portail_soneya.dart';         // ➜ ON GARDE
+// import 'pages/vtc/demande_course_page.dart';       // ➜ SUPPRIMÉ / NON IMPORTÉ
 import 'pages/vtc/offres_course_page.dart';
 import 'pages/vtc/suivi_course_page.dart';
 import 'pages/vtc/portefeuille_page.dart';
@@ -72,7 +72,7 @@ import 'pages/vtc/vehicules_page.dart';
 import 'pages/vtc/inscription_chauffeur_page.dart';
 import 'pages/vtc/admin_vtc_page.dart';
 
-// ✅ Nouveaux homes VTC
+// ✅ Homes VTC
 import 'pages/vtc/home_client_vtc_page.dart';
 import 'pages/vtc/home_chauffeur_vtc_page.dart';
 
@@ -135,8 +135,8 @@ class AppRoutes {
   static const String scanner = '/scanner';
 
   // 🚖 VTC / Moto-taxi
-  static const String vtcHome = '/vtc'; // Portail Soneya
-  static const String vtcDemande = '/vtc/demande';
+  static const String vtcHome = '/vtc';               // ➜ Portail Soneya
+  static const String vtcDemande = '/vtc/demande';    // ➜ alias vers HomeClient
   static const String vtcOffres = '/vtc/offres';
   static const String vtcSuivi = '/vtc/suivi';
   static const String vtcPortefeuille = '/vtc/portefeuille';
@@ -147,101 +147,65 @@ class AppRoutes {
   static const String vtcInscriptionChauffeur = '/vtc/inscription_chauffeur';
   static const String vtcAdmin = '/vtc/admin';
 
-  // ✅ Cibles du portail
+  // Cibles directes
   static const String soneyaClient = '/soneya/client';
   static const String soneyaChauffeur = '/soneya/chauffeur';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       // Core
-      case splash:
-        return _page(const SplashScreen());
-      case welcome:
-        return _page(const WelcomePage());
-      case mainNav:
-        return _page(const MainNavigationPage());
-      case home:
-        return _page(const HomePage());
+      case splash:        return _page(const SplashScreen());
+      case welcome:       return _page(const WelcomePage());
+      case mainNav:       return _page(const MainNavigationPage());
+      case home:          return _page(const HomePage());
 
       // Existants
-      case annonces:
-        return _page(const AnnoncesPage());
-      case pro:
-        return _page(const ProPage());
-      case carte:
-        return _page(const CartePage());
-      case divertissement:
-        return _page(const DivertissementPage());
-      case admin:
-        return _page(const AdminPage());
-      case resto:
-        return _page(const resto_pg.RestoPage());
-      case culte:
-        return _page(const CultePage());
-      case favoris:
-        return _page(const FavorisPage());
-      case login:
-        return _page(const LoginPage());
-      case register:
-        return _page(const register_pg.RegisterPage());
-      case tourisme:
-        return _page(const TourismePage());
-      case sante:
-        return _page(const SantePage());
-      case hotel:
-        return _page(const HotelPage());
-      case notifications:
-        return _page(const NotificationsPage());
-      case profil:
-        return _userProtected((u) => ProfilePage(user: u));
-      case parametre:
-        return _userProtected((u) => ParametrePage(user: u));
-      case aide:
-        return _page(const AidePage());
-      case messages:
-        return _page(const MessagesPage());
+      case annonces:      return _page(const AnnoncesPage());
+      case pro:           return _page(const ProPage());
+      case carte:         return _page(const CartePage());
+      case divertissement:return _page(const DivertissementPage());
+      case admin:         return _page(const AdminPage());
+      case resto:         return _page(const resto_pg.RestoPage());
+      case culte:         return _page(const CultePage());
+      case favoris:       return _page(const FavorisPage());
+      case login:         return _page(const LoginPage());
+      case register:      return _page(const register_pg.RegisterPage());
+      case tourisme:      return _page(const TourismePage());
+      case sante:         return _page(const SantePage());
+      case hotel:         return _page(const HotelPage());
+      case notifications: return _page(const NotificationsPage());
+      case profil:        return _userProtected((u) => ProfilePage(user: u));
+      case parametre:     return _userProtected((u) => ParametrePage(user: u));
+      case aide:          return _page(const AidePage());
+      case messages:      return _page(const MessagesPage());
 
-      case mesAnnonces:
-        return _userProtected((_) => const MesAnnoncesPage());
-      case mesPrestations:
-        return _userProtected((u) {
-          final prestations = u.espacePrestataire != null ? [u.espacePrestataire!] : <Map<String, dynamic>>[];
-          return MesPrestationsPage(prestations: prestations);
-        });
-      case mesRestaurants:
-        return _userProtected((u) {
-          final restos = u.restos ?? [];
-          return myresto_pg.MesRestaurantsPage(restaurants: restos);
-        });
-      case mesHotels:
-        return _userProtected((u) {
-          final hotels = u.hotels ?? [];
-          return hotel_page.MesHotelsPage(hotels: hotels);
-        });
-      case mesCliniques:
-        return _userProtected((u) {
-          final cliniques = u.cliniques ?? [];
-          return MesCliniquesPage(cliniques: cliniques);
-        });
+      case mesAnnonces:   return _userProtected((_) => const MesAnnoncesPage());
+      case mesPrestations:return _userProtected((u) {
+                            final prestations = u.espacePrestataire != null ? [u.espacePrestataire!] : <Map<String,dynamic>>[];
+                            return MesPrestationsPage(prestations: prestations);
+                          });
+      case mesRestaurants:return _userProtected((u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []));
+      case mesHotels:     return _userProtected((u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []));
+      case mesCliniques:  return _userProtected((u) => MesCliniquesPage(cliniques: u.cliniques ?? []));
 
       case inscriptionResto: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String, dynamic>) {
-          return _page(InscriptionRestoPage(restaurant: arg as Map<String, dynamic>?));
+        if (arg == null || arg is Map<String,dynamic>) {
+          return _page(InscriptionRestoPage(restaurant: arg as Map<String,dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionResto");
       }
       case inscriptionHotel: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String, dynamic>) {
-          return _page(InscriptionHotelPage(hotel: arg as Map<String, dynamic>?));
+        if (arg == null || arg is Map<String,dynamic>) {
+          return _page(InscriptionHotelPage(hotel: arg as Map<String,dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionHotel");
       }
       case inscriptionClinique: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String, dynamic>) {
-          return _page(EditCliniquePage(clinique: arg as Map<String, dynamic>?));
+        if (arg == null || arg is Map<String,dynamic>) {
+          return _page(EditCliniquePage(clinique: arg as Map<String,dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionClinique");
       }
@@ -263,92 +227,59 @@ class AppRoutes {
         return _error("ID invalide pour $hotelDetail");
       }
 
-      case editPrestataire:
-        return _page(EditPrestatairePage(prestataire: _argsMap(settings)));
-      case editHotel:
-        return _page(EditHotelPage(hotelId: _argsMap(settings)['id']));
-      case editResto:
-        return _page(EditRestoPage(resto: _argsMap(settings)));
-      case editAnnonce:
-        return _page(EditAnnoncePage(annonce: _argsMap(settings)));
-      case editClinique:
-        return _page(EditCliniquePage(clinique: _argsMap(settings)));
+      case editPrestataire: return _page(EditPrestatairePage(prestataire: _argsMap(settings)));
+      case editHotel:       return _page(EditHotelPage(hotelId: _argsMap(settings)['id']));
+      case editResto:       return _page(EditRestoPage(resto: _argsMap(settings)));
+      case editAnnonce:     return _page(EditAnnoncePage(annonce: _argsMap(settings)));
+      case editClinique:    return _page(EditCliniquePage(clinique: _argsMap(settings)));
 
-      // Social
-      case talents:
-        return _page(const PostsReelsPage());
+      // Social / Live
+      case talents:        return _page(const PostsReelsPage());
 
       // Live
-      case live:
-        return _page(const LivePage());
+      case live:           return _page(const LivePage());
       case liveRoom: {
         final m = _argsMap(settings);
         final roomId = (m['roomId'] as String?) ?? '';
         if (roomId.isEmpty) return _error('Argument manquant roomId pour $liveRoom');
         final isHost = (m['isHost'] as bool?) ?? false;
-        final title = m['title'] as String?;
+        final title  = m['title'] as String?;
         return _page(LiveRoomPage(roomId: roomId, isHost: isHost, initialTitle: title));
       }
 
       // Billetterie
-      case billetterie:
-        return _page(const EventsListPage());
-      case myTickets:
-        return _userProtected((_) => const MyTicketsPage());
-      case scanner:
-        return _userProtected((_) => const ScannerPage());
+      case billetterie:    return _page(const EventsListPage());
+      case myTickets:      return _userProtected((_) => const MyTicketsPage());
+      case scanner:        return _userProtected((_) => const ScannerPage());
 
       // 🚖 VTC / Moto-taxi
-      case vtcHome:
-        return _page(const PagePortailSoneya());
-
-      case vtcDemande:
-        return _userProtected((u) => DemandeCoursePage(currentUser: u));
-
+      case vtcHome:        return _page(const PagePortailSoneya());                 // ➜ portail
+      case vtcDemande:     return _userProtected((u) => HomeClientVtcPage(currentUser: u)); // ➜ alias HomeClient
       case vtcOffres: {
         final m = _argsMap(settings);
         final demandeId = (m['demandeId'] as String?) ?? '';
         if (demandeId.isEmpty) return _error('demandeId requis pour $vtcOffres');
         return _userProtected((_) => OffresCoursePage(demandeId: demandeId));
       }
-
       case vtcSuivi: {
         final m = _argsMap(settings);
         final courseId = (m['courseId'] as String?) ?? '';
         if (courseId.isEmpty) return _error('courseId requis pour $vtcSuivi');
         return _userProtected((_) => SuiviCoursePage(courseId: courseId));
       }
+      case vtcPortefeuille:return _userProtected((u) => PortefeuilleChauffeurPage(userId: u.id));
+      case vtcPaiements:   return _userProtected((u) => PaiementsPage(userId: u.id));
+      case vtcReglesTarifaires: return _userProtected((_) => const ReglesTarifairesPage());
+      case vtcCreneaux:    return _userProtected((u) => CreneauxChauffeurPage(userId: u.id));
+      case vtcVehicules:   return _userProtected((u) => VehiculesPage(ownerUserId: u.id));
+      case vtcInscriptionChauffeur: return _page(const InscriptionChauffeurPage());
+      case vtcAdmin:       return _userProtected((_) => const AdminVtcPage());
 
-      case vtcPortefeuille:
-        return _userProtected((u) => PortefeuilleChauffeurPage(userId: u.id));
+      // Cibles directes
+      case soneyaClient:   return _userProtected((u) => HomeClientVtcPage(currentUser: u));
+      case soneyaChauffeur:return _userProtected((u) => HomeChauffeurVtcPage(currentUser: u));
 
-      case vtcPaiements:
-        return _userProtected((u) => PaiementsPage(userId: u.id));
-
-      case vtcReglesTarifaires:
-        return _userProtected((_) => const ReglesTarifairesPage());
-
-      case vtcCreneaux:
-        return _userProtected((u) => CreneauxChauffeurPage(userId: u.id));
-
-      case vtcVehicules:
-        return _userProtected((u) => VehiculesPage(ownerUserId: u.id));
-
-      case vtcInscriptionChauffeur:
-        return _page(const InscriptionChauffeurPage());
-
-      case vtcAdmin:
-        return _userProtected((_) => const AdminVtcPage());
-
-      // ✅ Cibles du portail -> ouvrent les HOMES VTC
-      case soneyaClient:
-        return _userProtected((u) => HomeClientVtcPage(currentUser: u));
-
-      case soneyaChauffeur:
-        return _userProtected((u) => HomeChauffeurVtcPage(currentUser: u));
-
-      default:
-        return _error('Page non trouvée : ${settings.name}');
+      default:             return _error('Page non trouvée : ${settings.name}');
     }
   }
 
@@ -356,7 +287,7 @@ class AppRoutes {
   static Map<String, dynamic> _argsMap(RouteSettings s) {
     final a = s.arguments;
     return (a is Map) ? Map<String, dynamic>.from(a as Map) : <String, dynamic>{};
-    }
+  }
 
   static MaterialPageRoute _page(Widget child) =>
       MaterialPageRoute(builder: (_) => child);
