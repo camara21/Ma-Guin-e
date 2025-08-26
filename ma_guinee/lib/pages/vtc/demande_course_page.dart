@@ -1,14 +1,13 @@
-// lib/pages/vtc/demande_course_page.dart
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart' as ll;
 import 'package:http/http.dart' as http;
-import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../models/utilisateur_model.dart';
@@ -42,6 +41,10 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
   ll.LatLng? _pDepart;
   ll.LatLng? _pArrivee;
 
+  // Labels lisibles
+  String? _departLabel;
+  String? _arriveeLabel;
+
   double? _distanceKm;
   int? _durationMin;
   int? _priceGNF;
@@ -54,10 +57,69 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
   bool _creating = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Hydrate depuis arguments envoyés par la page précédente
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hydrateFromArgs();
+    });
+  }
+
+  @override
   void dispose() {
     _departCtrl.dispose();
     _arriveeCtrl.dispose();
     super.dispose();
+  }
+
+  // ---------- Hydrate depuis Navigator arguments ----------
+  void _hydrateFromArgs() async {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final dLat = _toDouble(args['depart_lat']);
+      final dLng = _toDouble(args['depart_lng']);
+      final aLat = _toDouble(args['arrivee_lat']);
+      final aLng = _toDouble(args['arrivee_lng']);
+      final dLabel = (args['depart_adresse'] ?? args['depart_label'])?.toString();
+      final aLabel = (args['arrivee_adresse'] ?? args['arrivee_label'])?.toString();
+      final veh = (args['vehicle'] ?? '').toString().trim();
+      if (veh.isNotEmpty) _vehicle = (veh == 'moto') ? 'moto' : 'car';
+
+      if (dLat != null && dLng != null) {
+        _pDepart = ll.LatLng(dLat, dLng);
+        _departLabel = dLabel ?? 'Départ';
+        _departCtrl.text = _departLabel!;
+      }
+      if (aLat != null && aLng != null) {
+        _pArrivee = ll.LatLng(aLat, aLng);
+        _arriveeLabel = aLabel ?? 'Destination';
+        _arriveeCtrl.text = _arriveeLabel!;
+      }
+
+      if (_pDepart != null && _pArrivee != null) {
+        _fitMapToBounds(_pDepart!, _pArrivee!);
+        await _computeRoute();
+      } else if (_pDepart != null) {
+        _map.move(_pDepart!, 14);
+      } else if (_pArrivee != null) {
+        _map.move(_pArrivee!, 14);
+      }
+
+      setState(() {});
+    }
+  }
+
+  double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  // ---------- Toast ----------
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---------- Géocodage ----------
@@ -103,9 +165,13 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
       final latlng = ll.LatLng(p.lat, p.lon);
       if (depart) {
         _pDepart = latlng;
+        _departLabel = p.displayNameShort;
+        _departCtrl.text = p.displayNameShort;
         _map.move(latlng, 14);
       } else {
         _pArrivee = latlng;
+        _arriveeLabel = p.displayNameShort;
+        _arriveeCtrl.text = p.displayNameShort;
         _map.move(latlng, 14);
       }
     });
@@ -152,6 +218,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
         setState(() {
           _pDepart = here;
           _departCtrl.text = 'Ma position';
+          _departLabel = 'Ma position';
         });
         if (_pArrivee != null) {
           await _computeRoute();
@@ -305,22 +372,33 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
       return;
     }
 
+    // Conversion pour les colonnes de ta BDD
+    final metres = (km * 1000).round();
+    final seconds = (min * 60).round();
+
+    // GeoJSON -> geometry/geography(Point,4326)
+    final departPoint = {
+      'type': 'Point',
+      'coordinates': [a.longitude, a.latitude],
+    };
+    final arriveePoint = {
+      'type': 'Point',
+      'coordinates': [b.longitude, b.latitude],
+    };
+
     setState(() => _creating = true);
     try {
       await _sb.from('courses').insert({
         'client_id': widget.currentUser.id,
-        'status': 'pending',
-        'vehicle': _vehicle == 'moto' ? 'moto' : 'car',
-        'city': _city,
-        'depart_label': _departCtrl.text.trim(),
-        'arrivee_label': _arriveeCtrl.text.trim(),
-        'depart_lat': a.latitude,
-        'depart_lng': a.longitude,
-        'arrivee_lat': b.latitude,
-        'arrivee_lng': b.longitude,
-        'distance_km': km,
-        'duration_min': min,
-        'price_estimated': price,
+        // statut par défaut côté DB: en_attente
+        'depart_adresse': _departLabel ?? _departCtrl.text.trim(),
+        'arrivee_adresse': _arriveeLabel ?? _arriveeCtrl.text.trim(),
+        'depart_point': departPoint,
+        'arrivee_point': arriveePoint,
+        'distance_metres': metres,
+        'duree_secondes_est': seconds,
+        'prix_gnf': price,
+        // moyen_paiement: défaut 'cash' (si configuré côté DB)
       });
 
       if (!mounted) return;
@@ -328,7 +406,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
       _toast('Demande créée.');
     } catch (e) {
       if (!mounted) return;
-      _toast('Échec création: $e');
+      _toast('Erreur: $e');
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -362,9 +440,11 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                       onTap: (tapPos, latlng) async {
                         if (_moveTarget == _MoveTarget.depart) {
                           setState(() => _pDepart = latlng);
+                          _departLabel ??= 'Point de départ';
                           if (_pArrivee != null) await _computeRoute();
                         } else if (_moveTarget == _MoveTarget.arrivee) {
                           setState(() => _pArrivee = latlng);
+                          _arriveeLabel ??= 'Point d’arrivée';
                           if (_pDepart != null) await _computeRoute();
                         }
                       },
@@ -388,7 +468,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                     ],
                   ),
                 ),
-                // Effet glass
+                // Effet glass + ombre douce
                 Positioned.fill(
                   child: IgnorePointer(
                     child: BackdropFilter(
@@ -408,10 +488,31 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                     ),
                   ),
                 ),
-                // Toggles véhicule
+                // Résumé des 2 points
                 Positioned(
                   top: 12,
                   left: 12,
+                  right: 12,
+                  child: _Glass(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          _LegChip(icon: Icons.my_location, label: _departLabel ?? 'Départ'),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward, size: 18),
+                          const SizedBox(width: 8),
+                          _LegChip(icon: Icons.flag, label: _arriveeLabel ?? 'Destination'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Toggles véhicule
+                Positioned(
+                  bottom: 12,
+                  left: 12,
+                  right: 12,
                   child: _Glass(
                     child: Row(
                       children: [
@@ -437,69 +538,13 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                     ),
                   ),
                 ),
-                // Boutons localisation
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: _Glass(
-                    child: Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Localiser (centrer)',
-                          onPressed: () => _centerOnUser(),
-                          icon: const Icon(Icons.gps_fixed),
-                        ),
-                        IconButton(
-                          tooltip: 'Départ = ma position',
-                          onPressed: () => _centerOnUser(setAsDepart: true),
-                          icon: const Icon(Icons.my_location),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Mode ajuster
-                Positioned(
-                  bottom: 12,
-                  left: 12,
-                  right: 12,
-                  child: _Glass(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Ajuster sur la carte', style: TextStyle(fontWeight: FontWeight.w600)),
-                          ToggleButtons(
-                            isSelected: [
-                              _moveTarget == _MoveTarget.depart,
-                              _moveTarget == _MoveTarget.arrivee,
-                            ],
-                            onPressed: (i) {
-                              setState(() {
-                                _moveTarget = i == 0
-                                    ? (_moveTarget == _MoveTarget.depart ? _MoveTarget.none : _MoveTarget.depart)
-                                    : (_moveTarget == _MoveTarget.arrivee ? _MoveTarget.none : _MoveTarget.arrivee);
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(10),
-                            children: const [
-                              Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('Départ')),
-                              Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('Arrivée')),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
 
           const SizedBox(height: 12),
 
-          // Ville + raccourci "ma position"
+          // Ville + racourci position
           Row(
             children: [
               Expanded(
@@ -513,10 +558,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                     DropdownMenuItem(value: 'Kankan', child: Text('Kankan')),
                     DropdownMenuItem(value: 'N’Zérékoré', child: Text('N’Zérékoré')),
                   ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _city = v);
-                  },
+                  onChanged: (v) => setState(() => _city = v ?? 'Conakry'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -531,7 +573,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
           ),
           const SizedBox(height: 10),
 
-          // Recherche départ — utiliser TypeAheadField (v5)
+          // Recherche départ
           TypeAheadField<_Place>(
             suggestionsCallback: _searchPlaces,
             itemBuilder: (_, p) => ListTile(
@@ -543,6 +585,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
               setState(() {
                 _departCtrl.text = p.displayNameShort;
                 _pDepart = ll.LatLng(p.lat, p.lon);
+                _departLabel = p.displayNameShort;
                 _map.move(_pDepart!, 14);
               });
               if (_pArrivee != null) _computeRoute();
@@ -560,7 +603,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
           ),
           const SizedBox(height: 10),
 
-          // Recherche destination — TypeAheadField (v5)
+          // Recherche destination
           TypeAheadField<_Place>(
             suggestionsCallback: _searchPlaces,
             itemBuilder: (_, p) => ListTile(
@@ -572,6 +615,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
               setState(() {
                 _arriveeCtrl.text = p.displayNameShort;
                 _pArrivee = ll.LatLng(p.lat, p.lon);
+                _arriveeLabel = p.displayNameShort;
                 _map.move(_pArrivee!, 14);
               });
               if (_pDepart != null) _computeRoute();
@@ -612,7 +656,7 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
                 child: ElevatedButton.icon(
                   onPressed: _creating ? null : _createCourse,
                   icon: const Icon(Icons.play_arrow),
-                  label: _creating ? const Text('Création...') : const Text('Créer la demande'),
+                  label: _creating ? const Text('Création…') : const Text('Créer la demande'),
                 ),
               ),
             ],
@@ -620,11 +664,6 @@ class _DemandeCoursePageState extends State<DemandeCoursePage> {
         ],
       ),
     );
-  }
-
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
 
@@ -690,6 +729,31 @@ class _VehiclePill extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LegChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _LegChip({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.06), blurRadius: 10)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

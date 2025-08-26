@@ -1,4 +1,4 @@
-// lib/pages/vtc/home_chauffeur_vtc_page.dart
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -7,11 +7,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../../models/utilisateur_model.dart';
 import '../../routes.dart';
 
-/// Accueil VTC côté CHAUFFEUR (style Uber)
-/// - Carte OSM gratuite (flutter_map)
-/// - Panneau coulissant avec poignée « trois traits »
-/// - Gros bouton Passer en ligne / Hors ligne en bas
-/// - Raccourcis déplacés dans le menu hamburger (drawer)
+/// Accueil VTC CHAUFFEUR – adapté au schéma FR (courses.*)
 class HomeChauffeurVtcPage extends StatefulWidget {
   final UtilisateurModel currentUser;
   const HomeChauffeurVtcPage({super.key, required this.currentUser});
@@ -20,19 +16,30 @@ class HomeChauffeurVtcPage extends StatefulWidget {
   State<HomeChauffeurVtcPage> createState() => _HomeChauffeurVtcPageState();
 }
 
-class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
+class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
+    with SingleTickerProviderStateMixin {
   final _sb = Supabase.instance.client;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  final _scaffoldKey = GlobalKey<ScaffoldState>(); // <- pour ouvrir le drawer
-
-  Map<String, dynamic>? _driver; // row chauffeurs
+  Map<String, dynamic>? _driver; // ligne 'chauffeurs'
   List<Map<String, dynamic>> _compatibles = [];
   List<Map<String, dynamic>> _actives = [];
   bool _loading = true;
   bool _isOnline = false;
+  num _todayEarnings = 0;
 
   RealtimeChannel? _chanCourses;
   RealtimeChannel? _chanMyCourses;
+
+  // Palette
+  static const kRed = Color(0xFFE73B2E);
+  static const kYellow = Color(0xFFFFD400);
+  static const kGreen = Color(0xFF1BAA5C);
+  static const kGoIdle = Color(0xFF2979FF);
+  static const kGoActive = Color(0xFFE53935);
+
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulse;
 
   String get _chauffeurId {
     final v = (_driver?['id'] ?? _driver?['user_id']) as String?;
@@ -42,6 +49,11 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
   @override
   void initState() {
     super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
     _bootstrap();
   }
 
@@ -49,6 +61,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
   void dispose() {
     _chanCourses?.unsubscribe();
     _chanMyCourses?.unsubscribe();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
@@ -57,7 +70,11 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
     try {
       await _loadDriver();
       if (!mounted || _driver == null) return;
-      await Future.wait([_loadCompatibles(reset: true), _loadActives()]);
+      await Future.wait([
+        _loadCompatibles(reset: true),
+        _loadActives(),
+        _loadTodayEarnings(),
+      ]);
       _subscribeStreams();
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -77,15 +94,42 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
         Navigator.pushReplacementNamed(context, AppRoutes.vtcInscriptionChauffeur);
         return;
       }
-      _driver = row;
-      _isOnline = (row['is_online'] as bool?) ?? false;
+      _driver = Map<String, dynamic>.from(row);
+      _isOnline = (_driver?['is_online'] as bool?) ?? false;
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur profil chauffeur: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur profil chauffeur: $e')));
     }
+  }
+
+  // Somme des prix des courses déposées aujourd’hui
+  Future<void> _loadTodayEarnings() async {
+    try {
+      final today = DateTime.now().toUtc();
+      final dayStartIso = DateTime.utc(today.year, today.month, today.day).toIso8601String();
+
+      final resp = await _sb
+          .from('courses')
+          .select('prix_gnf, depose_a, chauffeur_id, statut')
+          .eq('chauffeur_id', _chauffeurId)
+          .not('depose_a', 'is', null)
+          .gte('depose_a', dayStartIso)
+          .limit(500);
+
+      num sum = 0;
+      for (final e in (resp as List)) {
+        final v = e['prix_gnf'];
+        if (v is num) sum += v;
+        else if (v != null) {
+          final n = num.tryParse(v.toString());
+          if (n != null) sum += n;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _todayEarnings = sum);
+    } catch (_) {/* silencieux */}
   }
 
   Future<void> _toggleOnline(bool v) async {
@@ -96,31 +140,21 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
       setState(() => _isOnline = v);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Échec mise en ligne: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Échec mise en ligne: $e')));
     }
   }
 
+  // Demandes compatibles = toutes en attente (tu peux ajouter un filtre géographique plus tard)
   Future<void> _loadCompatibles({bool reset = false}) async {
     if (_driver == null) return;
     if (reset) _compatibles = [];
     try {
-      final String? city = _driver!['city'] as String?;
-      final String vpref = (_driver!['vehicle_pref'] as String?) ?? 'car';
-      if (city == null || city.isEmpty) {
-        setState(() => _compatibles = []);
-        return;
-      }
-
       final rows = await _sb
           .from('courses')
-          .select(
-              'id, city, vehicle, depart_label, arrivee_label, depart_lat, depart_lng, arrivee_lat, arrivee_lng, distance_km, price_estimated, created_at')
-          .eq('status', 'pending')
-          .eq('city', city)
-          .eq('vehicle', vpref)
-          .order('created_at', ascending: false)
+          .select('id, depart_adresse, arrivee_adresse, depart_point, arrivee_point, distance_metres, prix_gnf, demande_a, statut')
+          .eq('statut', 'en_attente')
+          .order('demande_a', ascending: false)
           .limit(30);
 
       if (!mounted) return;
@@ -128,59 +162,53 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement demandes: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur chargement demandes: $e')));
     }
   }
 
+  // Courses actives du chauffeur = statut non terminé/annulé
   Future<void> _loadActives() async {
     if (_driver == null) return;
     try {
       final me = _chauffeurId;
       final rows = await _sb
           .from('courses')
-          .select(
-              'id, status, client_id, depart_label, arrivee_label, depart_lat, depart_lng, arrivee_lat, arrivee_lng, price_final, created_at')
+          .select('id, statut, client_id, depart_adresse, arrivee_adresse, depart_point, arrivee_point, prix_gnf, demande_a, annulee_a, depose_a')
           .eq('chauffeur_id', me)
-          .inFilter('status', ['accepted', 'en_route'])
-          .order('created_at', ascending: false);
+          .not('statut', 'in', '("terminee","annulee")')
+          .order('demande_a', ascending: false);
 
       if (!mounted) return;
       _actives = (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement courses actives: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur chargement courses actives: $e')));
     }
   }
 
+  // Temps réel: nouvelles demandes en attente
   void _subscribeStreams() {
     _chanCourses?.unsubscribe();
     _chanMyCourses?.unsubscribe();
 
     if (_driver == null) return;
-    final String? city = _driver!['city'] as String?;
-    final String vpref = (_driver!['vehicle_pref'] as String?) ?? 'car';
-    if (city == null || city.isEmpty) return;
 
-    _chanCourses = _sb.channel('new_courses_${city}_$vpref')
+    _chanCourses = _sb.channel('new_courses_en_attente')
       ..onPostgresChanges(
         event: PostgresChangeEvent.insert,
         schema: 'public',
         table: 'courses',
         filter: PostgresChangeFilter(
           type: PostgresChangeFilterType.eq,
-          column: 'status',
-          value: 'pending',
+          column: 'statut',
+          value: 'en_attente',
         ),
         callback: (payload) {
           final r = Map<String, dynamic>.from(payload.newRecord);
-          if (r['city'] == city && r['vehicle'] == vpref) {
-            setState(() => _compatibles.insert(0, r));
-          }
+          setState(() => _compatibles.insert(0, r));
         },
       )
       ..subscribe();
@@ -195,14 +223,18 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
           column: 'chauffeur_id',
           value: _chauffeurId,
         ),
-        callback: (_) => _loadActives(),
+        callback: (_) {
+          _loadActives();
+          _loadTodayEarnings();
+        },
       )
       ..subscribe();
   }
 
+  // Offre – garde les noms génériques; ajuste si ta table diffère
   Future<void> _proposerOffre(Map<String, dynamic> demande) async {
     final priceCtrl =
-        TextEditingController(text: (demande['price_estimated'] ?? 0).toString());
+        TextEditingController(text: (demande['prix_gnf'] ?? 0).toString());
     final etaCtrl = TextEditingController(text: '8');
     String? vehLabel;
 
@@ -213,7 +245,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Course: ${demande['depart_label'] ?? '-'} → ${demande['arrivee_label'] ?? '-'}'),
+            Text('Course: ${demande['depart_adresse'] ?? '-'} → ${demande['arrivee_adresse'] ?? '-'}'),
             const SizedBox(height: 12),
             TextField(
               controller: priceCtrl,
@@ -229,8 +261,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
             const SizedBox(height: 8),
             TextField(
               onChanged: (v) => vehLabel = v,
-              decoration:
-                  const InputDecoration(labelText: 'Véhicule (ex: Toyota Corolla)'),
+              decoration: const InputDecoration(labelText: 'Véhicule (ex: Toyota Corolla)'),
             ),
           ],
         ),
@@ -241,32 +272,32 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
       ),
     );
 
-    if (ok != true) return;
-
-    final price = num.tryParse(priceCtrl.text.trim());
-    final eta = int.tryParse(etaCtrl.text.trim());
-    if (price == null || price <= 0 || eta == null || eta <= 0) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Valeurs invalides')));
-      return;
-    }
-
-    try {
-      await _sb.from('offres_course').insert({
-        'course_id': demande['id'],
-        'chauffeur_id': _chauffeurId,
-        'price': price,
-        'eta_min': eta,
-        'vehicle_label': vehLabel,
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Offre envoyée.')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Échec envoi offre: $e')));
+    if (ok == true) {
+      final price = num.tryParse(priceCtrl.text.trim());
+      final eta = int.tryParse(etaCtrl.text.trim());
+      if (price == null || price <= 0 || eta == null || eta <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Valeurs invalides')));
+        return;
+      }
+      try {
+        await _sb.from('offres_course').insert({
+          'course_id': demande['id'],
+          'chauffeur_id': _chauffeurId,
+          // adapte ces noms de colonnes si ton schéma diffère
+          'price': price,
+          'eta_min': eta,
+          'vehicle_label': vehLabel,
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Offre envoyée.')));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Échec envoi offre: $e')));
+      }
     }
   }
 
@@ -278,29 +309,39 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
     Navigator.pushNamed(context, AppRoutes.vtcSuivi, arguments: {'courseId': id});
   }
 
-  // --- Helpers cartes ---
-  double? _toDouble(dynamic v) {
-    if (v == null) return null;
-    if (v is double) return v;
-    if (v is int) return v.toDouble();
-    return double.tryParse(v.toString());
+  // ---------- Helpers géométrie / formats ----------
+  ll.LatLng? _latLngFromPoint(dynamic point) {
+    try {
+      if (point is Map && point['type'] == 'Point') {
+        final coords = point['coordinates'];
+        if (coords is List && coords.length >= 2) {
+          final lon = (coords[0] as num).toDouble();
+          final lat = (coords[1] as num).toDouble();
+          return ll.LatLng(lat, lon);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
-  ll.LatLng? _latLngFrom(dynamic lat, dynamic lng) {
-    final la = _toDouble(lat);
-    final lo = _toDouble(lng);
-    if (la == null || lo == null) return null;
-    return ll.LatLng(la, lo);
+  String _fmtGNF(num v) {
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final remain = s.length - i - 1;
+      buf.write(s[i]);
+      if (remain > 0 && remain % 3 == 0) buf.write(' ');
+    }
+    return buf.toString();
   }
 
   @override
   Widget build(BuildContext context) {
     final th = Theme.of(context);
 
-    // Marqueurs sur carte (si une course active existe)
     final firstActive = _actives.isNotEmpty ? _actives.first : null;
-    final d = _latLngFrom(firstActive?['depart_lat'], firstActive?['depart_lng']);
-    final a = _latLngFrom(firstActive?['arrivee_lat'], firstActive?['arrivee_lng']);
+    final d = _latLngFromPoint(firstActive?['depart_point']);
+    final a = _latLngFromPoint(firstActive?['arrivee_point']);
     final center = d ?? a ?? const ll.LatLng(9.6412, -13.5784); // Conakry
 
     final markers = <Marker>[
@@ -309,14 +350,14 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
           point: d,
           width: 40,
           height: 40,
-          child: const Icon(Icons.location_pin, size: 32, color: Colors.red),
+          child: const Icon(Icons.location_pin, size: 32, color: kRed),
         ),
       if (a != null)
         Marker(
           point: a,
           width: 40,
           height: 40,
-          child: const Icon(Icons.flag, size: 28, color: Colors.green),
+          child: const Icon(Icons.flag, size: 28, color: kGreen),
         ),
     ];
 
@@ -324,7 +365,6 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
       key: _scaffoldKey,
       backgroundColor: Colors.white,
 
-      // — Drawer: toutes les actions sont ici —
       drawer: Drawer(
         child: SafeArea(
           child: ListView(
@@ -381,14 +421,14 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
 
       body: Stack(
         children: [
-          // --- Carte OSM plein écran ---
+          // Carte OSM
           Positioned.fill(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : FlutterMap(
                     options: MapOptions(
                       initialCenter: center,
-                      initialZoom: 13,
+                      initialZoom: 12.0,
                       interactionOptions: const InteractionOptions(
                         flags: ~InteractiveFlag.rotate,
                       ),
@@ -397,58 +437,32 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
                       TileLayer(
                         urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
-                        userAgentPackageName: 'com.example.ma_guinee',
+                        userAgentPackageName: 'com.ma_guinee.app',
+                        retinaMode: true,
                       ),
                       MarkerLayer(markers: markers),
                     ],
                   ),
           ),
 
-          // --- Bouton menu (hamburger) ---
+          // Top bar: menu + gains
           Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
+            top: MediaQuery.of(context).padding.top + 8,
             left: 12,
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              elevation: 2,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                child: const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Icon(Icons.menu),
-                ),
-              ),
-            ),
-          ),
-
-          // --- Statut en haut à droite ---
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
             right: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: _isOnline ? Colors.green.shade600 : Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(.1), blurRadius: 10)],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_isOnline ? Icons.wifi_tethering : Icons.wifi_tethering_off,
-                      color: Colors.white, size: 16),
-                  const SizedBox(width: 6),
-                  Text(_isOnline ? 'En ligne' : 'Hors ligne',
-                      style:
-                          const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                ],
-              ),
+            child: Row(
+              children: [
+                _glassButton(
+                  child: const Icon(Icons.menu),
+                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                ),
+                const Spacer(),
+                _earningsPill(_todayEarnings),
+              ],
             ),
           ),
 
-          // --- Panneau coulissant façon Uber ---
+          // Panneau coulissant
           DraggableScrollableSheet(
             initialChildSize: 0.18,
             minChildSize: 0.14,
@@ -463,7 +477,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
+                        color: Colors.black.withOpacity(.10),
                         blurRadius: 20,
                         offset: const Offset(0, -6),
                       ),
@@ -472,20 +486,31 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
                   child: Column(
                     children: [
                       const SizedBox(height: 8),
-                      // poignée « trois traits »
+                      // poignée néon
                       Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 6),
-                        child: Column(
-                          children: [
-                            _barHandle(),
-                            const SizedBox(height: 3),
-                            _barHandle(width: 36),
-                            const SizedBox(height: 3),
-                            _barHandle(width: 26),
-                          ],
+                        padding: const EdgeInsets.only(top: 10, bottom: 10),
+                        child: Container(
+                          width: 82,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(50),
+                            gradient: const LinearGradient(
+                              colors: [kRed, kYellow, kGreen],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: kGreen.withOpacity(.35),
+                                blurRadius: 16,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      // Statut + switch compact
+
+                      // Statut + switch
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(
@@ -500,16 +525,12 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
                                 style: th.textTheme.bodyMedium,
                               ),
                             ),
-                            Switch(
-                              value: _isOnline,
-                              onChanged: (v) => _toggleOnline(v),
-                            ),
+                            Switch(value: _isOnline, onChanged: (v) => _toggleOnline(v)),
                           ],
                         ),
                       ),
                       const Divider(height: 12),
 
-                      // Liste scrollable
                       Expanded(
                         child: ListView(
                           controller: controller,
@@ -517,76 +538,58 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
                           children: [
                             if ((_driver?['is_verified'] as bool?) != true)
                               Card(
-                                color: Colors.amber.withOpacity(.15),
                                 elevation: 0,
+                                color: Colors.amber.withOpacity(.15),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                                 child: const ListTile(
                                   leading: Icon(Icons.verified_user_outlined),
                                   title: Text('Vérification en attente'),
-                                  subtitle:
-                                      Text("Votre compte chauffeur sera revu par l'équipe."),
+                                  subtitle: Text("Votre compte chauffeur sera revu par l'équipe."),
                                 ),
                               ),
                             const SizedBox(height: 8),
 
                             Text('Demandes compatibles',
-                                style: th.textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                                style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                             const SizedBox(height: 8),
-
                             if (_compatibles.isEmpty)
                               const Card(
-                                  child:
-                                      ListTile(title: Text('Aucune demande pour l’instant')))
+                                elevation: 0,
+                                child: ListTile(title: Text('Aucune demande pour l’instant')),
+                              )
                             else
-                              ..._compatibles.map(
-                                (d) => Card(
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    side: BorderSide(
-                                        color: th.dividerColor.withOpacity(.15)),
-                                  ),
-                                  child: ListTile(
-                                    title: Text(
-                                        '${d['depart_label'] ?? '-'} → ${d['arrivee_label'] ?? '-'}'),
-                                    subtitle: Text(
-                                        '~${(d['distance_km'] ?? 0)} km • Estimé: ${d['price_estimated'] ?? '-'} GNF'),
-                                    trailing: ElevatedButton(
-                                      onPressed: () => _proposerOffre(d),
-                                      child: const Text('Proposer'),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              ..._compatibles.map((d) {
+                                final km = ((d['distance_metres'] ?? 0) as num).toDouble() / 1000.0;
+                                final prix = d['prix_gnf'];
+                                return _dCard(
+                                  title:
+                                      '${d['depart_adresse'] ?? '-'} → ${d['arrivee_adresse'] ?? '-'}',
+                                  subtitle:
+                                      '~${km.toStringAsFixed(2)} km • Estimé: ${prix != null ? _fmtGNF((prix as num)) : '-'} GNF',
+                                  actionLabel: 'Proposer',
+                                  onAction: () => _proposerOffre(d),
+                                );
+                              }),
 
                             const SizedBox(height: 14),
                             Text('Mes courses actives',
-                                style: th.textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                                style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                             const SizedBox(height: 8),
-
                             if (_actives.isEmpty)
-                              const Card(child: ListTile(title: Text('Aucune course active')))
+                              const Card(
+                                elevation: 0,
+                                child: ListTile(title: Text('Aucune course active')),
+                              )
                             else
-                              ..._actives.map(
-                                (c) => Card(
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    side: BorderSide(
-                                        color: th.dividerColor.withOpacity(.15)),
-                                  ),
-                                  child: ListTile(
-                                    title: Text(
-                                        '${c['depart_label'] ?? '-'} → ${c['arrivee_label'] ?? '-'}'),
-                                    subtitle: Text('Statut: ${c['status']}'),
-                                    trailing: ElevatedButton(
-                                      onPressed: () => _openSuivi(c),
-                                      child: const Text('Suivi'),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              ..._actives.map((c) => _dCard(
+                                    title:
+                                        '${c['depart_adresse'] ?? '-'} → ${c['arrivee_adresse'] ?? '-'}',
+                                    subtitle: 'Statut: ${c['statut']}',
+                                    actionLabel: 'Suivi',
+                                    onAction: () => _openSuivi(c),
+                                  )),
                             const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.center,
@@ -606,24 +609,58 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
             },
           ),
 
-          // --- Gros bouton Passer en ligne / Hors ligne ---
+          // Bouton "GO" (toggle en ligne)
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: 24,
-            child: SafeArea(
-              top: false,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  backgroundColor: _isOnline ? Colors.redAccent : Colors.green.shade600,
-                ),
-                onPressed: () => _toggleOnline(!_isOnline),
-                child: Text(
-                  _isOnline ? 'Passer hors ligne' : 'Passer en ligne',
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+            bottom: 128,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () => _toggleOnline(!_isOnline),
+                child: AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, child) {
+                    final t = _pulse.value; // 0..1
+                    final color = _isOnline ? kGoActive : kGoIdle;
+                    final scale = 1.0 + (t * 0.04);
+                    final blur = 18 + (t * 14);
+                    final spread = 4 + (t * 4);
+                    return Transform.scale(
+                      scale: scale,
+                      child: Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: _isOnline
+                                ? [kGoActive, Colors.deepOrange]
+                                : [kGoIdle, Colors.lightBlueAccent],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: color.withOpacity(.55),
+                              blurRadius: blur,
+                              spreadRadius: spread,
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'GO',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                            shadows: [Shadow(color: Colors.white, blurRadius: 18)],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -633,13 +670,70 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage> {
     );
   }
 
-  Widget _barHandle({double width = 48}) {
-    return Container(
-      width: width,
-      height: 4,
-      decoration: BoxDecoration(
-        color: Colors.black12,
-        borderRadius: BorderRadius.circular(99),
+  // ---------- UI helpers ----------
+  Widget _dCard({
+    required String title,
+    required String subtitle,
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.withOpacity(.15)),
+      ),
+      child: ListTile(
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: ElevatedButton(onPressed: onAction, child: Text(actionLabel)),
+      ),
+    );
+  }
+
+  Widget _earningsPill(num gnf) {
+    final text = '${_fmtGNF(gnf)} GNF';
+    return _glassCapsule(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+    );
+  }
+
+  Widget _glassButton({required Widget child, required VoidCallback onTap}) {
+    return _glassCapsule(
+      padding: const EdgeInsets.all(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _glassCapsule({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.75),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(.6), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.08),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: child,
+        ),
       ),
     );
   }
