@@ -18,17 +18,22 @@ dependencies:
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0
+  # Optionnel si tu veux proposer Google Maps (mobile + web) en plus d’OSM
+  google_maps_flutter: ^2.7.0
+  google_maps_flutter_web: ^0.5.7
+
+  # 🌐 Requêtes HTTP (OSRM + Nominatim)
+  http: ^1.2.1
 
   # 🗄️ Supabase / état
   supabase_flutter: ^2.3.4
-  realtime_client: ^2.5.1
   provider: ^6.1.2
 
   # 🔔 Notifications (locale + push)
   firebase_core: ^3.3.0
-  firebase_core_web: ^2.16.0
   firebase_messaging: ^15.1.0
   flutter_local_notifications: ^17.2.1
+  timezone: ^0.9.2
 
   # 🔗 Partage & ouverture externe
   share_plus: ^10.0.0
@@ -51,6 +56,7 @@ dependencies:
   flutter_svg: ^2.0.10+1
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1
+  intl: ^0.19.0
 
   # 🎥 Vidéo
   chewie: ^1.7.1

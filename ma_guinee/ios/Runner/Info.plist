@@ -45,11 +45,18 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	
-	<!-- 📍 Ajout des permissions pour la géolocalisation -->
+
+	<!-- 🔑 Clé Google Maps iOS (google_maps_flutter) -->
+	<key>GMSApiKey</key>
+	<string>VOTRE_CLE_API_IOS</string>
+
+	<!-- 📍 Permissions localisation -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cette app a besoin de votre position pour localiser l'établissement.</string>
+	<string>Cette app utilise votre position pour trouver des chauffeurs proches.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Votre position est utilisée pour la géolocalisation précise des établissements.</string>
+	<string>Votre position peut être utilisée en arrière-plan pour améliorer le suivi de course.</string>
+	<!-- (Compatibilité iOS plus anciens) -->
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Votre position est utilisée pour la géolocalisation précise lors des courses.</string>
 </dict>
 </plist>

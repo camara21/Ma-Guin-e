@@ -52,7 +52,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Écoute la table notifications et filtre côté client (pas de .eq()).
+  /// Écoute la table notifications et filtre côté client
   void _ecouterNotifications() {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
@@ -67,7 +67,7 @@ class _HomePageState extends State<HomePage> {
 
       final nonLues = rows.where((n) {
         final uid = n['utilisateur_id']?.toString();
-        final lu = n['lu'] == true; // true si déjà lu
+        final lu = n['lu'] == true;
         return uid == user.id && !lu;
       }).length;
 
@@ -75,12 +75,12 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// Charge la valeur initiale (notifications non lues + messages non lus).
+  /// Charge la valeur initiale (notifications non lues + messages non lus)
   Future<void> _chargerMessagesNonLus() async {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
-    // Valeur initiale pour le badge notifications
+    // badge notifications
     try {
       final rows = await Supabase.instance.client
           .from('notifications')
@@ -96,16 +96,16 @@ class _HomePageState extends State<HomePage> {
         setState(() => _notificationsNonLues = nonLues);
       }
     } catch (_) {
-      // Optionnel: log/ignore
+      // ignore
     }
 
-    // Compteur de messages non lus (via ton service)
+    // messages non lus
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
   }
 
-  // Carte d’icône standard (utilisée par toutes les tuiles)
+  // Carte d’icône standard
   Widget buildIcon(IconData iconData, Color color) {
     return Container(
       decoration: BoxDecoration(
@@ -124,71 +124,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ===== Icône personnalisée Langni (88x88) avec badge “Bientôt” =====
-  Widget _langniIcon() {
+  /// Icône personnalisée Soneya
+  Widget _soneyaIcon() {
     final br = BorderRadius.circular(14);
     return Container(
       width: 88,
       height: 88,
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: br,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF06C167), Color(0xFF00A884)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withOpacity(0.10),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Stack(
-        fit: StackFit.expand,
+      child: const Stack(
         children: [
-          // bandes rouge / jaune / vert
-          ClipRRect(
-            borderRadius: br,
-            child: Row(
-              children: const [
-                Expanded(child: ColoredBox(color: Color(0xFFCE1126))), // rouge
-                Expanded(child: ColoredBox(color: Color(0xFFFCD116))), // jaune
-                Expanded(child: ColoredBox(color: Color(0xFF009460))), // vert
-              ],
-            ),
-          ),
-          // bulle discussion au centre
-          Center(
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.92),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.forum_rounded, size: 26, color: Color(0xFF113CFC)),
-            ),
-          ),
-          // badge "Bientôt"
+          Center(child: Icon(Icons.two_wheeler, color: Colors.white, size: 36)),
           Positioned(
-            top: 6,
-            right: 6,
-            child: _soonBadge(),
+            right: 10,
+            bottom: 10,
+            child: Icon(Icons.directions_car, color: Colors.white, size: 22),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _soonBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFF113CFC),
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
-      ),
-      child: const Text(
-        'Bientôt',
-        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -231,7 +196,7 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
-          // Icône Notifications avec badge
+          // Notifications + badge
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 4),
             child: Stack(
@@ -264,7 +229,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          // Icône Aide
+          // Aide
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 12),
             child: IconButton(
@@ -279,7 +244,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔶 Bannière
+            // Bannière
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -340,7 +305,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // 🧩 Grille des services
+            // Grille
             GridView.count(
               crossAxisCount: crossAxisCount,
               childAspectRatio: childAspectRatio,
@@ -360,14 +325,18 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
                 _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
 
-                // 🔹 Langni (bientôt)
-                      _serviceTileFuture(
-                       Icons.groups_rounded, // Icône plus professionnelle
-                      "Langni",
-                       const Color(0xFF113CFC), // Couleur réseau social (bleu)
-                       "Langni, le réseau social guinéen, arrive bientôt. Conçu pour et par les Guinéens.",
-                      ),
-
+                // 🔹 Soneya -> Portail VTC
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.vtcHome),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _soneyaIcon(),
+                      const SizedBox(height: 6),
+                      const Text("Soneya", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
 
                 // 🔹 Billetterie (bientôt)
                 _serviceTileFuture(
@@ -385,7 +354,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service disponible (navigue vers une route existante)
+  /// Tuile d'un service disponible
   Widget _serviceTile(IconData icon, String label, String route, Color color) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
@@ -400,7 +369,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service futur (affiche uniquement un message)
+  /// Tuile d'un service futur
   Widget _serviceTileFuture(IconData icon, String label, Color color, String message) {
     return GestureDetector(
       onTap: () {
@@ -429,7 +398,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service futur avec icône personnalisée (widget)
+  /// Tuile d'un service futur avec icône personnalisée
   Widget _serviceTileFutureCustom(Widget iconWidget, String label, String message) {
     return GestureDetector(
       onTap: () {
