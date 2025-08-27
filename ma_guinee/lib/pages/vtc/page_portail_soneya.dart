@@ -1,180 +1,116 @@
 // lib/pages/vtc/page_portail_soneya.dart
-import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../routes.dart';
 
 class PagePortailSoneya extends StatefulWidget {
   const PagePortailSoneya({super.key});
-
   @override
   State<PagePortailSoneya> createState() => _PagePortailSoneyaState();
 }
 
 class _PagePortailSoneyaState extends State<PagePortailSoneya>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _sb = Supabase.instance.client;
 
-  bool _chargement = true;
-  bool _aProfilChauffeur = false; // présence dans `chauffeurs`
-  String _onglet = 'client'; // 'client' | 'chauffeur' (sélecteur UI)
-  bool _didAutoRedirect = false; // évite la double navigation
+  bool _loading = true;
+  bool _hasDriverProfile = false;
 
-  late final AnimationController _pulseCtrl;
+  late final AnimationController _rotCtrl;   // halo rotatif
+  late final AnimationController _pulseCtrl; // bandeau néon
   late final Animation<double> _pulse;
-
-  // Palette Guinée
-  static const kRed = Color(0xFFE73B2E);
-  static const kYellow = Color(0xFFFFD400);
-  static const kGreen = Color(0xFF1BAA5C);
 
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
+    _rotCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
+      ..repeat(reverse: true);
     _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
-
-    // Lance le chargement + redirection auto
-    _chargerEtat();
+    _loadState();
   }
 
   @override
   void dispose() {
+    _rotCtrl.dispose();
     _pulseCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _chargerEtat() async {
+  Future<void> _loadState() async {
     final u = _sb.auth.currentUser;
-
-    // Si pas connecté -> login
     if (u == null) {
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Navigator.pushReplacementNamed(context, AppRoutes.login);
-        });
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.login);
+      });
       return;
     }
-
     try {
-      // Vérifie s'il a déjà un profil chauffeur
-      final ch = await _sb
-          .from('chauffeurs')
-          .select('id, user_id')
-          .eq('user_id', u.id)
-          .maybeSingle();
-
-      final hasDriver = ch != null;
-
+      final row = await _sb.from('chauffeurs').select('id').eq('user_id', u.id).maybeSingle();
       if (!mounted) return;
       setState(() {
-        _aProfilChauffeur = hasDriver;
-        _onglet = hasDriver ? 'chauffeur' : 'client';
-        _chargement = false;
+        _hasDriverProfile = row != null;
+        _loading = false;
       });
-
-      // Redirection AUTO côté chauffeur (création silencieuse si besoin)
-      _redirectAutoChauffeur();
     } catch (_) {
-      if (mounted) setState(() => _chargement = false);
-      // Même en cas d'erreur, tente la redirection chauffeur
-      _redirectAutoChauffeur();
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _redirectAutoChauffeur() {
-    if (_didAutoRedirect || !mounted) return;
-    _didAutoRedirect = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _allerChauffeur();
-    });
-  }
-
-  Future<void> _allerClient() async {
+  Future<void> _goClient() async {
+    final u = _sb.auth.currentUser;
+    if (u != null) {
+      try { await _sb.from('chauffeurs').update({'is_online': false}).eq('user_id', u.id); } catch (_) {}
+    }
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, AppRoutes.soneyaClient);
   }
 
-  Future<void> _allerChauffeur() async {
+  Future<void> _goChauffeur() async {
     final u = _sb.auth.currentUser;
     if (u == null) {
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, AppRoutes.login);
-      }
+      if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.login);
       return;
     }
     try {
-      // Crée/assure un profil chauffeur minimal (silencieux si existe déjà)
-      await _sb.from('chauffeurs').upsert(
-            {'user_id': u.id, 'is_online': false},
-            onConflict: 'user_id',
-          );
-    } catch (_) {
-      // On ignore pour ne pas bloquer la navigation
-    }
+      await _sb.from('chauffeurs').upsert({'user_id': u.id, 'is_online': false}, onConflict: 'user_id');
+    } catch (_) {}
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, AppRoutes.soneyaChauffeur);
   }
 
-  // Optionnel : "désactiver" le mode chauffeur sans supprimer la ligne
-  Future<void> _mettreHorsLigneChauffeur() async {
-    final u = _sb.auth.currentUser;
-    if (u == null) return;
-    try {
-      await _sb
-          .from('chauffeurs')
-          .update({'is_online': false})
-          .eq('user_id', u.id);
-    } catch (_) {}
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_chargement) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final pad = MediaQuery.of(context).padding;
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(title: const Text('Soneya'), centerTitle: true, elevation: 0),
       body: Stack(
         children: [
-          // Bandeau néon Guinée en fond
+          // Bandeau néon (haut)
           Positioned(
-            top: -120,
-            left: -60,
-            right: -60,
+            top: -140, left: -80, right: -80,
             child: AnimatedBuilder(
               animation: _pulse,
               builder: (_, __) {
-                final t = 0.75 + _pulse.value * 0.25;
+                final t = 0.7 + _pulse.value * 0.3;
                 return Container(
-                  height: 280,
+                  height: 300,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        kRed.withOpacity(.75),
-                        kYellow.withOpacity(.75),
-                        kGreen.withOpacity(.75)
+                        const Color(0xFFE73B2E).withOpacity(.70),
+                        const Color(0xFFFFD400).withOpacity(.70),
+                        const Color(0xFF1BAA5C).withOpacity(.70),
                       ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      stops: const [0.0, 0.5, 1.0],
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
                     ),
                     boxShadow: [
-                      BoxShadow(
-                        color: kGreen.withOpacity(.25 * t),
-                        blurRadius: 36 * t,
-                        spreadRadius: 6 * t,
-                      ),
+                      BoxShadow(color: const Color(0xFF1BAA5C).withOpacity(.20 * t), blurRadius: 40 * t, spreadRadius: 6 * t),
                     ],
-                    borderRadius: BorderRadius.circular(42),
+                    borderRadius: BorderRadius.circular(48),
                   ),
                 );
               },
@@ -184,29 +120,51 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
           // Contenu
           Positioned.fill(
             child: SafeArea(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(16, pad.top + 12, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _enTeteFuturiste(context),
-                    const SizedBox(height: 16),
-                    _roleSwitcher(context),
-                    const SizedBox(height: 16),
-                    if (_onglet == 'client')
-                      _blocClient(context)
-                    else
-                      _blocChauffeur(context),
-                    const SizedBox(height: 20),
-                    Center(
-                      child: Text(
-                        "Astuce : vous pouvez changer d’espace à tout moment.",
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.center,
-                      ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  Text('Choisissez votre espace',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Text('Transport simple et rapide.', style: Theme.of(context).textTheme.bodyMedium),
+                  const SizedBox(height: 16),
+
+                  _RoleCard(
+                    rotCtrl: _rotCtrl,
+                    haloColors: const [Color(0x330BA360), Color(0x333CBA92), Color(0x330BA360)],
+                    icon: Icons.phone_android,
+                    title: 'Je suis client',
+                    subtitle: 'Réserver, suivre, payer.',
+                    bullets: const ['Réservation instantanée', 'Suivi en temps réel', 'Paiement sécurisé'],
+                    buttonLabel: 'Entrer côté Client',
+                    buttonGradient: const LinearGradient(colors: [Color(0xFF0BA360), Color(0xFF3CBA92)]),
+                    onPressed: _goClient,
+                    trailing: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [Icon(Icons.two_wheeler), SizedBox(width: 8), Icon(Icons.directions_car)],
                     ),
-                  ],
-                ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _RoleCard(
+                    rotCtrl: _rotCtrl,
+                    haloColors: const [Color(0x33E53935), Color(0x33FFA726), Color(0x33E53935)],
+                    icon: Icons.drive_eta_rounded,
+                    title: 'Je suis chauffeur',
+                    subtitle: _hasDriverProfile
+                        ? 'Recevoir des demandes et suivre vos gains.'
+                        : 'Activez votre espace chauffeur.',
+                    bullets: const ['Demandes proches', 'Navigation intégrée', 'Gains & portefeuille'],
+                    buttonLabel: _hasDriverProfile ? 'Entrer côté Chauffeur' : 'Activer & entrer',
+                    buttonGradient: const LinearGradient(colors: [Color(0xFFE53935), Color(0xFFFFA726)]),
+                    onPressed: _goChauffeur,
+                    trailing: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [Icon(Icons.navigation_rounded), SizedBox(width: 8), Icon(Icons.verified)],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -214,305 +172,155 @@ class _PagePortailSoneyaState extends State<PagePortailSoneya>
       ),
     );
   }
+}
 
-  // ——— UI ———
+// --- Cartes et éléments UI ---
 
-  Widget _roleSwitcher(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.78),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withOpacity(.5), width: 0.8),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(.06),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4)),
-            ],
-          ),
-          child: Row(
-            children: [
-              _pillSwitch(
-                label: 'Espace Client',
-                selected: _onglet == 'client',
-                onTap: () async {
-                  await _mettreHorsLigneChauffeur(); // sécurité douce
-                  setState(() => _onglet = 'client');
-                  _allerClient();
-                },
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0BA360), Color(0xFF3CBA92)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                icon: Icons.person_pin_circle,
-              ),
-              const SizedBox(width: 8),
-              _pillSwitch(
-                label: 'Espace Chauffeur',
-                selected: _onglet == 'chauffeur',
-                onTap: () async {
-                  setState(() => _onglet = 'chauffeur');
-                  await _allerChauffeur();
-                },
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE53935), Color(0xFFFFA726)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                icon: Icons.drive_eta_rounded,
-                disabled: false,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+class _RoleCard extends StatelessWidget {
+  final AnimationController rotCtrl;
+  final List<Color> haloColors;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<String> bullets;
+  final String buttonLabel;
+  final Gradient buttonGradient;
+  final VoidCallback onPressed;
+  final Widget trailing;
 
-  Widget _pillSwitch({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    required LinearGradient gradient,
-    required IconData icon,
-    bool disabled = false,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: disabled ? null : onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: selected ? gradient : null,
-            color: selected ? null : Colors.white,
-            border: Border.all(color: Colors.black12),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(.12),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6))
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: selected ? Colors.white : Colors.black87),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? Colors.white : Colors.black87,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  const _RoleCard({
+    required this.rotCtrl,
+    required this.haloColors,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.bullets,
+    required this.buttonLabel,
+    required this.buttonGradient,
+    required this.onPressed,
+    required this.trailing,
+    super.key,
+  });
 
-  Widget _blocClient(BuildContext context) {
-    return _carteFuturiste(
-      leftIcon: Icons.phone_android,
-      title: 'Je suis client',
-      subtitle: "Réserver, suivre l’arrivée, payer, noter.",
-      actionLabel: 'Entrer côté Client',
-      onAction: _allerClient,
-      gradient: const LinearGradient(
-        colors: [Color(0xFF0BA360), Color(0xFF3CBA92)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      trailingIcons: const [
-        Icon(Icons.two_wheeler, color: Colors.black87, size: 36),
-        SizedBox(width: 8),
-        Icon(Icons.directions_car, color: Colors.black87, size: 22),
-      ],
-    );
-  }
-
-  Widget _blocChauffeur(BuildContext context) {
-    return _carteFuturiste(
-      leftIcon: Icons.drive_eta_rounded,
-      title: 'Je suis chauffeur',
-      subtitle: _aProfilChauffeur
-          ? 'Recevoir des demandes, naviguer, consulter vos gains.'
-          : 'Active ton espace chauffeur (création rapide).',
-      actionLabel:
-          _aProfilChauffeur ? 'Entrer côté Chauffeur' : 'Activer & entrer',
-      onAction: _allerChauffeur,
-      gradient: const LinearGradient(
-        colors: [Color(0xFFE53935), Color(0xFFFFA726)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      trailingIcons: const [
-        Icon(Icons.navigation_rounded, color: Colors.black87, size: 28),
-        SizedBox(width: 8),
-        Icon(Icons.verified, color: Colors.black87, size: 22),
-      ],
-    );
-  }
-
-  Widget _carteFuturiste({
-    required IconData leftIcon,
-    required String title,
-    required String subtitle,
-    required String actionLabel,
-    required VoidCallback onAction,
-    required LinearGradient gradient,
-    required List<Widget> trailingIcons,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.75),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withOpacity(.6), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.08),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _RotatingHaloIcon(controller: rotCtrl, colors: haloColors, icon: icon),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text(subtitle),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: bullets.map((b) => _Chip(b)).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  _PrimaryGradientButton(label: buttonLabel, onTap: onPressed, gradient: buttonGradient),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              ShaderMask(
-                shaderCallback: (r) => gradient.createShader(r),
-                child: Icon(leftIcon, size: 34, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 6),
-                    Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 10),
-                    _ButtonNeon(
-                      label: actionLabel,
-                      icon: Icons.arrow_forward,
-                      onTap: onAction,
-                      gradient: gradient,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              ...trailingIcons,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _enTeteFuturiste(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          height: 160,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.72),
-            border: Border.all(color: Colors.white.withOpacity(.6), width: 1.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.10),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: const Stack(
-            children: [
-              Positioned(
-                  left: 18,
-                  top: 18,
-                  child: Text('Soneya',
-                      style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .2))),
-              Positioned(
-                  left: 18,
-                  bottom: 16,
-                  right: 120,
-                  child: Text('Transport simple et rapide.\nChoisissez votre espace.',
-                      style: TextStyle(fontSize: 14))),
-              Positioned(right: 18, bottom: 16, child: Icon(Icons.two_wheeler, size: 48)),
-              Positioned(right: 68, bottom: 16, child: Icon(Icons.directions_car, size: 28)),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            trailing,
+          ],
         ),
       ),
     );
   }
 }
 
-class _ButtonNeon extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final LinearGradient gradient;
+class _Chip extends StatelessWidget {
+  final String text;
+  const _Chip(this.text, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, size: 14, color: Colors.black54),
+          const SizedBox(width: 6),
+          Text(text, style: Theme.of(context).textTheme.labelMedium),
+        ],
+      ),
+    );
+  }
+}
 
-  const _ButtonNeon({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    required this.gradient,
-  });
+class _RotatingHaloIcon extends StatelessWidget {
+  final AnimationController controller;
+  final List<Color> colors;
+  final IconData icon;
+  const _RotatingHaloIcon({required this.controller, required this.colors, required this.icon, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const double size = 44;
+    const double ring = 54;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (_, __) {
+        final angle = controller.value * 2 * math.pi;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.rotate(
+              angle: angle,
+              child: Container(
+                width: ring, height: ring,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SweepGradient(colors: colors, stops: const [0.0, 0.6, 1.0]),
+                ),
+              ),
+            ),
+            Container(width: ring - 8, height: ring - 8, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+            Container(
+              width: size, height: size,
+              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.black12)),
+              child: Icon(icon, size: 24),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PrimaryGradientButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final Gradient gradient;
+  const _PrimaryGradientButton({required this.label, required this.onTap, required this.gradient, super.key});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: gradient,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(.10),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
+      onTap: onTap, borderRadius: BorderRadius.circular(12),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: gradient),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 8),
-            Icon(icon, size: 18, color: Colors.white),
+          children: const [
+            // texte à gauche pour les langues RTL auto gérées
           ],
         ),
       ),

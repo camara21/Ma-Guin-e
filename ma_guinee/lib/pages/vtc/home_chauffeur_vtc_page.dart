@@ -1,3 +1,4 @@
+// lib/pages/vtc/home_chauffeur_vtc_page.dart
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,7 +8,6 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../../models/utilisateur_model.dart';
 import '../../routes.dart';
 
-/// Accueil VTC CHAUFFEUR – adapté au schéma FR (courses.*)
 class HomeChauffeurVtcPage extends StatefulWidget {
   final UtilisateurModel currentUser;
   const HomeChauffeurVtcPage({super.key, required this.currentUser});
@@ -21,7 +21,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
   final _sb = Supabase.instance.client;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  Map<String, dynamic>? _driver; // ligne 'chauffeurs'
+  Map<String, dynamic>? _driver;
   List<Map<String, dynamic>> _compatibles = [];
   List<Map<String, dynamic>> _actives = [];
   bool _loading = true;
@@ -31,15 +31,27 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
   RealtimeChannel? _chanCourses;
   RealtimeChannel? _chanMyCourses;
 
-  // Palette
+  // Couleurs
   static const kRed = Color(0xFFE73B2E);
   static const kYellow = Color(0xFFFFD400);
   static const kGreen = Color(0xFF1BAA5C);
-  static const kGoIdle = Color(0xFF2979FF);
-  static const kGoActive = Color(0xFFE53935);
 
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulse;
+  // Bouton bleu compact
+  static const kBtnBlue1 = Color(0xFF3EA2FF);
+  static const kBtnBlue2 = Color(0xFF1E59FF);
+  static const kBtnShadow = Color(0x801B2A4A);
+
+  // Panneau 2 crans (12% ↔ 40%)
+  final ValueNotifier<double> _panelT = ValueNotifier(0);
+  static const double _panelMin = 0.12;
+  static const double _panelMax = 0.40;
+
+  // (facultatif) anim utilisée ailleurs si besoin
+  late final AnimationController _pulseCtrl =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
+        ..repeat(reverse: true);
+  late final Animation<double> _pulse =
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
 
   String get _chauffeurId {
     final v = (_driver?['id'] ?? _driver?['user_id']) as String?;
@@ -47,34 +59,27 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
   }
 
   @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-    _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
-    _bootstrap();
-  }
-
-  @override
   void dispose() {
     _chanCourses?.unsubscribe();
     _chanMyCourses?.unsubscribe();
     _pulseCtrl.dispose();
+    _panelT.dispose();
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  // ---------- chargements ----------
   Future<void> _bootstrap() async {
     setState(() => _loading = true);
     try {
       await _loadDriver();
       if (!mounted || _driver == null) return;
-      await Future.wait([
-        _loadCompatibles(reset: true),
-        _loadActives(),
-        _loadTodayEarnings(),
-      ]);
+      await Future.wait([_loadCompatibles(reset: true), _loadActives(), _loadTodayEarnings()]);
       _subscribeStreams();
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -99,17 +104,16 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur profil chauffeur: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur profil chauffeur: $e')),
+      );
     }
   }
 
-  // Somme des prix des courses déposées aujourd’hui
   Future<void> _loadTodayEarnings() async {
     try {
       final today = DateTime.now().toUtc();
       final dayStartIso = DateTime.utc(today.year, today.month, today.day).toIso8601String();
-
       final resp = await _sb
           .from('courses')
           .select('prix_gnf, depose_a, chauffeur_id, statut')
@@ -117,7 +121,6 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
           .not('depose_a', 'is', null)
           .gte('depose_a', dayStartIso)
           .limit(500);
-
       num sum = 0;
       for (final e in (resp as List)) {
         final v = e['prix_gnf'];
@@ -129,7 +132,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
       }
       if (!mounted) return;
       setState(() => _todayEarnings = sum);
-    } catch (_) {/* silencieux */}
+    } catch (_) {}
   }
 
   Future<void> _toggleOnline(bool v) async {
@@ -138,14 +141,15 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
       await _sb.from('chauffeurs').update({'is_online': v}).eq('id', _chauffeurId);
       if (!mounted) return;
       setState(() => _isOnline = v);
+      if (v) _panelT.value = 1.0; // ouvrir le bandeau en passant en ligne
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Échec mise en ligne: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Échec mise en ligne: $e')),
+      );
     }
   }
 
-  // Demandes compatibles = toutes en attente (tu peux ajouter un filtre géographique plus tard)
   Future<void> _loadCompatibles({bool reset = false}) async {
     if (_driver == null) return;
     if (reset) _compatibles = [];
@@ -156,18 +160,17 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
           .eq('statut', 'en_attente')
           .order('demande_a', ascending: false)
           .limit(30);
-
       if (!mounted) return;
       _compatibles = (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur chargement demandes: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement demandes: $e')),
+      );
     }
   }
 
-  // Courses actives du chauffeur = statut non terminé/annulé
   Future<void> _loadActives() async {
     if (_driver == null) return;
     try {
@@ -178,22 +181,20 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
           .eq('chauffeur_id', me)
           .not('statut', 'in', '("terminee","annulee")')
           .order('demande_a', ascending: false);
-
       if (!mounted) return;
       _actives = (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur chargement courses actives: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement courses actives: $e')),
+      );
     }
   }
 
-  // Temps réel: nouvelles demandes en attente
   void _subscribeStreams() {
     _chanCourses?.unsubscribe();
     _chanMyCourses?.unsubscribe();
-
     if (_driver == null) return;
 
     _chanCourses = _sb.channel('new_courses_en_attente')
@@ -210,8 +211,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
           final r = Map<String, dynamic>.from(payload.newRecord);
           setState(() => _compatibles.insert(0, r));
         },
-      )
-      ..subscribe();
+      ).subscribe();
 
     _chanMyCourses = _sb.channel('my_courses_$_chauffeurId')
       ..onPostgresChanges(
@@ -227,11 +227,9 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
           _loadActives();
           _loadTodayEarnings();
         },
-      )
-      ..subscribe();
+      ).subscribe();
   }
 
-  // Offre – garde les noms génériques; ajuste si ta table diffère
   Future<void> _proposerOffre(Map<String, dynamic> demande) async {
     final priceCtrl =
         TextEditingController(text: (demande['prix_gnf'] ?? 0).toString());
@@ -285,7 +283,6 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
         await _sb.from('offres_course').insert({
           'course_id': demande['id'],
           'chauffeur_id': _chauffeurId,
-          // adapte ces noms de colonnes si ton schéma diffère
           'price': price,
           'eta_min': eta,
           'vehicle_label': vehLabel,
@@ -309,7 +306,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
     Navigator.pushNamed(context, AppRoutes.vtcSuivi, arguments: {'courseId': id});
   }
 
-  // ---------- Helpers géométrie / formats ----------
+  // --------- helpers ---------
   ll.LatLng? _latLngFromPoint(dynamic point) {
     try {
       if (point is Map && point['type'] == 'Point') {
@@ -326,15 +323,16 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
 
   String _fmtGNF(num v) {
     final s = v.toStringAsFixed(0);
-    final buf = StringBuffer();
+    final b = StringBuffer();
     for (int i = 0; i < s.length; i++) {
-      final remain = s.length - i - 1;
-      buf.write(s[i]);
-      if (remain > 0 && remain % 3 == 0) buf.write(' ');
+      final rem = s.length - i - 1;
+      b.write(s[i]);
+      if (rem > 0 && rem % 3 == 0) b.write(' ');
     }
-    return buf.toString();
+    return b.toString();
   }
 
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     final th = Theme.of(context);
@@ -345,26 +343,15 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
     final center = d ?? a ?? const ll.LatLng(9.6412, -13.5784); // Conakry
 
     final markers = <Marker>[
-      if (d != null)
-        Marker(
-          point: d,
-          width: 40,
-          height: 40,
-          child: const Icon(Icons.location_pin, size: 32, color: kRed),
-        ),
-      if (a != null)
-        Marker(
-          point: a,
-          width: 40,
-          height: 40,
-          child: const Icon(Icons.flag, size: 28, color: kGreen),
-        ),
+      if (d != null) Marker(point: d, width: 40, height: 40, child: const Icon(Icons.location_pin, size: 32, color: kRed)),
+      if (a != null) Marker(point: a, width: 40, height: 40, child: const Icon(Icons.flag, size: 28, color: kGreen)),
     ];
 
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Colors.white,
 
+      // ===== Drawer
       drawer: Drawer(
         child: SafeArea(
           child: ListView(
@@ -376,15 +363,13 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
                 subtitle: const Text('Espace chauffeur'),
               ),
               const Divider(),
-              SwitchListTile(
-                secondary: const Icon(Icons.power_settings_new),
-                title: Text(_isOnline ? 'En ligne' : 'Hors ligne'),
-                value: _isOnline,
-                onChanged: (v) => _toggleOnline(v),
-              ),
-              const Divider(),
               ListTile(
                 leading: const Icon(Icons.schedule),
+                title: const Text('Courses planifiées'),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.vtcCoursesPlanifiees),
+              ),
+              ListTile(
+                leading: const Icon(Icons.event_available),
                 title: const Text('Mes créneaux'),
                 onTap: () => Navigator.pushNamed(context, AppRoutes.vtcCreneaux),
               ),
@@ -408,7 +393,17 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
                 title: const Text('Règles tarifaires'),
                 onTap: () => Navigator.pushNamed(context, AppRoutes.vtcReglesTarifaires),
               ),
+              ListTile(
+                leading: const Icon(Icons.card_giftcard),
+                title: const Text('Bonus'),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.vtcBonus),
+              ),
               const Divider(),
+              ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('Paramètres'),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.parametres),
+              ),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Se déconnecter'),
@@ -419,258 +414,269 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
         ),
       ),
 
-      body: Stack(
-        children: [
-          // Carte OSM
-          Positioned.fill(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : FlutterMap(
-                    options: MapOptions(
-                      initialCenter: center,
-                      initialZoom: 12.0,
-                      interactionOptions: const InteractionOptions(
-                        flags: ~InteractiveFlag.rotate,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final paddingTop = MediaQuery.of(context).padding.top;
+          final paddingBottom = MediaQuery.of(context).padding.bottom;
+
+          // Hauteurs avec SafeArea (évite l’overflow bas)
+          final screenH = constraints.maxHeight;
+          final usableH = screenH - paddingBottom;
+          final minH = usableH * _panelMin;
+          final maxH = usableH * _panelMax;
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // --------- CARTE (Voyager only) ----------
+              Positioned.fill(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : FlutterMap(
+                        options: MapOptions(
+                          initialCenter: center,
+                          initialZoom: 12.0,
+                          minZoom: 3,
+                          maxZoom: 19,
+                          backgroundColor: Colors.white,
+                          interactionOptions: const InteractionOptions(
+                            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                          ),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                            subdomains: const ['a', 'b', 'c', 'd'],
+                            retinaMode: true,
+                            maxZoom: 19,
+                            maxNativeZoom: 19,
+                            userAgentPackageName: 'com.ma_guinee.app',
+                          ),
+                          MarkerLayer(markers: markers),
+                        ],
                       ),
+              ),
+
+              // --------- TOP BAR ----------
+              Positioned(
+                top: paddingTop + 8,
+                left: 12,
+                right: 12,
+                child: Row(
+                  children: [
+                    _glassButton(
+                      child: const Icon(Icons.menu),
+                      onTap: () => _scaffoldKey.currentState?.openDrawer(),
                     ),
-                    children: [
-                      TileLayer(
-                        urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        subdomains: const ['a', 'b', 'c'],
-                        userAgentPackageName: 'com.ma_guinee.app',
-                        retinaMode: true,
-                      ),
-                      MarkerLayer(markers: markers),
-                    ],
-                  ),
-          ),
-
-          // Top bar: menu + gains
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 12,
-            right: 12,
-            child: Row(
-              children: [
-                _glassButton(
-                  child: const Icon(Icons.menu),
-                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                ),
-                const Spacer(),
-                _earningsPill(_todayEarnings),
-              ],
-            ),
-          ),
-
-          // Panneau coulissant
-          DraggableScrollableSheet(
-            initialChildSize: 0.18,
-            minChildSize: 0.14,
-            maxChildSize: 0.88,
-            snap: true,
-            builder: (context, controller) {
-              return SafeArea(
-                top: false,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(.10),
-                        blurRadius: 20,
-                        offset: const Offset(0, -6),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      // poignée néon
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 10),
-                        child: Container(
-                          width: 82,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(50),
-                            gradient: const LinearGradient(
-                              colors: [kRed, kYellow, kGreen],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: kGreen.withOpacity(.35),
-                                blurRadius: 16,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Statut + switch
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.directions_car_filled, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _isOnline
-                                    ? 'Vous êtes en ligne — recevez des demandes'
-                                    : 'Vous êtes hors ligne',
-                                style: th.textTheme.bodyMedium,
-                              ),
-                            ),
-                            Switch(value: _isOnline, onChanged: (v) => _toggleOnline(v)),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 12),
-
-                      Expanded(
-                        child: ListView(
-                          controller: controller,
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                          children: [
-                            if ((_driver?['is_verified'] as bool?) != true)
-                              Card(
-                                elevation: 0,
-                                color: Colors.amber.withOpacity(.15),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const ListTile(
-                                  leading: Icon(Icons.verified_user_outlined),
-                                  title: Text('Vérification en attente'),
-                                  subtitle: Text("Votre compte chauffeur sera revu par l'équipe."),
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-
-                            Text('Demandes compatibles',
-                                style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 8),
-                            if (_compatibles.isEmpty)
-                              const Card(
-                                elevation: 0,
-                                child: ListTile(title: Text('Aucune demande pour l’instant')),
-                              )
-                            else
-                              ..._compatibles.map((d) {
-                                final km = ((d['distance_metres'] ?? 0) as num).toDouble() / 1000.0;
-                                final prix = d['prix_gnf'];
-                                return _dCard(
-                                  title:
-                                      '${d['depart_adresse'] ?? '-'} → ${d['arrivee_adresse'] ?? '-'}',
-                                  subtitle:
-                                      '~${km.toStringAsFixed(2)} km • Estimé: ${prix != null ? _fmtGNF((prix as num)) : '-'} GNF',
-                                  actionLabel: 'Proposer',
-                                  onAction: () => _proposerOffre(d),
-                                );
-                              }),
-
-                            const SizedBox(height: 14),
-                            Text('Mes courses actives',
-                                style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 8),
-                            if (_actives.isEmpty)
-                              const Card(
-                                elevation: 0,
-                                child: ListTile(title: Text('Aucune course active')),
-                              )
-                            else
-                              ..._actives.map((c) => _dCard(
-                                    title:
-                                        '${c['depart_adresse'] ?? '-'} → ${c['arrivee_adresse'] ?? '-'}',
-                                    subtitle: 'Statut: ${c['statut']}',
-                                    actionLabel: 'Suivi',
-                                    onAction: () => _openSuivi(c),
-                                  )),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.center,
-                              child: OutlinedButton.icon(
-                                onPressed: _refresh,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Actualiser'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Bouton "GO" (toggle en ligne)
-          Positioned(
-            bottom: 128,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: () => _toggleOnline(!_isOnline),
-                child: AnimatedBuilder(
-                  animation: _pulse,
-                  builder: (context, child) {
-                    final t = _pulse.value; // 0..1
-                    final color = _isOnline ? kGoActive : kGoIdle;
-                    final scale = 1.0 + (t * 0.04);
-                    final blur = 18 + (t * 14);
-                    final spread = 4 + (t * 4);
-                    return Transform.scale(
-                      scale: scale,
-                      child: Container(
-                        width: 110,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: _isOnline
-                                ? [kGoActive, Colors.deepOrange]
-                                : [kGoIdle, Colors.lightBlueAccent],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: color.withOpacity(.55),
-                              blurRadius: blur,
-                              spreadRadius: spread,
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'GO',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            shadows: [Shadow(color: Colors.white, blurRadius: 18)],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                    const Spacer(),
+                    _earningsPill(_todayEarnings),
+                  ],
                 ),
               ),
-            ),
-          ),
-        ],
+
+              // --------- BANDEAU (2 crans) + bouton flottant ----------
+              ValueListenableBuilder<double>(
+                valueListenable: _panelT,
+                builder: (context, t, _) {
+                  final h = ui.lerpDouble(minH, maxH, t)!;
+
+                  return Stack(
+                    children: [
+                      // Bandeau
+                      Positioned(
+                        left: 0, right: 0, bottom: 0, height: h, // ✅ pas de +paddingBottom
+                        child: SafeArea(
+                          top: false, bottom: true,
+                          child: _BottomPanel(
+                            header: _panelHeader(
+                              isMin: t < 0.01,
+                              onTapToggle: () => _panelT.value = (t < 0.5) ? 1.0 : 0.0,
+                            ),
+                            child: _panelContent(th),
+                            onDragUpdate: (dy) {
+                              final nt = (t - dy / (maxH - minH)).clamp(0.0, 1.0);
+                              _panelT.value = nt;
+                            },
+                            onDragEnd: () => _panelT.value = (t < 0.5) ? 0.0 : 1.0,
+                          ),
+                        ),
+                      ),
+
+                      // Bouton flottant "Wali folo" (fade + désactive les clics quand ouvert)
+                      Positioned(
+                        left: 0, right: 0,
+                        bottom: h + 10, // flotte au-dessus du panneau et monte avec lui
+                        child: IgnorePointer(
+                          ignoring: t >= 0.95, // bloque les clics quand caché
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            opacity: t >= 0.95 ? 0.0 : 1.0, // fondu à l’ouverture
+                            child: Center(
+                              child: _miniBlueButtonTextOnly(
+                                label: _isOnline ? 'Se mettre hors ligne' : 'Wali folo',
+                                onTap: () => _toggleOnline(!_isOnline),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  // ---------- UI helpers ----------
+  // ---------- panneau : header + contenu ----------
+  Widget _panelHeader({
+    required bool isMin,
+    required VoidCallback onTapToggle,
+  }) {
+    return GestureDetector(
+      onTap: onTapToggle, // tap pour ouvrir/fermer
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+        child: Column(
+          children: [
+            // Barre rouge-jaune-verte (poignée)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: isMin ? 82 : 64,
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(50),
+                gradient: const LinearGradient(colors: [kRed, kYellow, kGreen]),
+                boxShadow: [BoxShadow(color: kGreen.withOpacity(.35), blurRadius: isMin ? 16 : 10, spreadRadius: 1)],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Opacity(
+              opacity: .75,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(isMin ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20),
+                  const SizedBox(width: 4),
+                  Text(
+                    isMin ? 'Glissez ou touchez pour développer' : 'Glissez ou touchez pour réduire',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.directions_car_filled, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isOnline ? 'Vous êtes en ligne — recevez des demandes' : 'Vous êtes hors ligne',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _panelContent(ThemeData th) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      children: [
+        if ((_driver?['is_verified'] as bool?) != true)
+          Card(
+            elevation: 0,
+            color: Colors.amber.withOpacity(.15),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: const ListTile(
+              leading: Icon(Icons.verified_user_outlined),
+              title: Text('Vérification en attente'),
+              subtitle: Text("Votre compte chauffeur sera revu par l'équipe."),
+            ),
+          ),
+        const SizedBox(height: 8),
+        Text('Demandes compatibles', style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (_compatibles.isEmpty)
+          const Card(elevation: 0, child: ListTile(title: Text('Aucune demande pour l’instant')))
+        else
+          ..._compatibles.map((d0) {
+            final d = d0 as Map<String, dynamic>;
+            final km = ((d['distance_metres'] ?? 0) as num).toDouble() / 1000.0;
+            final prix = d['prix_gnf'];
+            return _dCard(
+              title: '${d['depart_adresse'] ?? '-'} → ${d['arrivee_adresse'] ?? '-'}',
+              subtitle: '~${km.toStringAsFixed(2)} km • Estimé: ${prix != null ? _fmtGNF(prix as num) : '-'} GNF',
+              actionLabel: 'Proposer',
+              onAction: () => _proposerOffre(d),
+            );
+          }),
+        const SizedBox(height: 14),
+        Text('Mes courses actives', style: th.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (_actives.isEmpty)
+          const Card(elevation: 0, child: ListTile(title: Text('Aucune course active')))
+        else
+          ..._actives.map((c0) {
+            final c = c0 as Map<String, dynamic>;
+            return _dCard(
+              title: '${c['depart_adresse'] ?? '-'} → ${c['arrivee_adresse'] ?? '-'}',
+              subtitle: 'Statut: ${c['statut']}',
+              actionLabel: 'Suivi',
+              onAction: () => _openSuivi(c),
+            );
+          }),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.center,
+          child: OutlinedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Actualiser'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===== bouton compact (texte seul) =====
+  Widget _miniBlueButtonTextOnly({required String label, required VoidCallback onTap}) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [kBtnBlue1, kBtnBlue2],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [BoxShadow(color: kBtnShadow, blurRadius: 12, offset: Offset(0, 5))],
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Cartes / badges utilitaires
   Widget _dCard({
     required String title,
     required String subtitle,
@@ -702,11 +708,7 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
   Widget _glassButton({required Widget child, required VoidCallback onTap}) {
     return _glassCapsule(
       padding: const EdgeInsets.all(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: child,
-      ),
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(14), child: child),
     );
   }
 
@@ -724,15 +726,47 @@ class _HomeChauffeurVtcPageState extends State<HomeChauffeurVtcPage>
             color: Colors.white.withOpacity(0.75),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: Colors.white.withOpacity(.6), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.08),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(.08), blurRadius: 12, offset: const Offset(0, 4))],
           ),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ======= panneau swipe custom =======
+class _BottomPanel extends StatelessWidget {
+  final Widget header;
+  final Widget child;
+  final void Function(double dy) onDragUpdate;
+  final VoidCallback onDragEnd;
+
+  const _BottomPanel({
+    required this.header,
+    required this.child,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 16,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      color: Colors.white,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: Column(
+          children: [
+            GestureDetector(
+              onVerticalDragUpdate: (d) => onDragUpdate(-d.primaryDelta!),
+              onVerticalDragEnd: (_) => onDragEnd(),
+              child: header,
+            ),
+            const SizedBox(height: 4),
+            Expanded(child: child),
+          ],
         ),
       ),
     );

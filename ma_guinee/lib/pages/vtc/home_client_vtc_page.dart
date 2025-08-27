@@ -21,7 +21,8 @@ const Color kMuted    = Color(0xFF6B7280);
 
 enum TargetField { depart, arrivee }
 enum _BottomTab { profil, historique, paiement }
-enum MapStyle { satellite, voyager, dark }
+// Carte claire par défaut, Satellite en second (pas de mode nuit)
+enum MapStyle { voyager, satellite }
 
 class HomeClientVtcPage extends StatefulWidget {
   final UtilisateurModel currentUser;
@@ -45,13 +46,13 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
   String? _departLabel;
   ll.LatLng? _arrivee;
   String? _arriveeLabel;
-  TargetField _target = TargetField.depart; // par défaut, on saisit Départ
+  TargetField _target = TargetField.depart;
 
   // Saisie
   final _departCtrl = TextEditingController();
   final _arriveeCtrl = TextEditingController();
 
-  // Ville (pour Nominatim local)
+  // Ville (pour Nominatim/lieux)
   String _city = 'Conakry';
 
   // Véhicule
@@ -74,7 +75,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
   bool _loadingRecent = false;
 
   // Styles de carte
-  MapStyle _mapStyle = MapStyle.satellite;
+  MapStyle _mapStyle = MapStyle.voyager; // ✅ claire par défaut
 
   // Distances utilitaires
   final ll.Distance _dist = const ll.Distance();
@@ -124,8 +125,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
       }
       if (!mounted || m == null) return;
 
-      final mm = m; // non-null hors setState
-
+      final mm = m;
       setState(() {
         _user = UtilisateurModel(
           id: (mm['id']?.toString() ?? widget.currentUser.id),
@@ -184,7 +184,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
     return true;
   }
 
-  // Met MA POSITION dans DÉPART (sans déplacer la caméra)
+  // Met MA POSITION dans DÉPART + ajuste caméra
   Future<void> _useMyLocationAsDepart() async {
     try {
       final ok = await _ensureLocationPermission();
@@ -196,6 +196,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
         _target = TargetField.depart;
         _depart = me; _departLabel = label; _departCtrl.text = label;
       });
+      _autoCameraAfterPointChange();
       if (_depart != null && _arrivee != null) _computeRoute();
     } catch (e) {
       _toast('Position indisponible: $e');
@@ -279,10 +280,11 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
       final tText = _departCtrl.text;
       _departCtrl.text = _arriveeCtrl.text; _arriveeCtrl.text = tText;
     });
+    _autoCameraAfterPointChange();
     if (_depart != null && _arrivee != null) _computeRoute();
   }
 
-  // TAP carte -> placer le point sans changer zoom/centre
+  // TAP carte -> placer le point + gestion caméra
   Future<void> _onMapTap(ll.LatLng p) async {
     final label = await _reverseGeocode(p);
     setState(() {
@@ -292,6 +294,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
         _arrivee = p; _arriveeLabel = label ?? 'Point d’arrivée'; _arriveeCtrl.text = _arriveeLabel!;
       }
     });
+    _autoCameraAfterPointChange();
     if (_depart != null && _arrivee != null) _computeRoute();
   }
 
@@ -306,10 +309,11 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
       if (depart) { _depart = p; _departLabel = l.fullLabel; _departCtrl.text = l.fullLabel; }
       else { _arrivee = p; _arriveeLabel = l.fullLabel; _arriveeCtrl.text = l.fullLabel; }
     });
+    _autoCameraAfterPointChange();
     if (_depart != null && _arrivee != null) _computeRoute();
   }
 
-  // ---------- Itinéraire / Prix ----------
+  // ---------- Itinéraire / Trafic / Prix ----------
   Future<void> _computeRoute() async {
     final a = _depart, b = _arrivee;
     if (a == null || b == null) return;
@@ -326,7 +330,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
       final uri = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving'
         '/${a.longitude},${a.latitude};${b.longitude},${b.latitude}'
-        '?overview=full&geometries=geojson',
+        '?overview=full&geometries=geojson'
       );
       final resp = await http.get(uri, headers: {'User-Agent': 'ma_guinee/1.0'});
       if (resp.statusCode == 200) {
@@ -337,7 +341,11 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
           final distMeters = (r['distance'] as num?)?.toDouble() ?? 0;
           final durSeconds = (r['duration'] as num?)?.toDouble() ?? 0;
           final km = distMeters / 1000.0;
-          final min = durSeconds / 60.0;
+          var min = durSeconds / 60.0;
+
+          // OSRM sans trafic temps réel -> on applique un facteur trafic
+          final factor = await _trafficFactor();
+          min = min * factor;
 
           final coords = (r['geometry']?['coordinates'] as List?) ?? [];
           final pts = <ll.LatLng>[];
@@ -348,7 +356,8 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
           }
           setState(() => _routePoints = pts);
           _applyEstimation(km, min);
-          return; // NE PAS déplacer la caméra
+          _fitToRoute(); // ajuste la caméra automatiquement
+          return;
         }
       }
       _fallbackDirectEstimation(a, b);
@@ -359,12 +368,40 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
     }
   }
 
-  void _fallbackDirectEstimation(ll.LatLng a, ll.LatLng b) {
+  // Trafic : d’abord table Supabase traffic_now(city), sinon heuristique par heure
+  Future<double> _trafficFactor() async {
+    try {
+      final row = await _sb
+          .from('traffic_now')
+          .select('city,factor,updated_at')
+          .eq('city', _city)
+          .order('updated_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (row != null && row['factor'] != null) {
+        final f = (row['factor'] as num).toDouble();
+        if (f > 0.5 && f < 3.0) return f;
+      }
+    } catch (_) {}
+    // Heuristique locale – voiture plus impactée que moto
+    final hour = DateTime.now().hour;
+    final isCar = _vehicle != 'moto';
+    if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20)) {
+      return isCar ? 1.35 : 1.15; // pointe
+    } else if (hour >= 12 && hour <= 14) {
+      return isCar ? 1.15 : 1.05; // midi
+    }
+    return 1.0;
+  }
+
+  void _fallbackDirectEstimation(ll.LatLng a, ll.LatLng b) async {
     final km = _dist.as(ll.LengthUnit.Kilometer, a, b);
     final avgSpeedKmh = _vehicle == 'moto' ? 28.0 : 22.0;
-    final min = (km / math.max(avgSpeedKmh, 5) * 60).clamp(3, 180).toDouble();
+    var min = (km / math.max(avgSpeedKmh, 5) * 60).clamp(3, 180).toDouble();
+    min = min * (await _trafficFactor());
     setState(() => _routePoints = [a, b]);
     _applyEstimation(km, min);
+    _fitToTwoPoints(a, b);
   }
 
   void _applyEstimation(double km, double min) {
@@ -385,6 +422,37 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
     }
   }
 
+  // ---------- Camera helpers (fit auto comme Uber) ----------
+  void _autoCameraAfterPointChange() {
+    final a = _depart, b = _arrivee;
+    if (a != null && b != null) {
+      _fitToTwoPoints(a, b);
+    } else if (a != null) {
+      _map.move(a, 17);
+    } else if (b != null) {
+      _map.move(b, 17);
+    }
+  }
+
+  void _fitToTwoPoints(ll.LatLng a, ll.LatLng b) {
+    final bounds = LatLngBounds.fromPoints([a, b]);
+    _map.fitCamera(CameraFit.bounds(
+      bounds: bounds,
+      padding: const EdgeInsets.fromLTRB(60, 220, 60, 280), // garde l’UI visible
+      maxZoom: 18,
+    ));
+  }
+
+  void _fitToRoute() {
+    if (_routePoints.isEmpty) return;
+    final bounds = LatLngBounds.fromPoints(_routePoints);
+    _map.fitCamera(CameraFit.bounds(
+      bounds: bounds,
+      padding: const EdgeInsets.fromLTRB(60, 220, 60, 280),
+      maxZoom: 18,
+    ));
+  }
+
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
@@ -403,7 +471,9 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
               options: MapOptions(
                 initialCenter: _center,
                 initialZoom: _zoom,
-                backgroundColor: const Color(0xFF0B0D10), // neutre
+                minZoom: 3,
+                maxZoom: 19,              // borne max = tuiles -> pas d’écran noir
+                backgroundColor: Colors.white,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
@@ -421,7 +491,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                   TileLayer(
                     urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                     retinaMode: true,
-                    maxZoom: 19,            // ✅ évite l’écran vide
+                    maxZoom: 19,
                     maxNativeZoom: 19,
                     userAgentPackageName: 'com.ma_guinee.app',
                   ),
@@ -433,8 +503,8 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                     maxNativeZoom: 19,
                     userAgentPackageName: 'com.ma_guinee.app',
                   ),
-                ] else if (_mapStyle == MapStyle.voyager) ...[
-                  // Carte claire (moins blanche)
+                ] else ...[
+                  // Carte claire (par défaut)
                   TileLayer(
                     urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                     subdomains: const ['a', 'b', 'c', 'd'],
@@ -443,19 +513,9 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                     maxNativeZoom: 19,
                     userAgentPackageName: 'com.ma_guinee.app',
                   ),
-                ] else if (_mapStyle == MapStyle.dark) ...[
-                  // Mode nuit adouci
-                  TileLayer(
-                    urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
-                    subdomains: const ['a', 'b', 'c', 'd'],
-                    retinaMode: true,
-                    maxZoom: 19,
-                    maxNativeZoom: 19,
-                    userAgentPackageName: 'com.ma_guinee.app',
-                  ),
                 ],
 
-                // ---- Itinéraire (ligne nette uniquement) ----
+                // ---- Itinéraire ----
                 if (_routePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
@@ -484,12 +544,6 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
             ),
           ),
 
-          // Voile léger pour éclaircir le mode nuit (moins sombre)
-          if (_mapStyle == MapStyle.dark)
-            const IgnorePointer(
-              child: ColoredBox(color: Color(0x14FFFFFF)), // blanc 8% pour “délaver” un peu
-            ),
-
           // ---- Style + Swap (en haut à droite) ----
           Positioned(
             right: 12,
@@ -497,29 +551,17 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
             child: Column(
               children: [
                 _roundGlass(
-                  icon: _mapStyle == MapStyle.satellite
-                      ? Icons.satellite_alt
-                      : _mapStyle == MapStyle.voyager
-                          ? Icons.map
-                          : Icons.nightlight_round,
+                  icon: _mapStyle == MapStyle.satellite ? Icons.satellite_alt : Icons.map,
                   onTap: () {
                     setState(() {
-                      if (_mapStyle == MapStyle.satellite) {
-                        _mapStyle = MapStyle.voyager;
-                      } else if (_mapStyle == MapStyle.voyager) {
-                        _mapStyle = MapStyle.dark;
-                      } else {
-                        _mapStyle = MapStyle.satellite;
-                      }
+                      _mapStyle = _mapStyle == MapStyle.satellite
+                          ? MapStyle.voyager
+                          : MapStyle.satellite;
                     });
                   },
                 ),
                 const SizedBox(height: 10),
-                // Bouton échanger Départ/Arrivée (devant Destination)
-                _roundGlass(
-                  icon: Icons.swap_vert_rounded,
-                  onTap: _swap,
-                ),
+                _roundGlass(icon: Icons.swap_vert_rounded, onTap: _swap),
               ],
             ),
           ),
@@ -528,7 +570,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
           Positioned(
             top: padTop + 10,
             left: 12,
-            right: 62, // on laisse la place aux boutons à droite
+            right: 62,
             child: Column(
               children: [
                 Row(
@@ -539,7 +581,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                         controller: _departCtrl,
                         selected: _target == TargetField.depart,
                         onTap: () => setState(() => _target = TargetField.depart),
-                        onLeadingTap: _useMyLocationAsDepart, // localisation bleue ici
+                        onLeadingTap: _useMyLocationAsDepart,
                         onSelected: (l) {
                           setState(() {
                             _target = TargetField.depart;
@@ -547,6 +589,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                             _departLabel = l.fullLabel;
                             _departCtrl.text = l.fullLabel;
                           });
+                          _autoCameraAfterPointChange();
                           if (_arrivee != null) _computeRoute();
                         },
                       ),
@@ -591,6 +634,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                       _arriveeLabel = l.fullLabel;
                       _arriveeCtrl.text = l.fullLabel;
                     });
+                    _autoCameraAfterPointChange();
                     if (_depart != null) _computeRoute();
                   },
                 ),
@@ -772,7 +816,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
     required bool selected,
     required VoidCallback onTap,
     required void Function(_Lieu) onSelected,
-    VoidCallback? onLeadingTap, // action sur l’icône à gauche
+    VoidCallback? onLeadingTap,
   }) {
     final bool isDepart = label == 'Départ';
     return _Glass(
@@ -791,7 +835,7 @@ class _HomeClientVtcPageState extends State<HomeClientVtcPage> {
                   border: Border.all(color: kBrandBlue.withOpacity(.35)),
                 ),
                 child: Icon(
-                  isDepart ? Icons.my_location : Icons.flag, // localisation bleue
+                  isDepart ? Icons.my_location : Icons.flag,
                   color: kBrandBlue,
                   size: 20,
                 ),

@@ -27,7 +27,7 @@ import 'pages/hotel_page.dart';
 import 'pages/notifications_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/main_navigation_page.dart';
-import 'pages/parametre_page.dart';
+import 'pages/parametre_page.dart'; // ⬅️ ANCIEN paramètre (profil général)
 import 'pages/aide_page.dart';
 import 'pages/messages_page.dart';
 import 'pages/mes_annonces_page.dart';
@@ -60,8 +60,7 @@ import 'pages/live_page.dart';
 import 'pages/live_room_page.dart';
 
 // 🚖 VTC / Moto-taxi
-import 'pages/vtc/page_portail_soneya.dart';         // ➜ ON GARDE
-// import 'pages/vtc/demande_course_page.dart';       // ➜ SUPPRIMÉ / NON IMPORTÉ
+import 'pages/vtc/page_portail_soneya.dart';
 import 'pages/vtc/offres_course_page.dart';
 import 'pages/vtc/suivi_course_page.dart';
 import 'pages/vtc/portefeuille_page.dart';
@@ -75,6 +74,15 @@ import 'pages/vtc/admin_vtc_page.dart';
 // ✅ Homes VTC
 import 'pages/vtc/home_client_vtc_page.dart';
 import 'pages/vtc/home_chauffeur_vtc_page.dart';
+
+// ✅ Nouveau : hub Paramètres chauffeur + sous-pages
+import 'pages/parametres/parametres_page.dart';
+import 'pages/parametres/param_navigation_page.dart';
+import 'pages/parametres/param_mode_nuit_page.dart';
+import 'pages/parametres/param_accessibilite_page.dart';
+import 'pages/parametres/param_son_voix_page.dart';
+import 'pages/parametres/param_communication_page.dart';
+import 'pages/parametres/param_a_propos_page.dart';
 
 class AppRoutes {
   // Core
@@ -100,7 +108,11 @@ class AppRoutes {
   static const String hotel = '/hotels';
   static const String notifications = '/notifications';
   static const String profil = '/profil';
-  static const String parametre = '/parametre';
+
+  // ⚠️ On garde l’ancien + on ajoute le nouveau hub
+  static const String parametre  = '/parametre';   // ancien (profil général)
+  static const String parametres = '/parametres';  // nouveau hub chauffeur
+
   static const String aide = '/aide';
   static const String messages = '/messages';
 
@@ -135,8 +147,8 @@ class AppRoutes {
   static const String scanner = '/scanner';
 
   // 🚖 VTC / Moto-taxi
-  static const String vtcHome = '/vtc';               // ➜ Portail Soneya
-  static const String vtcDemande = '/vtc/demande';    // ➜ alias vers HomeClient
+  static const String vtcHome = '/vtc';
+  static const String vtcDemande = '/vtc/demande';
   static const String vtcOffres = '/vtc/offres';
   static const String vtcSuivi = '/vtc/suivi';
   static const String vtcPortefeuille = '/vtc/portefeuille';
@@ -146,10 +158,21 @@ class AppRoutes {
   static const String vtcVehicules = '/vtc/vehicules';
   static const String vtcInscriptionChauffeur = '/vtc/inscription_chauffeur';
   static const String vtcAdmin = '/vtc/admin';
+  // ➕ nouveaux
+  static const String vtcCoursesPlanifiees = '/vtc/courses-planifiees';
+  static const String vtcBonus = '/vtc/bonus';
 
   // Cibles directes
   static const String soneyaClient = '/soneya/client';
   static const String soneyaChauffeur = '/soneya/chauffeur';
+
+  // 🔀 Sous-routes Paramètres (hub)
+  static const String paramNavigation    = '/parametres/navigation';
+  static const String paramModeNuit      = '/parametres/mode-nuit';
+  static const String paramAccessibilite = '/parametres/accessibilite';
+  static const String paramSonVoix       = '/parametres/son-voix';
+  static const String paramCommunication = '/parametres/communication';
+  static const String paramAPropos       = '/parametres/a-propos';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -175,13 +198,19 @@ class AppRoutes {
       case hotel:         return _page(const HotelPage());
       case notifications: return _page(const NotificationsPage());
       case profil:        return _userProtected((u) => ProfilePage(user: u));
-      case parametre:     return _userProtected((u) => ParametrePage(user: u));
+
+      // Paramètres
+      case parametre:     return _userProtected((u) => ParametrePage(user: u)); // ancien
+      case parametres:    return _page(const ParametresPage());                 // nouveau hub
+
       case aide:          return _page(const AidePage());
       case messages:      return _page(const MessagesPage());
 
       case mesAnnonces:   return _userProtected((_) => const MesAnnoncesPage());
       case mesPrestations:return _userProtected((u) {
-                            final prestations = u.espacePrestataire != null ? [u.espacePrestataire!] : <Map<String,dynamic>>[];
+                            final prestations = u.espacePrestataire != null
+                                ? [u.espacePrestataire!]
+                                : <Map<String, dynamic>>[];
                             return MesPrestationsPage(prestations: prestations);
                           });
       case mesRestaurants:return _userProtected((u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []));
@@ -190,22 +219,22 @@ class AppRoutes {
 
       case inscriptionResto: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String,dynamic>) {
-          return _page(InscriptionRestoPage(restaurant: arg as Map<String,dynamic>?));
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(InscriptionRestoPage(restaurant: arg as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionResto");
       }
       case inscriptionHotel: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String,dynamic>) {
-          return _page(InscriptionHotelPage(hotel: arg as Map<String,dynamic>?));
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(InscriptionHotelPage(hotel: arg as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionHotel");
       }
       case inscriptionClinique: {
         final arg = settings.arguments;
-        if (arg == null || arg is Map<String,dynamic>) {
-          return _page(EditCliniquePage(clinique: arg as Map<String,dynamic>?));
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(EditCliniquePage(clinique: arg as Map<String, dynamic>?));
         }
         return _error("Argument invalide pour $inscriptionClinique");
       }
@@ -253,8 +282,8 @@ class AppRoutes {
       case scanner:        return _userProtected((_) => const ScannerPage());
 
       // 🚖 VTC / Moto-taxi
-      case vtcHome:        return _page(const PagePortailSoneya());                 // ➜ portail
-      case vtcDemande:     return _userProtected((u) => HomeClientVtcPage(currentUser: u)); // ➜ alias HomeClient
+      case vtcHome:        return _page(const PagePortailSoneya());
+      case vtcDemande:     return _userProtected((u) => HomeClientVtcPage(currentUser: u));
       case vtcOffres: {
         final m = _argsMap(settings);
         final demandeId = (m['demandeId'] as String?) ?? '';
@@ -267,19 +296,40 @@ class AppRoutes {
         if (courseId.isEmpty) return _error('courseId requis pour $vtcSuivi');
         return _userProtected((_) => SuiviCoursePage(courseId: courseId));
       }
-      case vtcPortefeuille:return _userProtected((u) => PortefeuilleChauffeurPage(userId: u.id));
-      case vtcPaiements:   return _userProtected((u) => PaiementsPage(userId: u.id));
-      case vtcReglesTarifaires: return _userProtected((_) => const ReglesTarifairesPage());
-      case vtcCreneaux:    return _userProtected((u) => CreneauxChauffeurPage(userId: u.id));
-      case vtcVehicules:   return _userProtected((u) => VehiculesPage(ownerUserId: u.id));
+      case vtcPortefeuille:    return _userProtected((u) => PortefeuilleChauffeurPage(userId: u.id));
+      case vtcPaiements:       return _userProtected((u) => PaiementsPage(userId: u.id));
+      case vtcReglesTarifaires:return _userProtected((_) => const ReglesTarifairesPage());
+      case vtcCreneaux:        return _userProtected((u) => CreneauxChauffeurPage(userId: u.id));
+      case vtcVehicules:       return _userProtected((u) => VehiculesPage(ownerUserId: u.id));
       case vtcInscriptionChauffeur: return _page(const InscriptionChauffeurPage());
-      case vtcAdmin:       return _userProtected((_) => const AdminVtcPage());
+      case vtcAdmin:           return _userProtected((_) => const AdminVtcPage());
+
+      // ➕ nouveaux écrans VTC (stubs si pas encore faits)
+      case vtcCoursesPlanifiees:
+        return _page(Scaffold(
+          appBar: AppBar(title: const Text('Courses planifiées')),
+          body: const Center(child: Text('À venir…')),
+        ));
+      case vtcBonus:
+        return _page(Scaffold(
+          appBar: AppBar(title: const Text('Bonus')),
+          body: const Center(child: Text('À venir…')),
+        ));
 
       // Cibles directes
-      case soneyaClient:   return _userProtected((u) => HomeClientVtcPage(currentUser: u));
-      case soneyaChauffeur:return _userProtected((u) => HomeChauffeurVtcPage(currentUser: u));
+      case soneyaClient:    return _userProtected((u) => HomeClientVtcPage(currentUser: u));
+      case soneyaChauffeur: return _userProtected((u) => HomeChauffeurVtcPage(currentUser: u));
 
-      default:             return _error('Page non trouvée : ${settings.name}');
+      // 🔀 Sous-routes Paramètres (hub)
+      case paramNavigation:    return _page(const ParamNavigationPage());
+      case paramModeNuit:      return _page(const ParamModeNuitPage());
+      case paramAccessibilite: return _page(const ParamAccessibilitePage());
+      case paramSonVoix:       return _page(const ParamSonVoixPage());
+      case paramCommunication: return _page(const ParamCommunicationPage());
+      case paramAPropos:       return _page(const ParamAProposPage());
+
+      default:
+        return _error('Page non trouvée : ${settings.name}');
     }
   }
 
