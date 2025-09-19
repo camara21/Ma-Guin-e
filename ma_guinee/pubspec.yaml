@@ -18,18 +18,18 @@ dependencies:
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0
-  # Optionnel si tu veux proposer Google Maps (mobile + web) en plus d’OSM
+  # Optionnel : Google Maps en plus d’OSM (mobile + web)
   google_maps_flutter: ^2.7.0
   google_maps_flutter_web: ^0.5.7
 
-  # 🌐 Requêtes HTTP (OSRM + Nominatim)
+  # 🌐 Requêtes HTTP
   http: ^1.2.1
 
   # 🗄️ Supabase / état
   supabase_flutter: ^2.3.4
   provider: ^6.1.2
 
-  # 🔔 Notifications (locale + push)
+  # 🔔 Notifications (push + locales)
   firebase_core: ^3.3.0
   firebase_messaging: ^15.1.0
   flutter_local_notifications: ^17.2.1
@@ -49,10 +49,9 @@ dependencies:
   # 🎨 UI & composants
   photo_view: ^0.15.0
   carousel_slider: ^4.2.1
-  flutter_typeahead: ^5.2.0
   font_awesome_flutter: ^10.7.0
   universal_html: ^2.2.4
-  cached_network_image: ^3.4.0
+  cached_network_image: ^3.4.1
   flutter_svg: ^2.0.10+1
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1
@@ -69,6 +68,12 @@ dependencies:
   # ✅ Permissions (caméra, localisation, stockage…)
   permission_handler: ^11.3.1
 
+  # 🧾 PDF / impressions / ouverture de fichiers
+  pdf: ^3.10.7
+  printing: ^5.13.4
+  path_provider: ^2.1.4
+  open_filex: ^4.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -82,3 +87,4 @@ flutter:
     - assets/default_avatar.png
     - assets/logo_guinee.png
     - assets/nimba.png
+    - assets/jobs/hero.png

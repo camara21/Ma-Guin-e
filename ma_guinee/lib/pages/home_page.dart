@@ -1,3 +1,4 @@
+// lib/pages/home_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,9 @@ import '../providers/user_provider.dart';
 import 'cgu_bottom_sheet.dart';
 import '../services/message_service.dart';
 import '../routes.dart';
+
+// ✅ Jobs
+import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -52,7 +56,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Écoute la table notifications et filtre côté client
   void _ecouterNotifications() {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
@@ -75,12 +78,10 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// Charge la valeur initiale (notifications non lues + messages non lus)
   Future<void> _chargerMessagesNonLus() async {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
-    // badge notifications
     try {
       final rows = await Supabase.instance.client
           .from('notifications')
@@ -92,21 +93,16 @@ class _HomePageState extends State<HomePage> {
         return uid == user.id && !lu;
       }).length;
 
-      if (mounted) {
-        setState(() => _notificationsNonLues = nonLues);
-      }
-    } catch (_) {
-      // ignore
-    }
+      if (mounted) setState(() => _notificationsNonLues = nonLues);
+    } catch (_) {}
 
-    // messages non lus
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
   }
 
-  // Carte d’icône standard
-  Widget buildIcon(IconData iconData, Color color) {
+  // ---------- helpers d'icône (même style/taille pour tous) ----------
+  Widget _iconCard(Widget child) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -119,44 +115,35 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(22),
-      child: Icon(iconData, color: color, size: 44),
+      padding: const EdgeInsets.all(22), // => même taille visuelle
+      child: child,
     );
   }
 
-  /// Icône personnalisée Soneya
+  // Icône simple (comme avant)
+  Widget buildIcon(IconData iconData, Color color) {
+    return _iconCard(Icon(iconData, color: color, size: 44));
+  }
+
+  // Icône Soneya avec le même "card" mais un petit pictogramme secondaire
   Widget _soneyaIcon() {
-    final br = BorderRadius.circular(14);
-    return Container(
-      width: 88,
-      height: 88,
-      decoration: BoxDecoration(
-        borderRadius: br,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF06C167), Color(0xFF00A884)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: const Stack(
-        children: [
-          Center(child: Icon(Icons.two_wheeler, color: Colors.white, size: 36)),
+    const blue = Color(0xFF1976D2);
+    return _iconCard(
+      Stack(
+        children: const [
+          // icône principale Job (même taille que les autres)
+          Center(child: Icon(Icons.work_outline, color: blue, size: 44)),
+          // petit picto "CV" en coin (même couleur)
           Positioned(
-            right: 10,
-            bottom: 10,
-            child: Icon(Icons.directions_car, color: Colors.white, size: 22),
+            right: 2,
+            bottom: 2,
+            child: Icon(Icons.description, color: blue, size: 18),
           ),
         ],
       ),
     );
   }
+  // -------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -196,7 +183,6 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
-          // Notifications + badge
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 4),
             child: Stack(
@@ -229,7 +215,6 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          // Aide
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 12),
             child: IconButton(
@@ -279,7 +264,7 @@ class _HomePageState extends State<HomePage> {
                     top: 29,
                     left: 26,
                     child: Text(
-                      "Ma Guinée",
+                      "Soneya",
                       style: TextStyle(
                         fontSize: 34,
                         fontWeight: FontWeight.bold,
@@ -325,15 +310,18 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
                 _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
 
-                // 🔹 Soneya -> Portail VTC
+                // 🔹 Emplois (ex-Soneya) — même style/taille que les autres
                 GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.vtcHome),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => JobHomePage()),
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _soneyaIcon(),
                       const SizedBox(height: 6),
-                      const Text("Soneya", textAlign: TextAlign.center),
+                      const Text("Wali fen", textAlign: TextAlign.center),
                     ],
                   ),
                 ),
@@ -354,7 +342,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service disponible
   Widget _serviceTile(IconData icon, String label, String route, Color color) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
@@ -369,7 +356,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service futur
   Widget _serviceTileFuture(IconData icon, String label, Color color, String message) {
     return GestureDetector(
       onTap: () {
@@ -379,10 +365,7 @@ class _HomePageState extends State<HomePage> {
             title: Text(label),
             content: Text(message),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
-              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
             ],
           ),
         );
@@ -398,7 +381,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Tuile d'un service futur avec icône personnalisée
   Widget _serviceTileFutureCustom(Widget iconWidget, String label, String message) {
     return GestureDetector(
       onTap: () {
@@ -408,10 +390,7 @@ class _HomePageState extends State<HomePage> {
             title: Text(label),
             content: Text(message),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
-              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
             ],
           ),
         );

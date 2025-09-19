@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
+import 'models/job_models.dart'; // ✅ pour EmploiModel
 
 // Pages principales
 import 'pages/splash_screen.dart';
@@ -27,7 +28,7 @@ import 'pages/hotel_page.dart';
 import 'pages/notifications_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/main_navigation_page.dart';
-import 'pages/parametre_page.dart'; // ⬅️ ANCIEN paramètre (profil général)
+import 'pages/parametre_page.dart';
 import 'pages/aide_page.dart';
 import 'pages/messages_page.dart';
 import 'pages/mes_annonces_page.dart';
@@ -51,38 +52,27 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
-// ✅ Social/Live
-import 'pages/posts_reels_page.dart';
+// ✅ Billetterie
 import 'pages/events_list_page.dart';
 import 'pages/my_tickets_page.dart';
 import 'pages/scanner_page.dart';
-import 'pages/live_page.dart';
-import 'pages/live_room_page.dart';
 
-// 🚖 VTC / Moto-taxi
-import 'pages/vtc/page_portail_soneya.dart';
-import 'pages/vtc/offres_course_page.dart';
-import 'pages/vtc/suivi_course_page.dart';
-import 'pages/vtc/portefeuille_page.dart';
-import 'pages/vtc/paiements_page.dart';
-import 'pages/vtc/regles_tarifaires_page.dart';
-import 'pages/vtc/creneaux_page.dart';
-import 'pages/vtc/vehicules_page.dart';
-import 'pages/vtc/inscription_chauffeur_page.dart';
-import 'pages/vtc/admin_vtc_page.dart';
+// 🌟 JOB – pages existantes
+import 'pages/jobs/job_home_page.dart';
+import 'pages/jobs/jobs_page.dart';
+import 'pages/jobs/job_detail_page.dart';
+import 'pages/jobs/my_applications_page.dart';
+import 'pages/cv/cv_maker_page.dart'; // ✅ bon chemin
+import 'pages/jobs/employer/mes_offres_page.dart';
+import 'pages/jobs/employer/offre_edit_page.dart';
 
-// ✅ Homes VTC
-import 'pages/vtc/home_client_vtc_page.dart';
-import 'pages/vtc/home_chauffeur_vtc_page.dart';
+// 🌟 JOB – NOUVELLES pages Candidatures (liste + fiche détail)
+import 'pages/jobs/candidatures_page.dart';
+import 'pages/jobs/candidature_detail_page.dart';
 
-// ✅ Nouveau : hub Paramètres chauffeur + sous-pages
-import 'pages/parametres/parametres_page.dart';
-import 'pages/parametres/param_navigation_page.dart';
-import 'pages/parametres/param_mode_nuit_page.dart';
-import 'pages/parametres/param_accessibilite_page.dart';
-import 'pages/parametres/param_son_voix_page.dart';
-import 'pages/parametres/param_communication_page.dart';
-import 'pages/parametres/param_a_propos_page.dart';
+// ⚠️ Import employeur & garde
+import 'pages/jobs/employer/devenir_employeur_page.dart';
+import 'services/employeur_service.dart';
 
 class AppRoutes {
   // Core
@@ -109,9 +99,8 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String profil = '/profil';
 
-  // ⚠️ On garde l’ancien + on ajoute le nouveau hub
-  static const String parametre  = '/parametre';   // ancien (profil général)
-  static const String parametres = '/parametres';  // nouveau hub chauffeur
+  // Paramètres (profil général)
+  static const String parametre = '/parametre';
 
   static const String aide = '/aide';
   static const String messages = '/messages';
@@ -136,43 +125,20 @@ class AppRoutes {
   static const String editAnnonce = '/edit_annonce';
   static const String editClinique = '/edit_clinique';
 
-  // Social / Live
-  static const String talents = '/talents';
-  static const String live = '/live';
-  static const String liveRoom = '/live/room';
-
-  // Billetterie
+  // ✅ Billetterie
   static const String billetterie = '/billetterie';
   static const String myTickets = '/mes_billets';
   static const String scanner = '/scanner';
 
-  // 🚖 VTC / Moto-taxi
-  static const String vtcHome = '/vtc';
-  static const String vtcDemande = '/vtc/demande';
-  static const String vtcOffres = '/vtc/offres';
-  static const String vtcSuivi = '/vtc/suivi';
-  static const String vtcPortefeuille = '/vtc/portefeuille';
-  static const String vtcPaiements = '/vtc/paiements';
-  static const String vtcReglesTarifaires = '/vtc/tarifs';
-  static const String vtcCreneaux = '/vtc/creneaux';
-  static const String vtcVehicules = '/vtc/vehicules';
-  static const String vtcInscriptionChauffeur = '/vtc/inscription_chauffeur';
-  static const String vtcAdmin = '/vtc/admin';
-  // ➕ nouveaux
-  static const String vtcCoursesPlanifiees = '/vtc/courses-planifiees';
-  static const String vtcBonus = '/vtc/bonus';
-
-  // Cibles directes
-  static const String soneyaClient = '/soneya/client';
-  static const String soneyaChauffeur = '/soneya/chauffeur';
-
-  // 🔀 Sous-routes Paramètres (hub)
-  static const String paramNavigation    = '/parametres/navigation';
-  static const String paramModeNuit      = '/parametres/mode-nuit';
-  static const String paramAccessibilite = '/parametres/accessibilite';
-  static const String paramSonVoix       = '/parametres/son-voix';
-  static const String paramCommunication = '/parametres/communication';
-  static const String paramAPropos       = '/parametres/a-propos';
+  // 🌟 JOB
+  static const String jobHome = '/jobs';
+  static const String jobList = '/jobs/list';
+  static const String jobDetail = '/jobs/detail';
+  static const String myApplications = '/jobs/my_applications';
+  static const String cvMaker = '/jobs/cv';
+  static const String employerOffers = '/jobs/employer/offres';
+  static const String employerOfferEdit = '/jobs/employer/offre_edit';
+  static const String employerOfferCandidatures = '/jobs/employer/candidatures';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -200,8 +166,7 @@ class AppRoutes {
       case profil:        return _userProtected((u) => ProfilePage(user: u));
 
       // Paramètres
-      case parametre:     return _userProtected((u) => ParametrePage(user: u)); // ancien
-      case parametres:    return _page(const ParametresPage());                 // nouveau hub
+      case parametre:     return _userProtected((u) => ParametrePage(user: u));
 
       case aide:          return _page(const AidePage());
       case messages:      return _page(const MessagesPage());
@@ -262,71 +227,73 @@ class AppRoutes {
       case editAnnonce:     return _page(EditAnnoncePage(annonce: _argsMap(settings)));
       case editClinique:    return _page(EditCliniquePage(clinique: _argsMap(settings)));
 
-      // Social / Live
-      case talents:        return _page(const PostsReelsPage());
-
-      // Live
-      case live:           return _page(const LivePage());
-      case liveRoom: {
-        final m = _argsMap(settings);
-        final roomId = (m['roomId'] as String?) ?? '';
-        if (roomId.isEmpty) return _error('Argument manquant roomId pour $liveRoom');
-        final isHost = (m['isHost'] as bool?) ?? false;
-        final title  = m['title'] as String?;
-        return _page(LiveRoomPage(roomId: roomId, isHost: isHost, initialTitle: title));
-      }
-
-      // Billetterie
+      // ✅ Billetterie
       case billetterie:    return _page(const EventsListPage());
       case myTickets:      return _userProtected((_) => const MyTicketsPage());
       case scanner:        return _userProtected((_) => const ScannerPage());
 
-      // 🚖 VTC / Moto-taxi
-      case vtcHome:        return _page(const PagePortailSoneya());
-      case vtcDemande:     return _userProtected((u) => HomeClientVtcPage(currentUser: u));
-      case vtcOffres: {
-        final m = _argsMap(settings);
-        final demandeId = (m['demandeId'] as String?) ?? '';
-        if (demandeId.isEmpty) return _error('demandeId requis pour $vtcOffres');
-        return _userProtected((_) => OffresCoursePage(demandeId: demandeId));
+      // 🌟 JOB
+      case jobHome:        return _page(const JobHomePage());
+      case jobList:        return _page(const JobsPage());
+
+      case jobDetail: {
+        final a = settings.arguments;
+        String? jobId;
+        if (a is String && a.isNotEmpty) {
+          jobId = a;
+        } else if (a is Map) {
+          final m = Map<String, dynamic>.from(a as Map);
+          jobId = (m['jobId'] as String?) ?? (m['id'] as String?);
+        }
+        if (jobId == null || jobId.isEmpty) {
+          return _error("jobId requis pour $jobDetail");
+        }
+        return MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId!));
       }
-      case vtcSuivi: {
-        final m = _argsMap(settings);
-        final courseId = (m['courseId'] as String?) ?? '';
-        if (courseId.isEmpty) return _error('courseId requis pour $vtcSuivi');
-        return _userProtected((_) => SuiviCoursePage(courseId: courseId));
+
+      case myApplications: return _userProtected((_) => const MyApplicationsPage());
+      case cvMaker:        return _userProtected((_) => const CvMakerPage());
+
+      // ---------- ESPACE EMPLOYEUR ----------
+      case employerOffers:
+        return _userProtected((_) => _EmployeurGate(
+              builder: (empId) => MesOffresPage(employeurId: empId),
+              onMissing: const DevenirEmployeurPage(),
+            ));
+
+      case employerOfferEdit: {
+        final arg = settings.arguments;
+        return _userProtected((_) => _EmployeurGate(
+              builder: (empId) {
+                if (arg == null) {
+                  // création
+                  return OffreEditPage(employeurId: empId);
+                }
+                if (arg is EmploiModel) {
+                  // édition
+                  return OffreEditPage(existing: arg, employeurId: empId);
+                }
+                return const _RouteErrorPage(
+                  "Argument invalide pour /jobs/employer/offre_edit (attendu EmploiModel ou null)",
+                );
+              },
+              onMissing: const DevenirEmployeurPage(),
+            ));
       }
-      case vtcPortefeuille:    return _userProtected((u) => PortefeuilleChauffeurPage(userId: u.id));
-      case vtcPaiements:       return _userProtected((u) => PaiementsPage(userId: u.id));
-      case vtcReglesTarifaires:return _userProtected((_) => const ReglesTarifairesPage());
-      case vtcCreneaux:        return _userProtected((u) => CreneauxChauffeurPage(userId: u.id));
-      case vtcVehicules:       return _userProtected((u) => VehiculesPage(ownerUserId: u.id));
-      case vtcInscriptionChauffeur: return _page(const InscriptionChauffeurPage());
-      case vtcAdmin:           return _userProtected((_) => const AdminVtcPage());
 
-      // ➕ nouveaux écrans VTC (stubs si pas encore faits)
-      case vtcCoursesPlanifiees:
-        return _page(Scaffold(
-          appBar: AppBar(title: const Text('Courses planifiées')),
-          body: const Center(child: Text('À venir…')),
-        ));
-      case vtcBonus:
-        return _page(Scaffold(
-          appBar: AppBar(title: const Text('Bonus')),
-          body: const Center(child: Text('À venir…')),
-        ));
-
-      // Cibles directes
-      case soneyaClient:    return _userProtected((u) => HomeClientVtcPage(currentUser: u));
-      case soneyaChauffeur: return _userProtected((u) => HomeChauffeurVtcPage(currentUser: u));
-
-      // 🔀 Sous-routes Paramètres (hub)
-      case paramNavigation:    return _page(const ParamNavigationPage());
-      case paramModeNuit:      return _page(const ParamModeNuitPage());
-      case paramAccessibilite: return _page(const ParamAccessibilitePage());
-      case paramSonVoix:       return _page(const ParamSonVoixPage());
-      case paramCommunication: return _page(const ParamCommunicationPage());
-      case paramAPropos:       return _page(const ParamAProposPage());
+      // ✅ NOUVELLE route : liste des candidatures d’une offre
+      case employerOfferCandidatures: {
+        final m = _argsMap(settings);
+        final id    = (m['emploiId'] as String?) ?? (m['id'] as String?);
+        final titre = (m['titre'] as String?) ?? 'Candidatures';
+        if (id == null || id.isEmpty) {
+          return _error('emploiId requis pour $employerOfferCandidatures');
+        }
+        return _userProtected((_) => _EmployeurGate(
+              builder: (_) => CandidaturesPage(jobId: id, jobTitle: titre),
+              onMissing: const DevenirEmployeurPage(),
+            ));
+      }
 
       default:
         return _error('Page non trouvée : ${settings.name}');
@@ -365,6 +332,56 @@ class AppRoutes {
         }
         return builder(user);
       },
+    );
+  }
+}
+
+// ------------------ Helpers ajoutés pour JOB ------------------
+
+/// Résout l'employeurId de l'utilisateur courant.
+/// - Si trouvé → appelle `builder(employeurId)`
+/// - Sinon     → affiche `onMissing` (ex: DevenirEmployeurPage)
+class _EmployeurGate extends StatelessWidget {
+  const _EmployeurGate({
+    required this.builder,
+    required this.onMissing,
+  });
+
+  final Widget Function(String employeurId) builder;
+  final Widget onMissing;
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = EmployeurService();
+    return FutureBuilder<String?>(
+      future: svc.getEmployeurId(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError) {
+          return _RouteErrorPage('Erreur: ${snap.error}');
+        }
+        final id = snap.data;
+        if (id == null) return onMissing;
+        return builder(id);
+      },
+    );
+  }
+}
+
+/// Petite page d’erreur inline à utiliser depuis un builder.
+class _RouteErrorPage extends StatelessWidget {
+  const _RouteErrorPage(this.message, {super.key});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Erreur')),
+      body: Center(child: Text(message)),
     );
   }
 }
