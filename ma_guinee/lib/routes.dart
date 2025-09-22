@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
-import 'models/job_models.dart'; // ✅ pour EmploiModel
+import 'models/job_models.dart'; // EmploiModel
 
 // Pages principales
 import 'pages/splash_screen.dart';
@@ -15,7 +15,7 @@ import 'pages/carte_page.dart';
 import 'pages/divertissement_page.dart';
 import 'pages/admin_page.dart';
 
-// ✅ Alias clairs
+// Alias clairs
 import 'pages/resto_page.dart' as resto_pg;
 import 'pages/register_page.dart' as register_pg;
 
@@ -52,25 +52,28 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
-// ✅ Billetterie
+// Billetterie
 import 'pages/events_list_page.dart';
 import 'pages/my_tickets_page.dart';
 import 'pages/scanner_page.dart';
 
-// 🌟 JOB – pages existantes
+// JOB – pages existantes
 import 'pages/jobs/job_home_page.dart';
 import 'pages/jobs/jobs_page.dart';
 import 'pages/jobs/job_detail_page.dart';
-import 'pages/jobs/my_applications_page.dart';
-import 'pages/cv/cv_maker_page.dart'; // ✅ bon chemin
+
+// ⚠️ IMPORTANT: alias pour éviter tout conflit
+import 'pages/jobs/my_applications_page.dart' as apps;
+
+import 'pages/cv/cv_maker_page.dart';
 import 'pages/jobs/employer/mes_offres_page.dart';
 import 'pages/jobs/employer/offre_edit_page.dart';
 
-// 🌟 JOB – NOUVELLES pages Candidatures (liste + fiche détail)
+// JOB – nouvelles pages Candidatures (si déjà dans ton projet)
 import 'pages/jobs/candidatures_page.dart';
 import 'pages/jobs/candidature_detail_page.dart';
 
-// ⚠️ Import employeur & garde
+// Employeur & garde
 import 'pages/jobs/employer/devenir_employeur_page.dart';
 import 'services/employeur_service.dart';
 
@@ -99,7 +102,7 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String profil = '/profil';
 
-  // Paramètres (profil général)
+  // Paramètres
   static const String parametre = '/parametre';
 
   static const String aide = '/aide';
@@ -125,12 +128,12 @@ class AppRoutes {
   static const String editAnnonce = '/edit_annonce';
   static const String editClinique = '/edit_clinique';
 
-  // ✅ Billetterie
+  // Billetterie
   static const String billetterie = '/billetterie';
   static const String myTickets = '/mes_billets';
   static const String scanner = '/scanner';
 
-  // 🌟 JOB
+  // JOB
   static const String jobHome = '/jobs';
   static const String jobList = '/jobs/list';
   static const String jobDetail = '/jobs/detail';
@@ -227,12 +230,12 @@ class AppRoutes {
       case editAnnonce:     return _page(EditAnnoncePage(annonce: _argsMap(settings)));
       case editClinique:    return _page(EditCliniquePage(clinique: _argsMap(settings)));
 
-      // ✅ Billetterie
+      // Billetterie
       case billetterie:    return _page(const EventsListPage());
       case myTickets:      return _userProtected((_) => const MyTicketsPage());
       case scanner:        return _userProtected((_) => const ScannerPage());
 
-      // 🌟 JOB
+      // JOB
       case jobHome:        return _page(const JobHomePage());
       case jobList:        return _page(const JobsPage());
 
@@ -251,7 +254,8 @@ class AppRoutes {
         return MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId!));
       }
 
-      case myApplications: return _userProtected((_) => const MyApplicationsPage());
+      // ✅ ICI: alias apps pour éviter le conflit
+      case myApplications: return _userProtected((_) => const apps.MyApplicationsPage());
       case cvMaker:        return _userProtected((_) => const CvMakerPage());
 
       // ---------- ESPACE EMPLOYEUR ----------
@@ -266,11 +270,9 @@ class AppRoutes {
         return _userProtected((_) => _EmployeurGate(
               builder: (empId) {
                 if (arg == null) {
-                  // création
                   return OffreEditPage(employeurId: empId);
                 }
                 if (arg is EmploiModel) {
-                  // édition
                   return OffreEditPage(existing: arg, employeurId: empId);
                 }
                 return const _RouteErrorPage(
@@ -281,7 +283,6 @@ class AppRoutes {
             ));
       }
 
-      // ✅ NOUVELLE route : liste des candidatures d’une offre
       case employerOfferCandidatures: {
         final m = _argsMap(settings);
         final id    = (m['emploiId'] as String?) ?? (m['id'] as String?);
@@ -338,9 +339,6 @@ class AppRoutes {
 
 // ------------------ Helpers ajoutés pour JOB ------------------
 
-/// Résout l'employeurId de l'utilisateur courant.
-/// - Si trouvé → appelle `builder(employeurId)`
-/// - Sinon     → affiche `onMissing` (ex: DevenirEmployeurPage)
 class _EmployeurGate extends StatelessWidget {
   const _EmployeurGate({
     required this.builder,
@@ -372,7 +370,6 @@ class _EmployeurGate extends StatelessWidget {
   }
 }
 
-/// Petite page d’erreur inline à utiliser depuis un builder.
 class _RouteErrorPage extends StatelessWidget {
   const _RouteErrorPage(this.message, {super.key});
   final String message;

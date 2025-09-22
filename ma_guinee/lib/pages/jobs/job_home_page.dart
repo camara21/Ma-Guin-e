@@ -1,15 +1,17 @@
-// lib/pages/jobs/job_home_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'jobs_page.dart';
 import 'job_detail_page.dart';
-import 'my_applications_page.dart';
+
+// ⚠️ alias pour éviter collisions
+import 'my_applications_page.dart' as apps;
+import 'my_favorite_jobs_page.dart' as favs;
+
 import '../cv/cv_maker_page.dart';
 import 'employer/mes_offres_page.dart';
 import 'employer/devenir_employeur_page.dart';
 
-// même source que la page Recherche
 import 'package:ma_guinee/services/jobs_service.dart';
 import 'package:ma_guinee/models/job_models.dart';
 
@@ -29,6 +31,9 @@ class _JobHomePageState extends State<JobHomePage> {
   final _svc = JobsService();
   late Future<List<EmploiModel>> _recent;
 
+  // état local des favoris (emploi_id)
+  Set<String> _favSet = {};
+
   @override
   void initState() {
     super.initState();
@@ -41,11 +46,10 @@ class _JobHomePageState extends State<JobHomePage> {
   }
 
   Future<List<EmploiModel>> _loadRecent() {
-    // mêmes dernières offres que la page Recherche
     return _svc.chercher(limit: 12, offset: 0);
   }
 
-  // essaie d’enrichir (nom + logo) si l’EmploiModel expose employeurId
+  // enrichir (nom + logo) si EmploiModel expose employeurId
   Future<Map<String, Map<String, String>>> _loadEmployeursMeta(
     List<EmploiModel> items,
   ) async {
@@ -79,6 +83,61 @@ class _JobHomePageState extends State<JobHomePage> {
       return out;
     } catch (_) {
       return {};
+    }
+  }
+
+  // charge l'état des favoris (public.emplois_favoris)
+  Future<Set<String>> _loadFavSetFor(List<EmploiModel> items) async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) return {};
+    final ids = items.map((e) => e.id).where((s) => s.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+    final inList = '(${ids.map((e) => '"$e"').join(',')})';
+    final rows = await sb
+        .from('emplois_favoris')
+        .select('emploi_id')
+        .eq('utilisateur_id', uid)
+        .filter('emploi_id', 'in', inList);
+    final out = <String>{};
+    for (final r in (rows as List? ?? const [])) {
+      final id = (r['emploi_id'] ?? '').toString();
+      if (id.isNotEmpty) out.add(id);
+    }
+    return out;
+  }
+
+  // toggle favori
+  Future<void> _toggleFavorite(String jobId) async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Connectez-vous pour ajouter des favoris.')),
+      );
+      return;
+    }
+    final isFav = _favSet.contains(jobId);
+    try {
+      if (isFav) {
+        await sb.from('emplois_favoris').delete().match({
+          'utilisateur_id': uid,
+          'emploi_id': jobId,
+        });
+        setState(() => _favSet.remove(jobId));
+      } else {
+        await sb.from('emplois_favoris').insert({
+          'utilisateur_id': uid,
+          'emploi_id': jobId,
+        });
+        setState(() => _favSet.add(jobId));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur favoris : $e')),
+      );
     }
   }
 
@@ -128,9 +187,12 @@ class _JobHomePageState extends State<JobHomePage> {
       onSelected: (v) {
         switch (v) {
           case 1:
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyApplicationsPage()));
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()));
             break;
           case 2:
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()));
+            break;
+          case 3:
             _openEmployeur();
             break;
         }
@@ -147,6 +209,15 @@ class _JobHomePageState extends State<JobHomePage> {
         ),
         PopupMenuItem(
           value: 2,
+          child: ListTile(
+            leading: Icon(Icons.favorite_border),
+            title: Text('Mes favoris'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 3,
           child: ListTile(
             leading: Icon(Icons.business_center_outlined),
             title: Text('Espace employeur'),
@@ -174,10 +245,7 @@ class _JobHomePageState extends State<JobHomePage> {
   String _relativeFromEmploi(EmploiModel e) {
     try {
       final dyn = e as dynamic;
-      final iso = (dyn.creeLe ??
-                   dyn.cree_le ??
-                   dyn.createdAt ??
-                   dyn.created_at)?.toString();
+      final iso = (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)?.toString();
       return _formatRelative(iso);
     } catch (_) {
       return '';
@@ -219,7 +287,13 @@ class _JobHomePageState extends State<JobHomePage> {
                   icon: Icons.assignment_turned_in, label: 'Mes candidatures',
                   color: kGreen,
                   onTap: () => Navigator.push(
-                    context, MaterialPageRoute(builder: (_) => const MyApplicationsPage())),
+                    context, MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage())),
+                ),
+                _PillAction(
+                  icon: Icons.favorite_border, label: 'Mes favoris',
+                  color: kRed,
+                  onTap: () => Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage())),
                 ),
                 _PillAction(
                   icon: Icons.business_center, label: 'Espace employeur',
@@ -296,30 +370,43 @@ class _JobHomePageState extends State<JobHomePage> {
                 builder: (context, metaSnap) {
                   final meta = metaSnap.data ?? {};
 
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) {
-                      final e = items[i];
-                      // essaie de récupérer employerId dynamiquement
-                      String empId = '';
-                      try { empId = ((e as dynamic).employeurId ?? '').toString(); } catch (_) {}
-                      final company = meta[empId]?['nom'] ?? '';
-                      final logo    = meta[empId]?['logo'] ?? '';
+                  // charge l'état favoris pour la liste
+                  return FutureBuilder<Set<String>>(
+                    future: _loadFavSetFor(items),
+                    builder: (context, favSnap) {
+                      if (favSnap.hasData) {
+                        _favSet = favSnap.data!;
+                      }
+                      final useFav = favSnap.data ?? _favSet;
 
-                      return _JobCardVitrine(
-                        title: e.titre,
-                        company: company,
-                        subtitle: _formatVilleContrat(e),
-                        meta: _relativeFromEmploi(e), // ← date relative
-                        logoUrl: logo,
-                        bannerUrl: null,              // pas d’image par défaut
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => JobDetailPage(jobId: e.id)),
+                      return ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, i) {
+                          final e = items[i];
+                          String empId = '';
+                          try { empId = ((e as dynamic).employeurId ?? '').toString(); } catch (_) {}
+                          final company = meta[empId]?['nom'] ?? '';
+                          final logo    = meta[empId]?['logo'] ?? '';
+                          final isFav   = useFav.contains(e.id);
+
+                          return _JobCardVitrine(
+                            title: e.titre,
+                            company: company,
+                            subtitle: _formatVilleContrat(e),
+                            meta: _relativeFromEmploi(e), // date relative
+                            logoUrl: logo,
+                            bannerUrl: null,
+                            favorite: isFav,
+                            onFavoriteTap: () => _toggleFavorite(e.id),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => JobDetailPage(jobId: e.id)),
+                              );
+                            },
                           );
                         },
                       );
@@ -491,7 +578,7 @@ class _PillAction extends StatelessWidget {
   }
 }
 
-// ===================== Carte "vitrine" (logo = bannière cover + fond blanc) =====================
+// ===================== Carte "vitrine" (logo cover + cœur) =====================
 class _JobCardVitrine extends StatelessWidget {
   const _JobCardVitrine({
     required this.title,
@@ -499,6 +586,8 @@ class _JobCardVitrine extends StatelessWidget {
     required this.subtitle,
     required this.meta,
     required this.onTap,
+    required this.favorite,
+    required this.onFavoriteTap,
     this.logoUrl,
     this.bannerUrl,
   });
@@ -506,9 +595,11 @@ class _JobCardVitrine extends StatelessWidget {
   final String title;
   final String company;
   final String subtitle;
-  final String meta;       // ← affichage de la date relative
-  final String? logoUrl;   // utilisé en badge ou en bannière fallback
+  final String meta;       // date relative
+  final String? logoUrl;   // utilisé en badge ou bannière fallback
   final String? bannerUrl; // bannière dédiée si dispo
+  final bool favorite;
+  final VoidCallback onFavoriteTap;
   final VoidCallback onTap;
 
   @override
@@ -547,7 +638,7 @@ class _JobCardVitrine extends StatelessWidget {
                     )
                   else if (useLogoAsBanner)
                     Container(
-                      color: Colors.white, // fond blanc derrière les PNG transparents
+                      color: Colors.white,
                       child: Image.network(
                         logoUrl!.trim(),
                         fit: BoxFit.cover, // remplit et recadre
@@ -558,7 +649,6 @@ class _JobCardVitrine extends StatelessWidget {
                       ),
                     )
                   else
-                    // Pas de bannière ni logo → fond doux neutre
                     const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -595,12 +685,13 @@ class _JobCardVitrine extends StatelessWidget {
                       ),
                     ),
 
-                  // Favori
+                  // Cœur favoris
                   Positioned(
                     top: 6, right: 6,
                     child: IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.favorite_border, size: 18),
+                      onPressed: onFavoriteTap,
+                      icon: Icon(favorite ? Icons.favorite : Icons.favorite_border, size: 18),
+                      color: favorite ? Colors.red : Colors.black87,
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.white,
                         padding: const EdgeInsets.all(6),
