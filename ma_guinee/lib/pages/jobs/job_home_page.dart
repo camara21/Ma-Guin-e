@@ -9,6 +9,10 @@ import '../cv/cv_maker_page.dart';
 import 'employer/mes_offres_page.dart';
 import 'employer/devenir_employeur_page.dart';
 
+// même source que la page Recherche
+import 'package:ma_guinee/services/jobs_service.dart';
+import 'package:ma_guinee/models/job_models.dart';
+
 class JobHomePage extends StatefulWidget {
   const JobHomePage({super.key});
   @override
@@ -16,14 +20,14 @@ class JobHomePage extends StatefulWidget {
 }
 
 class _JobHomePageState extends State<JobHomePage> {
-  // Palette Ma Guinée
+  // Palette
   static const kBlue   = Color(0xFF1976D2);
   static const kBg     = Color(0xFFF6F7F9);
   static const kRed    = Color(0xFFCE1126);
-  static const kYellow = Color(0xFFFCD116);
   static const kGreen  = Color(0xFF009460);
 
-  late Future<List<Map<String, dynamic>>> _recent;
+  final _svc = JobsService();
+  late Future<List<EmploiModel>> _recent;
 
   @override
   void initState() {
@@ -31,80 +35,51 @@ class _JobHomePageState extends State<JobHomePage> {
     _recent = _loadRecent();
   }
 
-  Future<List<Map<String, dynamic>>> _loadRecent() async {
+  bool get _isMobile {
+    final w = MediaQuery.maybeOf(context)?.size.width ?? 800;
+    return w < 600;
+  }
+
+  Future<List<EmploiModel>> _loadRecent() {
+    // mêmes dernières offres que la page Recherche
+    return _svc.chercher(limit: 12, offset: 0);
+  }
+
+  // essaie d’enrichir (nom + logo) si l’EmploiModel expose employeurId
+  Future<Map<String, Map<String, String>>> _loadEmployeursMeta(
+    List<EmploiModel> items,
+  ) async {
     final sb = Supabase.instance.client;
     try {
-      // 1) Offres récentes publiques (actif = true)
-      final List rows = await sb
-          .from('emplois')
-          .select('id, titre, ville, commune, type_contrat, cree_le, employeur_id')
-          .eq('actif', true)
-          .order('cree_le', ascending: false)
-          .limit(8);
-
-      final items = rows.map((e) => Map<String, dynamic>.from(e)).toList();
-
-      // 2) Tenter de récupérer logos via la RPC (si dispo)
-      final ids = items
-          .map((m) => (m['employeur_id'] ?? '').toString())
-          .where((s) => s.isNotEmpty)
-          .toSet()
-          .toList();
-
-      Map<String, Map<String, dynamic>> logosById = {};
-      if (ids.isNotEmpty) {
+      final ids = <String>{};
+      for (final e in items) {
         try {
-          final res = await sb.rpc('get_employeurs_public', params: {'ids': ids});
-          final list = (res as List?) ?? const [];
-          for (final e in list) {
-            final m = Map<String, dynamic>.from(e);
-            final id = (m['id'] ?? '').toString();
-            if (id.isNotEmpty) logosById[id] = m;
-          }
-        } catch (_) {
-          // La RPC n'existe pas → on ignore les logos (pas d'erreur UI)
-        }
+          final dyn = e as dynamic;
+          final id = dyn.employeurId?.toString();
+          if (id != null && id.isNotEmpty) ids.add(id);
+        } catch (_) {}
       }
+      if (ids.isEmpty) return {};
 
-      // 3) Merge logos dans les items
-      for (final m in items) {
-        final empId = (m['employeur_id'] ?? '').toString();
-        if (empId.isNotEmpty && logosById.containsKey(empId)) {
-          m['employeur_nom']  = logosById[empId]?['nom'] ?? '';
-          m['logo_url']       = logosById[empId]?['logo_url'] ?? '';
-        } else {
-          m['employeur_nom']  = '';
-          m['logo_url']       = '';
-        }
+      final inList = '(${ids.map((e) => '"$e"').join(',')})';
+      final rows = await sb
+          .from('employeurs')
+          .select('id, nom, logo_url')
+          .filter('id', 'in', inList);
+
+      final out = <String, Map<String, String>>{};
+      for (final r in (rows as List? ?? const [])) {
+        final m = Map<String, dynamic>.from(r);
+        final id = (m['id'] ?? '').toString();
+        out[id] = {
+          'nom': (m['nom'] ?? '').toString(),
+          'logo': (m['logo_url'] ?? '').toString(),
+        };
       }
-
-      return items;
-    } catch (e) {
-      // Si la policy SELECT n’est pas ouverte au public, on arrive ici
-      debugPrint('load recent jobs error: $e');
-      rethrow;
+      return out;
+    } catch (_) {
+      return {};
     }
-  }
-
-  String _formatVilleType(Map<String, dynamic> m) {
-    final ville = (m['ville'] ?? '').toString();
-    final type  = (m['type_contrat'] ?? '').toString().toUpperCase();
-    if (ville.isEmpty && type.isEmpty) return '';
-    if (ville.isEmpty) return type;
-    if (type.isEmpty)  return ville;
-    return '$ville • $type';
-  }
-
-  String _formatDate(Map<String, dynamic> m) {
-    final raw = m['cree_le']?.toString();
-    if (raw == null || raw.isEmpty) return '';
-    try {
-      final d = DateTime.parse(raw).toLocal();
-      final diff = DateTime.now().difference(d);
-      if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
-      if (diff.inHours   < 24) return 'il y a ${diff.inHours} h';
-      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-    } catch (_) { return ''; }
   }
 
   Future<void> _openEmployeur() async {
@@ -147,8 +122,72 @@ class _JobHomePageState extends State<JobHomePage> {
     }
   }
 
+  PopupMenuButton<int> _mobileMenu() {
+    return PopupMenuButton<int>(
+      icon: const Icon(Icons.menu_rounded),
+      onSelected: (v) {
+        switch (v) {
+          case 1:
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyApplicationsPage()));
+            break;
+          case 2:
+            _openEmployeur();
+            break;
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 1,
+          child: ListTile(
+            leading: Icon(Icons.assignment_turned_in_outlined),
+            title: Text('Mes candidatures'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 2,
+          child: ListTile(
+            leading: Icon(Icons.business_center_outlined),
+            title: Text('Espace employeur'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ------- Helpers date relative -------
+  String _formatRelative(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      final diff = DateTime.now().toLocal().difference(d);
+      if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
+      if (diff.inHours   < 24) return 'il y a ${diff.inHours} h';
+      if (diff.inDays    < 7)  return 'il y a ${diff.inDays} j';
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    } catch (_) { return ''; }
+  }
+
+  String _relativeFromEmploi(EmploiModel e) {
+    try {
+      final dyn = e as dynamic;
+      final iso = (dyn.creeLe ??
+                   dyn.cree_le ??
+                   dyn.createdAt ??
+                   dyn.created_at)?.toString();
+      return _formatRelative(iso);
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isMobile = _isMobile;
+
     return Scaffold(
       backgroundColor: kBg,
       appBar: AppBar(
@@ -156,6 +195,9 @@ class _JobHomePageState extends State<JobHomePage> {
         foregroundColor: Colors.black,
         elevation: 0.5,
         title: const Text('Emplois'),
+        actions: [
+          if (isMobile) _mobileMenu(),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -169,29 +211,23 @@ class _JobHomePageState extends State<JobHomePage> {
           ),
           const SizedBox(height: 12),
 
-          // Actions rapides
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: [
-              _PillAction(
-                icon: Icons.picture_as_pdf, label: 'Générer mon CV',
-                color: kYellow,
-                onTap: () => Navigator.push(
-                  context, MaterialPageRoute(builder: (_) => CvMakerPage())),
-              ),
-              _PillAction(
-                icon: Icons.assignment_turned_in, label: 'Mes candidatures',
-                color: kGreen,
-                onTap: () => Navigator.push(
-                  context, MaterialPageRoute(builder: (_) => const MyApplicationsPage())),
-              ),
-              _PillAction(
-                icon: Icons.business_center, label: 'Espace employeur',
-                color: kRed,
-                onTap: _openEmployeur,
-              ),
-            ],
-          ),
+          if (!isMobile)
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: [
+                _PillAction(
+                  icon: Icons.assignment_turned_in, label: 'Mes candidatures',
+                  color: kGreen,
+                  onTap: () => Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => const MyApplicationsPage())),
+                ),
+                _PillAction(
+                  icon: Icons.business_center, label: 'Espace employeur',
+                  color: kRed,
+                  onTap: _openEmployeur,
+                ),
+              ],
+            ),
 
           const SizedBox(height: 16),
 
@@ -226,17 +262,18 @@ class _JobHomePageState extends State<JobHomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               onPressed: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => CvMakerPage())),
+                context, MaterialPageRoute(builder: (_) => const CvMakerPage())),
               child: const Text('Créer mon CV'),
             ),
           ),
 
           const SizedBox(height: 18),
 
-          _SectionTitle('Dernières offres'),
+          Text('Dernières offres', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
 
-          FutureBuilder<List<Map<String, dynamic>>>(
+          // ====== LISTE VITRINE ======
+          FutureBuilder<List<EmploiModel>>(
             future: _recent,
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) {
@@ -249,31 +286,42 @@ class _JobHomePageState extends State<JobHomePage> {
                 return const Text('Impossible de charger les offres.');
               }
 
-              final items = snap.data ?? const [];
+              final items = snap.data ?? const <EmploiModel>[];
               if (items.isEmpty) {
                 return const Text('Aucune offre disponible pour l’instant.');
               }
 
-              return ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (_, i) {
-                  final m = items[i];
-                  final logo = (m['logo_url'] ?? '').toString();
-                  final jobId = (m['id'] ?? '').toString();
+              return FutureBuilder<Map<String, Map<String, String>>>(
+                future: _loadEmployeursMeta(items),
+                builder: (context, metaSnap) {
+                  final meta = metaSnap.data ?? {};
 
-                  return _JobCard(
-                    title: (m['titre'] ?? '').toString(),
-                    subtitle: _formatVilleType(m),
-                    meta: _formatDate(m),
-                    logoUrl: logo,
-                    onTap: () {
-                      if (jobId.isEmpty) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId)),
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (_, i) {
+                      final e = items[i];
+                      // essaie de récupérer employerId dynamiquement
+                      String empId = '';
+                      try { empId = ((e as dynamic).employeurId ?? '').toString(); } catch (_) {}
+                      final company = meta[empId]?['nom'] ?? '';
+                      final logo    = meta[empId]?['logo'] ?? '';
+
+                      return _JobCardVitrine(
+                        title: e.titre,
+                        company: company,
+                        subtitle: _formatVilleContrat(e),
+                        meta: _relativeFromEmploi(e), // ← date relative
+                        logoUrl: logo,
+                        bannerUrl: null,              // pas d’image par défaut
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => JobDetailPage(jobId: e.id)),
+                          );
+                        },
                       );
                     },
                   );
@@ -284,6 +332,13 @@ class _JobHomePageState extends State<JobHomePage> {
         ],
       ),
     );
+  }
+
+  String _formatVilleContrat(EmploiModel e) {
+    final parts = <String>[];
+    if (e.ville.isNotEmpty) parts.add(e.ville);
+    if (e.typeContrat.isNotEmpty) parts.add(e.typeContrat);
+    return parts.join(' • ');
   }
 }
 
@@ -348,9 +403,9 @@ class _HeroJobs extends StatelessWidget {
                       Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2)),
                     ],
                   ),
-                  children: [
-                    TextSpan(text: '$titleTop\n'),
-                    const TextSpan(text: 'choisis ton avenir', style: TextStyle(fontWeight: FontWeight.w900)),
+                  children: const [
+                    TextSpan(text: 'La Guinée recrute\n'),
+                    TextSpan(text: 'choisis ton avenir', style: TextStyle(fontWeight: FontWeight.w900)),
                   ],
                 ),
               ),
@@ -374,10 +429,10 @@ class _HeroJobs extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Trouver mon job',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                             SizedBox(height: 4),
                             Text('Métier, entreprise, compétence…',
-                              style: TextStyle(color: Colors.black45, fontSize: 14)),
+                                style: TextStyle(color: Colors.black45, fontSize: 14)),
                           ],
                         ),
                       ),
@@ -399,21 +454,6 @@ class _HeroJobs extends StatelessWidget {
 }
 
 // ================== UI helpers ==================
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-}
-
-// ===== Boutons pilule =====
 class _PillAction extends StatelessWidget {
   const _PillAction({
     required this.icon,
@@ -451,74 +491,161 @@ class _PillAction extends StatelessWidget {
   }
 }
 
-// ===== Carte offre =====
-class _JobCard extends StatelessWidget {
-  const _JobCard({
+// ===================== Carte "vitrine" (logo = bannière cover + fond blanc) =====================
+class _JobCardVitrine extends StatelessWidget {
+  const _JobCardVitrine({
     required this.title,
+    required this.company,
     required this.subtitle,
     required this.meta,
     required this.onTap,
     this.logoUrl,
+    this.bannerUrl,
   });
 
   final String title;
+  final String company;
   final String subtitle;
-  final String meta;
-  final String? logoUrl;
+  final String meta;       // ← affichage de la date relative
+  final String? logoUrl;   // utilisé en badge ou en bannière fallback
+  final String? bannerUrl; // bannière dédiée si dispo
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasLogo = (logoUrl ?? '').trim().isNotEmpty;
+    final hasLogo   = (logoUrl ?? '').trim().isNotEmpty;
+    final hasBanner = (bannerUrl ?? '').trim().isNotEmpty;
+
+    // Si pas de bannière mais un logo → bannière = logo recadré en cover
+    final bool useLogoAsBanner = !hasBanner && hasLogo;
+
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final double bannerHeight = isMobile ? 110 : 140;
+    final double badgeSize    = isMobile ? 36  : 42;
 
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.black12),
-          ),
-          child: Row(
-            children: [
-              if (hasLogo)
-                CircleAvatar(radius: 18, backgroundImage: NetworkImage(logoUrl!.trim()))
-              else
-                const CircleAvatar(
-                  radius: 18,
-                  backgroundColor: _JobHomePageState.kBlue,
-                  child: Icon(Icons.work_outline, color: Colors.white, size: 18),
-                ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.black54)),
-                    ],
-                    if (meta.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(meta, style: const TextStyle(fontSize: 12, color: Colors.black45)),
-                    ],
-                  ],
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ===== BANNIÈRE =====
+            SizedBox(
+              height: bannerHeight,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasBanner)
+                    Image.network(
+                      bannerUrl!.trim(),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                    )
+                  else if (useLogoAsBanner)
+                    Container(
+                      color: Colors.white, // fond blanc derrière les PNG transparents
+                      child: Image.network(
+                        logoUrl!.trim(),
+                        fit: BoxFit.cover, // remplit et recadre
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.work_outline, size: 40, color: Colors.black45),
+                      ),
+                    )
+                  else
+                    // Pas de bannière ni logo → fond doux neutre
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF4F6F9), Color(0xFFE9EDF3)],
+                        ),
+                      ),
+                    ),
+
+                  // Badge logo uniquement si on n'utilise pas déjà le logo en bannière
+                  if (!useLogoAsBanner && hasLogo)
+                    Positioned(
+                      top: 10, left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black12)],
+                        ),
+                        child: SizedBox(
+                          width: badgeSize, height: badgeSize,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              logoUrl!.trim(),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.work_outline, size: 22),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Favori
+                  Positioned(
+                    top: 6, right: 6,
+                    child: IconButton(
+                      onPressed: () {},
+                      icon: const Icon(Icons.favorite_border, size: 18),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.all(6),
+                        minimumSize: const Size(32, 32),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+
+            // ===== Texte + bouton =====
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  if (company.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(company, style: const TextStyle(color: Colors.black54)),
+                  ],
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: const TextStyle(color: Colors.black54)),
+                  ],
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(meta, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                  ],
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton(
+                      onPressed: onTap,
+                      child: const Text('Voir l’offre'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
