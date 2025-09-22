@@ -100,10 +100,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
   }
 
   String _relativeFromJob(Map<String,dynamic> j) {
-    final iso = (j['cree_le'] ??
-                 j['created_at'] ??
-                 j['createdAt'] ??
-                 j['creeLe'])?.toString();
+    final iso = (j['cree_le'] ?? j['created_at'] ?? j['createdAt'] ?? j['creeLe'])?.toString();
     return _relative(iso);
   }
 
@@ -330,12 +327,15 @@ class _JobDetailPageState extends State<JobDetailPage> {
     final exigences   = (j['exigences'] ?? '').toString();
     final avantages   = (j['avantages'] ?? '').toString();
 
-    String salaireStr() {
-      if (salMin != null) {
-        final base = salMax != null
-            ? '${_fmtMontant(salMin)} - ${_fmtMontant(salMax)}'
-            : _fmtMontant(salMin);
-        return '$base (GNF / $periodeSalaire)';
+    // 👉 libellé salaire explicite
+    String salaireText() {
+      final per = (periodeSalaire.isEmpty ? 'mois' : periodeSalaire);
+      if (salMin != null && salMax != null) {
+        return 'Salaire : entre ${_fmtMontant(salMin)} et ${_fmtMontant(salMax)} GNF par $per';
+      } else if (salMin != null) {
+        return 'Salaire : ${_fmtMontant(salMin)} GNF par $per';
+      } else if (salMax != null) {
+        return 'Salaire : jusqu’à ${_fmtMontant(salMax)} GNF par $per';
       }
       return 'Salaire : à négocier';
     }
@@ -443,7 +443,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
                       _Tag(icon: Icons.place, text: commune.isNotEmpty ? '$ville, $commune' : ville),
                       if (contrat.isNotEmpty)
                         _Tag(icon: Icons.badge_outlined, text: contrat.toUpperCase()),
-                      _Tag(icon: Icons.payments_outlined, text: salaireStr()),
+                      // 💰 Salaire explicite
+                      _Tag(icon: Icons.payments_outlined, text: salaireText()),
                       _Tag(
                         icon: teletravail ? Icons.home_work_outlined : Icons.pin_drop_outlined,
                         text: teletravail ? 'Télétravail' : 'Sur site',
@@ -461,28 +462,46 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
             const SizedBox(height: 12),
 
-            // ── Description
-            if (description.isNotEmpty) ...[
-              const _SectionTitle('Les missions du poste'),
-              _Card(child: _ExpandableText(description)),
-              const SizedBox(height: 12),
-            ],
+            // ── 🔲 Bloc unique "lisse" à la HelloWork
+            if (description.isNotEmpty ||
+                exigences.isNotEmpty ||
+                avantages.isNotEmpty)
+              _Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (description.isNotEmpty) ...[
+                      const _InnerTitle('Les missions du poste'),
+                      const SizedBox(height: 6),
+                      _ExpandableText(description),
+                    ],
+                    if (description.isNotEmpty && (exigences.isNotEmpty || avantages.isNotEmpty))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Divider(height: 1),
+                      ),
+                    if (exigences.isNotEmpty) ...[
+                      const _InnerTitle('Le profil recherché'),
+                      const SizedBox(height: 6),
+                      _ExpandableText(exigences),
+                    ],
+                    if (exigences.isNotEmpty && avantages.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Divider(height: 1),
+                      ),
+                    if (avantages.isNotEmpty) ...[
+                      const _InnerTitle('Infos complémentaires'),
+                      const SizedBox(height: 6),
+                      _ExpandableText(avantages),
+                    ],
+                  ],
+                ),
+              ),
 
-            // ── Exigences
-            if (exigences.isNotEmpty) ...[
-              const _SectionTitle('Le profil recherché'),
-              _Card(child: _ExpandableText(exigences)),
-              const SizedBox(height: 12),
-            ],
+            const SizedBox(height: 12),
 
-            // ── Avantages
-            if (avantages.isNotEmpty) ...[
-              const _SectionTitle('Infos complémentaires'),
-              _Card(child: _ExpandableText(avantages)),
-              const SizedBox(height: 12),
-            ],
-
-            // ── Candidature rapide (compact, “lisse”)
+            // ── Candidature rapide (compact)
             const _SectionTitle('Envoyez votre candidature'),
             _Card(
               child: Column(
@@ -635,6 +654,20 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _InnerTitle extends StatelessWidget {
+  const _InnerTitle(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+    );
+  }
+}
+
 class _Tag extends StatelessWidget {
   const _Tag({required this.icon, required this.text, this.color});
   final IconData icon;
@@ -710,7 +743,6 @@ class _ExpandableTextState extends State<_ExpandableText> {
       style: style,
     );
 
-    // On calcule si le bouton "Voir plus" est utile en mesurant rapidement
     final moreNeeded = widget.text.length > 320; // heuristique simple
 
     return Column(
