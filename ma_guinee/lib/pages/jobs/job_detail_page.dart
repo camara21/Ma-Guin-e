@@ -8,40 +8,26 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/jobs_service.dart';
 
 /// ───────────────────────────────────────────────────────────────────
-/// 1) Helpers formats
+/// Format montant avec des points: 1.000 / 25.000 / 1.250.000
 String _fmtMontant(dynamic v) {
   if (v == null) return '';
   final n = (v is num) ? v : num.tryParse(v.toString());
   if (n == null) return v.toString();
   final s = n.toStringAsFixed(0);
-  final out = StringBuffer();
-  int c = 0;
+  final b = StringBuffer();
+  var c = 0;
   for (int i = s.length - 1; i >= 0; i--) {
-    out.write(s[i]);
+    b.write(s[i]);
     c++;
-    if (c % 3 == 0 && i != 0) out.write('.');
+    if (c % 3 == 0 && i != 0) b.write('.');
   }
-  return out.toString().split('').reversed.join();
-}
-
-String _relativeFromIso(String? iso) {
-  if (iso == null || iso.isEmpty) return '';
-  try {
-    final d = DateTime.parse(iso).toLocal();
-    final diff = DateTime.now().toLocal().difference(d);
-    if (diff.inMinutes < 60) return 'Publié il y a ${diff.inMinutes} min';
-    if (diff.inHours < 24) return 'Publié il y a ${diff.inHours} h';
-    if (diff.inDays < 7) return 'Publié il y a ${diff.inDays} j';
-    return 'Publié le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-  } catch (_) {
-    return '';
-  }
+  return b.toString().split('').reversed.join();
 }
 /// ───────────────────────────────────────────────────────────────────
 
 class JobDetailPage extends StatefulWidget {
-  final String jobId;
   const JobDetailPage({super.key, required this.jobId});
+  final String jobId;
 
   @override
   State<JobDetailPage> createState() => _JobDetailPageState();
@@ -49,14 +35,14 @@ class JobDetailPage extends StatefulWidget {
 
 class _JobDetailPageState extends State<JobDetailPage> {
   // 🎨 Palette
-  static const kBlue = Color(0xFF1976D2);
-  static const kBg = Color(0xFFF6F7F9);
-  static const kRed = Color(0xFFCE1126);
+  static const kBlue   = Color(0xFF1976D2);
+  static const kBg     = Color(0xFFF6F7F9);
+  static const kRed    = Color(0xFFCE1126);
   static const kYellow = Color(0xFFFCD116);
-  static const kGreen = Color(0xFF009460);
+  static const kGreen  = Color(0xFF009460);
 
   final _svc = JobsService();
-  final _sb = Supabase.instance.client;
+  final _sb  = Supabase.instance.client;
 
   Map<String, dynamic>? job;
   Map<String, dynamic>? employer;
@@ -66,19 +52,18 @@ class _JobDetailPageState extends State<JobDetailPage> {
   bool _isFavorite = false;
   bool _togglingFav = false;
 
-  // 👤 Infos candidat
+  // 👤 Candidature rapide
   final _firstNameCtrl = TextEditingController();
-  final _lastNameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _letterCtrl = TextEditingController();
+  final _lastNameCtrl  = TextEditingController();
+  final _phoneCtrl     = TextEditingController();
+  final _emailCtrl     = TextEditingController();
+  final _letterCtrl    = TextEditingController();
 
-  // 📎 CV (état local)
-  String? _cvBucket; // 'cvs' (privé) ou 'cvs_public' (public)
-  String? _cvPath; // chemin interne 'uid/ts_nom.ext'
-  String? _cvName; // nom d’origine pour affichage
-  bool _cvPublic = false; // choix utilisateur
-  bool _posting = false;
+  // 📎 CV
+  String? _cvBucket; // 'cvs' ou 'cvs_public'
+  String? _cvPath;
+  String? _cvName;
+  bool _cvPublic = false;
 
   void _toast(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -99,14 +84,34 @@ class _JobDetailPageState extends State<JobDetailPage> {
     super.dispose();
   }
 
+  // ───────────────── DATA ─────────────────
+  String _relative(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      final diff = DateTime.now().toLocal().difference(d);
+      if (diff.inMinutes < 60) return 'publié il y a ${diff.inMinutes} min';
+      if (diff.inHours   < 24) return 'publié il y a ${diff.inHours} h';
+      if (diff.inDays    < 7)  return 'publié il y a ${diff.inDays} j';
+      final dd = d.day.toString().padLeft(2,'0');
+      final mm = d.month.toString().padLeft(2,'0');
+      return 'publié le $dd/$mm/${d.year}';
+    } catch (_) { return ''; }
+  }
+
+  String _relativeFromJob(Map<String,dynamic> j) {
+    final iso = (j['cree_le'] ??
+                 j['created_at'] ??
+                 j['createdAt'] ??
+                 j['creeLe'])?.toString();
+    return _relative(iso);
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final j = await _svc.sb
-          .from('emplois')
-          .select('*')
-          .eq('id', widget.jobId)
-          .maybeSingle();
+      final j = await _svc.sb.from('emplois').select('*')
+          .eq('id', widget.jobId).maybeSingle();
 
       Map<String, dynamic>? emp;
       final empId = j?['employeur_id'];
@@ -114,25 +119,25 @@ class _JobDetailPageState extends State<JobDetailPage> {
         emp = await _svc.employeur(empId.toString());
       }
 
+      // état favori → public.emplois_favoris (par utilisateur)
       bool fav = false;
       final uid = _sb.auth.currentUser?.id;
       if (uid != null) {
-        // ✅ table officielle des favoris
-        final f = await _svc.sb
+        final row = await _svc.sb
             .from('emplois_favoris')
             .select('emploi_id')
             .eq('utilisateur_id', uid)
             .eq('emploi_id', widget.jobId)
             .maybeSingle();
-        fav = f != null;
+        fav = row != null;
       }
 
       if (!mounted) return;
       setState(() {
-        job = j == null ? null : Map<String, dynamic>.from(j as Map);
-        employer = emp;
+        job         = j == null ? null : Map<String, dynamic>.from(j as Map);
+        employer    = emp;
         _isFavorite = fav;
-        _loading = false;
+        _loading    = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -141,12 +146,11 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
   }
 
-  // ✅ Toggle favori directement sur public.emplois_favoris
   Future<void> _toggleFavorite() async {
     if (_togglingFav) return;
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) {
-      _toast('Connectez-vous pour gérer vos favoris.');
+      _toast('Connectez-vous pour ajouter des favoris.');
       return;
     }
     setState(() => _togglingFav = true);
@@ -156,16 +160,15 @@ class _JobDetailPageState extends State<JobDetailPage> {
           'utilisateur_id': uid,
           'emploi_id': widget.jobId,
         });
-        if (mounted) setState(() => _isFavorite = false);
-        _toast('Retiré des favoris');
       } else {
         await _sb.from('emplois_favoris').insert({
           'utilisateur_id': uid,
           'emploi_id': widget.jobId,
         });
-        if (mounted) setState(() => _isFavorite = true);
-        _toast('Ajouté aux favoris');
       }
+      if (!mounted) return;
+      setState(() => _isFavorite = !_isFavorite);
+      _toast(_isFavorite ? 'Ajouté aux favoris' : 'Retiré des favoris');
     } catch (e) {
       _toast('Action impossible : $e');
     } finally {
@@ -173,20 +176,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
   }
 
-  InputDecoration _dec(String label, IconData icon) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, color: kBlue),
-      border: const OutlineInputBorder(),
-      focusedBorder:
-          const OutlineInputBorder(borderSide: BorderSide(color: kBlue, width: 2)),
-      enabledBorder:
-          const OutlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    );
-  }
-
+  // ───────────────── CV ─────────────────
   String _sanitizeFileName(String name) =>
       name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
 
@@ -216,32 +206,29 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
 
     try {
-      final userId = _sb.auth.currentUser?.id ?? 'anonymous';
+      final userId   = _sb.auth.currentUser?.id ?? 'anonymous';
       final safeName = _sanitizeFileName(file.name);
-      final path =
-          '$userId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
-      final targetBucket = _cvPublic ? 'cvs_public' : 'cvs';
+      final path     = '$userId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final bucket   = _cvPublic ? 'cvs_public' : 'cvs';
 
-      await _sb.storage.from(targetBucket).uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              upsert: false,
-              cacheControl: '3600',
-              contentType: _guessContentType(file.name),
-            ),
-          );
+      await _sb.storage.from(bucket).uploadBinary(
+        path, bytes,
+        fileOptions: FileOptions(
+          upsert: false,
+          cacheControl: '3600',
+          contentType: _guessContentType(file.name),
+        ),
+      );
 
       if (!mounted) return;
       setState(() {
-        _cvName = file.name;
-        _cvBucket = targetBucket;
-        _cvPath = path;
+        _cvName   = file.name;
+        _cvBucket = bucket;
+        _cvPath   = path;
       });
       _toast(_cvPublic ? 'CV public ajouté ✅' : 'CV ajouté (privé) ✅');
     } catch (e) {
-      if (!mounted) return;
-      _toast('Échec de l’upload du CV : $e');
+      _toast('Échec upload CV : $e');
     }
   }
 
@@ -254,8 +241,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
       } else {
         url = await _sb.storage.from('cvs').createSignedUrl(_cvPath!, 300);
       }
-      final ok = await launchUrl(Uri.parse(url),
-          mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (!ok) _toast('Impossible d’ouvrir le CV.');
     } catch (_) {
       _toast('Aperçu du CV indisponible.');
@@ -264,136 +250,98 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
   Future<void> _removeCv() async {
     if (_cvPath == null || _cvBucket == null) {
-      setState(() {
-        _cvName = null;
-        _cvPath = null;
-        _cvBucket = null;
-      });
+      setState(() { _cvName = _cvPath = _cvBucket = null; });
       return;
     }
     try {
       await _sb.storage.from(_cvBucket!).remove([_cvPath!]);
       if (!mounted) return;
-      setState(() {
-        _cvName = null;
-        _cvPath = null;
-        _cvBucket = null;
-      });
+      setState(() { _cvName = _cvPath = _cvBucket = null; });
       _toast('CV retiré.');
     } catch (e) {
-      if (!mounted) return;
       _toast('Suppression impossible : $e');
     }
   }
 
-  // ✅ Envoi candidature (message clair si déjà postulé)
+  // ───────────────── Candidature ─────────────────
   Future<void> _submit() async {
     final user = _sb.auth.currentUser;
-    if (user == null) {
-      _toast('Veuillez vous connecter pour postuler.');
-      return;
-    }
+    if (user == null) { _toast('Veuillez vous connecter pour postuler.'); return; }
 
     final prenom = _firstNameCtrl.text.trim();
-    final nom = _lastNameCtrl.text.trim();
-    final phone = _phoneCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
+    final nom    = _lastNameCtrl.text.trim();
+    final phone  = _phoneCtrl.text.trim();
+    final email  = _emailCtrl.text.trim();
     final lettre = _letterCtrl.text.trim();
-
-    if (prenom.isEmpty || nom.isEmpty) {
-      _toast('Prénom et Nom sont requis');
-      return;
-    }
-    if (phone.isEmpty) {
-      _toast('Téléphone requis');
-      return;
-    }
-    if (_cvPath == null || _cvBucket == null) {
-      _toast('Merci de joindre votre CV');
-      return;
-    }
+    if (prenom.isEmpty || nom.isEmpty) { _toast('Prénom et Nom sont requis'); return; }
+    if (phone.isEmpty) { _toast('Téléphone requis'); return; }
+    if (_cvPath == null || _cvBucket == null) { _toast('Merci de joindre votre CV'); return; }
 
     final String cvValue = (_cvBucket == 'cvs_public')
         ? _sb.storage.from('cvs_public').getPublicUrl(_cvPath!)
         : _cvPath!;
 
-    setState(() => _posting = true);
     try {
       await _svc.sb.from('candidatures').insert({
-        'emploi_id': widget.jobId,
-        'candidat': user.id, // compat historic
-        'candidat_id': user.id,
-        'prenom': prenom,
-        'nom': nom,
-        'telephone': phone,
+        'emploi_id'   : widget.jobId,
+        'candidat_id' : user.id,
+        'prenom'      : prenom,
+        'nom'         : nom,
+        'telephone'   : phone,
         if (email.isNotEmpty) 'email': email,
         if (lettre.isNotEmpty) 'lettre': lettre,
-        'cv_url': cvValue,
+        'cv_url'      : cvValue,
         'cv_is_public': _cvBucket == 'cvs_public',
       });
-
       if (!mounted) return;
       _toast('Candidature envoyée ✅');
       Navigator.pop(context);
     } catch (e) {
       final msg = e.toString();
-      final isUniqueViolation =
+      final isUnique =
           (e is PostgrestException && e.code == '23505') ||
-              msg.contains('23505') ||
-              msg.contains('candidatures_emploi_id_candidat_key');
-
-      if (isUniqueViolation) {
-        _toast('Vous avez déjà postulé à cette offre.');
-      } else {
-        _toast('Envoi impossible : $e');
-      }
-    } finally {
-      if (mounted) setState(() => _posting = false);
+          msg.contains('23505') || msg.contains('candidatures_emploi_id_candidat_key');
+      _toast(isUnique ? 'Vous avez déjà postulé à cette offre.' : 'Envoi impossible : $e');
     }
   }
 
+  // ───────────────── UI ─────────────────
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-          body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (job == null) {
       return const Scaffold(body: Center(child: Text('Offre introuvable')));
     }
 
-    final title = (job!['titre'] ?? 'Offre').toString();
-    final ville = (job!['ville'] ?? '').toString();
-    final commune = (job!['commune'] ?? '').toString();
-    final typeContrat = (job!['type_contrat'] ?? '').toString();
-    final teletravail = job!['teletravail'] == true;
+    final j = job!;
+    final title       = (j['titre'] ?? 'Offre').toString();
+    final ville       = (j['ville'] ?? '').toString();
+    final commune     = (j['commune'] ?? '').toString();
+    final contrat     = (j['type_contrat'] ?? '').toString();
+    final teletravail = j['teletravail'] == true;
 
-    final salMin = job!['salaire_min_gnf'];
-    final salMax = job!['salaire_max_gnf'];
-    final periodeSalaire = (job!['periode_salaire'] ?? '').toString();
-    final publieAt = (job!['cree_le'] ??
-            job!['created_at'] ??
-            job!['creeLe'] ??
-            job!['createdAt'])
-        ?.toString();
+    final salMin         = j['salaire_min_gnf'];
+    final salMax         = j['salaire_max_gnf'];
+    final periodeSalaire = (j['periode_salaire'] ?? 'mois').toString();
 
-    final description = (job!['description'] ?? '').toString();
-    final exigences = (job!['exigences'] ?? '').toString();
-    final avantages = (job!['avantages'] ?? '').toString();
+    final description = (j['description'] ?? '').toString();
+    final exigences   = (j['exigences'] ?? '').toString();
+    final avantages   = (j['avantages'] ?? '').toString();
 
     String salaireStr() {
       if (salMin != null) {
         final base = salMax != null
             ? '${_fmtMontant(salMin)} - ${_fmtMontant(salMax)}'
             : _fmtMontant(salMin);
-        final per = (periodeSalaire.isNotEmpty ? periodeSalaire : 'mois');
-        return '$base (GNF / $per)';
+        return '$base (GNF / $periodeSalaire)';
       }
       return 'Salaire : à négocier';
     }
 
-    final logoUrl =
-        (employer?['logo_url'] as String?) ?? (employer?['logo'] as String?);
+    final logoUrl = (employer?['logo_url'] as String?) ?? (employer?['logo'] as String?);
+    final publie  = _relativeFromJob(j);
 
     return Scaffold(
       backgroundColor: kBg,
@@ -413,12 +361,50 @@ class _JobDetailPageState extends State<JobDetailPage> {
           ),
         ],
       ),
+
+      // CTA collant
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 48,
+                width: 52,
+                child: OutlinedButton(
+                  onPressed: _togglingFav ? null : _toggleFavorite,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _isFavorite ? kRed : Colors.black87,
+                    side: BorderSide(color: _isFavorite ? kRed : Colors.black26),
+                  ),
+                  child: Icon(_isFavorite ? Icons.favorite : Icons.favorite_border),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: kBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: _submit,
+                  child: const Text('Postuler'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 120), // espace pr le CTA bas
           children: [
-            // ---- En-tête employeur + infos principales
+            // ── En-tête
             _Card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,128 +412,78 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   Row(
                     children: [
                       if (logoUrl != null && logoUrl.trim().isNotEmpty)
-                        CircleAvatar(
-                            radius: 22, backgroundImage: NetworkImage(logoUrl))
+                        CircleAvatar(radius: 22, backgroundImage: NetworkImage(logoUrl))
                       else
                         const CircleAvatar(
-                          radius: 22,
-                          backgroundColor: kBlue,
-                          child:
-                              Icon(Icons.business, color: Colors.white, size: 20),
+                          radius: 22, backgroundColor: kBlue,
+                          child: Icon(Icons.business, color: Colors.white, size: 20),
                         ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          (employer?['nom'] ?? 'Employeur').toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              (employer?['nom'] ?? 'Employeur').toString(),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                            ),
+                            if (publie.isNotEmpty)
+                              Text(publie, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.place, size: 16, color: Colors.black45),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '${ville}${commune.isNotEmpty ? ', $commune' : ''}',
-                          style: const TextStyle(color: Colors.black54),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.badge_outlined,
-                          size: 16, color: Colors.black45),
-                      const SizedBox(width: 6),
-                      Text(
-                        typeContrat.toUpperCase(),
-                        style: const TextStyle(color: Colors.black54),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    salaireStr(),
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
+
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+                    spacing: 8, runSpacing: 8,
                     children: [
-                      if (teletravail)
-                        const _ChipInfo(
-                            text: 'Télétravail',
-                            color: kGreen,
-                            icon: Icons.home_work_outlined),
-                      if (!teletravail)
-                        const _ChipInfo(
-                            text: 'Sur site',
-                            color: kYellow,
-                            icon: Icons.location_on_outlined),
-                      if (employer?['telephone'] != null &&
-                          (employer!['telephone'] as String).isNotEmpty)
-                        _MiniPill(
-                            icon: Icons.phone,
-                            text: employer!['telephone'].toString()),
-                      if (employer?['email'] != null &&
-                          (employer!['email'] as String).isNotEmpty)
-                        _MiniPill(
-                            icon: Icons.email_outlined,
-                            text: employer!['email'].toString()),
+                      _Tag(icon: Icons.place, text: commune.isNotEmpty ? '$ville, $commune' : ville),
+                      if (contrat.isNotEmpty)
+                        _Tag(icon: Icons.badge_outlined, text: contrat.toUpperCase()),
+                      _Tag(icon: Icons.payments_outlined, text: salaireStr()),
+                      _Tag(
+                        icon: teletravail ? Icons.home_work_outlined : Icons.pin_drop_outlined,
+                        text: teletravail ? 'Télétravail' : 'Sur site',
+                        color: teletravail ? kGreen : kYellow,
+                      ),
+                      if ((employer?['telephone'] ?? '').toString().isNotEmpty)
+                        _MiniPill(icon: Icons.phone, text: employer!['telephone'].toString()),
+                      if ((employer?['email'] ?? '').toString().isNotEmpty)
+                        _MiniPill(icon: Icons.email_outlined, text: employer!['email'].toString()),
                     ],
                   ),
-                  if (publieAt != null && publieAt.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.schedule,
-                            size: 16, color: Colors.black45),
-                        const SizedBox(width: 6),
-                        Text(
-                          _relativeFromIso(publieAt),
-                          style: const TextStyle(color: Colors.black54),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
 
             const SizedBox(height: 12),
 
-            // ---- Description
+            // ── Description
             if (description.isNotEmpty) ...[
-              const _SectionTitle('Description'),
-              _Card(child: Text(description)),
+              const _SectionTitle('Les missions du poste'),
+              _Card(child: _ExpandableText(description)),
               const SizedBox(height: 12),
             ],
 
-            // ---- Exigences
+            // ── Exigences
             if (exigences.isNotEmpty) ...[
-              const _SectionTitle('Exigences'),
-              _Card(child: Text(exigences)),
+              const _SectionTitle('Le profil recherché'),
+              _Card(child: _ExpandableText(exigences)),
               const SizedBox(height: 12),
             ],
 
-            // ---- Avantages
+            // ── Avantages
             if (avantages.isNotEmpty) ...[
-              const _SectionTitle('Avantages'),
-              _Card(child: Text(avantages)),
+              const _SectionTitle('Infos complémentaires'),
+              _Card(child: _ExpandableText(avantages)),
               const SizedBox(height: 12),
             ],
 
-            // ---- Candidature rapide
-            const _SectionTitle('Candidature rapide'),
+            // ── Candidature rapide (compact, “lisse”)
+            const _SectionTitle('Envoyez votre candidature'),
             _Card(
               child: Column(
                 children: [
@@ -557,8 +493,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
                         child: TextField(
                           controller: _firstNameCtrl,
                           textCapitalization: TextCapitalization.words,
-                          decoration:
-                              _dec('Prénom (obligatoire)', Icons.badge_outlined),
+                          decoration: _dec('Prénom', Icons.badge_outlined),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -566,7 +501,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
                         child: TextField(
                           controller: _lastNameCtrl,
                           textCapitalization: TextCapitalization.words,
-                          decoration: _dec('Nom (obligatoire)', Icons.badge),
+                          decoration: _dec('Nom', Icons.badge),
                         ),
                       ),
                     ],
@@ -575,7 +510,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   TextField(
                     controller: _phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: _dec('Téléphone (obligatoire)', Icons.phone),
+                    decoration: _dec('Téléphone', Icons.phone),
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -587,20 +522,16 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   TextField(
                     controller: _letterCtrl,
                     maxLines: 5,
-                    decoration:
-                        _dec('Message / Lettre (court)', Icons.edit_note_outlined),
+                    decoration: _dec('Message / Lettre (court)', Icons.edit_note_outlined),
                   ),
                   const SizedBox(height: 10),
 
-                  // --- Boutons & aperçu CV
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.attach_file),
-                          label: Text(_cvName == null
-                              ? 'Joindre mon CV (PDF/DOCX)'
-                              : 'Remplacer le CV'),
+                          label: Text(_cvName == null ? 'Joindre mon CV (PDF/DOCX)' : 'Remplacer le CV'),
                           onPressed: _pickCv,
                         ),
                       ),
@@ -609,8 +540,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   if (_cvPath != null) ...[
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         border: Border.all(color: Colors.black12),
@@ -618,96 +548,55 @@ class _JobDetailPageState extends State<JobDetailPage> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.attachment,
-                              color:
-                                  _cvBucket == 'cvs_public' ? kGreen : Colors.black54),
+                          Icon(Icons.attachment, color: _cvBucket == 'cvs_public' ? kGreen : Colors.black54),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _cvName ?? 'cv',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Voir le CV',
-                            icon: const Icon(Icons.open_in_new),
-                            onPressed: _viewCv,
-                          ),
-                          IconButton(
-                            tooltip: 'Supprimer le CV',
-                            icon: const Icon(Icons.close),
-                            onPressed: _removeCv,
-                          ),
+                          IconButton(tooltip: 'Voir le CV', icon: const Icon(Icons.open_in_new), onPressed: _viewCv),
+                          IconButton(tooltip: 'Supprimer le CV', icon: const Icon(Icons.close), onPressed: _removeCv),
                         ],
                       ),
                     ),
                   ],
-
                   const SizedBox(height: 8),
                   CheckboxListTile(
                     value: _cvPublic,
-                    onChanged: (_cvPath == null)
-                        ? (v) => setState(() => _cvPublic = v ?? false)
-                        : null, // désactivée si un CV est déjà uploadé
+                    onChanged: (_cvPath == null) ? (v) => setState(() => _cvPublic = v ?? false) : null,
                     controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text(
-                        'Rendre mon CV public (visible par tous les recruteurs)'),
-                    subtitle: const Text(
-                        'Si décoché : CV privé, accessible via lien signé uniquement'),
+                    title: const Text('Rendre mon CV public (visible par les recruteurs)'),
+                    subtitle: const Text('Si décoché : CV privé, accessible via lien signé'),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _togglingFav ? null : _toggleFavorite,
-                    icon: Icon(
-                      _isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: _isFavorite ? kRed : Colors.black87,
-                    ),
-                    label: Text(
-                        _isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: kBlue,
-                      foregroundColor: Colors.white,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 12),
-                      textStyle:
-                          const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: _posting ? null : _submit,
-                    child: _posting
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Postuler'),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
     );
   }
+
+  // Input decoration
+  InputDecoration _dec(String label, IconData icon) => InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: kBlue),
+        border: const OutlineInputBorder(),
+        focusedBorder: const OutlineInputBorder(
+          borderSide: BorderSide(color: kBlue, width: 2),
+        ),
+        enabledBorder: const OutlineInputBorder(
+          borderSide: BorderSide(color: Colors.black12),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      );
 }
 
-/// ---------- UI helpers
+// ───────────────── Helpers UI ─────────────────
 
 class _Card extends StatelessWidget {
   const _Card({required this.child});
@@ -740,40 +629,35 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .titleMedium
-            ?.copyWith(fontWeight: FontWeight.w700),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
 }
 
-class _ChipInfo extends StatelessWidget {
-  const _ChipInfo(
-      {required this.text, required this.color, required this.icon});
-  final String text;
-  final Color color;
+class _Tag extends StatelessWidget {
+  const _Tag({required this.icon, required this.text, this.color});
   final IconData icon;
+  final String text;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape:
-          StadiumBorder(side: BorderSide(color: color.withOpacity(.35))),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(text,
-                style:
-                    TextStyle(color: color, fontWeight: FontWeight.w600)),
-          ],
-        ),
+    final c = color ?? Colors.black54;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withOpacity(.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: c),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(color: c, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
@@ -788,8 +672,7 @@ class _MiniPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      shape:
-          const StadiumBorder(side: BorderSide(color: Colors.black12)),
+      shape: const StadiumBorder(side: BorderSide(color: Colors.black12)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
@@ -801,6 +684,53 @@ class _MiniPill extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ExpandableText extends StatefulWidget {
+  const _ExpandableText(this.text, {this.maxLines = 8});
+  final String text;
+  final int maxLines;
+
+  @override
+  State<_ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<_ExpandableText> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyMedium;
+    final textWidget = Text(
+      widget.text,
+      maxLines: _expanded ? null : widget.maxLines,
+      overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+      style: style,
+    );
+
+    // On calcule si le bouton "Voir plus" est utile en mesurant rapidement
+    final moreNeeded = widget.text.length > 320; // heuristique simple
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        textWidget,
+        if (moreNeeded) ...[
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Text(
+              _expanded ? 'Voir moins' : 'Voir plus',
+              style: const TextStyle(
+                color: _JobDetailPageState.kBlue,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
