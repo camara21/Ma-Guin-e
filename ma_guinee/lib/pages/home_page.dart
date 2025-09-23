@@ -308,13 +308,15 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.museum, "Tourisme", AppRoutes.tourisme, const Color(0xFF009460)),
                 _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
-                _serviceTile(Icons.star, "Favoris", AppRoutes.favoris, const Color(0xFF009460)),
 
-                // 🔹 Emplois (ex-Soneya) — même style/taille que les autres
+                // 🔁 Remplacement: Favoris -> Logement
+                _serviceTile(Icons.house_rounded, "Logement", AppRoutes.logement, const Color(0xFF009460)),
+
+                // 🔹 Emplois (ex-Soneya)
                 GestureDetector(
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => JobHomePage()),
+                    MaterialPageRoute(builder: (_) => const JobHomePage()),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

@@ -1,9 +1,11 @@
+// lib/routes.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
 import 'models/job_models.dart'; // EmploiModel
+import 'models/logement_models.dart'; // ✅ enums & model Logement
 
 // Pages principales
 import 'pages/splash_screen.dart';
@@ -20,7 +22,7 @@ import 'pages/resto_page.dart' as resto_pg;
 import 'pages/register_page.dart' as register_pg;
 
 import 'pages/culte_page.dart';
-import 'pages/favoris_page.dart';
+// import 'pages/favoris_page.dart'; // ❌ retiré (remplacé par Logement)
 import 'pages/login_page.dart';
 import 'pages/tourisme_page.dart';
 import 'pages/sante_page.dart';
@@ -69,13 +71,20 @@ import 'pages/cv/cv_maker_page.dart';
 import 'pages/jobs/employer/mes_offres_page.dart';
 import 'pages/jobs/employer/offre_edit_page.dart';
 
-// JOB – nouvelles pages Candidatures (si déjà dans ton projet)
+// JOB – nouvelles pages Candidatures
 import 'pages/jobs/candidatures_page.dart';
 import 'pages/jobs/candidature_detail_page.dart';
 
 // Employeur & garde
 import 'pages/jobs/employer/devenir_employeur_page.dart';
 import 'services/employeur_service.dart';
+
+// ✅ Module Logement (toutes les pages)
+import 'pages/logement/logement_home_page.dart';
+import 'pages/logement/logement_list_page.dart';
+import 'pages/logement/logement_detail_page.dart';
+import 'pages/logement/logement_edit_page.dart';
+import 'pages/logement/logement_map_page.dart';
 
 class AppRoutes {
   // Core
@@ -93,7 +102,13 @@ class AppRoutes {
 
   static const String resto = '/restos';
   static const String culte = '/culte';
-  static const String favoris = '/favoris';
+  // static const String favoris = '/favoris'; // ❌ remplacé
+  static const String logement = '/logement';               // ✅ Home
+  static const String logementList = '/logement/list';      // ✅ Liste
+  static const String logementDetail = '/logement/detail';  // ✅ Détail
+  static const String logementEdit = '/logement/edit';      // ✅ Créer/éditer
+  static const String logementMap = '/logement/map';        // ✅ Carte
+
   static const String login = '/login';
   static const String register = '/register';
   static const String tourisme = '/tourisme';
@@ -159,7 +174,52 @@ class AppRoutes {
       case admin:         return _page(const AdminPage());
       case resto:         return _page(const resto_pg.RestoPage());
       case culte:         return _page(const CultePage());
-      case favoris:       return _page(const FavorisPage());
+
+      // ✅ LOGEMENT
+      case logement:
+        return _page(const LogementHomePage());
+
+      case logementList: {
+        // args: { q?: String, mode?: 'location'|'achat'|LogementMode, categorie?: 'maison'|'appartement'|'studio'|'terrain'|'autres' }
+        final a = _argsMap(settings);
+        final String? q = a['q'] as String?;
+        final LogementMode mode = _parseMode(a['mode']);
+        final LogementCategorie? cat = _parseCategorieOrNull(a['categorie']); // null = pas de filtre
+        return _page(LogementListPage(
+          initialQuery: q,
+          initialMode: mode,
+          initialCategorie: cat ?? LogementCategorie.autres,
+        ));
+      }
+
+      case logementDetail: {
+        // args: String id  |  {id: String}
+        final a = settings.arguments;
+        final id = (a is String) ? a : (a is Map ? (a['id']?.toString()) : null);
+        if (id == null || id.isEmpty) return _error('ID requis pour $logementDetail');
+        return _page(LogementDetailPage(logementId: id));
+      }
+
+      case logementEdit: {
+        // args: { existing?: LogementModel }
+        final a = _argsMap(settings);
+        final existing = a['existing'];
+        if (existing != null && existing is! LogementModel) {
+          return _error('Argument "existing" invalide pour $logementEdit');
+        }
+        return _userProtected((_) => LogementEditPage(existing: existing as LogementModel?));
+      }
+
+      case logementMap: {
+        // args: { ville?: String, commune?: String }
+        final a = _argsMap(settings);
+        return _page(LogementMapPage(
+          ville: a['ville'] as String?,
+          commune: a['commune'] as String?,
+        ));
+      }
+
+      // Auth / profil / divers
       case login:         return _page(const LoginPage());
       case register:      return _page(const register_pg.RegisterPage());
       case tourisme:      return _page(const TourismePage());
@@ -254,7 +314,6 @@ class AppRoutes {
         return MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId!));
       }
 
-      // ✅ ICI: alias apps pour éviter le conflit
       case myApplications: return _userProtected((_) => const apps.MyApplicationsPage());
       case cvMaker:        return _userProtected((_) => const CvMakerPage());
 
@@ -381,4 +440,36 @@ class _RouteErrorPage extends StatelessWidget {
       body: Center(child: Text(message)),
     );
   }
+}
+
+// ------------------ Helpers parsing Logement ------------------
+
+LogementMode _parseMode(dynamic v) {
+  if (v is LogementMode) return v;
+  if (v is String) {
+    switch (v.toLowerCase()) {
+      case 'achat':
+        return LogementMode.achat;
+      case 'location':
+      default:
+        return LogementMode.location;
+    }
+  }
+  return LogementMode.location;
+}
+
+LogementCategorie? _parseCategorieOrNull(dynamic v) {
+  if (v == null) return null;
+  if (v is LogementCategorie) return v;
+  if (v is String) {
+    switch (v.toLowerCase()) {
+      case 'maison': return LogementCategorie.maison;
+      case 'appartement': return LogementCategorie.appartement;
+      case 'studio': return LogementCategorie.studio;
+      case 'terrain': return LogementCategorie.terrain;
+      case 'autres': return LogementCategorie.autres;
+      case 'tous': return null; // important: pas de filtre
+    }
+  }
+  return LogementCategorie.autres;
 }

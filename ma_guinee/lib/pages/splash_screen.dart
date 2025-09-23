@@ -44,7 +44,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
             // Texte principal AVEC glow
             Text(
-              "Ma Guinée",
+              "Soneya",
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.bold,
