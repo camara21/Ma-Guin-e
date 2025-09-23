@@ -1,12 +1,16 @@
+import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle, FilteringTextInputFormatter;
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
+
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-
-import '../../services/jobs_service.dart';
 
 class CvMakerPage extends StatefulWidget {
   const CvMakerPage({super.key});
@@ -20,7 +24,6 @@ class _CvMakerPageState extends State<CvMakerPage> {
   static const kBg   = Color(0xFFF6F7F9);
 
   final _form = GlobalKey<FormState>();
-  final _svc = JobsService();
 
   // ───────── Formulaires
   final _prenom       = TextEditingController();
@@ -54,7 +57,7 @@ class _CvMakerPageState extends State<CvMakerPage> {
   pw.Font? _fontBold;
 
   bool _genBusy = false;
-  bool _uploading = false;
+  bool _saving  = false;
 
   @override
   void initState() {
@@ -130,7 +133,6 @@ class _CvMakerPageState extends State<CvMakerPage> {
         _experience.text.trim().length < 10 ||
         _formation.text.trim().length < 10 ||
         _langues.text.trim().isEmpty) {
-      // Remplissage léger si l’utilisateur exporte sans cliquer sur “Générer”
       _generateSmart(force: true);
     }
   }
@@ -492,23 +494,61 @@ class _CvMakerPageState extends State<CvMakerPage> {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
-  Future<void> _saveAndUpload() async {
+  // ========= Enregistrement local & partage =========
+  Future<String> _saveToDevice(Uint8List bytes) async {
+    final safeName = [
+      'CV',
+      _prenom.text.trim().isEmpty ? null : _prenom.text.trim(),
+      _nom.text.trim().isEmpty ? null : _nom.text.trim(),
+      DateTime.now().millisecondsSinceEpoch.toString()
+    ].whereType<String>().join('_').replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory('${dir.path}/CVs');
+    if (!await folder.exists()) await folder.create(recursive: true);
+
+    final filePath = '${folder.path}/$safeName.pdf';
+    final file = File(filePath);
+    await file.writeAsBytes(bytes, flush: true);
+    return filePath;
+  }
+
+  Future<void> _downloadPdf() async {
     if (!_form.currentState!.validate()) return;
-    setState(() => _uploading = true);
+    setState(() => _saving = true);
     try {
-      final pdf = await _buildPdfBytes();
-      final path = await _svc.uploadCv(
-        pdf,
-        filename: 'cv_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
-      if (mounted) Navigator.pop(context, path);
+      final bytes = await _buildPdfBytes();
+
+      if (kIsWeb) {
+        // Sur web : déclenche directement le téléchargement/partage
+        await Printing.sharePdf(bytes: bytes, filename: 'CV_${DateTime.now().millisecondsSinceEpoch}.pdf');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('CV prêt au téléchargement.')),
+          );
+        }
+        return;
+      }
+
+      // Mobile/Desktop : enregistre dans Documents/CVs et ouvre
+      final savedPath = await _saveToDevice(bytes);
+      await OpenFilex.open(savedPath);
+
+      // Et propose aussi le partage
+      await Printing.sharePdf(bytes: bytes, filename: savedPath.split('/').last);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CV enregistré : $savedPath')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur upload CV : $e')),
+        SnackBar(content: Text('Impossible d’enregistrer le CV : $e')),
       );
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -534,7 +574,7 @@ class _CvMakerPageState extends State<CvMakerPage> {
             // Champs adaptatifs
             LayoutBuilder(builder: (ctx, c) {
               final narrow = c.maxWidth < 560;
-              final childRow = Row(
+              final row = Row(
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
@@ -569,9 +609,8 @@ class _CvMakerPageState extends State<CvMakerPage> {
                 ],
               );
 
-              if (!narrow) return childRow;
+              if (!narrow) return row;
 
-              // Version colonne pour petits écrans (pas d'overflow)
               return Column(
                 children: [
                   DropdownButtonFormField<String>(
@@ -639,7 +678,6 @@ class _CvMakerPageState extends State<CvMakerPage> {
                   ],
                 );
               }
-              // Version pile (petit écran)
               return Column(
                 children: [
                   SizedBox(width: double.infinity, child: genBtn),
@@ -795,7 +833,7 @@ class _CvMakerPageState extends State<CvMakerPage> {
 
             const SizedBox(height: 16),
 
-            // ===== Assistant (IA) — déplacé EN BAS et responsive =====
+            // ===== Assistant (IA) — placé EN BAS et responsive =====
             Text('Assistant (IA locale)', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             _assistantSection(),
@@ -820,11 +858,11 @@ class _CvMakerPageState extends State<CvMakerPage> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    icon: _uploading
+                    icon: _saving
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.cloud_upload),
-                    label: const Text('Générer & téléverser'),
-                    onPressed: _uploading ? null : _saveAndUpload,
+                        : const Icon(Icons.download),
+                    label: const Text('Télécharger le PDF'),
+                    onPressed: _saving ? null : _downloadPdf,
                   ),
                 ),
               ],
