@@ -18,7 +18,6 @@ dependencies:
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0
-  # Optionnel : Google Maps en plus d’OSM (mobile + web)
   google_maps_flutter: ^2.7.0
   google_maps_flutter_web: ^0.5.7
 
@@ -83,9 +82,14 @@ flutter:
   uses-material-design: true
 
   assets:
+    # Images existantes
     - assets/guinee_map.png
     - assets/default_avatar.png
     - assets/logo_guinee.png
     - assets/nimba.png
     - assets/jobs/hero.png
     - assets/jobs/card_cover.png
+
+    # 🆕 Polices utilisées par le PDF (accents OK)
+    - assets/fonts/Inter_24pt-Regular.ttf
+    - assets/fonts/Inter_24pt-Bold.ttf

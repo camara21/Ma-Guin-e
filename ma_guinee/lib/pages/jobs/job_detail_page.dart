@@ -2,6 +2,7 @@
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ✅ pour limiter aux chiffres
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -279,16 +280,16 @@ class _JobDetailPageState extends State<JobDetailPage> {
         : _cvPath!;
 
     try {
+      // ✅ Colonnes conformes à ta table
       await _svc.sb.from('candidatures').insert({
-        'emploi_id'   : widget.jobId,
-        'candidat_id' : user.id,
-        'prenom'      : prenom,
-        'nom'         : nom,
-        'telephone'   : phone,
-        if (email.isNotEmpty) 'email': email,
-        if (lettre.isNotEmpty) 'lettre': lettre,
-        'cv_url'      : cvValue,
-        'cv_is_public': _cvBucket == 'cvs_public',
+        'emploi_id' : widget.jobId,
+        'candidat'  : user.id,      // <- IMPORTANT
+        'prenom'    : prenom,
+        'nom'       : nom,
+        'telephone' : phone,
+        if (email.isNotEmpty)  'email'  : email,
+        if (lettre.isNotEmpty) 'lettre' : lettre,
+        'cv_url'    : cvValue,
       });
       if (!mounted) return;
       _toast('Candidature envoyée ✅');
@@ -526,11 +527,18 @@ class _JobDetailPageState extends State<JobDetailPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
+
+                  // ✅ Téléphone : uniquement chiffres
                   TextField(
                     controller: _phoneCtrl,
-                    keyboardType: TextInputType.phone,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      // LengthLimitingTextInputFormatter(9), // décommente si tu veux 9 chiffres max
+                    ],
                     decoration: _dec('Téléphone', Icons.phone),
                   ),
+
                   const SizedBox(height: 10),
                   TextField(
                     controller: _emailCtrl,

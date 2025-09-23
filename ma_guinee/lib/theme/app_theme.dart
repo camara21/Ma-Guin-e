@@ -1,0 +1,35 @@
+// lib/theme/app_theme.dart
+import 'package:flutter/material.dart';
+
+class AppTheme {
+  static ThemeData build({Brightness brightness = Brightness.light}) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF1976D2), // ← BLEU de base
+      brightness: brightness,
+    );
+
+    final text = Typography.material2021().black.copyWith(
+      bodyMedium: const TextStyle(fontFamily: 'Inter', fontSize: 16, height: 1.45),
+      bodyLarge : const TextStyle(fontFamily: 'Inter', fontSize: 18, height: 1.45),
+      titleMedium: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 18),
+      titleLarge : const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 22),
+      labelLarge : const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 14),
+    );
+
+    return ThemeData(
+      // On garde Material 2 comme tu avais (useMaterial3: false dans main avant)
+      useMaterial3: false,
+      colorScheme: scheme,
+      fontFamily: 'Inter',
+      textTheme: text,
+      inputDecorationTheme: const InputDecorationTheme(
+        labelStyle: TextStyle(fontSize: 14, fontFamily: 'Inter'),
+        hintStyle : TextStyle(fontSize: 14, fontFamily: 'Inter'),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+    );
+  }
+
+  static ThemeData get light => build(brightness: Brightness.light);
+  static ThemeData get dark  => build(brightness: Brightness.dark);
+}

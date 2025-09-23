@@ -16,6 +16,9 @@ import 'providers/user_provider.dart';
 import 'providers/favoris_provider.dart';
 import 'providers/prestataires_provider.dart';
 
+// 👇👇👇 AJOUTE CETTE LIGNE
+import 'theme/app_theme.dart';
+
 // Notifications locales
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -138,8 +141,7 @@ Future<void> enablePushNotifications() async {
       alert: true,
       badge: true,
       sound: true,
-      provisional:
-          false, // tu peux passer à true si tu veux des notifs silencieuses iOS
+      provisional: false,
     );
 
     if (settings.authorizationStatus != AuthorizationStatus.authorized &&
@@ -151,7 +153,6 @@ Future<void> enablePushNotifications() async {
     // 2) Récupération du token
     String? token;
     if (kIsWeb) {
-      // IMPORTANT: remplace par ta clé VAPID publique (Firebase project settings)
       token = await messaging.getToken(
         vapidKey: 'TA_CLE_VAPID_PUBLIQUE_ICI',
       );
@@ -162,8 +163,6 @@ Future<void> enablePushNotifications() async {
     debugPrint('FCM token: $token');
 
     // TODO: Enregistrer le token côté Supabase si tu gères l’envoi ciblé
-    // await Supabase.instance.client.from('user_tokens').upsert({ ... });
-
   } catch (e, st) {
     debugPrint('Erreur enablePushNotifications: $e\n$st');
   }
@@ -202,11 +201,20 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: AppRoutes.splash,
       onGenerateRoute: AppRoutes.generateRoute,
-      theme: ThemeData(
-        primarySwatch: Colors.green,
-        fontFamily: 'Montserrat',
-        useMaterial3: false,
-      ),
+
+      // 🟦 THEME BLEU GLOBAL + Inter + “texte normal” 16sp
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
+
+      // Rend bodyMedium(16) le style par défaut de tous les Text (sans changer le reste)
+      builder: (context, child) {
+        final style = AppTheme.light.textTheme.bodyMedium!;
+        return DefaultTextStyle.merge(
+          style: style,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
