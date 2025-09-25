@@ -1,10 +1,20 @@
 // lib/pages/logement/logement_home_page.dart
-import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
 import '../../routes.dart';
+
+// Provider / modèle utilisateur
+import '../../providers/user_provider.dart';
+import '../../models/utilisateur_model.dart';
+
+// Pages internes
+import 'favoris_page.dart';
+import 'mes_annonces_page.dart';
 
 class LogementHomePage extends StatefulWidget {
   const LogementHomePage({super.key});
@@ -16,16 +26,37 @@ class LogementHomePage extends StatefulWidget {
 class _LogementHomePageState extends State<LogementHomePage> {
   final _searchCtrl = TextEditingController();
   final _svc = LogementService();
+  final _sb = Supabase.instance.client;
 
+  // Filtres
   String _mode = 'location';   // location | achat
-  String _categorie = 'tous';  // maison | appartement | studio | terrain | tous
+  String _categorie = 'tous';  // tous | maison | appartement | studio | terrain
 
-  List<LogementModel> _latest = [];
-  List<LogementModel> _near = [];
+  // Flux paginé
+  static const int _pageSize = 20;
+  final ScrollController _scrollCtrl = ScrollController();
+  final List<LogementModel> _feed = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
 
-  // Palette (Action Logement)
+  // (toujours présents côté code, même si non affichés)
+  List<Map<String, dynamic>> _favoris = [];
+  List<Map<String, dynamic>> _mine = [];
+
+  // -------- Hero / Carousel --------
+  final _heroCtrl = PageController();
+  int _heroIndex = 0;
+  Timer? _heroTimer;
+
+  static const List<String> _heroImages = [
+    'https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=1600&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?q=80&w=1600&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=1600&auto=format&fit=crop',
+  ];
+
+  // Palette
   static const _primary     = Color(0xFF0D3B66);
   static const _primaryDark = Color(0xFF0A2C4C);
   static const _accent      = Color(0xFFE0006D);
@@ -37,36 +68,158 @@ class _LogementHomePageState extends State<LogementHomePage> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _attachInfiniteScroll();
+    _reloadAll();
+
+    _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final next = (_heroIndex + 1) % _heroImages.length;
+      _heroCtrl.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
   void dispose() {
+    _heroTimer?.cancel();
+    _heroCtrl.dispose();
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadAll() async {
-    setState(() { _loading = true; _error = null; });
+  // =================================== DATA ===================================
+
+  void _attachInfiniteScroll() {
+    _scrollCtrl.addListener(() {
+      if (_scrollCtrl.position.pixels >=
+              _scrollCtrl.position.maxScrollExtent - 300 &&
+          !_loadingMore &&
+          !_loading &&
+          _hasMore) {
+        _loadMore();
+      }
+    });
+  }
+
+  Future<void> _reloadAll() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _feed.clear();
+      _hasMore = true;
+    });
     try {
-      final latest = await _svc.latest(limit: 10);
-      final near   = await _svc.nearMe(limit: 10);
-      if (!mounted) return;
+      final firstPage = _fetchPage(offset: 0);
+      final favF = _loadFavoris();
+      final mineF = _loadMine();
+      final results = await Future.wait([firstPage, favF, mineF]);
+
+      final pageItems = results[0] as List<LogementModel>;
       setState(() {
-        _latest = latest;
-        _near   = near;
+        _feed.addAll(pageItems);
+        _hasMore = pageItems.length == _pageSize;
+        _favoris = results[1] as List<Map<String, dynamic>>;
+        _mine = results[2] as List<Map<String, dynamic>>;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
-  void _soon([String what = 'Fonctionnalité']) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$what bientôt disponible')));
+  Future<void> _loadMore() async {
+    if (!_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final items = await _fetchPage(offset: _feed.length);
+      setState(() {
+        _feed.addAll(items);
+        _hasMore = items.length == _pageSize;
+      });
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
+
+  LogementSearchParams _paramsForCurrentFilters({required int offset}) {
+    final mode = (_mode == 'achat') ? LogementMode.achat : LogementMode.location;
+    LogementCategorie? cat;
+    switch (_categorie) {
+      case 'maison':      cat = LogementCategorie.maison; break;
+      case 'appartement': cat = LogementCategorie.appartement; break;
+      case 'studio':      cat = LogementCategorie.studio; break;
+      case 'terrain':     cat = LogementCategorie.terrain; break;
+      default:            cat = null; // 'tous'
+    }
+    return LogementSearchParams(
+      mode: mode,
+      categorie: cat,
+      orderBy: 'cree_le',
+      ascending: false,
+      limit: _pageSize,
+      offset: offset,
+    );
+  }
+
+  Future<List<LogementModel>> _fetchPage({required int offset}) {
+    final p = _paramsForCurrentFilters(offset: offset);
+    return _svc.search(p);
+  }
+
+  String? _currentUserId() {
+    try {
+      final u = context.read<UserProvider?>()?.utilisateur;
+      final id = (u as UtilisateurModel?)?.id;
+      if (id != null && id.toString().isNotEmpty) return id.toString();
+    } catch (_) {}
+    final sid = _sb.auth.currentUser?.id;
+    return (sid != null && sid.isNotEmpty) ? sid : null;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadFavoris() async {
+    final uid = _currentUserId();
+    if (uid == null) return [];
+    final favRows = await _sb
+        .from('logement_favoris')
+        .select('logement_id, cree_le')
+        .eq('user_id', uid)
+        .order('cree_le', ascending: false);
+
+    final List<String> ids = (favRows as List)
+        .map((e) => (e as Map)['logement_id']?.toString())
+        .whereType<String>()
+        .toList(growable: false);
+    if (ids.isEmpty) return [];
+
+    final rows = await _sb
+        .from('logements')
+        .select('id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
+        .inFilter('id', ids)
+        .order('cree_le', ascending: false);
+
+    return (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMine() async {
+    final uid = _currentUserId();
+    if (uid == null) return [];
+    final rows = await _sb
+        .from('logements')
+        .select('id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
+        .eq('user_id', uid)
+        .order('cree_le', ascending: false);
+    return (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  // =================================== UI ===================================
 
   @override
   Widget build(BuildContext context) {
@@ -75,46 +228,42 @@ class _LogementHomePageState extends State<LogementHomePage> {
     return Scaffold(
       backgroundColor: _isDark ? const Color(0xFF0F172A) : _neutralBg,
 
-      // AppBar avec icônes (non branchées pour favoris & mes annonces)
       appBar: AppBar(
         backgroundColor: _primary,
         elevation: 0,
         title: const Text("Logements en Guinée", style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            tooltip: "Notifications",
-            onPressed: () => _soon('Notifications'),
-            icon: const Icon(Icons.notifications_none, color: Colors.white),
-          ),
-          IconButton(
-            tooltip: "Favoris",
-            onPressed: () => _soon('Favoris'),
-            icon: const Icon(Icons.favorite_border, color: Colors.white),
-          ),
-          IconButton(
-            tooltip: "Mes annonces",
-            onPressed: () => _soon('Mes annonces'),
-            icon: const Icon(Icons.person_outline, color: Colors.white),
+          // uniquement le bouton pour ouvrir le menu (drawer)
+          Builder(
+            builder: (ctx) => IconButton(
+              tooltip: "Menu",
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+              icon: const Icon(Icons.menu, color: Colors.white),
+            ),
           ),
         ],
       ),
 
+      endDrawer: _buildEndDrawer(),
+
       body: RefreshIndicator(
-        onRefresh: _loadAll,
+        onRefresh: _reloadAll,
         child: ListView(
+          controller: _scrollCtrl,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(padding),
           children: [
             _heroBanner(),
-            const SizedBox(height: 18),
-            _searchBar(),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
+
+            // Filtres
             _modeSwitch(),
             const SizedBox(height: 10),
             _categoriesGrid(),
-            const SizedBox(height: 18),
-            _quickActions(),      // Favoris & Mes annonces en boutons, non branchés
+            const SizedBox(height: 16),
+
+            _quickActions(),
             const SizedBox(height: 22),
 
             if (_loading)
@@ -125,20 +274,25 @@ class _LogementHomePageState extends State<LogementHomePage> {
             else if (_error != null)
               _errorBox(_error!)
             else ...[
-              _sectionTitle("Nouveaux biens"),
+              _sectionTitle("Tous les biens"),
               const SizedBox(height: 12),
-              _horizontalList(_latest),
-              const SizedBox(height: 22),
-              _sectionTitle(
-                "Près de moi",
-                trailing: IconButton(
-                  icon: const Icon(Icons.map_outlined, color: _primary),
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.logementMap),
-                ),
-              ),
+              _gridFeed(_feed),
               const SizedBox(height: 12),
-              _horizontalList(_near),
-              const SizedBox(height: 100),
+              _loadingMore
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: CircularProgressIndicator(),
+                    ))
+                  : (!_hasMore
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text("— Fin de la liste —",
+                                style: TextStyle(color: Colors.black45)),
+                          ),
+                        )
+                      : const SizedBox.shrink()),
+              const SizedBox(height: 80),
             ],
           ],
         ),
@@ -146,68 +300,193 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _ctaGreen,
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit),
+        onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
+            .then((_) => _reloadAll()),
         icon: const Icon(Icons.add_home_work_outlined),
         label: const Text("Publier un bien"),
       ),
     );
   }
 
-  // ------------------ Widgets ------------------
+  // ================== END DRAWER (menu) ==================
+  Widget _buildEndDrawer() {
+    UtilisateurModel? user;
+    try { user = context.read<UserProvider?>()?.utilisateur; } catch (_) { user = null; }
+    final nom    = (user?.nom ?? '').trim();
+    final prenom = (user?.prenom ?? '').trim();
+    final full   = ([prenom, nom]..removeWhere((s) => s.isEmpty)).join(' ');
+    final photo  = user?.photoUrl;
+
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Bloc profil (conservé)
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: _neutralBg,
+                  backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                  child: (photo == null || photo.isEmpty)
+                      ? const Icon(Icons.person, size: 28, color: _primary)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    full.isEmpty ? 'Utilisateur' : full,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+
+            // === ➜ ICI : DEUX BOUTONS UNIQUEMENT ===
+            const SizedBox(height: 8),
+            _drawerActionButton(
+              icon: Icons.favorite_border,
+              label: "Mes favoris",
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const FavorisPage()))
+                    .then((_) => _reloadAll());
+              },
+            ),
+            const SizedBox(height: 10),
+            _drawerActionButton(
+              icon: Icons.library_books_outlined,
+              label: "Mes annonces",
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))
+                    .then((_) => _reloadAll());
+              },
+            ),
+            const SizedBox(height: 8),
+            // (aucune autre section dans le drawer)
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      height: 48,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: _primary,
+          alignment: Alignment.centerLeft,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: _primary),
+          ),
+        ),
+        onPressed: onTap,
+        icon: Icon(icon),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
+  // ------------------ Widgets du corps ------------------
 
   Widget _heroBanner() {
     return Container(
-      height: 164,
+      height: 200,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          colors: [_primary, _primaryDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [BoxShadow(color: Colors.black26.withOpacity(0.10), blurRadius: 18, offset: const Offset(0, 7))],
+        boxShadow: [BoxShadow(color: Colors.black26.withOpacity(0.10), blurRadius: 18, offset: Offset(0, 7))],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DotsPainter(color: Colors.white.withOpacity(0.10))))),
+          PageView.builder(
+            controller: _heroCtrl,
+            itemCount: _heroImages.length,
+            onPageChanged: (i) => setState(() => _heroIndex = i),
+            itemBuilder: (_, i) => Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(_heroImages[i], fit: BoxFit.cover),
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xAA0D3B66), Color(0x660A2C4C)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Positioned(
-            left: 20,
-            top: 22,
-            right: 140,
+            left: 18, right: 18, top: 16,
             child: Text(
-              "Trouvez votre logement idéal, simplement.",
+              "Trouvez votre logement idéal,\nsimplement.",
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700, height: 1.25),
             ),
           ),
           Positioned(
-            right: 14,
-            bottom: -8,
-            child: Transform.rotate(
-              angle: -math.pi / 16,
-              child: Icon(Icons.house_rounded, size: 140, color: Colors.white.withOpacity(0.18)),
+            right: 12, top: 12,
+            child: Row(
+              children: List.generate(_heroImages.length, (i) {
+                final active = (i == _heroIndex);
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 10 : 8,
+                  height: active ? 10 : 8,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(active ? 0.95 : 0.65),
+                    shape: BoxShape.circle,
+                  ),
+                );
+              }),
             ),
+          ),
+          Positioned(
+            left: 12, right: 12, bottom: 12,
+            child: _searchField(),
           ),
         ],
       ),
     );
   }
 
-  Widget _searchBar() {
-    return TextField(
-      controller: _searchCtrl,
-      onSubmitted: (_) {
-        final q = _searchCtrl.text.trim();
-        final args = <String, dynamic>{'q': q, 'mode': _mode};
-        if (_categorie != 'tous') args['categorie'] = _categorie;
-        Navigator.pushNamed(context, AppRoutes.logementList, arguments: args);
-      },
-      decoration: InputDecoration(
-        hintText: "Rechercher : ville, quartier, mot-clé…",
-        prefixIcon: const Icon(Icons.search),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+  Widget _searchField() {
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(14),
+      child: TextField(
+        controller: _searchCtrl,
+        onSubmitted: (_) {
+          final q = _searchCtrl.text.trim();
+          final args = <String, dynamic>{'q': q, 'mode': _mode};
+          if (_categorie != 'tous') args['categorie'] = _categorie;
+          Navigator.pushNamed(context, AppRoutes.logementList, arguments: args);
+        },
+        decoration: InputDecoration(
+          hintText: "Rechercher : ville, quartier, mot-clé…",
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        ),
       ),
     );
   }
@@ -219,7 +498,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
         ChoiceChip(
           label: const Text("Location"),
           selected: _mode == "location",
-          onSelected: (_) => setState(() => _mode = "location"),
+          onSelected: (_) {
+            setState(() => _mode = "location");
+            _reloadAll();
+          },
           selectedColor: _accent,
           labelStyle: TextStyle(color: _mode == "location" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
@@ -229,7 +511,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
         ChoiceChip(
           label: const Text("Achat"),
           selected: _mode == "achat",
-          onSelected: (_) => setState(() => _mode = "achat"),
+          onSelected: (_) {
+            setState(() => _mode = "achat");
+            _reloadAll();
+          },
           selectedColor: _accent,
           labelStyle: TextStyle(color: _mode == "achat" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
@@ -241,19 +526,23 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   Widget _categoriesGrid() {
     final cats = [
-      {"icon": Icons.home, "label": "Maison", "id": "maison"},
-      {"icon": Icons.apartment, "label": "Appartement", "id": "appartement"},
-      {"icon": Icons.meeting_room, "label": "Studio", "id": "studio"},
-      {"icon": Icons.park, "label": "Terrain", "id": "terrain"},
+      {"icon": Icons.grid_view,    "label": "Tous",        "id": "tous"},
+      {"icon": Icons.home,         "label": "Maison",      "id": "maison"},
+      {"icon": Icons.apartment,    "label": "Appartement", "id": "appartement"},
+      {"icon": Icons.meeting_room, "label": "Studio",      "id": "studio"},
+      {"icon": Icons.park,         "label": "Terrain",     "id": "terrain"},
     ];
     return GridView.count(
-      crossAxisCount: 4,
+      crossAxisCount: 5,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       children: cats.map((c) {
         final selected = _categorie == c["id"];
         return GestureDetector(
-          onTap: () => setState(() => _categorie = c["id"] as String),
+          onTap: () {
+            setState(() => _categorie = c["id"] as String);
+            _reloadAll();
+          },
           child: Column(
             children: [
               CircleAvatar(
@@ -271,6 +560,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   Widget _quickActions() {
+    // Favoris / Annonces retirés (déplacés dans le drawer)
     return Wrap(
       spacing: 10,
       runSpacing: 10,
@@ -284,31 +574,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             elevation: 0,
           ),
-          onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit),
+          onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
+              .then((_) => _reloadAll()),
           icon: const Icon(Icons.add),
           label: const Text("Publier"),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _primary,
-            side: const BorderSide(color: _primary),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () => _soon('Favoris'),
-          icon: const Icon(Icons.favorite_border),
-          label: const Text("Favoris"),
-        ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _primary,
-            side: const BorderSide(color: _primary),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () => _soon('Mes annonces'),
-          icon: const Icon(Icons.collections_bookmark_outlined),
-          label: const Text("Mes annonces"),
         ),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -335,36 +604,37 @@ class _LogementHomePageState extends State<LogementHomePage> {
     );
   }
 
-  Widget _horizontalList(List<LogementModel> items) {
+  // ---------- GRILLE 2 COLONNES (flux) ----------
+  Widget _gridFeed(List<LogementModel> items) {
     if (items.isEmpty) {
-      return Container(
-        height: 110,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-        child: const Text("Aucun bien pour le moment", style: TextStyle(color: Colors.black54)),
-      );
+      return _emptyCard("Aucun bien pour ces filtres");
     }
-    return SizedBox(
-      height: 188,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) => _bienCard(items[i]),
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.78,
       ),
+      itemCount: items.length,
+      itemBuilder: (_, i) => _bienTile(items[i]),
     );
   }
 
-  Widget _bienCard(LogementModel b) {
+  Widget _bienTile(LogementModel b) {
     final image = (b.photos.isNotEmpty) ? b.photos.first : null;
     final mode  = b.mode == LogementMode.achat ? 'Achat' : 'Location';
     final cat   = _labelCat(b.categorie);
     final price = (b.prixGnf != null) ? _formatPrice(b.prixGnf!, b.mode) : 'Prix à discuter';
 
     return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, AppRoutes.logementDetail, arguments: b.id),
+      onTap: () {
+        if (b.id.isEmpty) return;
+        Navigator.pushNamed(context, AppRoutes.logementDetail, arguments: b.id);
+      },
       child: Container(
-        width: 240,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -375,11 +645,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              height: 110,
+              height: 120,
               width: double.infinity,
               color: Colors.grey.shade200,
-              child: image == null ? const Icon(Icons.image, size: 46, color: Colors.black26)
-                                   : Image.network(image, fit: BoxFit.cover),
+              child: (image == null || image.isEmpty)
+                  ? const Icon(Icons.image, size: 46, color: Colors.black26)
+                  : Image.network(image, fit: BoxFit.cover),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
@@ -393,8 +664,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
                   const SizedBox(height: 6),
                   Text(price, style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
-                  Text([if (b.ville != null) b.ville!, if (b.commune != null) b.commune!].join(' • '),
-                      style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                  Text(
+                    [if (b.ville != null) b.ville!, if (b.commune != null) b.commune!].join(' • '),
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -403,6 +678,14 @@ class _LogementHomePageState extends State<LogementHomePage> {
       ),
     );
   }
+
+  // Helpers
+  Widget _emptyCard(String msg) => Container(
+        height: 120,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+        child: Text(msg, style: const TextStyle(color: Colors.black54)),
+      );
 
   String _labelCat(LogementCategorie c) {
     switch (c) {
@@ -414,10 +697,26 @@ class _LogementHomePageState extends State<LogementHomePage> {
     }
   }
 
+  LogementCategorie _catFromDb(String v) {
+    switch (v) {
+      case 'maison': return LogementCategorie.maison;
+      case 'appartement': return LogementCategorie.appartement;
+      case 'studio': return LogementCategorie.studio;
+      case 'terrain': return LogementCategorie.terrain;
+      default: return LogementCategorie.autres;
+    }
+  }
+
   Widget _chip(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(color: _neutralBg, borderRadius: BorderRadius.circular(8)),
         child: Text(text, style: const TextStyle(fontSize: 12)),
+      );
+
+  Widget _chipSmall(String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: _neutralBg, borderRadius: BorderRadius.circular(6)),
+        child: Text(text, style: const TextStyle(fontSize: 11)),
       );
 
   String _formatPrice(num value, LogementMode mode) {
@@ -442,28 +741,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
             const Icon(Icons.error_outline, color: Colors.red),
             const SizedBox(width: 8),
             Expanded(child: Text(msg)),
-            TextButton(onPressed: _loadAll, child: const Text('Réessayer')),
+            TextButton(onPressed: _reloadAll, child: const Text('Réessayer')),
           ],
         ),
       );
-}
-
-// ---- Painter décoratif pour bannière ----
-class _DotsPainter extends CustomPainter {
-  const _DotsPainter({required this.color});
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..style = PaintingStyle.fill;
-    const r = 3.0;
-    for (double y = 18; y < size.height; y += 18) {
-      for (double x = 18; x < size.width; x += 18) {
-        canvas.drawCircle(Offset(x, y), r, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DotsPainter old) => false;
 }

@@ -115,7 +115,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(22), // => même taille visuelle
+      padding: const EdgeInsets.all(22), // même taille visuelle
       child: child,
     );
   }
@@ -125,20 +125,77 @@ class _HomePageState extends State<HomePage> {
     return _iconCard(Icon(iconData, color: color, size: 44));
   }
 
-  // Icône Soneya avec le même "card" mais un petit pictogramme secondaire
+  // Icône Soneya (Jobs)
   Widget _soneyaIcon() {
     const blue = Color(0xFF1976D2);
     return _iconCard(
       Stack(
         children: const [
-          // icône principale Job (même taille que les autres)
           Center(child: Icon(Icons.work_outline, color: blue, size: 44)),
-          // petit picto "CV" en coin (même couleur)
           Positioned(
             right: 2,
             bottom: 2,
             child: Icon(Icons.description, color: blue, size: 18),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ Icône Logement alignée & cohérente (44px + badge discret)
+  Widget _logementIcon() {
+    const primary = Color(0xFF0B3A6A); // bleu profond
+    const accent  = Color(0xFFE1005A); // fuchsia (badge)
+
+    return _iconCard(
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Center(
+            child: Icon(
+              Icons.apartment_rounded,
+              color: primary,
+              size: 44, // ✅ même taille que les autres
+            ),
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2), // propre sur la carte blanche
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.10),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Icon(Icons.location_on_rounded, size: 12, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Tuile utilisant un widget d'icône custom
+  Widget _serviceTileCustom(Widget iconWidget, String label, String route) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          iconWidget,
+          const SizedBox(height: 6),
+          Text(label, textAlign: TextAlign.center),
         ],
       ),
     );
@@ -309,8 +366,8 @@ class _HomePageState extends State<HomePage> {
                 _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
                 _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
 
-                // 🔁 Remplacement: Favoris -> Logement
-                _serviceTile(Icons.house_rounded, "Logement", AppRoutes.logement, const Color(0xFF009460)),
+                // 🔁 Logement avec l’icône custom alignée
+                _serviceTileCustom(_logementIcon(), "Logement", AppRoutes.logement),
 
                 // 🔹 Emplois (ex-Soneya)
                 GestureDetector(

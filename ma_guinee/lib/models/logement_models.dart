@@ -3,28 +3,24 @@ import 'dart:convert';
 
 /// Type d'opération
 enum LogementMode { location, achat }
-LogementMode logementModeFrom(String s) =>
-    s == 'achat' ? LogementMode.achat : LogementMode.location;
 
 String logementModeToString(LogementMode m) =>
     m == LogementMode.achat ? 'achat' : 'location';
 
-/// Catégorie de bien
-enum LogementCategorie { maison, appartement, studio, terrain, autres }
-LogementCategorie logementCategorieFrom(String s) {
+/// Parse robuste depuis la DB (gère null/espaces/majuscules)
+LogementMode logementModeFromDb(dynamic v) {
+  final s = v?.toString().trim().toLowerCase();
   switch (s) {
-    case 'maison':
-      return LogementCategorie.maison;
-    case 'appartement':
-      return LogementCategorie.appartement;
-    case 'studio':
-      return LogementCategorie.studio;
-    case 'terrain':
-      return LogementCategorie.terrain;
+    case 'achat':
+      return LogementMode.achat;
+    case 'location':
     default:
-      return LogementCategorie.autres;
+      return LogementMode.location;
   }
 }
+
+/// Catégorie de bien
+enum LogementCategorie { maison, appartement, studio, terrain, autres }
 
 String logementCategorieToString(LogementCategorie c) {
   switch (c) {
@@ -41,6 +37,23 @@ String logementCategorieToString(LogementCategorie c) {
   }
 }
 
+/// Parse robuste depuis la DB (gère null/espaces/majuscules)
+LogementCategorie logementCategorieFromDb(dynamic v) {
+  final s = v?.toString().trim().toLowerCase();
+  switch (s) {
+    case 'maison':
+      return LogementCategorie.maison;
+    case 'appartement':
+      return LogementCategorie.appartement;
+    case 'studio':
+      return LogementCategorie.studio;
+    case 'terrain':
+      return LogementCategorie.terrain;
+    default:
+      return LogementCategorie.autres;
+  }
+}
+
 /// Modèle principal
 class LogementModel {
   final String id;
@@ -49,7 +62,7 @@ class LogementModel {
   final String? description;
   final LogementMode mode;               // location | achat
   final LogementCategorie categorie;     // maison | appartement | studio | terrain | autres
-  final num? prixGnf;                    // en GNF (vente) OU loyer mensuel
+  final num? prixGnf;                    // GNF (vente) ou loyer mensuel
   final String? ville;
   final String? commune;
   final String? adresse;
@@ -57,10 +70,10 @@ class LogementModel {
   final int? chambres;
   final double? lat;
   final double? lng;
-  final List<String> photos;             // URLs publiques (récupérées via table logement_photos)
+  final List<String> photos;             // URLs publiques (via table logement_photos)
   final DateTime creeLe;
 
-  /// 📞 Numéro de contact de l'annonceur (colonne SQL: contact_telephone)
+  /// 📞 colonne SQL: contact_telephone
   final String? contactTelephone;
 
   LogementModel({
@@ -87,52 +100,60 @@ class LogementModel {
     List<String> _photos = const [];
     final p = m['photos'];
     if (p is List) {
-      _photos =
-          p.map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+      _photos = p
+          .map((e) => e?.toString() ?? '')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
     } else if (p is String && p.isNotEmpty) {
       try {
         final arr = jsonDecode(p);
         if (arr is List) {
           _photos = arr
               .map((e) => e?.toString() ?? '')
+              .map((s) => s.trim())
               .where((s) => s.isNotEmpty)
               .toList();
         }
       } catch (_) {}
     }
 
+    num? _num(dynamic v) =>
+        v == null ? null : (v is num ? v : num.tryParse(v.toString().trim()));
+    int? _int(dynamic v) =>
+        v == null ? null : (v is int ? v : int.tryParse(v.toString().trim()));
+    double? _dbl(dynamic v) {
+      final n = _num(v);
+      return n?.toDouble();
+    }
+    String? _s(dynamic v) {
+      final t = v?.toString().trim();
+      return (t == null || t.isEmpty) ? null : t;
+    }
+
     return LogementModel(
-      id: m['id'].toString(),
+      id: m['id']?.toString() ?? '',
       userId: m['user_id']?.toString() ?? '',
       titre: m['titre']?.toString() ?? '',
-      description: m['description']?.toString(),
-      mode: logementModeFrom(m['mode']?.toString() ?? 'location'),
-      categorie: logementCategorieFrom(m['categorie']?.toString() ?? 'autres'),
-      prixGnf: (m['prix_gnf'] is num)
-          ? m['prix_gnf'] as num
-          : num.tryParse(m['prix_gnf']?.toString() ?? ''),
-      ville: m['ville']?.toString(),
-      commune: m['commune']?.toString(),
-      adresse: m['adresse']?.toString(),
-      superficieM2: (m['superficie_m2'] is num)
-          ? m['superficie_m2'] as num
-          : num.tryParse(m['superficie_m2']?.toString() ?? ''),
-      chambres: (m['chambres'] is int)
-          ? m['chambres'] as int
-          : int.tryParse(m['chambres']?.toString() ?? ''),
-      lat: (m['lat'] is num)
-          ? (m['lat'] as num).toDouble()
-          : double.tryParse(m['lat']?.toString() ?? ''),
-      lng: (m['lng'] is num)
-          ? (m['lng'] as num).toDouble()
-          : double.tryParse(m['lng']?.toString() ?? ''),
+      description: _s(m['description']),
+      mode: logementModeFromDb(m['mode']),
+      categorie: logementCategorieFromDb(m['categorie']),
+      prixGnf: _num(m['prix_gnf']),
+      ville: _s(m['ville']),
+      commune: _s(m['commune']),
+      adresse: _s(m['adresse']),
+      superficieM2: _num(m['superficie_m2']),
+      chambres: _int(m['chambres']),
+      lat: _dbl(m['lat']),
+      lng: _dbl(m['lng']),
       photos: _photos,
       creeLe:
           DateTime.tryParse(m['cree_le']?.toString() ?? '') ?? DateTime.now(),
-      contactTelephone: m['contact_telephone']?.toString(),
+      contactTelephone: _s(m['contact_telephone']),
     );
   }
 
+  /// ⚠️ Sans `photos` (elles sont stockées dans `logement_photos`)
   Map<String, dynamic> toInsertMap() => {
         'titre': titre,
         'description': description,
@@ -146,12 +167,8 @@ class LogementModel {
         'chambres': chambres,
         'lat': lat,
         'lng': lng,
-        // 'photos' n’est pas enregistré directement si tu utilises la table logement_photos,
-        // mais on le laisse pour compat ascendante si tu as une colonne JSON.
-        'photos': photos,
-        // ✅ nouveau champ
         'contact_telephone': contactTelephone,
-      };
+      }..removeWhere((_, v) => v == null);
 
   LogementModel copyWith({
     String? id,
@@ -196,23 +213,23 @@ class LogementModel {
 
 /// Paramètres de recherche
 class LogementSearchParams {
-  final String? q; // mot-clé: titre/ville/commune
-  final LogementMode? mode; // location | achat
+  final String? q; // mot-clé
+  final LogementMode? mode;
   final LogementCategorie? categorie;
   final String? ville;
   final String? commune;
-  final num? prixMin; // en GNF
+  final num? prixMin;
   final num? prixMax;
-  final num? surfaceMin; // m²
+  final num? surfaceMin;
   final num? surfaceMax;
-  final int? chambres; // exact (0=ignore)
+  final int? chambres;
   final String orderBy; // 'cree_le' | 'prix_gnf' | 'superficie_m2'
   final bool ascending;
   final int limit;
   final int offset;
-  final double? nearLat; // pour tri par distance (optionnel)
+  final double? nearLat;
   final double? nearLng;
-  final int? nearKm; // rayon
+  final int? nearKm;
 
   const LogementSearchParams({
     this.q,
