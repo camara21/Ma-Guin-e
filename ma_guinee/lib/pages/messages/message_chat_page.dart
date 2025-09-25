@@ -1,3 +1,4 @@
+// lib/pages/messages/message_chat_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,16 +10,18 @@ import '../../models/utilisateur_model.dart';
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
     super.key,
-    required this.peerUserId,     // destinataire (propriétaire du bien)
-    required this.title,          // ex: titre du logement
-    this.contextType = 'logement',
-    required this.contextId,      // id du logement
+    required this.peerUserId,     // autre participant
+    required this.title,          // titre à afficher (nom ou titre d’annonce)
+    required this.contextType,    // 'annonce' | 'prestataire' | 'logement' (alias -> 'annonce')
+    required this.contextId,      // id annonce OU id prestataire
+    this.contextTitle,            // optionnel: annonce_titre / prestataire_name
   });
 
   final String peerUserId;
   final String title;
   final String contextType;
   final String contextId;
+  final String? contextTitle;
 
   @override
   State<MessageChatPage> createState() => _MessageChatPageState();
@@ -33,6 +36,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
   late Stream<List<_Msg>> _stream;
   bool _sending = false;
 
+  // 'logement' est un alias de 'annonce' pour nous
+  String get _ctx => (widget.contextType == 'logement') ? 'annonce' : widget.contextType;
+
   String? _myId() {
     try {
       final u = context.read<UserProvider?>()?.utilisateur;
@@ -45,9 +51,8 @@ class _MessageChatPageState extends State<MessageChatPage> {
   @override
   void initState() {
     super.initState();
-    // stream par polling léger (2s). Tu peux passer en Realtime plus tard.
-    _stream = Stream.periodic(const Duration(seconds: 2))
-        .asyncMap((_) => _fetchThread());
+    // polling léger (2s). Tu pourras passer en Realtime si besoin.
+    _stream = Stream.periodic(const Duration(seconds: 2)).asyncMap((_) => _fetchThread());
   }
 
   @override
@@ -61,45 +66,71 @@ class _MessageChatPageState extends State<MessageChatPage> {
     final me = _myId();
     if (me == null) return [];
 
-    final orFilter =
-        'and(from_id.eq.$me,to_id.eq.${widget.peerUserId}),and(from_id.eq.${widget.peerUserId},to_id.eq.$me)';
+    // participants (moi <-> peer)
+    final pair =
+        'and(sender_id.eq.$me,receiver_id.eq.${widget.peerUserId}),and(sender_id.eq.${widget.peerUserId},receiver_id.eq.$me)';
 
-    final rows = await _sb
+    // accepte anciens messages marqués 'logement'
+    final ctxs = (_ctx == 'annonce') ? ['annonce', 'logement'] : [_ctx];
+
+    final sel = await _sb
         .from('messages')
-        .select('id, from_id, to_id, body, context_type, context_id, created_at, read_at')
-        .or(orFilter)
-        .eq('context_type', widget.contextType)
-        .eq('context_id', widget.contextId)
-        .order('created_at', ascending: true);
+        .select('id, sender_id, receiver_id, contenu, contexte, annonce_id, prestataire_id, date_envoi, lu')
+        .or(pair)
+        .inFilter('contexte', ctxs)
+        .eq(_ctx == 'annonce' ? 'annonce_id' : 'prestataire_id', widget.contextId)
+        .order('date_envoi', ascending: true);
 
-    return (rows as List)
-        .map((e) => _Msg.fromMap(e as Map<String, dynamic>))
-        .toList(growable: false);
+    final rows = (sel as List).cast<Map<String, dynamic>>();
+
+    // marquer comme lus ce qui m’est destiné
+    final idsToMark = rows
+        .where((m) => (m['receiver_id']?.toString() == me) && (m['lu'] != true))
+        .map((m) => m['id'].toString())
+        .toList();
+    if (idsToMark.isNotEmpty) {
+      await _sb.from('messages').update({'lu': true}).inFilter('id', idsToMark);
+    }
+
+    return rows.map(_Msg.fromMap).toList(growable: false);
   }
 
   Future<void> _send() async {
     final me = _myId();
-    final body = _text.text.trim();
+    final txt = _text.text.trim();
     if (me == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Connecte-toi pour envoyer un message.')),
       );
       return;
     }
-    if (body.isEmpty) return;
+    if (txt.isEmpty) return;
 
     setState(() => _sending = true);
     try {
-      await _sb.from('messages').insert({
-        'from_id': me,
-        'to_id': widget.peerUserId,
-        'body': body,
-        'context_type': widget.contextType,
-        'context_id': widget.contextId,
-      });
+      // insertion selon contexte
+      final data = <String, dynamic>{
+        'sender_id': me,
+        'receiver_id': widget.peerUserId,
+        'contexte': _ctx, // 'annonce' (inclut 'logement') ou 'prestataire'
+        'contenu': txt,
+        'date_envoi': DateTime.now().toIso8601String(),
+        'lu': false,
+      };
+      if (_ctx == 'annonce') {
+        data['annonce_id'] = widget.contextId;
+        if (widget.contextTitle != null) data['annonce_titre'] = widget.contextTitle;
+      } else {
+        data['prestataire_id'] = widget.contextId;
+        if (widget.contextTitle != null) data['prestataire_name'] = widget.contextTitle;
+      }
+
+      await _sb.from('messages').insert(data);
+
       _text.clear();
-      // petit délai pour laisser le stream se rafraîchir puis scroll en bas
-      await Future.delayed(const Duration(milliseconds: 200));
+
+      // petit délai, puis scroll tout en bas
+      await Future.delayed(const Duration(milliseconds: 150));
       if (_scroll.hasClients) {
         _scroll.animateTo(
           _scroll.position.maxScrollExtent + 80,
@@ -130,17 +161,25 @@ class _MessageChatPageState extends State<MessageChatPage> {
               stream: _stream,
               builder: (context, snap) {
                 final items = snap.data ?? const <_Msg>[];
+
+                // auto-scroll en bas quand la liste change
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scroll.hasClients) {
+                    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+                  }
+                });
+
                 return ListView.builder(
                   controller: _scroll,
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                   itemCount: items.length,
                   itemBuilder: (_, i) {
                     final m = items[i];
-                    final isMine = (m.fromId == me);
+                    final isMine = (m.senderId == me);
                     return _Bubble(
                       isMine: isMine,
                       body: m.body,
-                      time: _fmtTime(context, m.createdAt),
+                      time: _fmtTime(context, m.dateEnvoi),
                     );
                   },
                 );
@@ -167,17 +206,17 @@ class _MessageChatPageState extends State<MessageChatPage> {
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12,
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: _sending ? null : _send,
-                    icon: const Icon(Icons.send),
-                    label: const Text('Envoyer'),
+                    icon: _sending
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.send),
+                    label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                   ),
                 ],
               ),
@@ -231,10 +270,7 @@ class _Bubble extends StatelessWidget {
               alignment: Alignment.bottomRight,
               child: Text(
                 time,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: (isMine ? fgMine : fgOther).withOpacity(0.7),
-                ),
+                style: TextStyle(fontSize: 10, color: (isMine ? fgMine : fgOther).withOpacity(0.7)),
               ),
             ),
           ],
@@ -246,18 +282,24 @@ class _Bubble extends StatelessWidget {
 
 class _Msg {
   final String id;
-  final String fromId;
-  final String toId;
+  final String senderId;
+  final String receiverId;
   final String body;
-  final DateTime createdAt;
+  final DateTime dateEnvoi;
 
-  _Msg({required this.id, required this.fromId, required this.toId, required this.body, required this.createdAt});
+  _Msg({
+    required this.id,
+    required this.senderId,
+    required this.receiverId,
+    required this.body,
+    required this.dateEnvoi,
+  });
 
   factory _Msg.fromMap(Map<String, dynamic> m) => _Msg(
         id: m['id'].toString(),
-        fromId: m['from_id'].toString(),
-        toId: m['to_id'].toString(),
-        body: (m['body'] ?? '').toString(),
-        createdAt: DateTime.parse(m['created_at'].toString()),
+        senderId: m['sender_id'].toString(),
+        receiverId: m['receiver_id'].toString(),
+        body: (m['contenu'] ?? '').toString(),
+        dateEnvoi: DateTime.parse(m['date_envoi'].toString()),
       );
 }

@@ -1,3 +1,4 @@
+// lib/pages/logement/logement_detail_page.dart
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,8 +13,9 @@ import '../../routes.dart';
 import '../../providers/user_provider.dart';
 import '../../models/utilisateur_model.dart';
 
-// ➜ on importe l’éditeur pour pousser la page en passant le modèle
+// pages
 import 'logement_edit_page.dart';
+import 'package:ma_guinee/pages/messages/message_chat_page.dart'; // ⬅️ ouvre le chat après l’envoi
 
 class LogementDetailPage extends StatefulWidget {
   const LogementDetailPage({super.key, required this.logementId});
@@ -208,8 +210,13 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: _sending ? null : () => _sendMessage(closeAfter: true),
-                        icon: const Icon(Icons.send),
-                        label: const Text('Envoyer'),
+                        icon: _sending
+                            ? const SizedBox(
+                                width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.send),
+                        label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _accent, foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -227,6 +234,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     );
   }
 
+  /// ✅ Envoie le message avec le schéma unifié, ferme la feuille puis ouvre le chat
   Future<void> _sendMessage({bool closeAfter = false}) async {
     final b = _bien; if (b == null) return;
     final me = _currentUserId();
@@ -241,16 +249,38 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     setState(() => _sending = true);
     try {
       await _sb.from('messages').insert({
-        'from_id': me,
-        'to_id': b.userId,
-        'body': body,
-        'context_type': 'logement',
-        'context_id': b.id,
+        'sender_id': me,
+        'receiver_id': b.userId,       // propriétaire du bien
+        'contexte': 'annonce',         // alias de 'logement'
+        'annonce_id': b.id,
+        'annonce_titre': b.titre,
+        'contenu': body,
+        'date_envoi': DateTime.now().toIso8601String(),
+        'lu': false,
       });
+
       if (!mounted) return;
+
       _msgCtrl.clear();
-      _snack("Message envoyé");
-      if (closeAfter) Navigator.of(context).maybePop();
+      if (closeAfter) {
+        // ferme la bottom sheet avant d’ouvrir le chat
+        Navigator.of(context).maybePop();
+        await Future.delayed(const Duration(milliseconds: 120));
+      }
+
+      // ➜ Ouvre directement la page de chat pour cette annonce
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MessageChatPage(
+            peerUserId: b.userId,
+            title: b.titre,
+            contextType: 'annonce',   // le chat gère aussi 'logement' -> 'annonce'
+            contextId: b.id,
+            contextTitle: b.titre,    // optionnel pour l’affichage dans les listes
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       _snack("Erreur envoi: $e");

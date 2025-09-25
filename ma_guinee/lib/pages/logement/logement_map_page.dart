@@ -32,6 +32,15 @@ class _LogementMapPageState extends State<LogementMapPage> {
   LatLng? _maPosition; // Position utilisateur (si dispo)
   _MapStyle _style = _MapStyle.voyager;
 
+  // ---------- FOCUS transmis depuis la page détail ----------
+  String? _focusId;
+  double? _focusLat;
+  double? _focusLng;
+  String? _focusTitre;
+  String? _focusVille;
+  String? _focusCommune;
+  bool _argsLu = false;
+
   // ---------- Thème ----------
   Color get _primary => const Color(0xFF0B3A6A);
   Color get _accent  => const Color(0xFFE1005A);
@@ -45,11 +54,35 @@ class _LogementMapPageState extends State<LogementMapPage> {
     _init();
   }
 
+  // ✅ On lit les arguments (id/lat/lng/…) une seule fois ici
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_argsLu) return;
+    _argsLu = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      _focusId      = args['id']?.toString();
+      _focusLat     = _toDouble(args['lat']);
+      _focusLng     = _toDouble(args['lng']);
+      _focusTitre   = args['titre']?.toString();
+      _focusVille   = args['ville']?.toString();
+      _focusCommune = args['commune']?.toString();
+    }
+  }
+
+  double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+    }
+
   Future<void> _init() async {
     setState(() { _loading = true; _error = null; });
     await _getMaPosition();
     await _load();
-    _fitToMarkers();
+    await _postLoadFocus(); // ✅ centre/ouvre l’offre si fournie, sinon fit markers
   }
 
   Future<void> _load() async {
@@ -64,6 +97,42 @@ class _LogementMapPageState extends State<LogementMapPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _postLoadFocus() async {
+    // Si on a un bien ciblé, on se centre dessus et on ouvre sa fiche
+    if (_focusLat != null && _focusLng != null) {
+      _mapController.move(LatLng(_focusLat!, _focusLng!), 15.5);
+
+      // Cherche le logement dans la liste chargée
+      final target = _items.firstWhere(
+        (e) => e.id == _focusId,
+        orElse: () => LogementModel(
+          id: _focusId ?? '',
+          userId: '',
+          titre: _focusTitre ?? 'Annonce',
+          description: '',
+          prixGnf: null,
+          mode: LogementMode.location,
+          categorie: LogementCategorie.appartement,
+          lat: _focusLat,
+          lng: _focusLng,
+          ville: _focusVille,
+          commune: _focusCommune,
+          photos: const [],
+          adresse: null,
+          chambres: null,
+          superficieM2: null,
+          creeLe: DateTime.now(),
+        ),
+      );
+
+      // Laisse le temps au layout puis ouvre la fiche
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (mounted) _showPreview(target);
+    } else {
+      _fitToMarkers();
     }
   }
 
@@ -121,6 +190,8 @@ class _LogementMapPageState extends State<LogementMapPage> {
     return b.toString().split('').reversed.join();
   }
 
+  bool get _focusDansListe => _focusId != null && _items.any((e) => e.id == _focusId);
+
   @override
   Widget build(BuildContext context) {
     final subtitle = [widget.ville, widget.commune].whereType<String>().join(' • ');
@@ -176,10 +247,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
                             disableClusteringAtZoom: 17,
                             size: const Size(44, 44),
                             padding: const EdgeInsets.all(50),
-
-                            // pas de FitBoundsOptions pour compat max
                             zoomToBoundsOnClick: true,
-
                             builder: (context, markers) {
                               return Container(
                                 decoration: BoxDecoration(
@@ -220,6 +288,16 @@ class _LogementMapPageState extends State<LogementMapPage> {
                               ),
                             ),
                           ]),
+
+                        // ✅ Marqueur de secours si le bien ciblé n'est pas dans la liste (_items)
+                        if (_focusLat != null && _focusLng != null && !_focusDansListe)
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(_focusLat!, _focusLng!),
+                              width: 60, height: 60, alignment: Alignment.topCenter,
+                              child: const Icon(Icons.location_on, size: 40, color: Color(0xFFE1005A)),
+                            ),
+                          ]),
                       ],
                     ),
 
@@ -243,8 +321,6 @@ class _LogementMapPageState extends State<LogementMapPage> {
                         ),
                       ),
                     ),
-
-                    // (❌ plus de liste en bas)
 
                     // ---------- FAB Ma position ----------
                     Positioned(

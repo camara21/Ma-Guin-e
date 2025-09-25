@@ -1,10 +1,12 @@
+// lib/pages/messages/messages_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
-import 'messages_annonce_page.dart';
-import 'messages_prestataire_page.dart';
+
+// ✅ utiliser le chat unifié
+import 'messages/message_chat_page.dart'; // <-- assure-toi que le fichier existe bien ici
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
@@ -43,14 +45,15 @@ class _MessagesPageState extends State<MessagesPage> {
       final d = DateTime.tryParse(v);
       if (d != null) return d;
     }
-    // fallback très ancien si null / invalide
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   String _dateLabel(dynamic v) {
-    final d = _asDate(v);
-    // format yyyy-mm-dd simple
-    return d.toIso8601String().split('T').first;
+    final d = _asDate(v).toLocal();
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$day/$m/$y';
   }
 
   // -------------------- LOAD --------------------
@@ -60,10 +63,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
     setState(() => _loading = true);
 
-    // 1) Récupérer tous les messages où je suis sender/receiver
     final messages = await _messageService.fetchUserConversations(user.id);
 
-    // 2) Grouper par conversation (contexte + cible + autre participant)
     final Map<String, Map<String, dynamic>> grouped = {};
     final Set<String> participantIds = {};
 
@@ -89,7 +90,6 @@ class _MessagesPageState extends State<MessagesPage> {
       }
     }
 
-    // 3) Noms/prénoms des participants
     if (participantIds.isNotEmpty) {
       final users = await Supabase.instance.client
           .from('utilisateurs')
@@ -103,7 +103,6 @@ class _MessagesPageState extends State<MessagesPage> {
       _utilisateurs = {};
     }
 
-    // 4) Ordonner par date_envoi (robuste)
     final list = grouped.values.toList()
       ..sort((a, b) => _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
 
@@ -158,9 +157,8 @@ class _MessagesPageState extends State<MessagesPage> {
             isAnnonce ? convo['annonce_id'] : convo['prestataire_id'],
           )
           .eq('receiver_id', user.id)
-          .eq('sender_id', otherId); // pas de filtre sur lu
+          .eq('sender_id', otherId);
 
-      // Optimiste
       final idx = _conversations.indexOf(convo);
       if (idx != -1 && mounted) {
         setState(() {
@@ -192,7 +190,6 @@ class _MessagesPageState extends State<MessagesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        // 🔙 ton thème d’avant
         backgroundColor: Colors.white,
         elevation: 1,
         iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
@@ -239,8 +236,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final utilisateur = _utilisateurs[otherId];
                           final title = (utilisateur != null)
-                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}"
-                                  .trim()
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
                               : (isAnnonce ? "Annonceur" : "Prestataire");
 
                           final subtitle = (m['contenu'] ?? '').toString();
@@ -277,33 +273,28 @@ class _MessagesPageState extends State<MessagesPage> {
                             ),
                             trailing: Text(dateLabel, style: const TextStyle(fontSize: 12)),
                             onTap: () async {
-                              await _markThreadAsRead(convo: m, otherId: otherId);
+                              await _markThreadAsRead(convo: m, otherId: (otherId ?? '').toString());
 
-                              if (isAnnonce) {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => MessagesAnnoncePage(
-                                      annonceId: m['annonce_id'],
-                                      annonceTitre: title,
-                                      receiverId: otherId,
-                                      senderId: user!.id,
-                                    ),
+                              // ✅ OUVERTURE DU CHAT UNIFIÉ (sans contextTitle)
+                              final contextTypeStr = (m['contexte'] ?? '').toString(); // 'annonce' | 'prestataire'
+                              final contextIdStr = contextTypeStr == 'annonce'
+                                  ? (m['annonce_id'] ?? '').toString()
+                                  : (m['prestataire_id'] ?? '').toString();
+
+                              final otherIdStr = (otherId ?? '').toString();
+
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => MessageChatPage(
+                                    peerUserId: otherIdStr,
+                                    title: title, // affiché en AppBar du chat
+                                    // si jamais tu envoies 'logement' quelque part, le chat le convertit en 'annonce'
+                                    contextType: contextTypeStr,
+                                    contextId: contextIdStr,
                                   ),
-                                );
-                              } else {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => MessagesPrestatairePage(
-                                      prestataireId: m['prestataire_id'],
-                                      prestataireNom: title,
-                                      receiverId: otherId,
-                                      senderId: user!.id,
-                                    ),
-                                  ),
-                                );
-                              }
+                                ),
+                              );
 
                               _loadConversations();
                             },
