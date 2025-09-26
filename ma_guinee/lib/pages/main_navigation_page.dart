@@ -14,7 +14,7 @@ import 'profile_page.dart';
 class Badge extends StatelessWidget {
   final int count;
   final double size;
-  const Badge({Key? key, required this.count, this.size = 16}) : super(key: key);
+  const Badge({Key? key, required this.count, this.size = 18}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +31,7 @@ class Badge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -54,10 +54,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // ✅ Maintenant on utilise le stream basé sur la table messages
-    final Stream<int> badgeStream = (user == null)
-        ? Stream<int>.value(0)
-        : _svc.unreadCountStream(user.id);
+    // Stream du badge Messages (nombre non lus)
+    final Stream<int> badgeStream =
+        (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
 
     final pages = <Widget>[
       const HomePage(),
@@ -79,13 +78,27 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       child: Scaffold(
         body: pages[_currentIndex],
         bottomNavigationBar: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
+
+          // Couleurs
           selectedItemColor: Colors.red,
           unselectedItemColor: Colors.grey,
+
+          // TAILLE DES ICÔNES (↑)
+          iconSize: 30, // taille de base
+          selectedIconTheme: const IconThemeData(size: 34),
+          unselectedIconTheme: const IconThemeData(size: 28),
+
+          // (optionnel) Lisibilité labels
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+
           items: [
             const BottomNavigationBarItem(
-              icon: Icon(Icons.home, color: Colors.red),
+              // Laisser le thème gérer la couleur (retire color: Colors.red)
+              icon: Icon(Icons.home),
               label: 'Accueil',
             ),
             const BottomNavigationBarItem(
@@ -99,14 +112,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 children: [
                   const Icon(Icons.forum_rounded),
                   Positioned(
-                    right: -4,
-                    top: -4,
+                    right: -6, // ajusté pour icônes plus grandes
+                    top: -6,
                     child: StreamBuilder<int>(
                       stream: badgeStream,
                       initialData: 0,
                       builder: (context, snapshot) {
                         final count = snapshot.data ?? 0;
-                        return Badge(count: count);
+                        return Badge(count: count, size: 18);
                       },
                     ),
                   ),
