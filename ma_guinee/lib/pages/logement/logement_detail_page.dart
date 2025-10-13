@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart'; // 👈 PARTAGER
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
@@ -28,7 +29,7 @@ class LogementDetailPage extends StatefulWidget {
 class _LogementDetailPageState extends State<LogementDetailPage> {
   final _svc = LogementService();
   final _page = PageController();
-  final _sb   = Supabase.instance.client;
+  final _sb = Supabase.instance.client;
 
   LogementModel? _bien;
   bool _loading = true;
@@ -41,12 +42,15 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   final _msgCtrl = TextEditingController();
   bool _sending = false;
 
+  // --- signalement ---
+  bool _sendingReport = false; // 👈 anti double-clic report
+
   // Palette
   Color get _primary => const Color(0xFF0B3A6A);
-  Color get _accent  => const Color(0xFFE1005A);
-  bool  get _isDark  => Theme.of(context).brightness == Brightness.dark;
-  Color get _bg      => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _chipBg  => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _accent => const Color(0xFFE1005A);
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
+  Color get _chipBg => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   String? _currentUserId() {
     try {
@@ -77,7 +81,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final data = await _svc.getById(widget.logementId);
 
@@ -94,38 +101,52 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       }
 
       if (!mounted) return;
-      setState(() { _bien = data; _fav = fav; _loading = false; });
+      setState(() {
+        _bien = data;
+        _fav = fav;
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
   // -------- actions --------
   void _openMap() {
-    final b = _bien; if (b == null) return;
+    final b = _bien;
+    if (b == null) return;
     if (b.lat == null || b.lng == null) {
       _snack("Coordonnées indisponibles pour ce bien.");
       return;
     }
     Navigator.pushNamed(context, AppRoutes.logementMap, arguments: {
-      'id': b.id, 'lat': b.lat, 'lng': b.lng, 'titre': b.titre,
-      'ville': b.ville, 'commune': b.commune,
+      'id': b.id,
+      'lat': b.lat,
+      'lng': b.lng,
+      'titre': b.titre,
+      'ville': b.ville,
+      'commune': b.commune,
     });
   }
 
-  // ➜ Edition : on pousse la page en PASSANT le modèle (pré-remplissage garanti)
+  // ➜ Edition
   Future<void> _edit() async {
-    final b = _bien; if (b == null) return;
+    final b = _bien;
+    if (b == null) return;
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => LogementEditPage(existing: b)),
     );
-    if (mounted) _load(); // rafraîchir le détail au retour
+    if (mounted) _load();
   }
 
   Future<void> _deleteBien() async {
-    final b = _bien; if (b == null) return;
+    final b = _bien;
+    if (b == null) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -133,7 +154,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         content: const Text('Voulez-vous vraiment supprimer cette annonce ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true),  child: const Text('Supprimer')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
         ],
       ),
     );
@@ -142,15 +163,16 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       await _sb.from('logements').delete().eq('id', b.id);
       if (!mounted) return;
       _snack('Annonce supprimée');
-      Navigator.of(context).pop(); // retour à la liste
+      Navigator.of(context).pop();
     } catch (e) {
       if (mounted) _snack('Erreur suppression: $e');
     }
   }
 
-  // 🔹 COMPOSE DANS LA PAGE (pas de route)
+  // 🔹 COMPOSE DANS LA PAGE
   void _openMessages() {
-    final b = _bien; if (b == null) return;
+    final b = _bien;
+    if (b == null) return;
     _msgCtrl.clear();
     showModalBottomSheet(
       context: context,
@@ -167,21 +189,18 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 10),
-              Container(width: 36, height: 4, decoration: BoxDecoration(
-                color: Colors.black26, borderRadius: BorderRadius.circular(2),
-              )),
+              Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(2))),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text('Message • ${b.titre}',
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text('Message • ${b.titre}', style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      icon: const Icon(Icons.close),
-                    ),
+                    IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
                   ],
                 ),
               ),
@@ -212,13 +231,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                         onPressed: _sending ? null : () => _sendMessage(closeAfter: true),
                         icon: _sending
                             ? const SizedBox(
-                                width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
+                                width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.send),
                         label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _accent, foregroundColor: Colors.white,
+                          backgroundColor: _accent,
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
@@ -234,9 +252,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     );
   }
 
-  /// ✅ Envoie le message avec le schéma unifié, ferme la feuille puis ouvre le chat
+  /// ✅ Envoie le message
   Future<void> _sendMessage({bool closeAfter = false}) async {
-    final b = _bien; if (b == null) return;
+    final b = _bien;
+    if (b == null) return;
     final me = _currentUserId();
     if (me == null) {
       _snack("Connecte-toi pour envoyer un message.");
@@ -250,9 +269,9 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     try {
       await _sb.from('messages').insert({
         'sender_id': me,
-        'receiver_id': b.userId,       // propriétaire du bien
-        'contexte': 'annonce',         // alias de 'logement'
-        'annonce_id': b.id,
+        'receiver_id': b.userId,
+        'contexte': 'logement', // 🔁 CORRIGÉ
+        'annonce_id': b.id, // on réutilise annonce_id pour pointer le logement
         'annonce_titre': b.titre,
         'contenu': body,
         'date_envoi': DateTime.now().toIso8601String(),
@@ -263,21 +282,19 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
       _msgCtrl.clear();
       if (closeAfter) {
-        // ferme la bottom sheet avant d’ouvrir le chat
         Navigator.of(context).maybePop();
         await Future.delayed(const Duration(milliseconds: 120));
       }
 
-      // ➜ Ouvre directement la page de chat pour cette annonce
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => MessageChatPage(
             peerUserId: b.userId,
             title: b.titre,
-            contextType: 'annonce',   // le chat gère aussi 'logement' -> 'annonce'
+            contextType: 'logement', // 🔁 CORRIGÉ
             contextId: b.id,
-            contextTitle: b.titre,    // optionnel pour l’affichage dans les listes
+            contextTitle: b.titre,
           ),
         ),
       );
@@ -291,7 +308,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
   Future<void> _callOwner() async {
     final tel = _bien?.contactTelephone?.trim();
-    if (tel == null || tel.isEmpty) { _snack("Numéro indisponible."); return; }
+    if (tel == null || tel.isEmpty) {
+      _snack("Numéro indisponible.");
+      return;
+    }
     final uri = Uri(scheme: 'tel', path: tel);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -310,10 +330,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     final id = widget.logementId;
     try {
       if (_fav) {
-        await _sb.from('logement_favoris')
-          .delete()
-          .eq('user_id', me)
-          .eq('logement_id', id);
+        await _sb.from('logement_favoris').delete().eq('user_id', me).eq('logement_id', id);
         setState(() => _fav = false);
         _snack("Retiré des favoris");
       } else {
@@ -336,6 +353,168 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     return mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
   }
 
+  // ======= PARTAGER & SIGNALER =======
+
+  void _shareBien() {
+    final b = _bien;
+    if (b == null) return;
+    final lignes = <String>[
+      b.titre,
+      _formatPrice(b.prixGnf, b.mode),
+      if (b.ville?.isNotEmpty == true) 'Ville : ${b.ville}',
+      if (b.commune?.isNotEmpty == true) 'Commune : ${b.commune}',
+    ];
+    Share.share(lignes.join('\n'));
+  }
+
+  void _openReportSheet() {
+    final b = _bien;
+    if (b == null) return;
+    final me = _currentUserId();
+    if (me == null) {
+      _snack("Connecte-toi pour signaler.");
+      Navigator.pushNamed(context, AppRoutes.login);
+      return;
+    }
+    if (_isOwner) {
+      _snack("Action non autorisée pour votre propre annonce.");
+      return;
+    }
+
+    final reasons = <String>[
+      'Fausse annonce',
+      'Tentative de fraude',
+      'Contenu inapproprié',
+      'Mauvaise expérience',
+      'Usurpation d’identité',
+      'Autre'
+    ];
+    final TextEditingController ctrl = TextEditingController();
+    String selected = reasons.first;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Signaler ce logement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: reasons
+                    .map((r) => ChoiceChip(
+                          label: Text(r),
+                          selected: selected == r,
+                          onSelected: (_) => setLocal(() => selected = r),
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  hintText: "Expliquez brièvement… (facultatif)",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.report_gmailerrorred),
+                  label: Text(_sendingReport ? 'Envoi…' : 'Envoyer le signalement'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _sendingReport
+                      ? null
+                      : () async {
+                          Navigator.pop(ctx);
+                          await _sendReportToTable(selected, ctrl.text.trim());
+                        },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendReportToTable(String reason, String details) async {
+    if (_sendingReport) return;
+    setState(() => _sendingReport = true);
+
+    final b = _bien!; // déjà vérifié
+    final me = _currentUserId()!;
+
+    try {
+      // anti-doublon client
+      final already = await _sb
+          .from('reports')
+          .select('id')
+          .eq('context', 'logement')
+          .eq('cible_id', b.id)
+          .eq('reported_by', me)
+          .maybeSingle();
+      if (already != null) {
+        _snack('Vous avez déjà signalé ce logement.');
+        setState(() => _sendingReport = false);
+        return;
+      }
+
+      await _sb.from('reports').insert({
+        'context': 'logement',
+        'cible_id': b.id,
+        'owner_id': b.userId,
+        'reported_by': me,
+        'reason': reason,
+        'details': details.isEmpty ? null : details,
+        // infos utiles
+        'ville': b.ville,
+        'titre': b.titre,
+        'prix': b.prixGnf,
+        'devise': 'GNF',
+        'telephone': b.contactTelephone,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      _snack('Signalement envoyé. Merci.');
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        _snack('Déjà signalé.');
+      } else {
+        _snack('Erreur: ${e.message}');
+      }
+    } catch (e) {
+      _snack('Erreur: $e');
+    } finally {
+      if (mounted) setState(() => _sendingReport = false);
+    }
+  }
+
+  // ======= / PARTAGER & SIGNALER =======
+
   @override
   Widget build(BuildContext context) {
     final b = _bien;
@@ -350,40 +529,35 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
           IconButton(
             tooltip: _fav ? "Retirer des favoris" : "Ajouter aux favoris",
             onPressed: _toggleFav,
-            icon: Icon(
-              _fav ? Icons.favorite : Icons.favorite_border,
-              color: _fav ? Colors.red : Colors.white,
-            ),
+            icon: Icon(_fav ? Icons.favorite : Icons.favorite_border, color: _fav ? Colors.red : Colors.white),
           ),
-          IconButton(
-            tooltip: "Rafraîchir",
-            onPressed: _load,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
+          IconButton(tooltip: "Rafraîchir", onPressed: _load, icon: const Icon(Icons.refresh, color: Colors.white)),
           PopupMenuButton<String>(
             iconColor: Colors.white,
             onSelected: (v) {
               switch (v) {
-                case 'edit': _edit(); break;
-                case 'share': _snack("Partage à venir"); break;
-                case 'report':
-                  showDialog(context: context, builder: (_) => AlertDialog(
-                    title: const Text("Signaler"),
-                    content: const Text("La fonctionnalité de signalement arrive bientôt."),
-                    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
-                  ));
+                case 'edit':
+                  _edit();
                   break;
-                case 'delete': _deleteBien(); break;
+                case 'share':
+                  _shareBien();
+                  break; // 👈 PARTAGER
+                case 'report':
+                  _openReportSheet();
+                  break; // 👈 SIGNALER
+                case 'delete':
+                  _deleteBien();
+                  break;
               }
             },
             itemBuilder: (_) => _isOwner
                 ? const [
-                    PopupMenuItem(value: 'edit',   child: Text('Modifier')),
-                    PopupMenuItem(value: 'share',  child: Text('Partager')),
+                    PopupMenuItem(value: 'edit', child: Text('Modifier')),
+                    PopupMenuItem(value: 'share', child: Text('Partager')),
                     PopupMenuItem(value: 'delete', child: Text('Supprimer')),
                   ]
                 : const [
-                    PopupMenuItem(value: 'share',  child: Text('Partager')),
+                    PopupMenuItem(value: 'share', child: Text('Partager')),
                     PopupMenuItem(value: 'report', child: Text('Signaler')),
                   ],
           ),
@@ -417,7 +591,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                                       ),
                                       const SizedBox(height: 12),
                                       Wrap(
-                                        spacing: 8, runSpacing: -6,
+                                        spacing: 8,
+                                        runSpacing: -6,
                                         children: [
                                           _chip(b.mode == LogementMode.achat ? 'Achat' : 'Location'),
                                           _chip(logementCategorieToString(b.categorie)),
@@ -643,11 +818,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     child: Image.network(
                       photos[i],
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.broken_image_outlined,
-                        size: 80,
-                        color: Colors.white54,
-                      ),
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image_outlined, size: 80, color: Colors.white54),
                     ),
                   ),
                 ),
@@ -745,11 +917,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
               const SizedBox(height: 10),
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: const Text("Réessayer"),
-              ),
+              ElevatedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text("Réessayer")),
             ],
           ),
         ),

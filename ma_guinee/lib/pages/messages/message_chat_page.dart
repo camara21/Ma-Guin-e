@@ -1,25 +1,20 @@
 // lib/pages/messages/message_chat_page.dart
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../providers/user_provider.dart';
-import '../../models/utilisateur_model.dart';
-
-// 🔗 même service / modèles que la page détail
-import '../../services/logement_service.dart';
-import '../../models/logement_models.dart';
-import '../logement/logement_detail_page.dart';
+// adapte l’import si besoin
+import '../../pages/logement/logement_detail_page.dart';
 
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
     super.key,
-    required this.peerUserId,     // autre participant
-    required this.title,          // nom interlocuteur (AppBar)
-    required this.contextType,    // 'annonce' | 'prestataire' | 'logement' (alias -> 'annonce')
-    required this.contextId,      // id annonce/logement OU id prestataire
-    this.contextTitle,            // titre du logement (si dispo)
+    required this.peerUserId,   // id de l'interlocuteur
+    required this.title,        // titre dans l'appbar
+    required this.contextType,  // 'logement' | 'prestataire'
+    required this.contextId,    // id du logement / prestataire
+    this.contextTitle,
   });
 
   final String peerUserId;
@@ -35,52 +30,74 @@ class MessageChatPage extends StatefulWidget {
 class _MessageChatPageState extends State<MessageChatPage> {
   final _sb = Supabase.instance.client;
 
-  final _text = TextEditingController();
-  final _scroll = ScrollController();
+  // Bucket des photos logement
+  static const String _logementBucket = 'logements';
 
+  // Helpers URL publiques
+  String _publicUrlFrom(String bucket, String pathOrUrl) {
+    if (pathOrUrl.isEmpty) return '';
+    if (pathOrUrl.startsWith('http')) return pathOrUrl;
+    final objectPath = pathOrUrl.startsWith('$bucket/')
+        ? pathOrUrl.substring(bucket.length + 1)
+        : pathOrUrl;
+    return _sb.storage.from(bucket).getPublicUrl(objectPath);
+  }
+
+  String _publicUrlAuto(String pathOrUrl, {required String bucketFallback}) {
+    if (pathOrUrl.isEmpty) return '';
+    if (pathOrUrl.startsWith('http')) return pathOrUrl;
+    final slash = pathOrUrl.indexOf('/');
+    if (slash > 0) {
+      final maybeBucket = pathOrUrl.substring(0, slash);
+      final objectPath = pathOrUrl.substring(slash + 1);
+      try {
+        return _sb.storage.from(maybeBucket).getPublicUrl(objectPath);
+      } catch (_) {}
+    }
+    return _publicUrlFrom(bucketFallback, pathOrUrl);
+  }
+
+  // État messages
+  final _msgCtrl = TextEditingController();
+  final _scroll  = ScrollController();
   late Stream<List<_Msg>> _stream;
   bool _sending = false;
 
-  // alias: logement -> annonce
-  String get _ctx => (widget.contextType == 'logement') ? 'annonce' : widget.contextType;
-
-  // Offre (via LogementService)
-  final _logements = LogementService();
+  // Carte logement
   late Future<_Offer?> _offerFuture;
 
-  String? _myId() {
-    try {
-      final u = context.read<UserProvider?>()?.utilisateur;
-      final id = (u as UtilisateurModel?)?.id;
-      if (id != null && id.toString().isNotEmpty) return id.toString();
-    } catch (_) {}
-    return _sb.auth.currentUser?.id;
-  }
+  String get _ctx => widget.contextType; // 'logement' | 'prestataire'
+  bool get _showOfferCard => (_ctx == 'logement');
+  String? get _myId => _sb.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
     _stream = Stream.periodic(const Duration(seconds: 2)).asyncMap((_) => _fetchThread());
-    _offerFuture = (_ctx == 'annonce') ? _fetchOfferFromService() : Future.value(null);
+    _offerFuture = _showOfferCard ? _fetchLogementHeader(widget.contextId) : Future.value(null);
   }
 
   @override
   void dispose() {
-    _text.dispose();
+    _msgCtrl.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Lit le logement via LogementService (même logique que détail)
-  Future<_Offer?> _fetchOfferFromService() async {
+  // ========= HEADER LOGEMENT =========
+  Future<_Offer?> _fetchLogementHeader(String id) async {
     try {
-      final b = await _logements.getById(widget.contextId);
-      if (b == null) {
-        // fallback minimal pour afficher qqch si jamais l’ID n’existe plus
+      final row = await _sb
+          .from('logements')
+          .select(
+              'id, titre, images, photos, photo, image, cover, cover_url, image_couverture, image_url, prix, devise, ville, commune')
+          .eq('id', id)
+          .maybeSingle();
+
+      if (row == null) {
         return _Offer(
-          id: widget.contextId,
-          titre: (widget.contextTitle ?? 'Logement').toString(),
+          id: id,
+          titre: widget.contextTitle ?? 'Logement',
           imageUrl: null,
           ville: '',
           commune: '',
@@ -88,22 +105,90 @@ class _MessageChatPageState extends State<MessageChatPage> {
         );
       }
 
-      final img = b.photos.isNotEmpty ? b.photos.first : null;
-      final prixLabel = _fmtPrixWithMode(b.prixGnf, b.mode);
+      // Normalise vers List<String> (accepte List, String simple ou String JSON)
+      List<String> _listify(dynamic v) {
+        if (v == null) return const <String>[];
+        if (v is List) {
+          return v
+              .map((e) {
+                if (e == null) return '';
+                if (e is String) return e;
+                if (e is Map) {
+                  final m = Map<String, dynamic>.from(e);
+                  return (m['path'] ??
+                          m['url'] ??
+                          m['publicUrl'] ??
+                          m['name'] ??
+                          m['filename'] ??
+                          '')
+                      .toString();
+                }
+                return e.toString();
+              })
+              .where((s) => s.isNotEmpty)
+              .toList();
+        }
+        if (v is String) {
+          final s = v.trim();
+          if (s.isEmpty) return const <String>[];
+          // JSON list ?
+          if ((s.startsWith('[') && s.endsWith(']')) ||
+              (s.startsWith('{') && s.endsWith('}'))) {
+            try {
+              final decoded = jsonDecode(s);
+              return _listify(decoded);
+            } catch (_) {
+              return <String>[s];
+            }
+          }
+          return <String>[s];
+        }
+        return <String>[v.toString()];
+      }
+
+      // Cherche la première clé "images"
+      final orderKeys = [
+        'images',
+        'photos',
+        'gallery',
+        'pictures',
+        'image_list',
+        'photo',
+        'image',
+        'cover',
+        'cover_url',
+        'image_couverture',
+        'image_url'
+      ];
+      List<String> imgs = const [];
+      for (final k in orderKeys) {
+        if (row[k] != null) {
+          imgs = _listify(row[k]);
+          if (imgs.isNotEmpty) break;
+        }
+      }
+
+      final image = imgs.isNotEmpty
+          ? _publicUrlAuto(imgs.first, bucketFallback: _logementBucket)
+          : null;
+
+      final prix = row['prix'];
+      final devise = (row['devise'] ?? '').toString();
+      final prixLabel =
+          (prix is num) ? '${prix.toInt()} ${devise.isEmpty ? 'GNF' : devise}' : null;
 
       return _Offer(
-        id: b.id,
-        titre: b.titre,
-        imageUrl: img,
-        ville: b.ville ?? '',
-        commune: b.commune ?? '',
+        id: (row['id'] ?? '').toString(),
+        titre: (row['titre'] ?? '').toString(),
+        imageUrl: image,
+        ville: (row['ville'] ?? '').toString(),
+        commune: (row['commune'] ?? '').toString(),
         prixLabel: prixLabel,
       );
     } catch (_) {
-      // en cas d’erreur réseau, on affiche au moins le titre
       return _Offer(
-        id: widget.contextId,
-        titre: (widget.contextTitle ?? 'Logement').toString(),
+        id: id,
+        titre: widget.contextTitle ?? 'Logement',
         imageUrl: null,
         ville: '',
         commune: '',
@@ -111,41 +196,41 @@ class _MessageChatPageState extends State<MessageChatPage> {
       );
     }
   }
-  // ─────────────────────────────────────────────────────────────
 
+  // ========= MESSAGES =========
   Future<List<_Msg>> _fetchThread() async {
-    final me = _myId();
-    if (me == null) return [];
+    final me = _myId;
+    if (me == null) return const <_Msg>[];
 
     final pair =
         'and(sender_id.eq.$me,receiver_id.eq.${widget.peerUserId}),and(sender_id.eq.${widget.peerUserId},receiver_id.eq.$me)';
 
-    final ctxs = (_ctx == 'annonce') ? ['annonce', 'logement'] : [_ctx];
-
     final sel = await _sb
         .from('messages')
-        .select('id, sender_id, receiver_id, contenu, contexte, annonce_id, prestataire_id, date_envoi, lu')
+        .select(
+            'id, sender_id, receiver_id, contenu, contexte, annonce_id, prestataire_id, date_envoi, lu')
         .or(pair)
-        .inFilter('contexte', ctxs)
-        .eq(_ctx == 'annonce' ? 'annonce_id' : 'prestataire_id', widget.contextId)
+        .eq('contexte', _ctx)
+        // Logement réutilise la colonne annonce_id
+        .eq(_ctx == 'prestataire' ? 'prestataire_id' : 'annonce_id', widget.contextId)
         .order('date_envoi', ascending: true);
 
     final rows = (sel as List).cast<Map<String, dynamic>>();
 
-    final idsToMark = rows
+    final toMark = rows
         .where((m) => (m['receiver_id']?.toString() == me) && (m['lu'] != true))
         .map((m) => m['id'].toString())
         .toList();
-    if (idsToMark.isNotEmpty) {
-      await _sb.from('messages').update({'lu': true}).inFilter('id', idsToMark);
+    if (toMark.isNotEmpty) {
+      await _sb.from('messages').update({'lu': true}).inFilter('id', toMark);
     }
 
     return rows.map(_Msg.fromMap).toList(growable: false);
   }
 
   Future<void> _send() async {
-    final me = _myId();
-    final txt = _text.text.trim();
+    final me = _myId;
+    final txt = _msgCtrl.text.trim();
     if (me == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -160,35 +245,34 @@ class _MessageChatPageState extends State<MessageChatPage> {
       final data = <String, dynamic>{
         'sender_id': me,
         'receiver_id': widget.peerUserId,
-        'contexte': _ctx,
+        'contexte': _ctx, // <= 'logement' OU 'prestataire'
         'contenu': txt,
         'date_envoi': DateTime.now().toIso8601String(),
         'lu': false,
       };
-      if (_ctx == 'annonce') {
-        data['annonce_id'] = widget.contextId;
-        if (widget.contextTitle != null) data['annonce_titre'] = widget.contextTitle;
-      } else {
+      if (_ctx == 'prestataire') {
         data['prestataire_id'] = widget.contextId;
         if (widget.contextTitle != null) data['prestataire_name'] = widget.contextTitle;
+      } else {
+        // logement => stocké dans annonce_id
+        data['annonce_id'] = widget.contextId;
+        if (widget.contextTitle != null) data['annonce_titre'] = widget.contextTitle;
       }
 
       await _sb.from('messages').insert(data);
-      _text.clear();
+      _msgCtrl.clear();
 
       await Future.delayed(const Duration(milliseconds: 150));
       if (_scroll.hasClients) {
         _scroll.animateTo(
           _scroll.position.maxScrollExtent + 80,
-          duration: const Duration(milliseconds: 250),
+          duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur envoi: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur envoi: $e')));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -196,13 +280,38 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final me = _myId();
-    final showOfferCard = (_ctx == 'annonce'); // alias logement
+    final me = _myId;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Message • ${widget.title}')),
+      appBar: AppBar(title: Text(widget.title)),
       body: Column(
         children: [
+          if (_showOfferCard)
+            FutureBuilder<_Offer?>(
+              future: _offerFuture,
+              builder: (context, snap) {
+                final off = snap.data;
+                if (snap.connectionState != ConnectionState.done || off == null) {
+                  return const SizedBox(height: 4);
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8, left: 12, right: 12, top: 10),
+                  child: _OfferMessageBubble(
+                    offer: off,
+                    onTap: () {
+                      // ➜ Détail LOGEMENT (pas Annonce)
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LogementDetailPage(logementId: off.id),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+
           Expanded(
             child: StreamBuilder<List<_Msg>>(
               stream: _stream,
@@ -213,50 +322,20 @@ class _MessageChatPageState extends State<MessageChatPage> {
                   if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
                 });
 
-                return FutureBuilder<_Offer?>(
-                  future: _offerFuture,
-                  builder: (context, offerSnap) {
-                    final off = offerSnap.data;
-                    final hasOffer = showOfferCard && off != null;
-                    final total = msgs.length + (hasOffer ? 1 : 0);
-
-                    return ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      itemCount: total,
-                      itemBuilder: (_, i) {
-                        if (hasOffer && i == 0) {
-                          // 👉 PREMIER "MESSAGE" = CARTE LOGEMENT
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _OfferMessageBubble(
-                              offer: off!,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => LogementDetailPage(logementId: off.id),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        }
-
-                        final m = msgs[i - (hasOffer ? 1 : 0)];
-                        final isMine = (m.senderId == me);
-                        return _Bubble(
-                          isMine: isMine,
-                          body: m.body,
-                          time: _fmtTime(context, m.dateEnvoi),
-                        );
-                      },
-                    );
+                return ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  itemCount: msgs.length,
+                  itemBuilder: (_, i) {
+                    final m = msgs[i];
+                    final mine = (m.senderId == me);
+                    return _Bubble(isMine: mine, body: m.body, time: _fmtTime(context, m.dateEnvoi));
                   },
                 );
               },
             ),
           ),
+
           SafeArea(
             top: false,
             child: Padding(
@@ -265,7 +344,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: _text,
+                      controller: _msgCtrl,
                       minLines: 1,
                       maxLines: 5,
                       textInputAction: TextInputAction.send,
@@ -302,20 +381,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
     final t = TimeOfDay.fromDateTime(dt.toLocal());
     return t.format(ctx);
   }
-
-  // même logique d'affichage que la page détail, condensée ici
-  String? _fmtPrixWithMode(num? value, LogementMode? mode) {
-    if (value == null) return null;
-    String unit = (mode == LogementMode.achat) ? 'GNF' : 'GNF / mois';
-    if (value >= 1000000) {
-      final m = (value / 1000000).toStringAsFixed(1).replaceAll('.0', '');
-      return '$m M $unit';
-    }
-    final s = value.toStringAsFixed(0);
-    return '$s $unit';
-  }
 }
 
+// ===== UI + DTOs =====
 class _OfferMessageBubble extends StatelessWidget {
   const _OfferMessageBubble({required this.offer, required this.onTap});
   final _Offer offer;
@@ -323,72 +391,74 @@ class _OfferMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // style bulle "système" à gauche
     final bg = Theme.of(context).colorScheme.surfaceVariant;
     final fg = Theme.of(context).colorScheme.onSurface;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
-              topRight: Radius.circular(14),
-              bottomLeft: Radius.circular(4),
-              bottomRight: Radius.circular(14),
-            ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(14),
+            topRight: Radius.circular(14),
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(14),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Row(
-            children: [
-              // vignette photo
-              (offer.imageUrl == null || offer.imageUrl!.isEmpty)
-                  ? Container(width: 110, height: 86, color: Colors.grey.shade300)
-                  : Image.network(offer.imageUrl!, width: 110, height: 86, fit: BoxFit.cover),
-              const SizedBox(width: 10),
-              // infos
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 10, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            (offer.imageUrl == null || offer.imageUrl!.isEmpty)
+                ? Container(width: 110, height: 86, color: Colors.grey.shade300)
+                : Image.network(
+                    offer.imageUrl!,
+                    width: 110,
+                    height: 86,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Container(width: 110, height: 86, color: Colors.grey.shade300),
+                  ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 10, 10, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      offer.titre.isEmpty ? 'Logement' : offer.titre,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+                    ),
+                    if (offer.prixLabel != null) ...[
+                      const SizedBox(height: 4),
                       Text(
-                        offer.titre.isEmpty ? 'Logement' : offer.titre,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w700, color: fg),
-                      ),
-                      if (offer.prixLabel != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          offer.prixLabel!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        offer.prixLabel!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
-                      const SizedBox(height: 2),
+                      ),
+                    ],
+                    const SizedBox(height: 2),
+                    if (offer.ville.isNotEmpty || offer.commune.isNotEmpty)
                       Text(
                         [offer.ville, offer.commune].where((e) => e.isNotEmpty).join(' • '),
                         style: TextStyle(color: fg.withOpacity(.75)),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 6),
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: Icon(Icons.chevron_right_rounded),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(Icons.chevron_right_rounded),
+            ),
+          ],
         ),
       ),
     );
@@ -432,7 +502,7 @@ class _Bubble extends StatelessWidget {
               alignment: Alignment.bottomRight,
               child: Text(
                 time,
-                style: TextStyle(fontSize: 10, color: (isMine ? fgMine : fgOther).withOpacity(0.7)),
+                style: TextStyle(fontSize: 10, color: (isMine ? fgMine : fgOther).withOpacity(.7)),
               ),
             ),
           ],
@@ -473,7 +543,6 @@ class _Offer {
   final String ville;
   final String commune;
   final String? prixLabel;
-
   _Offer({
     required this.id,
     required this.titre,

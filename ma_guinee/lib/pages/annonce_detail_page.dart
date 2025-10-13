@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ma_guinee/models/annonce_model.dart';
 import 'package:ma_guinee/pages/messages_annonce_page.dart';
@@ -17,12 +16,38 @@ class AnnonceDetailPage extends StatefulWidget {
 }
 
 class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
+  final _sb = Supabase.instance.client;
+
+  // ── Storage / URLs publics ─────────────────────────────────────
+  static const String _annonceBucket = 'annonce-photos';
+  String _publicUrl(String p) {
+    // Si c’est déjà une URL http(s), on renvoie tel quel
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+
+    // Sinon on fabrique l’URL publique depuis le bucket
+    final path = p.startsWith('$_annonceBucket/')
+        ? p.substring(_annonceBucket.length + 1)
+        : p;
+    return Supabase.instance.client.storage.from(_annonceBucket).getPublicUrl(path);
+  }
+
+  // UI
   final PageController _pageController = PageController();
-  int _currentImageIndex = 0;
+  int _currentImageIndex = 0; // compteur 1/N dès la première image
+
+  // Données
   Map<String, dynamic>? vendeur;
   late Future<List<AnnonceModel>> _futureSimilaires;
   late Future<List<AnnonceModel>> _futureSellerAnnonces;
-  final Color bleuMaGuinee = const Color(0xFF1E3FCF);
+
+  // Style
+  static const Color kPrimary = Color(0xFF1E3FCF);
+  Color get _bg => Colors.grey.shade50;
+
+  bool _sendingReport = false;
+
+  bool get _isOwner => _sb.auth.currentUser?.id == widget.annonce.userId;
+  String? get _meId => _sb.auth.currentUser?.id;
 
   @override
   void initState() {
@@ -38,68 +63,149 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     super.dispose();
   }
 
+  // ─── Récup (inchangé) ─────────────────────────────────────────
   Future<void> _chargerInfosVendeur() async {
-    final data = await Supabase.instance.client
-        .from('utilisateurs')
-        .select()
-        .eq('id', widget.annonce.userId)
-        .maybeSingle();
+    final data = await _sb.from('utilisateurs').select().eq('id', widget.annonce.userId).maybeSingle();
     if (mounted && data is Map<String, dynamic>) {
       setState(() => vendeur = data);
     }
   }
 
   Future<List<AnnonceModel>> _fetchAnnoncesSimilaires() async {
-    final raw = await Supabase.instance.client
+    final raw = await _sb
         .from('annonces')
         .select()
-        // .eq('categorie', widget.annonce.categorie)  <-- retiré
         .eq('ville', widget.annonce.ville)
         .neq('id', widget.annonce.id)
         .limit(5);
     final list = raw is List ? raw : <dynamic>[];
-    return list
-        .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
-    final raw = await Supabase.instance.client
-        .from('annonces')
-        .select()
-        .eq('user_id', widget.annonce.userId);
+    final raw = await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
     final list = raw is List ? raw : <dynamic>[];
-    return list
-        .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  void _afficherImagePleine(int index) {
-    showDialog(
+  // ─── Header images + actions ──────────────────────────────────
+  Widget _imagesHeader() {
+    // On convertit toutes les images en URL publiques
+    final photos = widget.annonce.images.map(_publicUrl).toList();
+    final hasImages = photos.isNotEmpty;
+
+    return Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: hasImages
+              ? PageView.builder(
+                  controller: _pageController,
+                  itemCount: photos.length,
+                  onPageChanged: (i) => setState(() => _currentImageIndex = i),
+                  itemBuilder: (_, i) => GestureDetector(
+                    onTap: () => _openViewer(i),
+                    child: Image.network(
+                      photos[i],
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey.shade200,
+                        child: const Center(child: Icon(Icons.image_not_supported)),
+                      ),
+                    ),
+                  ),
+                )
+              : Container(
+                  color: Colors.grey.shade200,
+                  child: const Center(child: Icon(Icons.image, size: 60, color: Colors.grey)),
+                ),
+        ),
+
+        if (hasImages)
+          Positioned(
+            bottom: 12,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+              child: Text('${_currentImageIndex + 1}/${photos.length}', style: const TextStyle(color: Colors.white)),
+            ),
+          ),
+
+        Positioned(
+          top: 12,
+          left: 12,
+          child: CircleAvatar(
+            backgroundColor: Colors.black54,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+
+        Positioned(
+          top: 12,
+          right: 12,
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  icon: Icon(widget.annonce.estFavori ? Icons.favorite : Icons.favorite_border, color: Colors.white),
+                  onPressed: () => setState(() => widget.annonce.estFavori = !widget.annonce.estFavori),
+                ),
+              ),
+              const SizedBox(width: 8),
+              CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: PopupMenuButton<String>(
+                  color: Colors.white,
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onSelected: (v) => v == 'share' ? _shareAnnonce() : _openReportSheet(),
+                  itemBuilder: (_) => _isOwner
+                      ? const [PopupMenuItem(value: 'share', child: Text('Partager'))]
+                      : const [
+                          PopupMenuItem(value: 'share', child: Text('Partager')),
+                          PopupMenuItem(value: 'report', child: Text('Signaler')),
+                        ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openViewer(int index) {
+    final photos = widget.annonce.images.map(_publicUrl).toList();
+
+    showGeneralDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.black,
-        insetPadding: EdgeInsets.zero,
+      barrierDismissible: true,
+      barrierLabel: 'viewer',
+      barrierColor: Colors.black.withOpacity(0.92),
+      pageBuilder: (_, __, ___) => Material(
+        color: Colors.transparent,
         child: Stack(
           children: [
             PhotoViewGallery.builder(
-              itemCount: widget.annonce.images.length,
+              itemCount: photos.length,
               pageController: PageController(initialPage: index),
-              onPageChanged: (i) => setState(() => _currentImageIndex = i),
               builder: (_, i) => PhotoViewGalleryPageOptions(
-                imageProvider: NetworkImage(widget.annonce.images[i]),
+                imageProvider: NetworkImage(photos[i]),
                 heroAttributes: PhotoViewHeroAttributes(tag: i),
               ),
             ),
             Positioned(
-              top: 40,
-              left: 20,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
+              top: 16,
+              right: 16,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ],
@@ -108,168 +214,90 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  Widget _buildImageCarousel() {
-    final isDesktop = MediaQuery.of(context).size.width > 600;
-    return SizedBox(
-      height: 250,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.annonce.images.length,
-            onPageChanged: (i) => setState(() => _currentImageIndex = i),
-            itemBuilder: (_, i) => GestureDetector(
-              onTap: () => _afficherImagePleine(i),
-              child: Image.network(
-                widget.annonce.images[i],
-                fit: BoxFit.cover,
+  void _shareAnnonce() {
+    final a = widget.annonce;
+    Share.share([
+      a.titre,
+      '${a.prix.toInt()} ${a.devise}',
+      if (a.ville.isNotEmpty) 'Ville : ${a.ville}',
+      if (a.description.isNotEmpty) a.description,
+    ].join('\n'));
+  }
+
+  void _openReportSheet() {
+    if (_meId == null) return _snack('Connexion requise pour signaler.');
+    if (_isOwner) return _snack('Vous ne pouvez pas signaler votre propre annonce.');
+
+    final reasons = ['Fausse annonce', 'Tentative de fraude', 'Contenu inapproprié', 'Mauvaise expérience', 'Usurpation d’identité', 'Autre'];
+    final ctrl = TextEditingController();
+    String selected = reasons.first;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => Padding(
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Signaler cette annonce', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: reasons
+                    .map((r) => ChoiceChip(label: Text(r), selected: selected == r, onSelected: (_) => setLocal(() => selected = r)))
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 4,
+                decoration: const InputDecoration(hintText: 'Expliquez brièvement… (facultatif)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
                 width: double.infinity,
-              ),
-            ),
-          ),
-          // Retour
-          Positioned(
-            top: 40, left: 12,
-            child: CircleAvatar(
-              backgroundColor: Colors.black54,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-          ),
-          // Partage
-          Positioned(
-            top: 40, right: 60,
-            child: CircleAvatar(
-              backgroundColor: Colors.black54,
-              child: IconButton(
-                icon: const Icon(Icons.share, color: Colors.white),
-                onPressed: () => Share.share(
-                  'Regarde cette annonce : ${widget.annonce.titre}',
-                ),
-              ),
-            ),
-          ),
-          // Favori
-          Positioned(
-            top: 40, right: 12,
-            child: CircleAvatar(
-              backgroundColor: Colors.black54,
-              child: IconButton(
-                icon: Icon(
-                  widget.annonce.estFavori
-                      ? Icons.favorite
-                      : Icons.favorite_border,
-                  color: Colors.white,
-                ),
-                onPressed: () => setState(
-                    () => widget.annonce.estFavori = !widget.annonce.estFavori),
-              ),
-            ),
-          ),
-          // Flèche desktop ←
-          if (isDesktop && _currentImageIndex > 0)
-            Positioned(
-              left: 8, top: 0, bottom: 0,
-              child: Center(
-                child: IconButton(
-                  iconSize: 32,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.arrow_back_ios),
-                  onPressed: () => _pageController.previousPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.report_gmailerrorred),
+                  label: const Text('Envoyer le signalement'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _sb.from('reports').insert({
+                      'context': 'annonce',
+                      'cible_id': widget.annonce.id,
+                      'owner_id': widget.annonce.userId,
+                      'reported_by': _meId!,
+                      'reason': selected,
+                      'details': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
+                      'ville': widget.annonce.ville,
+                      'titre': widget.annonce.titre,
+                      'prix': widget.annonce.prix,
+                      'devise': widget.annonce.devise,
+                      'telephone': widget.annonce.telephone,
+                      'created_at': DateTime.now().toIso8601String(),
+                    });
+                    _snack('Signalement envoyé. Merci.');
+                  },
                 ),
               ),
-            ),
-          // Flèche desktop →
-          if (isDesktop && _currentImageIndex < widget.annonce.images.length - 1)
-            Positioned(
-              right: 8, top: 0, bottom: 0,
-              child: Center(
-                child: IconButton(
-                  iconSize: 32,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.arrow_forward_ios),
-                  onPressed: () => _pageController.nextPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-              ),
-            ),
-          // Compteur 1/6
-          Positioned(
-            bottom: 12, right: 16,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${_currentImageIndex + 1}/${widget.annonce.images.length}',
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildBoutonsContact() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _boutonContact(
-          icon: Icons.message,
-          label: 'Contacter',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MessagesAnnoncePage(
-                annonceId: widget.annonce.id,
-                annonceTitre: widget.annonce.titre,
-                receiverId: widget.annonce.userId,
-                senderId: Supabase.instance.client.auth.currentUser!.id,
-              ),
-            ),
-          ),
-        ),
-        _boutonContact(
-          icon: Icons.call,
-          label: 'Appeler',
-          onPressed: () => launchUrl(Uri.parse("tel:${widget.annonce.telephone}")),
-        ),
-        _boutonContact(
-          icon: FontAwesomeIcons.whatsapp,
-          label: 'WhatsApp',
-          onPressed: () =>
-              launchUrl(Uri.parse("https://wa.me/${widget.annonce.telephone}")),
-        ),
-      ],
-    );
-  }
-
-  Widget _boutonContact({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) =>
-      ElevatedButton.icon(
-        icon: Icon(icon, color: Colors.white),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: bleuMaGuinee,
-          foregroundColor: Colors.white,
-        ),
-        onPressed: onPressed,
-      );
-
+  // ─── Fiche vendeur ────────────────────────────────────────────
   Widget _buildVendeurComplet() {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSellerAnnonces,
@@ -277,153 +305,77 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
-        final autres = snap.data!
-            .where((a) => a.id != widget.annonce.id)
-            .toList();
-        final u = vendeur!;
-        final insc = DateTime.tryParse(u['date_inscription'] ?? '');
-        final membreDepuis = insc != null
-            ? 'Membre depuis ${insc.month}/${insc.year}'
-            : '';
+        final autres = (snap.data ?? []).where((a) => a.id != widget.annonce.id).toList();
+
+        final u = vendeur ?? {};
+        final prenom = (u['prenom'] ?? '').toString().trim();
+        final nom = (u['nom'] ?? '').toString().trim();
+        final fallback = (u['name'] ?? u['username'] ?? '').toString().trim();
+        final displayName = ('$prenom $nom').trim().isNotEmpty ? ('$prenom $nom').trim() : (fallback.isNotEmpty ? fallback : 'Utilisateur');
+
+        final photo = (u['photo_url'] ?? '').toString().trim();
+        final hasPhoto = photo.isNotEmpty && photo.startsWith('http');
+
+        final dstr = (u['date_inscription'] ?? u['created_at'] ?? '').toString();
+        final d = DateTime.tryParse(dstr);
+        final membreDepuis = (d != null) ? 'Membre depuis ${d.month}/${d.year}' : '';
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Vendu par',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Vendu par', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             ListTile(
               leading: CircleAvatar(
                 radius: 24,
-                backgroundImage: NetworkImage(u['photo_url'] ?? ''),
+                backgroundColor: Colors.grey.shade300,
+                backgroundImage: hasPhoto ? NetworkImage(photo) : null,
+                child: hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
               ),
-              title: Text("${u['prenom']} ${u['nom']}",
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text("$membreDepuis • ${autres.length} annonces"),
             ),
-            if (autres.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text('Les autres annonces de ce vendeur',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 160,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: autres.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (_, i) {
-                    final a = autres[i];
-                    return GestureDetector(
-                      onTap: () => Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => AnnonceDetailPage(annonce: a)),
-                      ),
-                      child: Container(
-                        width: 140,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (a.images.isNotEmpty)
-                              ClipRRect(
-                                borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(8)),
-                                child: Image.network(
-                                  a.images.first,
-                                  height: 80,
-                                  width: 140,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Text(
-                                a.titre,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(
-                                '${a.prix.toInt()} ${a.devise}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.black54),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
           ],
         );
       },
     );
   }
 
-  Widget _buildAnnoncesSimilaires() {
+  // ─── Autres annonces du vendeur ───────────────────────────────
+  Widget _buildAutresDuVendeur() {
     return FutureBuilder<List<AnnonceModel>>(
-      future: _futureSimilaires,
+      future: _futureSellerAnnonces,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const SizedBox.shrink();
         }
-        if (snap.hasError) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'Erreur de chargement : ${snap.error}',
-              style: const TextStyle(color: Colors.red),
-            ),
-          );
-        }
-        final list = snap.data ?? <AnnonceModel>[];
-        if (list.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              "Pas d'annonce similaire pour ce produit dans votre ville.",
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
+        final list = (snap.data ?? []).where((a) => a.id != widget.annonce.id).toList();
+        if (list.isEmpty) return const SizedBox.shrink();
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // <<< CHANGEMENT ICI
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                "D’autres annonces qui pourraient vous intéresser",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Les autres annonces de ce vendeur', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             SizedBox(
-              height: 200,
+              height: 180,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: list.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
                   final a = list[i];
+                  final thumb = a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
+
                   return GestureDetector(
                     onTap: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                          builder: (_) => AnnonceDetailPage(annonce: a)),
+                      MaterialPageRoute(builder: (_) => AnnonceDetailPage(annonce: a)),
                     ),
                     child: Container(
-                      width: 160,
+                      width: 150,
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(8),
@@ -431,35 +383,44 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (a.images.isNotEmpty)
+                          if (thumb != null)
                             ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(8)),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                               child: Image.network(
-                                a.images.first,
-                                height: 100,
-                                width: 160,
+                                thumb,
+                                height: 90,
+                                width: 150,
                                 fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  height: 90,
+                                  width: 150,
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(Icons.image_not_supported),
+                                ),
                               ),
+                            )
+                          else
+                            Container(
+                              height: 90,
+                              width: 150,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              ),
+                              child: const Icon(Icons.image),
                             ),
-                          const SizedBox(height: 4),
                           Padding(
                             padding: const EdgeInsets.all(8),
                             child: Text(
                               a.titre,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),
                           Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              "${a.prix.toInt()} ${a.devise}",
-                              style: const TextStyle(color: Colors.black54),
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text("${a.prix.toInt()} ${a.devise}", style: const TextStyle(fontSize: 12, color: Colors.black54)),
                           ),
                         ],
                       ),
@@ -474,40 +435,193 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
+  // ─── Similaires ────────────────────────────────────────────────
+  Widget _buildAnnoncesSimilaires() {
+    return FutureBuilder<List<AnnonceModel>>(
+      future: _futureSimilaires,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final list = snap.data ?? <AnnonceModel>[];
+        if (list.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Text("Pas d'annonce similaire pour ce produit dans votre ville.", textAlign: TextAlign.center),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text("D’autres annonces qui pourraient vous intéresser", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ),
+            SizedBox(
+              height: 200,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: list.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, i) {
+                  final a = list[i];
+                  final thumb = a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
+
+                  return GestureDetector(
+                    onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => AnnonceDetailPage(annonce: a))),
+                    child: Container(
+                      width: 160,
+                      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (thumb != null)
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              child: Image.network(thumb, height: 100, width: 160, fit: BoxFit.cover),
+                            )
+                          else
+                            Container(
+                              height: 100,
+                              width: 160,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              ),
+                              child: const Icon(Icons.image),
+                            ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(a.titre, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text("${a.prix.toInt()} ${a.devise}", style: const TextStyle(color: Colors.black54)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ─── Barre d’actions bas ──────────────────────────────────────
+  Widget _bottomActions() {
+    if (_isOwner) return const SizedBox.shrink();
+    final a = widget.annonce;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: BoxDecoration(
+          color: _bg,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, -4))],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: kPrimary),
+                  foregroundColor: kPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  final me = _meId;
+                  if (me == null) {
+                    _snack('Connectez-vous pour envoyer un message.');
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MessagesAnnoncePage(
+                        annonceId: a.id,
+                        annonceTitre: a.titre,
+                        receiverId: a.userId,
+                        senderId: me,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.forum_outlined),
+                label: const Text("Message"),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () async {
+                  final tel = a.telephone.trim();
+                  if (tel.isEmpty) return _snack('Numéro de téléphone indisponible.');
+                  final ok = await canLaunchUrl(Uri.parse('tel:$tel'));
+                  if (!ok) return _snack('Impossible d’ouvrir l’application Téléphone.');
+                  await launchUrl(Uri.parse('tel:$tel'));
+                },
+                icon: const Icon(Icons.call),
+                label: const Text("Contacter"),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Build ────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final a = widget.annonce;
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      body: ListView(
+      backgroundColor: _bg,
+      body: Column(
         children: [
-          _buildImageCarousel(),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          _imagesHeader(),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
               children: [
-                Text(widget.annonce.titre,
-                    style: const TextStyle(
-                        fontSize: 22, fontWeight: FontWeight.bold)),
+                Text(a.titre, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                Text(
-                  '${widget.annonce.prix.toInt()} ${widget.annonce.devise} • ${widget.annonce.ville}',
-                  style:
-                      const TextStyle(fontSize: 16, color: Colors.black54),
-                ),
+                Text('${a.prix.toInt()} ${a.devise} • ${a.ville}', style: const TextStyle(fontSize: 16, color: Colors.black54)),
                 const SizedBox(height: 16),
-                Text(widget.annonce.description),
-                const SizedBox(height: 16),
-                _buildBoutonsContact(),
-                const SizedBox(height: 24),
+                Text(a.description),
+                const SizedBox(height: 18),
+                const Divider(height: 1),
+                const SizedBox(height: 18),
+
                 _buildVendeurComplet(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 6),
+
+                _buildAutresDuVendeur(),
+                const SizedBox(height: 12),
+
                 _buildAnnoncesSimilaires(),
+                const SizedBox(height: 12),
               ],
             ),
           ),
+          _bottomActions(),
         ],
       ),
     );
   }
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 }

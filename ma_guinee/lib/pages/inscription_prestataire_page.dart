@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,11 +17,21 @@ class InscriptionPrestatairePage extends StatefulWidget {
 class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage> {
   final _formKey = GlobalKey<FormState>();
 
+  // Champs
   String? _selectedJob;
   String _city = '';
   String _description = '';
+
+  // Téléphone (Guinée uniquement)
+  static const String kDialCode = '+224';
+  String _nationalNumber = '';       // numéro saisi (sans indicatif)
+  String _prestatairePhone = '';     // valeur normalisée en base (+224XXXXXXXX)
+
+  // Image activité
   XFile? _pickedImage;
   bool _isUploading = false;
+  bool _isSaving = false;
+  bool _hasExisting = false;
   String? _uploadedImageUrl;
 
   static const String _bucket = 'prestataire-photos';
@@ -71,6 +82,12 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
     ],
   };
 
+  @override
+  void initState() {
+    super.initState();
+    _loadExisting();
+  }
+
   String _categoryForJob(String? job) {
     if (job == null) return '';
     for (final e in _categories.entries) {
@@ -79,11 +96,8 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
     return '';
   }
 
-  /// Nettoie le nom du fichier pour Supabase Storage (pas d’espace, accent, etc)
   String _cleanFileName(String name) {
-    return name
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\d\-_\.]'), '_'); // autorise . - _ et alphanum
+    return name.toLowerCase().replaceAll(RegExp(r'[^\w\d\-_\.]'), '_');
   }
 
   Future<void> _pickImage() async {
@@ -100,7 +114,6 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
       final supa = Supabase.instance.client;
       final uid = context.read<UserProvider>().utilisateur!.id;
 
-      // Nettoyage du nom de fichier et chemin dossier
       final cleanFileName = _cleanFileName(file.name);
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_$cleanFileName';
       final storagePath = '$uid/$fileName';
@@ -140,22 +153,68 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
     }
   }
 
+  /// Pré-remplit uniquement si un enregistrement prestataire existe
+  Future<void> _loadExisting() async {
+    final supa = Supabase.instance.client;
+    final user = context.read<UserProvider>().utilisateur;
+    if (user == null) return;
+
+    try {
+      final row = await supa
+          .from('prestataires')
+          .select('metier, category, ville, description, photo_url, phone')
+          .eq('utilisateur_id', user.id)
+          .maybeSingle();
+
+      if (row != null) {
+        setState(() {
+          _hasExisting   = true;
+          _selectedJob   = (row['metier'] ?? '') as String?;
+          _city          = (row['ville'] ?? '').toString();
+          _description   = (row['description'] ?? '').toString();
+
+          final existingPhone = (row['phone'] ?? '').toString();
+          _prestatairePhone = existingPhone;
+
+          // Remplir le champ sans indicatif pour l’édition
+          if (existingPhone.startsWith(kDialCode)) {
+            _nationalNumber = existingPhone.substring(kDialCode.length).replaceAll(RegExp(r'\D'), '');
+          } else {
+            _nationalNumber = existingPhone.replaceAll(RegExp(r'\D'), '');
+          }
+
+          _uploadedImageUrl = (row['photo_url'] ?? '').toString().isEmpty
+              ? null
+              : row['photo_url'].toString();
+        });
+      }
+    } catch (_) {
+      // ne bloque pas l'UI
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final user = context.read<UserProvider>().utilisateur!;
     final supa = Supabase.instance.client;
 
+    // Normaliser le numéro en +224XXXXXXXX
+    final digits = _nationalNumber.replaceAll(RegExp(r'\D'), '');
+    final normalizedPhone = '$kDialCode$digits';
+
     final row = {
       'utilisateur_id': user.id,
       'metier': _selectedJob,
-      'category': _categoryForJob(_selectedJob), // 💡 Auto-catégorisation ici
+      'category': _categoryForJob(_selectedJob),
       'ville': _city.trim(),
       'description': _description.trim(),
+      'phone': normalizedPhone,                // <- enregistre dans 'phone'
       'photo_url': _uploadedImageUrl ?? '',
       'date_ajout': DateTime.now().toIso8601String(),
     };
 
+    setState(() => _isSaving = true);
     try {
       final existing = await supa
           .from('prestataires')
@@ -165,20 +224,44 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
 
       if (existing != null) {
         await supa.from('prestataires').update(row).eq('utilisateur_id', user.id);
-      } else {
-        await supa.from('prestataires').insert(row);
-      }
-
-      if (mounted) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Inscription prestataire réussie !')),
+          const SnackBar(content: Text('Vos informations prestataire ont été mises à jour.')),
         );
         Navigator.pop(context, true);
+        return;
       }
+
+      await supa.from('prestataires').insert(row);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inscription prestataire réussie !')),
+      );
+      Navigator.pop(context, true);
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        try {
+          await supa.from('prestataires').update(row).eq('utilisateur_id', user.id);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Vos informations prestataire ont été mises à jour.')),
+          );
+          Navigator.pop(context, true);
+          return;
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : ${e.message}')),
+      );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur : $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -208,7 +291,7 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
           key: _formKey,
           child: ListView(
             children: [
-              // Header prestataire
+              // Bandeau d’info
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 14),
@@ -241,18 +324,27 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
                         children: [
                           Text('Prestataire : ${user.prenom} ${user.nom}',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16.5)),
-                          Text('Tel : ${user.telephone}',
+                          Text('Tel compte : ${user.telephone}',
                               style: const TextStyle(color: Colors.white70, fontSize: 13.5)),
                           Text(user.email,
                               style: const TextStyle(color: Colors.white70, fontSize: 13.5)),
                         ],
                       ),
                     ),
+                    if (_hasExisting)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(.2),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text('Déjà inscrit', style: TextStyle(color: Colors.white)),
+                      ),
                   ],
                 ),
               ),
 
-              // Photo
+              // Photo activité
               Row(
                 children: [
                   OutlinedButton.icon(
@@ -314,24 +406,38 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
 
               // Ville
               TextFormField(
+                initialValue: _city.isEmpty ? null : _city,
                 decoration: _inputDecoration('Ville'),
                 onChanged: (v) => _city = v,
                 validator: (v) => v == null || v.isEmpty ? 'Ville requise' : null,
               ),
               const SizedBox(height: 13),
 
-              // Téléphone (readonly)
+              // Téléphone PRESTATAIRE (Guinée uniquement, +224 fixe)
               TextFormField(
-                initialValue: user.telephone,
-                readOnly: true,
-                decoration: _inputDecoration('Numéro de téléphone').copyWith(
-                  fillColor: const Color(0xFFF3F4F6),
-                ),
+                initialValue: _nationalNumber.isEmpty ? null : _nationalNumber,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9\s\-]')), // chiffres/espaces/tirets
+                ],
+                decoration: _inputDecoration('Numéro du prestataire (ex: 6x xx xx xx)')
+                    .copyWith(
+                      prefixText: '$kDialCode ',
+                      prefixStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                onChanged: (v) => _nationalNumber = v,
+                validator: (v) {
+                  final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
+                  if (digits.isEmpty) return 'Téléphone requis';
+                  if (digits.length < 8) return 'Numéro trop court';
+                  return null;
+                },
               ),
               const SizedBox(height: 13),
 
               // Description
               TextFormField(
+                initialValue: _description.isEmpty ? null : _description,
                 maxLines: 3,
                 decoration: _inputDecoration('Description de votre activité'),
                 onChanged: (v) => _description = v,
@@ -342,16 +448,22 @@ class _InscriptionPrestatairePageState extends State<InscriptionPrestatairePage>
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _isUploading ? null : _submit,
+                  onPressed: (_isUploading || _isSaving) ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009460),
                     padding: const EdgeInsets.symmetric(vertical: 17),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     elevation: 2,
                   ),
-                  icon: const Icon(Icons.check_circle_outline, color: Colors.white),
-                  label: const Text('Valider mon inscription',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                  icon: _isSaving
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.check_circle_outline, color: Colors.white),
+                  label: Text(
+                    _isSaving
+                        ? 'Enregistrement…'
+                        : (_hasExisting ? 'Mettre à jour mon inscription' : 'Valider mon inscription'),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),

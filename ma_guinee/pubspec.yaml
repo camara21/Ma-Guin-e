@@ -28,6 +28,8 @@ dependencies:
   # 🗄️ Supabase / état
   supabase_flutter: ^2.3.4
   provider: ^6.1.2
+  # ✅ Ajout pour CountOption / FetchOptions / PostgrestList
+  postgrest: ^2.1.3
 
   # 🔔 Notifications (push + locales)
   firebase_core: ^3.3.0
