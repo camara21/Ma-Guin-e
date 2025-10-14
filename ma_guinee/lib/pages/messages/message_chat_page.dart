@@ -1,10 +1,13 @@
 // lib/pages/messages/message_chat_page.dart
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// adapte l’import si besoin
+// Service & modèles logement (même source que la page détail)
+import '../../services/logement_service.dart';
+import '../../models/logement_models.dart';
+
+// Détail logement
 import '../../pages/logement/logement_detail_page.dart';
 
 class MessageChatPage extends StatefulWidget {
@@ -30,32 +33,8 @@ class MessageChatPage extends StatefulWidget {
 class _MessageChatPageState extends State<MessageChatPage> {
   final _sb = Supabase.instance.client;
 
-  // Bucket des photos logement
-  static const String _logementBucket = 'logements';
-
-  // Helpers URL publiques
-  String _publicUrlFrom(String bucket, String pathOrUrl) {
-    if (pathOrUrl.isEmpty) return '';
-    if (pathOrUrl.startsWith('http')) return pathOrUrl;
-    final objectPath = pathOrUrl.startsWith('$bucket/')
-        ? pathOrUrl.substring(bucket.length + 1)
-        : pathOrUrl;
-    return _sb.storage.from(bucket).getPublicUrl(objectPath);
-  }
-
-  String _publicUrlAuto(String pathOrUrl, {required String bucketFallback}) {
-    if (pathOrUrl.isEmpty) return '';
-    if (pathOrUrl.startsWith('http')) return pathOrUrl;
-    final slash = pathOrUrl.indexOf('/');
-    if (slash > 0) {
-      final maybeBucket = pathOrUrl.substring(0, slash);
-      final objectPath = pathOrUrl.substring(slash + 1);
-      try {
-        return _sb.storage.from(maybeBucket).getPublicUrl(objectPath);
-      } catch (_) {}
-    }
-    return _publicUrlFrom(bucketFallback, pathOrUrl);
-  }
+  // même pattern que la page détail
+  final LogementService _logSvc = LogementService();
 
   // État messages
   final _msgCtrl = TextEditingController();
@@ -63,7 +42,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
   late Stream<List<_Msg>> _stream;
   bool _sending = false;
 
-  // Carte logement
+  // Carte (en-tête)
   late Future<_Offer?> _offerFuture;
 
   String get _ctx => widget.contextType; // 'logement' | 'prestataire'
@@ -74,7 +53,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
   void initState() {
     super.initState();
     _stream = Stream.periodic(const Duration(seconds: 2)).asyncMap((_) => _fetchThread());
-    _offerFuture = _showOfferCard ? _fetchLogementHeader(widget.contextId) : Future.value(null);
+    _offerFuture = _showOfferCard ? _fetchLogementHeaderViaService(widget.contextId) : Future.value(null);
   }
 
   @override
@@ -84,17 +63,11 @@ class _MessageChatPageState extends State<MessageChatPage> {
     super.dispose();
   }
 
-  // ========= HEADER LOGEMENT =========
-  Future<_Offer?> _fetchLogementHeader(String id) async {
+  // ====== HEADER LOGEMENT (utilise le service, getById -> LogementModel?) ======
+  Future<_Offer?> _fetchLogementHeaderViaService(String id) async {
     try {
-      final row = await _sb
-          .from('logements')
-          .select(
-              'id, titre, images, photos, photo, image, cover, cover_url, image_couverture, image_url, prix, devise, ville, commune')
-          .eq('id', id)
-          .maybeSingle();
-
-      if (row == null) {
+      final LogementModel? bien = await _logSvc.getById(id);
+      if (bien == null) {
         return _Offer(
           id: id,
           titre: widget.contextTitle ?? 'Logement',
@@ -105,84 +78,40 @@ class _MessageChatPageState extends State<MessageChatPage> {
         );
       }
 
-      // Normalise vers List<String> (accepte List, String simple ou String JSON)
-      List<String> _listify(dynamic v) {
-        if (v == null) return const <String>[];
-        if (v is List) {
-          return v
-              .map((e) {
-                if (e == null) return '';
-                if (e is String) return e;
-                if (e is Map) {
-                  final m = Map<String, dynamic>.from(e);
-                  return (m['path'] ??
-                          m['url'] ??
-                          m['publicUrl'] ??
-                          m['name'] ??
-                          m['filename'] ??
-                          '')
-                      .toString();
-                }
-                return e.toString();
-              })
-              .where((s) => s.isNotEmpty)
-              .toList();
-        }
-        if (v is String) {
-          final s = v.trim();
-          if (s.isEmpty) return const <String>[];
-          // JSON list ?
-          if ((s.startsWith('[') && s.endsWith(']')) ||
-              (s.startsWith('{') && s.endsWith('}'))) {
-            try {
-              final decoded = jsonDecode(s);
-              return _listify(decoded);
-            } catch (_) {
-              return <String>[s];
-            }
-          }
-          return <String>[s];
-        }
-        return <String>[v.toString()];
-      }
-
-      // Cherche la première clé "images"
-      final orderKeys = [
-        'images',
-        'photos',
-        'gallery',
-        'pictures',
-        'image_list',
-        'photo',
-        'image',
-        'cover',
-        'cover_url',
-        'image_couverture',
-        'image_url'
-      ];
-      List<String> imgs = const [];
-      for (final k in orderKeys) {
-        if (row[k] != null) {
-          imgs = _listify(row[k]);
-          if (imgs.isNotEmpty) break;
+      // première image (souvent déjà en URL publique via le service)
+      String? imageUrl;
+      if (bien.photos.isNotEmpty) {
+        final first = bien.photos.firstWhere((p) => p.trim().isNotEmpty, orElse: () => '');
+        if (first.isNotEmpty) {
+          imageUrl = first.startsWith('http')
+              ? first
+              : _sb.storage
+                  .from('logements')
+                  .getPublicUrl(first.startsWith('logements/')
+                      ? first.substring('logements/'.length)
+                      : first);
         }
       }
 
-      final image = imgs.isNotEmpty
-          ? _publicUrlAuto(imgs.first, bucketFallback: _logementBucket)
-          : null;
-
-      final prix = row['prix'];
-      final devise = (row['devise'] ?? '').toString();
-      final prixLabel =
-          (prix is num) ? '${prix.toInt()} ${devise.isEmpty ? 'GNF' : devise}' : null;
+      // libellé prix identique aux pages logement
+      String? prixLabel;
+      final v = bien.prixGnf;
+      if (v != null) {
+        if (v >= 1000000) {
+          final m = (v / 1000000).toStringAsFixed(1).replaceAll('.0', '');
+          prixLabel = bien.mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
+        } else {
+          final s = v.toStringAsFixed(0);
+          prixLabel = bien.mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
+        }
+      }
 
       return _Offer(
-        id: (row['id'] ?? '').toString(),
-        titre: (row['titre'] ?? '').toString(),
-        imageUrl: image,
-        ville: (row['ville'] ?? '').toString(),
-        commune: (row['commune'] ?? '').toString(),
+        id: bien.id,
+        titre: bien.titre,
+        imageUrl: imageUrl,
+        ville: bien.ville ?? '',
+        commune: bien.commune ?? '',
         prixLabel: prixLabel,
       );
     } catch (_) {
@@ -197,7 +126,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
     }
   }
 
-  // ========= MESSAGES =========
+  // ================= MESSAGES =================
   Future<List<_Msg>> _fetchThread() async {
     final me = _myId;
     if (me == null) return const <_Msg>[];
@@ -207,16 +136,16 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
     final sel = await _sb
         .from('messages')
-        .select(
-            'id, sender_id, receiver_id, contenu, contexte, annonce_id, prestataire_id, date_envoi, lu')
+        .select('id,sender_id,receiver_id,contenu,contexte,annonce_id,prestataire_id,date_envoi,lu')
         .or(pair)
         .eq('contexte', _ctx)
-        // Logement réutilise la colonne annonce_id
+        // logement réutilise annonce_id
         .eq(_ctx == 'prestataire' ? 'prestataire_id' : 'annonce_id', widget.contextId)
         .order('date_envoi', ascending: true);
 
     final rows = (sel as List).cast<Map<String, dynamic>>();
 
+    // marquer comme lus
     final toMark = rows
         .where((m) => (m['receiver_id']?.toString() == me) && (m['lu'] != true))
         .map((m) => m['id'].toString())
@@ -245,7 +174,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
       final data = <String, dynamic>{
         'sender_id': me,
         'receiver_id': widget.peerUserId,
-        'contexte': _ctx, // <= 'logement' OU 'prestataire'
+        'contexte': _ctx, // 'logement' OU 'prestataire'
         'contenu': txt,
         'date_envoi': DateTime.now().toIso8601String(),
         'lu': false,
@@ -299,12 +228,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
                   child: _OfferMessageBubble(
                     offer: off,
                     onTap: () {
-                      // ➜ Détail LOGEMENT (pas Annonce)
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => LogementDetailPage(logementId: off.id),
-                        ),
+                        MaterialPageRoute(builder: (_) => LogementDetailPage(logementId: off.id)),
                       );
                     },
                   ),
