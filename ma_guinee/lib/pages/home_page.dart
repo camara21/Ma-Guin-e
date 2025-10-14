@@ -120,23 +120,54 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Icône simple (comme avant)
-  Widget buildIcon(IconData iconData, Color color) {
-    return _iconCard(Icon(iconData, color: color, size: 44));
+  // Petit badge commun (en bas à droite)
+  static const Color _badgeColor = Color(0xFFE1005A); // fuchsia Soneya
+  Widget _smallBadge(IconData icon) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: _badgeColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(child: Icon(icon, size: 12, color: Colors.white)),
+    );
   }
 
-  // Icône Soneya (Jobs)
+  // Icône Material + badge
+  Widget _iconWithBadge({
+    required IconData main,
+    required Color color,
+    required IconData badge,
+  }) {
+    return _iconCard(
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(child: Icon(main, color: color, size: 44)),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(badge)),
+        ],
+      ),
+    );
+  }
+
+  // Icône Soneya (Jobs) – conserve ton style + badge CV
   Widget _soneyaIcon() {
     const blue = Color(0xFF1976D2);
     return _iconCard(
       Stack(
-        children: const [
-          Center(child: Icon(Icons.work_outline, color: blue, size: 44)),
-          Positioned(
-            right: 2,
-            bottom: 2,
-            child: Icon(Icons.description, color: blue, size: 18),
-          ),
+        clipBehavior: Clip.none,
+        children: [
+          const Center(child: Icon(Icons.work_outline, color: blue, size: 44)),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(Icons.description)),
         ],
       ),
     );
@@ -145,42 +176,14 @@ class _HomePageState extends State<HomePage> {
   // ✅ Icône Logement alignée & cohérente (44px + badge discret)
   Widget _logementIcon() {
     const primary = Color(0xFF0B3A6A); // bleu profond
-    const accent  = Color(0xFFE1005A); // fuchsia (badge)
-
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
           const Center(
-            child: Icon(
-              Icons.apartment_rounded,
-              color: primary,
-              size: 44, // ✅ même taille que les autres
-            ),
+            child: Icon(Icons.apartment_rounded, color: primary, size: 44),
           ),
-          Positioned(
-            right: 2,
-            bottom: 2,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: accent,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2), // propre sur la carte blanche
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Icon(Icons.location_on_rounded, size: 12, color: Colors.white),
-              ),
-            ),
-          ),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(Icons.location_on_rounded)),
         ],
       ),
     );
@@ -286,7 +289,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bannière
+            // Bannière (inchangée)
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -356,20 +359,163 @@ class _HomePageState extends State<HomePage> {
               mainAxisSpacing: spacing,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _serviceTile(Icons.campaign, "Annonces", AppRoutes.annonces, const Color(0xFFCE1126)),
-                _serviceTile(Icons.engineering, "Prestataires", AppRoutes.pro, const Color(0xFFFCD116)),
-                _serviceTile(Icons.account_balance, "Services Admin", AppRoutes.admin, const Color(0xFF009460)),
-                _serviceTile(Icons.restaurant, "Restaurants", AppRoutes.resto, const Color(0xFFFCD116)),
-                _serviceTile(Icons.mosque, "Lieux de culte", AppRoutes.culte, const Color(0xFF009460)),
-                _serviceTile(Icons.theaters, "Divertissement", AppRoutes.divertissement, const Color(0xFFCE1126)),
-                _serviceTile(Icons.museum, "Tourisme", AppRoutes.tourisme, const Color(0xFF009460)),
-                _serviceTile(Icons.local_hospital, "Santé", AppRoutes.sante, const Color(0xFFFCD116)),
-                _serviceTile(Icons.hotel, "Hôtels", AppRoutes.hotel, const Color(0xFFCE1126)),
+                // Annonces (rouge)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.annonces),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.campaign,
+                        color: const Color(0xFFCE1126),
+                        badge: Icons.add,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Annonces", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
 
-                // 🔁 Logement avec l’icône custom alignée
+                // Prestataires (icône Flutter : handyman)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.handyman_rounded,
+                        color: const Color(0xFFFCD116),
+                        badge: Icons.build_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Prestataires", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Services Admin (vert)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.account_balance,
+                        color: const Color(0xFF009460),
+                        badge: Icons.description_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Services Admin", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Restaurants (jaune)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.resto),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.restaurant,
+                        color: const Color(0xFFFCD116),
+                        badge: Icons.delivery_dining_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Restaurants", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Lieux de culte (vert)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.culte),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.mosque,
+                        color: const Color(0xFF009460),
+                        badge: Icons.schedule_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Lieux de culte", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Divertissement (rouge)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.divertissement),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.theaters,
+                        color: const Color(0xFFCE1126),
+                        badge: Icons.music_note_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Divertissement", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Tourisme (vert)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.museum,
+                        color: const Color(0xFF009460),
+                        badge: Icons.place_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Tourisme", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Santé (jaune)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.sante),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.local_hospital,
+                        color: const Color(0xFFFCD116),
+                        badge: Icons.health_and_safety_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Santé", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // Hôtels (rouge)
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.hotel),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _iconWithBadge(
+                        main: Icons.hotel,
+                        color: const Color(0xFFCE1126),
+                        badge: Icons.star_rate_rounded,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text("Hôtels", textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+
+                // 🔁 Logement (icône custom cohérente)
                 _serviceTileCustom(_logementIcon(), "Logement", AppRoutes.logement),
 
-                // 🔹 Emplois (ex-Soneya)
+                // 🔹 Emplois (Wali fen)
                 GestureDetector(
                   onTap: () => Navigator.push(
                     context,
@@ -407,7 +553,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          buildIcon(icon, color),
+          _iconWithBadge(main: icon, color: color, badge: Icons.info_outline), // générique
           const SizedBox(height: 6),
           Text(label, textAlign: TextAlign.center),
         ],
@@ -432,7 +578,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          buildIcon(icon, color),
+          _iconWithBadge(main: icon, color: color, badge: Icons.lock_clock),
           const SizedBox(height: 6),
           Text(label, textAlign: TextAlign.center),
         ],
