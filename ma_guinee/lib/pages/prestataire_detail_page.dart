@@ -15,25 +15,25 @@ class PrestataireDetailPage extends StatefulWidget {
 }
 
 class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
-  // ————————— Etats locaux —————————
+  // ——— Etats locaux ———
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
+
   List<Map<String, dynamic>> _avis = [];
+  Map<String, Map<String, dynamic>> _usersById = {};
   double _noteMoyenne = 0;
 
-  // Résolution propriétaire réel (utilisateur lié au prestataire)
-  String? _ownerId;            // prestataires.utilisateur_id
+  // Résolution propriétaire (utilisateur lié au prestataire)
+  String? _ownerId; // prestataires.utilisateur_id
   bool _ownerResolved = false;
 
-  // Anti double clic sur “Envoyer signalement”
   bool _sending = false;
 
-  // Thème local
   static const Color kPrimary = Color(0xFF113CFC);
   static const Color kDivider = Color(0xFFEAEAEA);
-
-  // Buckets (si tu utilises un path et non une URL complète)
   static const String _avatarBucket = 'profile-photos';
+
+  final _client = Supabase.instance.client;
 
   @override
   void initState() {
@@ -42,12 +42,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     _loadAvis();
   }
 
-  // ————————— Utilitaires —————————
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   bool get _isOwner {
-    final me = Supabase.instance.client.auth.currentUser;
+    final me = _client.auth.currentUser;
     if (!_ownerResolved || me == null || _ownerId == null) return false;
     return me.id == _ownerId;
   }
@@ -55,14 +54,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   String? _publicUrl(String bucket, String? path) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    final objectPath = path.startsWith('$bucket/')
-        ? path.substring(bucket.length + 1)
-        : path;
-    return Supabase.instance.client.storage.from(bucket).getPublicUrl(objectPath);
+    final objectPath =
+        path.startsWith('$bucket/') ? path.substring(bucket.length + 1) : path;
+    return _client.storage.from(bucket).getPublicUrl(objectPath);
   }
 
   Future<void> _resolveOwner() async {
-    // essaie d’abord les champs présents dans data
     final fromData = (widget.data['utilisateur_id'] ??
             widget.data['user_id'] ??
             widget.data['owner_id'] ??
@@ -78,7 +75,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       return;
     }
 
-    // sinon, va lire prestataires.utilisateur_id en base
     final prestataireId = widget.data['id']?.toString();
     if (prestataireId == null || prestataireId.isEmpty) {
       if (!mounted) return;
@@ -87,7 +83,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
 
     try {
-      final row = await Supabase.instance.client
+      final row = await _client
           .from('prestataires')
           .select('utilisateur_id')
           .eq('id', prestataireId)
@@ -102,36 +98,110 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
+  // ——— AVIS : lecture (nouveau schéma) ———
   Future<void> _loadAvis() async {
     try {
-      final id = widget.data['id'];
-      final res = await Supabase.instance.client
-          .from('avis')
-          .select('note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
-          .eq('contexte', 'prestataire')
-          .eq('cible_id', id)
+      final id = widget.data['id']?.toString();
+      if (id == null || id.isEmpty) return;
+
+      // 1) Avis
+      final res = await _client
+          .from('avis_prestataires')
+          .select('auteur_id, etoiles, commentaire, created_at')
+          .eq('prestataire_id', id)
           .order('created_at', ascending: false);
 
-      final list = List<Map<String, dynamic>>.from(res as List);
-      final notes = <num>[
-        for (final e in list)
-          if (e['note'] is num) e['note'] as num,
-      ];
-      final moyenne = notes.isNotEmpty
-          ? notes.reduce((a, b) => a + b) / notes.length
-          : 0;
+      final list = List<Map<String, dynamic>>.from(res);
+
+      // 2) Moyenne
+      final notes = list
+          .map<int>((e) => (e['etoiles'] as num?)?.toInt() ?? 0)
+          .where((n) => n > 0)
+          .toList();
+      final moyenne =
+          notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
+
+      // 3) Auteurs (batch via .or)
+      final ids = list
+          .map((e) => e['auteur_id'])
+          .where((v) => v != null)
+          .map((v) => v.toString())
+          .toSet()
+          .toList();
+
+      Map<String, Map<String, dynamic>> usersById = {};
+      if (ids.isNotEmpty) {
+        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+        final usersRes = await _client
+            .from('utilisateurs')
+            .select('id, prenom, nom, photo_url')
+            .or(orFilter);
+        final users = List<Map<String, dynamic>>.from(usersRes);
+        for (final u in users) {
+          usersById[u['id'].toString()] = u;
+        }
+      }
 
       if (!mounted) return;
       setState(() {
         _avis = list;
-        _noteMoyenne = moyenne.toDouble();
+        _usersById = usersById;
+        _noteMoyenne = moyenne;
       });
     } catch (e) {
-      // silencieux pour l’instant
+      // silencieux mais tu peux _snack(e.toString());
     }
   }
 
-  // ————————— Actions —————————
+  // ——— AVIS : insert/update (1 seul par user) ———
+  Future<void> _ajouterOuModifierAvis({
+    required String prestataireId,
+    required String utilisateurId,
+    required int note,
+    required String commentaire,
+  }) async {
+    // Upsert direct (conflit sur prestataire_id + auteur_id)
+    await _client.from('avis_prestataires').upsert(
+      {
+        'prestataire_id': prestataireId,
+        'auteur_id': utilisateurId,
+        'etoiles': note,
+        'commentaire': commentaire,
+      },
+      onConflict: 'prestataire_id,auteur_id',
+    );
+  }
+
+  Future<void> _envoyerAvis() async {
+    final me = _client.auth.currentUser;
+    if (me == null) return _snack("Connexion requise.");
+    final prestataireId = widget.data['id']?.toString() ?? '';
+    if (prestataireId.isEmpty) return _snack("Fiche prestataire invalide.");
+
+    if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
+      return _snack("Veuillez noter et commenter.");
+    }
+
+    try {
+      await _ajouterOuModifierAvis(
+        prestataireId: prestataireId,
+        utilisateurId: me.id,
+        note: _noteUtilisateur,
+        commentaire: _avisController.text.trim(),
+      );
+      setState(() {
+        _noteUtilisateur = 0;
+        _avisController.clear();
+      });
+      FocusScope.of(context).unfocus();
+      await _loadAvis();
+      _snack("Merci pour votre avis !");
+    } catch (e) {
+      _snack("Erreur lors de l’envoi : $e");
+    }
+  }
+
+  // ——— Actions ———
   Future<void> _call(String? input) async {
     if (_isOwner) return _snack("Action non autorisée pour votre propre fiche.");
 
@@ -148,7 +218,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
     String normalized = onlyDigits;
     if (normalized.startsWith('+')) {
-      // déjà au format international
     } else if (normalized.startsWith('224')) {
       normalized = '+$normalized';
     } else if (normalized.startsWith('0')) {
@@ -166,20 +235,15 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   }
 
   void _openChat() {
-    final me = Supabase.instance.client.auth.currentUser;
+    final me = _client.auth.currentUser;
     if (me == null) return _snack("Connexion requise.");
     if (_isOwner) return _snack("Vous ne pouvez pas vous contacter vous-même.");
-
-    // ⚠️ Si pas d’utilisateur lié, on bloque (évite P0001)
     if (!_ownerResolved || _ownerId == null || _ownerId!.isEmpty) {
       return _snack("Ce prestataire n'a pas encore de compte relié.");
     }
 
-    // ⚠️ ID du prestataire ≠ ID du propriétaire
     final prestataireId = widget.data['id']?.toString() ?? '';
-    if (prestataireId.isEmpty) {
-      return _snack("Fiche prestataire invalide.");
-    }
+    if (prestataireId.isEmpty) return _snack("Fiche prestataire invalide.");
 
     final prenom = widget.data['prenom']?.toString() ?? '';
     final nom = widget.data['nom']?.toString() ?? '';
@@ -189,12 +253,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => MessagesPrestatairePage(
-          // ici on passe bien l’ID DU PRESTATAIRE
           prestataireId: prestataireId,
-          prestataireNom: fullName.isNotEmpty
-              ? fullName
-              : (widget.data['metier']?.toString() ?? 'Prestataire'),
-          // et ici l’ID UTILISATEUR lié au prestataire (destinataire)
+          prestataireNom:
+              fullName.isNotEmpty ? fullName : (widget.data['metier']?.toString() ?? 'Prestataire'),
           receiverId: _ownerId!,
           senderId: me.id,
         ),
@@ -202,7 +263,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
-  // Menu AppBar
   void _onMenu(String value) async {
     switch (value) {
       case 'share':
@@ -225,9 +285,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
-  // ————————— Bottom-sheet “Signaler” —————————
   void _openReportSheet() {
-    final me = Supabase.instance.client.auth.currentUser;
+    final me = _client.auth.currentUser;
     if (me == null) {
       _snack("Connexion requise pour signaler.");
       return;
@@ -322,12 +381,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
-  // ————————— Version DB : insertion directe dans public.reports —————————
   Future<void> _sendReport(String reason, String details) async {
-    if (_sending) return; // anti double-clic
+    if (_sending) return;
     setState(() => _sending = true);
 
-    // petit loader modal
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -335,15 +392,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
 
     try {
-      final me = Supabase.instance.client.auth.currentUser;
+      final me = _client.auth.currentUser;
       if (me == null) throw 'Utilisateur non connecté.';
 
       final body = {
-        // ⚠️ si ta colonne est "contexte", renomme la clé ici
         'context': 'prestataire',
         'cible_id': widget.data['id']?.toString(),
-        'owner_id': _ownerId,             // optionnel
-        'reported_by': me.id,             // (souvent requis par RLS)
+        'owner_id': _ownerId,
+        'reported_by': me.id,
         'reason': reason,
         'details': details,
         'ville': widget.data['ville']?.toString(),
@@ -354,9 +410,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         'created_at': DateTime.now().toIso8601String(),
       };
 
-      await Supabase.instance.client.from('reports').insert(body);
+      await _client.from('reports').insert(body);
 
-      if (mounted) Navigator.of(context, rootNavigator: true).pop(); // close loader
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) setState(() => _sending = false);
       if (mounted) _snack('Signalement envoyé. Merci.');
     } on PostgrestException catch (e) {
@@ -378,14 +434,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
-  // ————————— UI —————————
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
 
     final metier = d['metier']?.toString() ?? '';
     final ville = d['ville']?.toString() ?? '';
-    // Si tu stockes un PATH de bucket, passe par _publicUrl :
     final String? rawPhoto = d['photo_url']?.toString();
     final photo = _publicUrl(_avatarBucket, rawPhoto) ?? rawPhoto ?? '';
 
@@ -455,13 +509,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               if (description.isNotEmpty) Text(description),
               const SizedBox(height: 20),
 
-              // Boutons d’action (masqués pour le propriétaire)
               if (_ownerResolved && !_isOwner)
                 Padding(
                   padding: const EdgeInsets.only(top: 10, bottom: 20),
                   child: Row(
                     children: [
-                      // Message (outline bleu)
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _openChat,
@@ -480,8 +532,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                         ),
                       ),
                       const SizedBox(width: 12),
-
-                      // Contacter (plein bleu)
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () async => _call(phone),
@@ -506,7 +556,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
               const Divider(height: 30, color: kDivider),
 
-              // — Avis (lecture simple + saisie à compléter)
               Row(
                 children: [
                   const Text("Avis",
@@ -518,31 +567,33 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 ],
               ),
               const SizedBox(height: 8),
-              for (final a in _avis)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.person, size: 20, color: Colors.black54),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if ((a['utilisateurs']?['prenom'] ?? '').toString().isNotEmpty ||
-                                (a['utilisateurs']?['nom'] ?? '').toString().isNotEmpty)
-                              Text(
-                                "${a['utilisateurs']?['prenom'] ?? ''} ${a['utilisateurs']?['nom'] ?? ''}".trim(),
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            if ((a['commentaire'] ?? '').toString().isNotEmpty)
-                              Text((a['commentaire'] ?? '').toString()),
-                          ],
-                        ),
+
+              if (_avis.isEmpty)
+                const Text("Aucun avis pour le moment.")
+              else
+                Column(
+                  children: _avis.map((a) {
+                    final userId = a['auteur_id']?.toString() ?? '';
+                    final user = _usersById[userId] ?? {};
+                    final avatar = (user['photo_url'] ?? '').toString();
+                    final note = (a['etoiles'] as num?)?.toInt() ?? 0;
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                        child: avatar.isEmpty ? const Icon(Icons.person) : null,
                       ),
-                    ],
-                  ),
+                      title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("$note ⭐️"),
+                          if ((a['commentaire'] ?? '').toString().isNotEmpty)
+                            Text(a['commentaire'].toString()),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
 
               const SizedBox(height: 16),
@@ -569,7 +620,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               ),
               const SizedBox(height: 10),
               ElevatedButton.icon(
-                onPressed: () => _snack("Fonction avis à compléter"),
+                onPressed: _envoyerAvis,
                 icon: const Icon(Icons.send),
                 label: const Text("Envoyer"),
                 style: ElevatedButton.styleFrom(

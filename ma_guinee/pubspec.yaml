@@ -28,7 +28,6 @@ dependencies:
   # 🗄️ Supabase / état
   supabase_flutter: ^2.3.4
   provider: ^6.1.2
-  # ✅ Ajout pour CountOption / FetchOptions / PostgrestList
   postgrest: ^2.1.3
 
   # 🔔 Notifications (push + locales)
@@ -53,7 +52,7 @@ dependencies:
   carousel_slider: ^4.2.1
   font_awesome_flutter: ^10.7.0
   universal_html: ^2.2.4
-  cached_network_image: ^3.4.1
+  cached_network_image: ^3.4.1   # <- garder UNE seule entrée ici
   flutter_svg: ^2.0.10+1
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1

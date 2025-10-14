@@ -14,13 +14,15 @@ import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  int _notificationsNonLues = 0;
+  // +15% vs 44px
+  static const double _iconSize = 51;
+
+  int _notificationsNonLues = 0; // ← admin-only
   int _messagesNonLus = 0;
 
   StreamSubscription<List<Map<String, dynamic>>>? _notifSub;
@@ -29,7 +31,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _verifierCGU();
-    _ecouterNotifications();
+    _ecouterNotificationsAdminOnly();
     _chargerMessagesNonLus();
   }
 
@@ -56,22 +58,23 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _ecouterNotifications() {
+  // --------- Notifications ADMIN uniquement ---------
+  void _ecouterNotificationsAdminOnly() {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
     _notifSub?.cancel();
 
+    // Stream filtré côté serveur : user + type != message
     _notifSub = Supabase.instance.client
-        .from('notifications')
+        .from('notifications:utilisateur_id=eq.${user.id}&type=neq.message')
         .stream(primaryKey: ['id'])
         .listen((rows) {
       if (!mounted) return;
 
       final nonLues = rows.where((n) {
-        final uid = n['utilisateur_id']?.toString();
         final lu = n['lu'] == true;
-        return uid == user.id && !lu;
+        return !lu; // type!=message déjà filtré dans le canal
       }).length;
 
       setState(() => _notificationsNonLues = nonLues);
@@ -83,19 +86,18 @@ class _HomePageState extends State<HomePage> {
     if (user == null) return;
 
     try {
+      // ⚠️ Filtre serveur: exclure les notifs de conversation entre utilisateurs
       final rows = await Supabase.instance.client
           .from('notifications')
-          .select('id, utilisateur_id, lu');
+          .select('id, utilisateur_id, lu, type')
+          .eq('utilisateur_id', user.id)
+          .neq('type', 'message');
 
-      final nonLues = (rows as List).where((n) {
-        final uid = n['utilisateur_id']?.toString();
-        final lu = n['lu'] == true;
-        return uid == user.id && !lu;
-      }).length;
-
+      final nonLues = (rows as List).where((n) => n['lu'] != true).length;
       if (mounted) setState(() => _notificationsNonLues = nonLues);
     } catch (_) {}
 
+    // Si tu utilises un compteur de messages privés ailleurs
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
@@ -115,34 +117,33 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(22), // même taille visuelle
+      padding: const EdgeInsets.all(22), // même cadre visuel
       child: child,
     );
   }
 
-  // Petit badge commun (en bas à droite)
-  static const Color _badgeColor = Color(0xFFE1005A); // fuchsia Soneya
-  Widget _smallBadge(IconData icon) {
+  // Badge discret : reprend EXACTEMENT la couleur de l’icône principale
+  Widget _smallBadge(Color bgColor, IconData icon) {
     return Container(
-      width: 20,
-      height: 20,
+      width: 16,
+      height: 16,
       decoration: BoxDecoration(
-        color: _badgeColor,
+        color: bgColor.withOpacity(0.95),
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
+        border: Border.all(color: Colors.white, width: 1.6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: bgColor.withOpacity(0.22),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
-      child: Center(child: Icon(icon, size: 12, color: Colors.white)),
+      child: Icon(icon, size: 9, color: Colors.white),
     );
   }
 
-  // Icône Material + badge
+  // Icône Material + badge accordé à la couleur principale
   Widget _iconWithBadge({
     required IconData main,
     required Color color,
@@ -152,38 +153,36 @@ class _HomePageState extends State<HomePage> {
       Stack(
         clipBehavior: Clip.none,
         children: [
-          Center(child: Icon(main, color: color, size: 44)),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(badge)),
+          Center(child: Icon(main, color: color, size: _iconSize)),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(color, badge)),
         ],
       ),
     );
   }
 
-  // Icône Soneya (Jobs) – conserve ton style + badge CV
+  // Icône Jobs
   Widget _soneyaIcon() {
     const blue = Color(0xFF1976D2);
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          const Center(child: Icon(Icons.work_outline, color: blue, size: 44)),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(Icons.description)),
+          const Center(child: Icon(Icons.work_outline, color: blue, size: _iconSize)),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(blue, Icons.description)),
         ],
       ),
     );
   }
 
-  // ✅ Icône Logement alignée & cohérente (44px + badge discret)
+  // ✅ Icône Logement (badge bleu cohérent)
   Widget _logementIcon() {
     const primary = Color(0xFF0B3A6A); // bleu profond
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          const Center(
-            child: Icon(Icons.apartment_rounded, color: primary, size: 44),
-          ),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(Icons.location_on_rounded)),
+          const Center(child: Icon(Icons.apartment_rounded, color: primary, size: _iconSize)),
+          Positioned(right: 2, bottom: 2, child: _smallBadge(primary, Icons.location_on_rounded)),
         ],
       ),
     );
@@ -243,6 +242,7 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
+          // 🔔 Notifications (admin-only) avec compteur rouge
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 4),
             child: Stack(
@@ -275,12 +275,9 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0, right: 12),
-            child: IconButton(
-              icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
-              onPressed: () => Navigator.pushNamed(context, AppRoutes.aide),
-            ),
+          IconButton(
+            icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.aide),
           ),
         ],
       ),
@@ -376,7 +373,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                // Prestataires (icône Flutter : handyman)
+                // Prestataires
                 GestureDetector(
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
                   child: Column(
@@ -461,22 +458,23 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                // Tourisme (vert)
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.museum,
-                        color: const Color(0xFF009460),
-                        badge: Icons.place_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Tourisme", textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
+                // Tourisme (vert) — nouvelle forme globe+loupe
+GestureDetector(
+  onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
+  child: Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _iconWithBadge(
+        main: Icons.travel_explore_rounded, // ✅ forme changée
+        color: const Color(0xFF009460),     // ✅ couleur identique à avant
+        badge: Icons.place_rounded,         // petit badge discret
+      ),
+      const SizedBox(height: 6),
+      const Text("Tourisme", textAlign: TextAlign.center),
+    ],
+  ),
+),
+
 
                 // Santé (jaune)
                 GestureDetector(
@@ -512,7 +510,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                // 🔁 Logement (icône custom cohérente)
+                // 🔁 Logement
                 _serviceTileCustom(_logementIcon(), "Logement", AppRoutes.logement),
 
                 // 🔹 Emplois (Wali fen)
@@ -547,20 +545,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _serviceTile(IconData icon, String label, String route, Color color) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _iconWithBadge(main: icon, color: color, badge: Icons.info_outline), // générique
-          const SizedBox(height: 6),
-          Text(label, textAlign: TextAlign.center),
-        ],
-      ),
-    );
-  }
-
+  // tuile générique (utilisée pour Billetterie à venir)
   Widget _serviceTileFuture(IconData icon, String label, Color color, String message) {
     return GestureDetector(
       onTap: () {
@@ -579,31 +564,6 @@ class _HomePageState extends State<HomePage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _iconWithBadge(main: icon, color: color, badge: Icons.lock_clock),
-          const SizedBox(height: 6),
-          Text(label, textAlign: TextAlign.center),
-        ],
-      ),
-    );
-  }
-
-  Widget _serviceTileFutureCustom(Widget iconWidget, String label, String message) {
-    return GestureDetector(
-      onTap: () {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(label),
-            content: Text(message),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
-            ],
-          ),
-        );
-      },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          iconWidget,
           const SizedBox(height: 6),
           Text(label, textAlign: TextAlign.center),
         ],

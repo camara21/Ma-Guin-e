@@ -1,14 +1,15 @@
+// lib/pages/resto_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 import 'package:photo_view/photo_view.dart';
-import '../services/avis_service.dart';
+import 'package:photo_view/photo_view_gallery.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class RestoDetailPage extends StatefulWidget {
-  final String restoId; // UUID
+  final String restoId; // UUID du restaurant
   const RestoDetailPage({super.key, required this.restoId});
 
   @override
@@ -16,16 +17,23 @@ class RestoDetailPage extends StatefulWidget {
 }
 
 class _RestoDetailPageState extends State<RestoDetailPage> {
+  final _sb = Supabase.instance.client;
+
   Map<String, dynamic>? resto;
   bool loading = true;
+  String? _error;
 
-  // Avis
-  int _noteUtilisateur = 0; // jamais prérempli
-  final _avisController = TextEditingController(); // jamais prérempli
-  List<Map<String, dynamic>> _avis = [];
-  double _noteMoyenne = 0;
-  final _avisService = AvisService();
-  bool _userHasExistingReview = false; // info seulement
+  // Avis (schéma adapté)
+  List<Map<String, dynamic>> _avis = []; // {auteur_id, etoiles, commentaire, created_at}
+  double _noteMoyenne = 0.0;
+  bool _dejaNote = false; // l’utilisateur courant a déjà laissé un avis
+
+  // Cache utilisateurs: auteur_id -> {nom, prenom, photo_url}
+  final Map<String, Map<String, dynamic>> _userCache = {};
+
+  // Saisie — jamais préremplie
+  int _noteUtilisateur = 0; // 1..5
+  final _avisController = TextEditingController();
 
   // Galerie
   final PageController _pageController = PageController();
@@ -35,17 +43,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   String get _id => widget.restoId;
 
   bool _isUuid(String id) {
-    final uuidRegExp = RegExp(
-      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-    );
-    return uuidRegExp.hasMatch(id);
+    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return r.hasMatch(id);
   }
 
   @override
   void initState() {
     super.initState();
     _loadResto();
-    _loadAvis();
+    _loadAvisBloc();
   }
 
   @override
@@ -61,60 +67,106 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return const [];
   }
 
+  // Si tu actives le CDN/transformations d’images, adapte ici
+  String _thumbUrl(String url) => url;
+  String _fullUrl(String url) => url;
+
+  // ───────────────────────── RESTO
   Future<void> _loadResto() async {
-    setState(() => loading = true);
+    setState(() {
+      loading = true;
+      _error = null;
+    });
     try {
-      final data = await Supabase.instance.client
+      final data = await _sb
           .from('restaurants')
-          .select()
+          .select('id, nom, ville, description, specialites, horaires, images, latitude, longitude, tel')
           .eq('id', _id)
           .maybeSingle();
+
       setState(() {
-        resto = (data == null) ? null : Map<String, dynamic>.from(data);
+        resto = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
       });
     } catch (e) {
-      setState(() => loading = false);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur de chargement: $e')));
+      setState(() {
+        loading = false;
+        _error = 'Erreur de chargement: $e';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
     }
   }
 
-  Future<void> _loadAvis() async {
+  // ───────────────────────── AVIS (table: avis_restaurants) + batch profils (sans .in_())
+  Future<void> _loadAvisBloc() async {
     try {
-      final res = await Supabase.instance.client
-          .from('avis')
-          .select('*, utilisateurs(*)')
-          .eq('contexte', 'restaurant')
-          .eq('cible_id', _id)
+      // 1) Liste des avis (aucune jointure)
+      final res = await _sb
+          .from('avis_restaurants')
+          .select('auteur_id, etoiles, commentaire, created_at')
+          .eq('restaurant_id', _id)
           .order('created_at', ascending: false);
 
       final list = List<Map<String, dynamic>>.from(res);
-      final notes = list.map<int>((e) => (e['note'] as num?)?.toInt() ?? 0).toList();
-      final moyenne =
-          notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
 
-      // L'utilisateur a-t-il déjà donné un avis ? (juste indicatif)
-      final user = Supabase.instance.client.auth.currentUser;
-      final already = user != null && list.any((a) => a['utilisateur_id'] == user.id);
+      // 2) Moyenne (sur 'etoiles')
+      double moyenne = 0.0;
+      if (list.isNotEmpty) {
+        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final sum = notes.fold<double>(0.0, (a, b) => a + b);
+        moyenne = sum / notes.length;
+      }
 
+      // 3) L’utilisateur courant a déjà noté ? (auteur_id)
+      final user = _sb.auth.currentUser;
+      final deja = user != null && list.any((a) => a['auteur_id'] == user.id);
+
+      // 4) Batch profils des auteurs (nom, prenom, photo_url) — fallback sans .in_()
+      final ids = list
+          .map((e) => e['auteur_id'])
+          .whereType<String>()
+          .where(_isUuid)
+          .toSet()
+          .toList();
+
+      Map<String, Map<String, dynamic>> fetched = {};
+      if (ids.isNotEmpty) {
+        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+        final profiles = await _sb
+            .from('utilisateurs')
+            .select('id, nom, prenom, photo_url')
+            .or(orFilter);
+
+        for (final p in List<Map<String, dynamic>>.from(profiles)) {
+          final id = (p['id'] ?? '').toString();
+          fetched[id] = {
+            'nom': p['nom'],
+            'prenom': p['prenom'],
+            'photo_url': p['photo_url'],
+          };
+        }
+      }
+
+      if (!mounted) return;
       setState(() {
         _avis = list;
         _noteMoyenne = moyenne;
-        _userHasExistingReview = already;
-        // Ne JAMAIS remplir _noteUtilisateur ou _avisController ici
+        _dejaNote = deja;
+        _userCache
+          ..clear()
+          ..addAll(fetched);
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur chargement avis: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement avis: $e')),
+      );
     }
   }
 
   Future<void> _envoyerAvis() async {
-    final user = Supabase.instance.client.auth.currentUser;
-
+    final user = _sb.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
@@ -135,27 +187,30 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
 
     try {
-      // Upsert (ajouter ou modifier l'avis existant)
-      await _avisService.ajouterOuModifierAvis(
-        contexte: 'restaurant',
-        cibleId: _id,
-        utilisateurId: user.id,
-        note: _noteUtilisateur,
-        commentaire: _avisController.text.trim(),
+      // Un seul avis par utilisateur → upsert (conflit sur restaurant_id, auteur_id)
+      await _sb.from('avis_restaurants').upsert(
+        {
+          'restaurant_id': _id,
+          'auteur_id': user.id,
+          'etoiles': _noteUtilisateur,
+          'commentaire': _avisController.text.trim(),
+        },
+        onConflict: 'restaurant_id,auteur_id',
       );
 
-      // On ne cache pas : on nettoie juste les champs après envoi
       setState(() {
         _noteUtilisateur = 0;
         _avisController.clear();
-        _userHasExistingReview = true; // affichera l'info
+        _dejaNote = true;
       });
       FocusScope.of(context).unfocus();
 
-      await _loadAvis();
+      await _loadAvisBloc();
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Merci pour votre avis !")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Avis enregistré ✅")),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -198,15 +253,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   }
 
   void _appeler() async {
-    // colonne correcte = 'tel' (fallback 'telephone' si jamais tu l'as aussi)
-    final telRaw =
-        (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
-    final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), ''); // nettoyer
+    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
+    final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (tel.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro indisponible.")),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Numéro indisponible.")));
       return;
     }
     final uri = Uri(scheme: 'tel', path: tel);
@@ -214,9 +266,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Impossible d'ouvrir le téléphone pour $tel")),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Impossible d'appeler $tel")));
     }
   }
 
@@ -225,17 +276,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
         return IconButton(
-          icon: Icon(
-            i < rating ? Icons.star : Icons.star_border,
-            color: Colors.amber,
-          ),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          icon: Icon(i < rating ? Icons.star : Icons.star_border, color: Colors.amber),
           onPressed: onTap == null ? null : () => onTap(i + 1),
         );
       }),
     );
   }
 
-  // --------- PLEIN ÉCRAN (PhotoViewGallery) ----------
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     showDialog(
       context: context,
@@ -252,7 +301,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 pageController: controller,
                 builder: (context, index) {
                   return PhotoViewGalleryPageOptions(
-                    imageProvider: NetworkImage(images[index]),
+                    imageProvider: CachedNetworkImageProvider(_fullUrl(images[index])),
                     minScale: PhotoViewComputedScale.contained,
                     maxScale: PhotoViewComputedScale.covered * 3,
                     heroAttributes: PhotoViewHeroAttributes(tag: 'resto_$index'),
@@ -261,11 +310,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 onPageChanged: (i) => setS(() => current = i),
                 backgroundDecoration: const BoxDecoration(color: Colors.black),
               ),
-              // Compteur 1/N
               Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
+                bottom: 24, left: 0, right: 0,
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -280,10 +326,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   ),
                 ),
               ),
-              // Fermer
               Positioned(
-                top: 24,
-                right: 8,
+                top: 24, right: 8,
                 child: IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, color: Colors.white),
@@ -295,7 +339,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       },
     );
   }
-  // ---------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -321,259 +364,310 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         backgroundColor: Colors.white,
         iconTheme: IconThemeData(color: primaryColor),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // ---------- CARROUSEL + MINIATURES ----------
-          if (images.isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
-                children: [
-                  SizedBox(
-                    height: 230,
-                    width: double.infinity,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: images.length,
-                      onPageChanged: (i) => setState(() => _currentIndex = i),
-                      itemBuilder: (context, index) => GestureDetector(
-                        onTap: () => _openFullScreenGallery(images, index),
-                        child: Hero(
-                          tag: 'resto_$index',
-                          child: Image.network(
-                            images[index],
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.image_not_supported),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _loadResto();
+          await _loadAvisBloc();
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ---------- Galerie
+            if (images.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  children: [
+                    SizedBox(
+                      height: 230, width: double.infinity,
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: images.length,
+                        onPageChanged: (i) => setState(() => _currentIndex = i),
+                        itemBuilder: (context, index) => GestureDetector(
+                          onTap: () => _openFullScreenGallery(images, index),
+                          child: Hero(
+                            tag: 'resto_$index',
+                            child: CachedNetworkImage(
+                              imageUrl: _fullUrl(images[index]),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              placeholder: (_, __) => Container(color: Colors.grey[200]),
+                              errorWidget: (_, __, ___) =>
+                                  const Center(child: Icon(Icons.image_not_supported)),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        '${_currentIndex + 1}/${images.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 68,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final isActive = index == _currentIndex;
-                  return GestureDetector(
-                    onTap: () {
-                      _pageController.animateToPage(
-                        index,
-                        duration: const Duration(milliseconds: 280),
-                        curve: Curves.easeOut,
-                      );
-                      setState(() => _currentIndex = index);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 90,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isActive ? primaryColor : Colors.transparent,
-                          width: 2,
+                    Positioned(
+                      right: 8, top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: Image.network(
-                        images[index],
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.broken_image),
+                        child: Text(
+                          '${_currentIndex + 1}/${images.length}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ),
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
-            ),
-          ],
-          // ------------------------------------------------
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 68,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final isActive = index == _currentIndex;
+                    return GestureDetector(
+                      onTap: () {
+                        _pageController.animateToPage(
+                          index,
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeOut,
+                        );
+                        setState(() => _currentIndex = index);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 90,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isActive ? primaryColor : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: CachedNetworkImage(
+                          imageUrl: _thumbUrl(images[index]),
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: Colors.grey[200]),
+                          errorWidget: (_, __, ___) =>
+                              const Center(child: Icon(Icons.broken_image)),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
 
-          const SizedBox(height: 12),
-          Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          if (spec.isNotEmpty) const SizedBox(height: 2),
-          if (spec.isNotEmpty)
-            Text(spec, style: const TextStyle(color: Colors.green)),
-          Row(
-            children: [
+            const SizedBox(height: 12),
+            Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            if (spec.isNotEmpty) const SizedBox(height: 2),
+            if (spec.isNotEmpty) Text(spec, style: const TextStyle(color: Colors.green)),
+            Row(children: [
               const Icon(Icons.location_on, color: Colors.red),
               const SizedBox(width: 4),
               Text(ville),
+            ]),
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(desc),
             ],
-          ),
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(desc),
-          ],
-          if (horaire.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
+            if (horaire.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(children: [
                 const Icon(Icons.schedule, size: 20),
                 const SizedBox(width: 4),
                 Text(horaire),
-              ],
-            ),
-          ],
-          if (_noteMoyenne > 0) ...[
-            const SizedBox(height: 8),
-            Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ⭐️"),
-          ],
-          const Divider(height: 30),
+              ]),
+            ],
+            if (_noteMoyenne > 0) ...[
+              const SizedBox(height: 8),
+              Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ⭐️"),
+            ],
 
-          const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
-          if (_userHasExistingReview)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 6),
-              child: Text(
-                "Vous avez déjà donné un avis. Renvoyez pour le mettre à jour.",
-                style: TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-            ),
-          _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
-          TextField(
-            controller: _avisController,
-            decoration: const InputDecoration(
-              hintText: "Votre commentaire",
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 10),
-          ElevatedButton.icon(
-            onPressed: _envoyerAvis,
-            icon: const Icon(Icons.send),
-            label: const Text("Envoyer"),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-          ),
+            const Divider(height: 30),
 
-          const SizedBox(height: 30),
-
-          if (lat != null && lng != null) ...[
-            const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 200,
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: LatLng(lat, lng),
-                  initialZoom: 15,
+            // ---------- Avis (saisie)
+            const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
+            if (_dejaNote)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  "Vous avez déjà laissé un avis. Vous pouvez le mettre à jour.",
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    subdomains: const ['a', 'b', 'c'],
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: LatLng(lat, lng),
-                        width: 40,
-                        height: 40,
-                        child: const Icon(Icons.location_on, color: Colors.red, size: 40),
-                      ),
-                    ],
-                  ),
-                ],
+              ),
+            _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
+            TextField(
+              controller: _avisController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: "Votre commentaire",
+                border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: () async {
-                final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
-              icon: const Icon(Icons.map),
-              label: const Text("Ouvrir dans Google Maps"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 30),
-
-          Row(children: [
-            Expanded(
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _appeler,
-                icon: const Icon(Icons.phone),
-                label: const Text("Appeler"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: _envoyerAvis,
+                icon: const Icon(Icons.send),
+                label: Text(_dejaNote ? "Mettre à jour l'avis" : "Envoyer l'avis"),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _reserver,
-                icon: const Icon(Icons.calendar_month),
-                label: const Text("Réserver"),
-                style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+
+            const SizedBox(height: 30),
+
+            // ---------- Carte
+            if (lat != null && lng != null) ...[
+              const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 200,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(lat, lng),
+                    initialZoom: 15,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(lat, lng),
+                          width: 40,
+                          height: 40,
+                          child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.map),
+                label: const Text("Ouvrir dans Google Maps"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 30),
+
+            // ---------- Liste des avis (nom + photo depuis _userCache[auteur_id])
+            const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            if (_avis.isEmpty)
+              const Text("Aucun avis pour le moment.")
+            else
+              Column(
+                children: _avis.map((a) {
+                  final uid = (a['auteur_id'] ?? '').toString();
+                  final u = _userCache[uid] ?? const {};
+                  final prenom = (u['prenom'] ?? '').toString();
+                  final nomU = (u['nom'] ?? '').toString();
+                  final photo = (u['photo_url'] ?? '').toString();
+                  final fullName = ('$prenom $nomU').trim().isEmpty
+                      ? 'Utilisateur'
+                      : ('$prenom $nomU').trim();
+
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: (photo.isNotEmpty)
+                          ? CachedNetworkImageProvider(photo)
+                          : null,
+                      child: photo.isEmpty ? const Icon(Icons.person) : null,
+                    ),
+                    title: Text(fullName),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("${a['etoiles']} ⭐️"),
+                        if (a['commentaire'] != null &&
+                            a['commentaire'].toString().trim().isNotEmpty)
+                          Text(a['commentaire'].toString()),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateTime.tryParse(a['created_at']?.toString() ?? '')
+                                  ?.toLocal()
+                                  .toString() ??
+                              '',
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+
+            const SizedBox(height: 16),
+            // (aucun bouton ici : déplacé en bottomNavigationBar)
           ]),
+        ),
+      ),
 
-          const SizedBox(height: 30),
-
-          const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          if (_avis.isEmpty)
-            const Text("Aucun avis pour le moment.")
-          else
-            Column(
-              children: _avis.map((a) {
-                final user = a['utilisateurs'] ?? {};
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: (user['photo_url'] != null && user['photo_url'].toString().isNotEmpty)
-                        ? NetworkImage(user['photo_url'])
-                        : null,
-                    child: (user['photo_url'] == null || user['photo_url'].toString().isEmpty)
-                        ? const Icon(Icons.person)
-                        : null,
+      // ✅ Barre collée en bas (toujours visible)
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 10,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _appeler,
+                  icon: const Icon(Icons.phone),
+                  label: const Text("Appeler"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("${a['note']} ⭐️"),
-                      if (a['commentaire'] != null) Text(a['commentaire'].toString()),
-                    ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _reserver,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text("Réserver"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                );
-              }).toList(),
-            ),
-        ]),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

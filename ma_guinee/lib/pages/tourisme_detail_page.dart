@@ -8,7 +8,6 @@ import 'package:photo_view/photo_view_gallery.dart';
 
 class TourismeDetailPage extends StatefulWidget {
   final Map<String, dynamic> lieu;
-
   const TourismeDetailPage({super.key, required this.lieu});
 
   @override
@@ -20,21 +19,31 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   final green = const Color(0xFF009460);
   final sendColor = const Color(0xFFFF9800);
 
-  int _noteUtilisateur = 0;
+  final _sb = Supabase.instance.client;
+
+  // Avis (saisie)
+  int _noteUtilisateur = 0; // 1..5
   final TextEditingController _avisController = TextEditingController();
 
-  List<Map<String, dynamic>> _avis = [];
+  // Avis (lecture)
+  List<Map<String, dynamic>> _avis = []; // {auteur_id, etoiles, commentaire, created_at}
   double _noteMoyenne = 0;
-  Map<String, dynamic>? _avisUtilisateur;
+  bool _dejaNote = false;
+  Map<String, Map<String, dynamic>> _usersById = {}; // auteur_id -> {prenom, nom, photo_url}
 
   // Galerie
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
+  bool _isUuid(String s) {
+    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return r.hasMatch(s);
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadAvis();
+    _loadAvisBloc();
   }
 
   @override
@@ -44,6 +53,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     super.dispose();
   }
 
+  // ---------- utils ----------
   List<String> _images(Map<String, dynamic> lieu) {
     if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
       return (lieu['images'] as List).map((e) => e.toString()).toList();
@@ -53,50 +63,88 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   }
 
   String _extractPhone(Map<String, dynamic> m) {
-    final raw = (m['contact'] ?? '').toString().trim();
-    if (raw.isEmpty) return '';
+    final raw = (m['contact'] ?? m['telephone'] ?? '').toString().trim();
     return raw.replaceAll(RegExp(r'[^0-9+]'), '');
   }
 
-  Future<void> _loadAvis() async {
-    final user = Supabase.instance.client.auth.currentUser;
+  // ---------- Charger avis + profils (PAS de join, pas d'avatar_url) ----------
+  Future<void> _loadAvisBloc() async {
+    try {
+      final lieuId = widget.lieu['id']?.toString();
+      if (lieuId == null || !_isUuid(lieuId)) return;
 
-    final res = await Supabase.instance.client
-        .from('avis')
-        .select(
-          'id, note, commentaire, utilisateur_id, created_at, utilisateurs(nom, prenom, photo_url)',
-        )
-        .eq('contexte', 'tourisme')
-        .eq('cible_id', widget.lieu['id'])
-        .order('created_at', ascending: false);
+      // 1) Avis
+      final rows = await _sb
+          .from('avis_lieux')
+          .select('auteur_id, etoiles, commentaire, created_at')
+          .eq('lieu_id', lieuId)
+          .order('created_at', ascending: false);
 
-    final avisList = List<Map<String, dynamic>>.from(res);
+      final list = List<Map<String, dynamic>>.from(rows);
 
-    double somme = 0;
-    for (var a in avisList) {
-      somme += (a['note'] as num).toDouble();
-    }
-
-    setState(() {
-      _avis = avisList;
-      _noteMoyenne = avisList.isNotEmpty ? somme / avisList.length : 0;
-
-      if (user != null) {
-        final aMoi = avisList.firstWhere(
-          (a) => a['utilisateur_id'] == user.id,
-          orElse: () => {},
-        );
-        _avisUtilisateur = aMoi.isEmpty ? null : aMoi;
+      // 2) Moyenne
+      double moyenne = 0.0;
+      if (list.isNotEmpty) {
+        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final sum = notes.fold<double>(0.0, (a, b) => a + b);
+        moyenne = sum / notes.length;
       }
-    });
+
+      // 3) déjà noté ?
+      final me = _sb.auth.currentUser;
+      final deja = me != null && list.any((a) => a['auteur_id'] == me.id);
+
+      // 4) Profils: ne demande que les colonnes existantes
+      final ids = list
+          .map((e) => e['auteur_id'])
+          .whereType<String>()
+          .where(_isUuid)
+          .toSet()
+          .toList();
+
+      Map<String, Map<String, dynamic>> fetched = {};
+      if (ids.isNotEmpty) {
+        // éviter .in_() → utiliser .or()
+        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+        final profs = await _sb
+            .from('utilisateurs')
+            .select('id, prenom, nom, photo_url') // <— pas d'avatar_url
+            .or(orFilter);
+
+        for (final p in List<Map<String, dynamic>>.from(profs)) {
+          final id = (p['id'] ?? '').toString();
+          fetched[id] = {
+            'prenom': p['prenom'],
+            'nom': p['nom'],
+            'photo_url': p['photo_url'],
+          };
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avis = list;
+        _noteMoyenne = moyenne;
+        _dejaNote = deja;
+        _usersById
+          ..clear()
+          ..addAll(fetched);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement avis: $e')),
+      );
+    }
   }
 
+  // ---------- Envoyer / MAJ avis (1 par utilisateur) ----------
   Future<void> _envoyerAvis() async {
     final note = _noteUtilisateur;
     final commentaire = _avisController.text.trim();
-    final user = Supabase.instance.client.auth.currentUser;
+    final me = _sb.auth.currentUser;
 
-    if (user == null) {
+    if (me == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Connexion requise.")),
       );
@@ -109,35 +157,46 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
       return;
     }
 
-    if (_avisUtilisateur != null) {
-      await Supabase.instance.client.from('avis').update({
-        'note': note,
-        'commentaire': commentaire,
-      }).eq('id', _avisUtilisateur!['id']);
-    } else {
-      await Supabase.instance.client.from('avis').insert({
-        'utilisateur_id': user.id,
-        'contexte': 'tourisme',
-        'cible_id': widget.lieu['id'],
-        'note': note,
-        'commentaire': commentaire,
-      });
+    final lieuId = widget.lieu['id']?.toString() ?? '';
+    if (!_isUuid(lieuId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("ID du lieu invalide.")),
+      );
+      return;
     }
 
-    setState(() {
-      _noteUtilisateur = 0;
-      _avisController.clear();
-    });
-
-    await _loadAvis();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci pour votre avis !")),
+    try {
+      await _sb.from('avis_lieux').upsert(
+        {
+          'lieu_id': lieuId,
+          'auteur_id': me.id,
+          'etoiles': note,
+          'commentaire': commentaire,
+        },
+        onConflict: 'lieu_id,auteur_id',
       );
+
+      setState(() {
+        _noteUtilisateur = 0;
+        _avisController.clear();
+        _dejaNote = true;
+      });
+      FocusScope.of(context).unfocus();
+      await _loadAvisBloc();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Merci pour votre avis !")),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur lors de l'envoi: $e")));
     }
   }
 
+  // ---------- Actions ----------
   void _contacterLieu(String numero) async {
     if (numero.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -253,6 +312,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Galerie
           if (images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -427,24 +487,27 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             const Text("Aucun avis pour le moment.")
           else ...[
             Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ⭐️"),
+            const SizedBox(height: 6),
             ..._avis.map((a) {
-              final user = a['utilisateurs'] ?? {};
+              final uid = (a['auteur_id'] ?? '').toString();
+              final u = _usersById[uid] ?? const {};
+              final prenom = (u['prenom'] ?? '').toString();
+              final nom = (u['nom'] ?? '').toString();
+              final photo = (u['photo_url'] ?? '').toString();
+              final fullName =
+                  ('$prenom $nom').trim().isEmpty ? 'Utilisateur' : ('$prenom $nom').trim();
+              final note = (a['etoiles'] as num?)?.toInt() ?? 0;
+
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundImage: (user['photo_url'] != null &&
-                          user['photo_url'].toString().isNotEmpty)
-                      ? NetworkImage(user['photo_url'])
-                      : null,
-                  child: (user['photo_url'] == null ||
-                          user['photo_url'].toString().isEmpty)
-                      ? const Icon(Icons.person)
-                      : null,
+                  backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                  child: photo.isEmpty ? const Icon(Icons.person) : null,
                 ),
-                title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
+                title: Text(fullName),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("${a['note']} ⭐️"),
+                    Text("$note ⭐️"),
                     if ((a['commentaire'] ?? '').toString().isNotEmpty)
                       Text(a['commentaire'].toString()),
                   ],
@@ -455,6 +518,14 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
           const SizedBox(height: 24),
           Text("Laisser un avis", style: Theme.of(context).textTheme.titleSmall),
+          if (_dejaNote)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text(
+                "Vous avez déjà laissé un avis. Renvoyez pour le mettre à jour.",
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ),
           Row(
             children: List.generate(5, (i) {
               final active = i < _noteUtilisateur;
@@ -479,7 +550,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           ElevatedButton.icon(
             onPressed: _envoyerAvis,
             icon: const Icon(Icons.send),
-            label: const Text("Envoyer"),
+            label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
             style: ElevatedButton.styleFrom(
               backgroundColor: sendColor,
               foregroundColor: Colors.white,

@@ -1,3 +1,5 @@
+// lib/pages/notifications_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,73 +11,127 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
+  final _client = Supabase.instance.client;
+
   List<Map<String, dynamic>> _notifications = [];
   bool _loading = true;
+
+  StreamSubscription<List<Map<String, dynamic>>>? _realtimeSub;
+  String _userId = '';
 
   @override
   void initState() {
     super.initState();
+    _userId = _client.auth.currentUser?.id ?? '';
     _loadNotifications();
-    _subscribeToRealtimeNotifications();
+    _subscribeRealtime();
   }
 
-  Future<void> _loadNotifications() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
+  @override
+  void dispose() {
+    _realtimeSub?.cancel();
+    super.dispose();
+  }
 
-    final data = await Supabase.instance.client
+  // Charge uniquement les notifs ADMIN (exclut type='message')
+  Future<void> _loadNotifications() async {
+    if (_userId.isEmpty) return;
+    final data = await _client
         .from('notifications')
         .select()
-        .eq('utilisateur_id', user.id)
+        .eq('utilisateur_id', _userId)
+        .neq('type', 'message') // ← admin only
         .order('date_creation', ascending: false);
 
+    if (!mounted) return;
     setState(() {
       _notifications = List<Map<String, dynamic>>.from(data);
       _loading = false;
     });
   }
 
-  void _subscribeToRealtimeNotifications() {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
-    Supabase.instance.client
-        .from('notifications:utilisateur_id=eq.${user.id}')
+  void _subscribeRealtime() {
+    if (_userId.isEmpty) return;
+    // Filtre temps réel: user + pas "message"
+    _realtimeSub = _client
+        .from('notifications:utilisateur_id=eq.${_userId}&type=neq.message')
         .stream(primaryKey: ['id'])
-        .listen((data) {
-      setState(() {
-        _notifications = List<Map<String, dynamic>>.from(data);
+        .listen((rows) {
+      // on garde le tri desc par date_creation
+      rows.sort((a, b) {
+        final da = DateTime.tryParse(a['date_creation']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final db = DateTime.tryParse(b['date_creation']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return db.compareTo(da);
       });
+      if (!mounted) return;
+      setState(() => _notifications = List<Map<String, dynamic>>.from(rows));
     });
   }
 
-  Future<void> _marquerCommeLue(String notificationId) async {
-    await Supabase.instance.client
-        .from('notifications')
-        .update({'lu': true})
-        .eq('id', notificationId);
+  // MAJ optimiste + update BDD
+  Future<void> _marquerCommeLue(String id, int index) async {
+    if (index >= 0 && index < _notifications.length) {
+      setState(() {
+        _notifications[index] = {..._notifications[index], 'lu': true};
+      });
+    }
+    try {
+      await _client
+          .from('notifications')
+          .update({'lu': true})
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+    } catch (_) {
+      // (optionnel) rollback si besoin
+    }
   }
 
-  Icon _getIcon(String type) {
+  Icon _iconForType(String? type) {
     switch (type) {
       case 'payment':
-        return Icon(Icons.payment, color: Colors.green[700]);
-      case 'info':
-        return Icon(Icons.info, color: Colors.orange[700]);
-      case 'message':
-        return Icon(Icons.message, color: Colors.blue[700]);
+        return Icon(Icons.payment, color: Colors.green[700], size: 22);
       case 'alerte':
-        return Icon(Icons.warning, color: Colors.red[700]);
+        return Icon(Icons.warning, color: Colors.red[700], size: 22);
+      case 'info':
+        return Icon(Icons.info, color: Colors.orange[700], size: 22);
       default:
-        return Icon(Icons.notifications, color: Colors.grey[700]);
+        return Icon(Icons.notifications, color: Colors.blueGrey[600], size: 22);
     }
+  }
+
+  Widget _leadingWithDot(Icon icon, bool lu) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        icon,
+        if (!lu)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Notifications", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Notifications",
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.black),
         elevation: 0.6,
@@ -84,40 +140,28 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ? const Center(child: CircularProgressIndicator())
           : _notifications.isEmpty
               ? const Center(child: Text("Aucune notification."))
-              : ListView.builder(
+              : ListView.separated(
                   padding: const EdgeInsets.all(18),
                   itemCount: _notifications.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 4),
                   itemBuilder: (context, index) {
-                    final notif = _notifications[index];
-                    final estLue = notif['lu'] == true;
+                    final n = _notifications[index];
+                    final lu = n['lu'] == true;
 
                     return ListTile(
-                      onTap: () {
-                        if (!estLue) _marquerCommeLue(notif['id']);
-                      },
-                      leading: Stack(
-                        children: [
-                          _getIcon(notif['type']),
-                          if (!estLue)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                width: 10,
-                                height: 10,
-                                decoration: const BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                        ],
+                      onTap: () => _marquerCommeLue(n['id'].toString(), index),
+                      leading: _leadingWithDot(_iconForType(n['type']?.toString()), lu),
+                      title: Text(
+                        (n['title'] ?? '').toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: lu ? FontWeight.normal : FontWeight.bold),
                       ),
-                      title: Text(notif['title'] ?? '',
-                          style: TextStyle(
-                            fontWeight: estLue ? FontWeight.normal : FontWeight.bold,
-                          )),
-                      subtitle: Text(notif['contenu'] ?? ''),
+                      subtitle: Text(
+                        (n['contenu'] ?? '').toString(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     );
                   },
                 ),

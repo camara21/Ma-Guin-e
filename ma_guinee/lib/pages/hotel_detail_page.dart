@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
-import '../../services/avis_service.dart';
 
 class HotelDetailPage extends StatefulWidget {
   final dynamic hotelId; // UUID (String) ou autre -> stringifié
@@ -14,13 +13,18 @@ class HotelDetailPage extends StatefulWidget {
 }
 
 class _HotelDetailPageState extends State<HotelDetailPage> {
+  final _sb = Supabase.instance.client;
+
   Map<String, dynamic>? hotel;
   bool loading = true;
+  String? _error;
 
+  // Avis
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
   double _noteMoyenne = 0;
   List<Map<String, dynamic>> _avis = [];
+  final Map<String, Map<String, dynamic>> _userCache = {}; // auteur_id -> profil
 
   // Carrousel
   final PageController _pageController = PageController();
@@ -28,11 +32,16 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
   String get _id => widget.hotelId.toString();
 
+  bool _isUuid(String id) {
+    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return r.hasMatch(id);
+  }
+
   @override
   void initState() {
     super.initState();
     _loadHotel();
-    _loadAvis();
+    _loadAvisBloc();
   }
 
   @override
@@ -42,34 +51,93 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     super.dispose();
   }
 
+  // ─────────── Hôtel
   Future<void> _loadHotel() async {
-    setState(() => loading = true);
-
-    final data = await Supabase.instance.client
-        .from('hotels')
-        .select()
-        .eq('id', _id)
-        .maybeSingle();
-
     setState(() {
-      hotel = data == null ? null : Map<String, dynamic>.from(data);
-      loading = false;
+      loading = true;
+      _error = null;
     });
+    try {
+      final data = await _sb
+          .from('hotels')
+          .select()
+          .eq('id', _id)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        hotel = data == null ? null : Map<String, dynamic>.from(data);
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        _error = e.toString();
+      });
+    }
   }
 
-  Future<void> _loadAvis() async {
-    final res = await Supabase.instance.client
-        .from('avis')
-        .select('note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
-        .eq('contexte', 'hotel')
-        .eq('cible_id', _id)
-        .order('created_at', ascending: false);
+  // ─────────── Avis (sans jointure, batch profils)
+  Future<void> _loadAvisBloc() async {
+    try {
+      // 1) Avis depuis avis_hotels
+      final rows = await _sb
+          .from('avis_hotels')
+          .select('auteur_id, etoiles, commentaire, created_at')
+          .eq('hotel_id', _id)
+          .order('created_at', ascending: false);
 
-    final notes = res.map<double>((e) => (e['note'] as num).toDouble()).toList();
-    setState(() {
-      _avis = List<Map<String, dynamic>>.from(res);
-      _noteMoyenne = notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
-    });
+      final list = List<Map<String, dynamic>>.from(rows);
+
+      // 2) Moyenne
+      double moyenne = 0.0;
+      if (list.isNotEmpty) {
+        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final s = notes.fold<double>(0.0, (a, b) => a + b);
+        moyenne = s / notes.length;
+      }
+
+      // 3) Batch profils auteurs (nom, prenom, photo_url)
+      final ids = list
+          .map((e) => e['auteur_id'])
+          .whereType<String>()
+          .where(_isUuid)
+          .toSet()
+          .toList();
+
+      Map<String, Map<String, dynamic>> fetched = {};
+      if (ids.isNotEmpty) {
+        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+        final profs = await _sb
+            .from('utilisateurs')
+            .select('id, nom, prenom, photo_url')
+            .or(orFilter);
+
+        for (final p in List<Map<String, dynamic>>.from(profs)) {
+          final id = (p['id'] ?? '').toString();
+          fetched[id] = {
+            'nom': p['nom'],
+            'prenom': p['prenom'],
+            'photo_url': p['photo_url'],
+          };
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avis = list;
+        _noteMoyenne = moyenne;
+        _userCache
+          ..clear()
+          ..addAll(fetched);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement avis: $e')),
+      );
+    }
   }
 
   Future<void> _envoyerAvis() async {
@@ -81,48 +149,76 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       return;
     }
 
-    final user = Supabase.instance.client.auth.currentUser;
+    final user = _sb.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
       );
       return;
     }
+    if (!_isUuid(_id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("ID hôtel invalide.")),
+      );
+      return;
+    }
 
-    await AvisService().ajouterOuModifierAvis(
-      contexte: 'hotel',
-      cibleId: _id,
-      utilisateurId: user.id,
-      note: _noteUtilisateur,
-      commentaire: commentaire,
-    );
+    try {
+      // Un seul avis par utilisateur → upsert
+      await _sb.from('avis_hotels').upsert(
+        {
+          'hotel_id': _id,
+          'auteur_id': user.id,
+          'etoiles': _noteUtilisateur,
+          'commentaire': commentaire,
+        },
+        onConflict: 'hotel_id,auteur_id',
+      );
 
-    _avisController.clear();
-    setState(() => _noteUtilisateur = 0);
-    await _loadAvis();
+      _avisController.clear();
+      setState(() => _noteUtilisateur = 0);
+      await _loadAvisBloc();
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Merci pour votre avis !")),
-    );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Merci pour votre avis !")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur envoi avis: $e")),
+      );
+    }
   }
 
+  // ─────────── Contact / localisation / réservation
   void _contacter() async {
-    final tel = (hotel?['telephone'] ?? '').toString();
-    if (tel.isEmpty) return;
-    final uri = Uri.parse('tel:$tel');
+    final tel = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim();
+    if (tel.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Numéro indisponible.")),
+      );
+      return;
+    }
+    final cleaned = tel.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = Uri(scheme: 'tel', path: cleaned);
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
   void _localiser() async {
     final lat = (hotel?['latitude'] as num?)?.toDouble();
     final lon = (hotel?['longitude'] as num?)?.toDouble();
-    if (lat == null || lon == null) return;
+    if (lat == null || lon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Coordonnées indisponibles.")),
+      );
+      return;
+    }
     final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -137,6 +233,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     );
   }
 
+  // ─────────── UI helpers
   Widget _buildStars(int rating, {void Function(int)? onTap}) {
     return Row(
       children: List.generate(5, (index) {
@@ -155,9 +252,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
     return Column(
       children: _avis.map((avis) {
-        final u = avis['utilisateurs'] ?? {};
-        final nom = "${u['prenom'] ?? ''} ${u['nom'] ?? ''}".trim();
-        final note = (avis['note'] as num?)?.toInt() ?? 0;
+        final uid = (avis['auteur_id'] ?? '').toString();
+        final u = _userCache[uid] ?? const {};
+        final nom = "${(u['prenom'] ?? '').toString()} ${(u['nom'] ?? '').toString()}".trim();
+        final note = (avis['etoiles'] as num?)?.toInt() ?? 0;
         final commentaire = (avis['commentaire'] ?? '').toString();
         final photo = (u['photo_url'] ?? '').toString();
 
@@ -179,7 +277,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(nom, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(nom.isEmpty ? 'Utilisateur' : nom, style: const TextStyle(fontWeight: FontWeight.bold)),
                   Row(
                     children: List.generate(
                       5,
@@ -187,7 +285,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  Text(commentaire),
+                  if (commentaire.isNotEmpty) Text(commentaire),
                 ]),
               ),
             ],
@@ -270,8 +368,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading || hotel == null) {
+    if (loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (hotel == null) {
+      return const Scaffold(body: Center(child: Text("Hôtel introuvable")));
     }
 
     final images = _imagesFromHotel();

@@ -3,11 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
-import '../../services/avis_service.dart'; // Assure-toi que le chemin est correct
 
 class DivertissementDetailPage extends StatefulWidget {
   final Map<String, dynamic> lieu;
-
   const DivertissementDetailPage({super.key, required this.lieu});
 
   @override
@@ -15,19 +13,30 @@ class DivertissementDetailPage extends StatefulWidget {
 }
 
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
-  int _note = 0;
-  double _noteMoyenne = 0;
+  // Saisie
+  int _note = 0; // 1..5
   final TextEditingController _avisController = TextEditingController();
-  int _currentImage = 0;
-  List<Map<String, dynamic>> _avisList = [];
+
+  // Avis
+  double _noteMoyenne = 0.0;
+  List<Map<String, dynamic>> _avisList = []; // {auteur_id, etoiles, commentaire, created_at}
+  final Map<String, Map<String, dynamic>> _usersById = {}; // auteur_id -> {prenom, nom, photo_url}
 
   // Galerie
   final PageController _pageController = PageController();
+  int _currentImage = 0;
+
+  final _sb = Supabase.instance.client;
+
+  bool _isUuid(String s) {
+    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return r.hasMatch(s);
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadAvis();
+    _loadAvisBloc();
   }
 
   @override
@@ -37,44 +46,72 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadAvis() async {
-    final avis = await AvisService().recupererAvis(
-      contexte: 'divertissement',
-      cibleId: widget.lieu['id'],
-    );
-    final notes = avis.map((e) => (e['note'] as num?)?.toInt() ?? 0).toList();
+  // ─────────── Charger avis + profils (table: avis_lieux)
+  Future<void> _loadAvisBloc() async {
+    try {
+      final lieuId = widget.lieu['id']?.toString();
+      if (lieuId == null || !_isUuid(lieuId)) return;
 
-    setState(() {
-      _avisList = avis;
-      _noteMoyenne = notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0;
-    });
-  }
+      // 1) Avis (aucune jointure)
+      final rows = await _sb
+          .from('avis_lieux')
+          .select('auteur_id, etoiles, commentaire, created_at')
+          .eq('lieu_id', lieuId)
+          .order('created_at', ascending: false);
 
-  void _callPhone(BuildContext context) async {
-    final raw = (widget.lieu['contact'] ?? widget.lieu['telephone'] ?? '').toString();
-    final phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
-    if (phone.isNotEmpty && await canLaunchUrl(Uri.parse('tel:$phone'))) {
-      await launchUrl(Uri.parse('tel:$phone'));
-    } else {
+      final list = List<Map<String, dynamic>>.from(rows);
+
+      // 2) Moyenne
+      double moyenne = 0.0;
+      if (list.isNotEmpty) {
+        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final sum = notes.fold<double>(0.0, (a, b) => a + b);
+        moyenne = sum / notes.length;
+      }
+
+      // 3) Profils auteurs (batch via .or)
+      final ids = list
+          .map((e) => e['auteur_id'])
+          .whereType<String>()
+          .where(_isUuid)
+          .toSet()
+          .toList();
+
+      Map<String, Map<String, dynamic>> fetched = {};
+      if (ids.isNotEmpty) {
+        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+        final profs = await _sb
+            .from('utilisateurs')
+            .select('id, prenom, nom, photo_url, avatar_url')
+            .or(orFilter);
+
+        for (final p in List<Map<String, dynamic>>.from(profs)) {
+          final id = (p['id'] ?? '').toString();
+          fetched[id] = {
+            'prenom': p['prenom'],
+            'nom': p['nom'],
+            'photo_url': p['photo_url'] ?? p['avatar_url'],
+          };
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avisList = list;
+        _noteMoyenne = moyenne;
+        _usersById
+          ..clear()
+          ..addAll(fetched);
+      });
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro non disponible ou invalide")),
+        SnackBar(content: Text('Erreur chargement avis: $e')),
       );
     }
   }
 
-  void _openMap(BuildContext context) {
-    final lat = widget.lieu['latitude'];
-    final lon = widget.lieu['longitude'];
-    if (lat != null && lon != null) {
-      launchUrl(Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon"));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Coordonnées GPS non disponibles")),
-      );
-    }
-  }
-
+  // ─────────── Envoyer / MAJ avis (1 par utilisateur)
   Future<void> _envoyerAvis() async {
     final avis = _avisController.text.trim();
     if (_note == 0 || avis.isEmpty) {
@@ -84,7 +121,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       return;
     }
 
-    final user = Supabase.instance.client.auth.currentUser;
+    final user = _sb.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Veuillez vous connecter pour laisser un avis.")),
@@ -92,27 +129,75 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       return;
     }
 
-    await AvisService().ajouterOuModifierAvis(
-      contexte: 'divertissement',
-      cibleId: widget.lieu['id'],
-      utilisateurId: user.id,
-      note: _note,
-      commentaire: avis,
-    );
+    final lieuId = widget.lieu['id']?.toString() ?? '';
+    if (!_isUuid(lieuId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("ID du lieu invalide.")),
+      );
+      return;
+    }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Merci pour votre avis !")),
-    );
+    try {
+      await _sb.from('avis_lieux').upsert(
+        {
+          'lieu_id': lieuId,
+          'auteur_id': user.id,
+          'etoiles': _note,
+          'commentaire': avis,
+        },
+        onConflict: 'lieu_id,auteur_id',
+      );
 
-    setState(() {
-      _note = 0;
-      _avisController.clear();
-    });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Merci pour votre avis !")),
+      );
 
-    _loadAvis();
+      setState(() {
+        _note = 0;
+        _avisController.clear();
+      });
+      FocusScope.of(context).unfocus();
+      await _loadAvisBloc();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de l'envoi: $e")),
+      );
+    }
   }
 
+  // ─────────── Téléphone / Carte
+  void _callPhone(BuildContext context) async {
+    final raw = (widget.lieu['contact'] ?? widget.lieu['telephone'] ?? '').toString();
+    final phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (phone.isNotEmpty && await canLaunchUrl(Uri.parse('tel:$phone'))) {
+      await launchUrl(Uri.parse('tel:$phone'), mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Numéro non disponible ou invalide")),
+      );
+    }
+  }
+
+  void _openMap(BuildContext context) async {
+    final lat = (widget.lieu['latitude'] as num?)?.toDouble();
+    final lon = (widget.lieu['longitude'] as num?)?.toDouble();
+    if (lat != null && lon != null) {
+      final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Coordonnées GPS non disponibles")),
+      );
+    }
+  }
+
+  // ─────────── Images helpers
   List<String> _images(Map<String, dynamic> lieu) {
     if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
       return (lieu['images'] as List).map((e) => e.toString()).toList();
@@ -147,7 +232,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 onPageChanged: (i) => setS(() => current = i),
                 backgroundDecoration: const BoxDecoration(color: Colors.black),
               ),
-              // Compteur 1/N
               Positioned(
                 bottom: 24,
                 left: 0,
@@ -166,7 +250,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
                 ),
               ),
-              // Fermer
               Positioned(
                 top: 24,
                 right: 8,
@@ -194,8 +277,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       appBar: AppBar(
         title: Text(
           (lieu['nom'] ?? '').toString(),
-          style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold),
-        ),
+        style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 1,
         iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
@@ -347,20 +429,42 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               Text("⭐ Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} / 5",
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
 
+            // ---------- Liste des avis (avec nom + photo)
             if (_avisList.isNotEmpty) ...[
               const SizedBox(height: 10),
               const Text("Avis des visiteurs :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ..._avisList.map((a) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text("⭐ ${a['note']} - ${a['commentaire']}", style: const TextStyle(fontSize: 14)),
-                  )),
+              ..._avisList.map((a) {
+                final uid = (a['auteur_id'] ?? '').toString();
+                final u = _usersById[uid] ?? const {};
+                final prenom = (u['prenom'] ?? '').toString();
+                final nom = (u['nom'] ?? '').toString();
+                final photo = (u['photo_url'] ?? '').toString();
+                final name = ('$prenom $nom').trim().isEmpty ? 'Utilisateur' : ('$prenom $nom').trim();
+                final note = (a['etoiles'] as num?)?.toInt() ?? 0;
+
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                    child: photo.isEmpty ? const Icon(Icons.person) : null,
+                  ),
+                  title: Text(name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("$note ⭐️"),
+                      if ((a['commentaire'] ?? '').toString().isNotEmpty)
+                        Text(a['commentaire'].toString()),
+                    ],
+                  ),
+                );
+              }),
               const SizedBox(height: 18),
             ],
 
             const Divider(height: 30),
 
-            // ---------- Avis
+            // ---------- Avis (saisie)
             const Text("Notez ce lieu :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Row(
