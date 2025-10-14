@@ -118,7 +118,37 @@ class LogementService {
     }
   }
 
-  /// ✅ Récupération de plusieurs biens par IDs (utile pour Favoris / Mes annonces)
+  /// ✅ Mes annonces (avec sous-table `logement_photos`) triées par `cree_le` desc.
+  Future<List<LogementModel>> myListings(String userId) async {
+    final rows = await _sb
+        .from(_kTable)
+        .select('''
+          id, user_id, titre, description, mode, categorie, prix_gnf,
+          ville, commune, adresse, superficie_m2, chambres, lat, lng,
+          contact_telephone, cree_le, maj_le,
+          logement_photos (url, position)
+        ''')
+        .eq('user_id', userId)
+        .order('cree_le', ascending: false);
+
+    final list = (rows as List).cast<Map<String, dynamic>>();
+
+    return list.map((r) {
+      final m = Map<String, dynamic>.from(r);
+      final photosRaw =
+          (r['logement_photos'] as List?)?.cast<Map<String, dynamic>>() ??
+              const <Map<String, dynamic>>[];
+      photosRaw.sort(
+          (a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0));
+      m['photos'] = photosRaw
+          .map((e) => (e['url'] ?? '').toString())
+          .where((u) => u.isNotEmpty)
+          .toList();
+      return LogementModel.fromMap(m);
+    }).toList();
+  }
+
+  /// Récupération de plusieurs biens par IDs (utile ailleurs).
   Future<List<LogementModel>> getManyByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     try {
@@ -240,7 +270,6 @@ class LogementService {
 
   // ─────────────────────────── CRUD ───────────────────────────
 
-  /// Crée la ligne logement (sans photos). Les photos sont gérées ensuite via `setPhotos`.
   Future<String> create(LogementModel data) async {
     try {
       final uid = _uidOrThrow();
@@ -262,7 +291,6 @@ class LogementService {
     }
   }
 
-  /// Met à jour la ligne logement (sans toucher aux photos).
   Future<void> updateFromModel(String id, LogementModel patch) async {
     await update(id, _modelToDbMap(patch)); // ✅ pas de `photos` ici
   }
@@ -335,8 +363,6 @@ class LogementService {
 
   // ─────────────────────── Storage (photos) ───────────────────────
 
-  /// Upload binaire dans le bucket public et renvoie (key, publicUrl).
-  /// Le chemin commence **toujours** par l'UID pour matcher vos policies.
   Future<({String key, String publicUrl})> uploadPhoto({
     required Uint8List bytes,
     required String filename,
@@ -370,7 +396,6 @@ class LogementService {
     }
   }
 
-  /// URL signée (si le bucket devenait privé).
   Future<String> createSignedUrl(String key, {int expiresInSec = 3600}) async {
     try {
       final url =

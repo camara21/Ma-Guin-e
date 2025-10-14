@@ -1,3 +1,4 @@
+// lib/pages/logement/logement_edit_page.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,10 +27,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
   Color get _accent => const Color(0xFFE1005A);
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _fieldFill =>
-      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF6F7FB);
-  Color get _chipBg =>
-      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _fieldFill => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF6F7FB);
+  Color get _chipBg => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   // Champs
   late TextEditingController _titre;
@@ -153,8 +152,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       );
 
   // ─────────────────────────── UI ───────────────────────────
@@ -200,17 +198,12 @@ class _LogementEditPageState extends State<LogementEditPage> {
                         child: DropdownButtonFormField<LogementMode>(
                           value: _mode,
                           items: const [
-                            DropdownMenuItem(
-                                value: LogementMode.location,
-                                child: Text("Location")),
-                            DropdownMenuItem(
-                                value: LogementMode.achat, child: Text("Achat")),
+                            DropdownMenuItem(value: LogementMode.location, child: Text("Location")),
+                            DropdownMenuItem(value: LogementMode.achat, child: Text("Achat")),
                           ],
                           onChanged: (v) => setState(() => _mode = v),
-                          decoration:
-                              _dec("Type d’opération *", hint: "Sélectionner…"),
-                          validator: (v) =>
-                              v == null ? "Choisir le type" : null,
+                          decoration: _dec("Type d’opération *", hint: "Sélectionner…"),
+                          validator: (v) => v == null ? "Choisir le type" : null,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -218,27 +211,15 @@ class _LogementEditPageState extends State<LogementEditPage> {
                         child: DropdownButtonFormField<LogementCategorie>(
                           value: _cat,
                           items: const [
-                            DropdownMenuItem(
-                                value: LogementCategorie.maison,
-                                child: Text("Maison")),
-                            DropdownMenuItem(
-                                value: LogementCategorie.appartement,
-                                child: Text("Appartement")),
-                            DropdownMenuItem(
-                                value: LogementCategorie.studio,
-                                child: Text("Studio")),
-                            DropdownMenuItem(
-                                value: LogementCategorie.terrain,
-                                child: Text("Terrain")),
-                            DropdownMenuItem(
-                                value: LogementCategorie.autres,
-                                child: Text("Autres")),
+                            DropdownMenuItem(value: LogementCategorie.maison, child: Text("Maison")),
+                            DropdownMenuItem(value: LogementCategorie.appartement, child: Text("Appartement")),
+                            DropdownMenuItem(value: LogementCategorie.studio, child: Text("Studio")),
+                            DropdownMenuItem(value: LogementCategorie.terrain, child: Text("Terrain")),
+                            DropdownMenuItem(value: LogementCategorie.autres, child: Text("Autres")),
                           ],
                           onChanged: (v) => setState(() => _cat = v),
-                          decoration:
-                              _dec("Catégorie *", hint: "Sélectionner…"),
-                          validator: (v) =>
-                              v == null ? "Choisir la catégorie" : null,
+                          decoration: _dec("Catégorie *", hint: "Sélectionner…"),
+                          validator: (v) => v == null ? "Choisir la catégorie" : null,
                         ),
                       ),
                     ],
@@ -250,8 +231,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       Expanded(
                         child: TextFormField(
                           controller: _prix,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: _dec("Prix / Loyer (GNF)"),
                         ),
                       ),
@@ -259,8 +239,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       Expanded(
                         child: TextFormField(
                           controller: _surface,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: _dec("Superficie (m²)"),
                         ),
                       ),
@@ -278,8 +257,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       DropdownMenuItem(value: 5, child: Text("5+")),
                     ],
                     onChanged: (v) => setState(() => _chambres = v),
-                    decoration: _dec("Chambres (optionnel)",
-                        hint: "Laisser vide si peu importe"),
+                    decoration: _dec("Chambres (optionnel)", hint: "Laisser vide si peu importe"),
                   ),
                   const SizedBox(height: 10),
 
@@ -314,8 +292,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   TextFormField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
-                    decoration: _dec("Téléphone de contact *",
-                        hint: "+224 6x xx xx xx"),
+                    decoration: _dec("Téléphone de contact *", hint: "+224 6x xx xx xx"),
                     validator: (v) {
                       final val = v?.trim() ?? '';
                       if (val.isEmpty) return "Numéro requis";
@@ -334,13 +311,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       backgroundColor: _accent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined),
-                    label:
-                        Text(_saving ? "Enregistrement..." : "Enregistrer"),
+                    label: Text(_saving ? "Enregistrement..." : "Enregistrer"),
                   ),
                 ],
               ),
@@ -365,12 +340,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Localisation précise",
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text("Localisation précise", style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
           const Text(
-            "Pour une localisation exacte, placez-vous DANS le logement (ou à l’entrée)"
-            " puis appuyez sur « Localiser ».\nCela permettra de bien situer l’offre sur la carte.",
+            "Pour une localisation exacte, placez-vous DANS le logement (ou à l’entrée) "
+            "puis appuyez sur « Localiser ». Vous pouvez aussi déplacer le repère manuellement.",
             style: TextStyle(color: Colors.black54, fontSize: 12, height: 1.2),
           ),
           const SizedBox(height: 10),
@@ -390,7 +364,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
           if (_lat != null && _lng != null) ...[
             const SizedBox(height: 10),
             SizedBox(
-              height: 200,
+              height: 220,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: FlutterMap(
@@ -398,11 +372,27 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   options: MapOptions(
                     initialCenter: LatLng(_lat!, _lng!),
                     initialZoom: 16,
+
+                    // ➜ clic simple : déplacer le repère
+                    onTap: (tapPos, latLng) {
+                      setState(() {
+                        _lat = latLng.latitude;
+                        _lng = latLng.longitude;
+                      });
+                    },
+
+                    // ➜ long-clic : déplacer + recentrer/zoomer
+                    onLongPress: (tapPos, latLng) {
+                      setState(() {
+                        _lat = latLng.latitude;
+                        _lng = latLng.longitude;
+                      });
+                      _mapCtrl.move(latLng, 17);
+                    },
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                       subdomains: const ['a', 'b', 'c'],
                       userAgentPackageName: 'com.example.app',
                     ),
@@ -412,14 +402,19 @@ class _LogementEditPageState extends State<LogementEditPage> {
                           point: LatLng(_lat!, _lng!),
                           width: 40,
                           height: 40,
-                          child: const Icon(Icons.location_on,
-                              size: 36, color: Colors.red),
+                          child: const Icon(Icons.location_on, size: 36, color: Colors.red),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              "Astuce : touchez la carte pour déplacer le repère. "
+              "Maintenez appuyé pour recentrer et zoomer.",
+              style: TextStyle(color: Colors.black54, fontSize: 12),
             ),
           ],
         ],
@@ -439,15 +434,12 @@ class _LogementEditPageState extends State<LogementEditPage> {
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
       }
-      if (p == LocationPermission.denied ||
-          p == LocationPermission.deniedForever) {
+      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
         _snack("Permission localisation refusée.");
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-      );
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
 
       setState(() {
         _lat = pos.latitude;
@@ -475,8 +467,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: _accent),
                 foregroundColor: _accent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _pickFromGallery,
               icon: const Icon(Icons.add_a_photo_outlined),
@@ -496,8 +487,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
             crossAxisSpacing: 8,
             childAspectRatio: 1,
           ),
-          itemBuilder: (_, i) =>
-              (i < _photos.length) ? _photoTile(i) : _addTile(),
+          itemBuilder: (_, i) => (i < _photos.length) ? _photoTile(i) : _addTile(),
         ),
       ],
     );
@@ -590,28 +580,23 @@ class _LogementEditPageState extends State<LogementEditPage> {
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         mode: _mode!,
         categorie: _cat!,
-        prixGnf: _prix.text.trim().isEmpty
-            ? null
-            : num.tryParse(_prix.text.trim()),
+        prixGnf: _prix.text.trim().isEmpty ? null : num.tryParse(_prix.text.trim()),
         ville: _ville.text.trim().isEmpty ? null : _ville.text.trim(),
         commune: _commune.text.trim().isEmpty ? null : _commune.text.trim(),
         adresse: _adresse.text.trim().isEmpty ? null : _adresse.text.trim(),
-        superficieM2: _surface.text.trim().isEmpty
-            ? null
-            : num.tryParse(_surface.text.trim()),
+        superficieM2: _surface.text.trim().isEmpty ? null : num.tryParse(_surface.text.trim()),
         chambres: _chambres,
         lat: _lat ?? widget.existing?.lat,
         lng: _lng ?? widget.existing?.lng,
         photos: const [],
         creeLe: widget.existing?.creeLe ?? DateTime.now(),
-        contactTelephone:
-            _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        contactTelephone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
       );
 
       // Détecte édition vs création
       final routeArg = ModalRoute.of(context)?.settings.arguments;
-      final bool isEditing = widget.existing != null ||
-          (routeArg is String && routeArg.trim().isNotEmpty);
+      final bool isEditing =
+          widget.existing != null || (routeArg is String && routeArg.trim().isNotEmpty);
 
       String id;
       if (!isEditing) {
@@ -619,8 +604,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
         id = await _svc.create(model);
       } else {
         // Edition
-        id = widget.existing?.id ??
-            (routeArg is String ? routeArg : 'new');
+        id = widget.existing?.id ?? (routeArg is String ? routeArg : 'new');
         if (id == 'new' || id.trim().isEmpty) {
           id = await _svc.create(model);
         } else {

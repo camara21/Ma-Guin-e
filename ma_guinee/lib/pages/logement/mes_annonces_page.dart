@@ -1,3 +1,4 @@
+// lib/pages/logement/mes_annonces_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -42,8 +43,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     super.dispose();
   }
 
+  // ----- Lecture via le service (1 seule requête logements + photos) -----
   Future<void> _load() async {
-    if (_uid == null) {
+    final uid = _uid;
+    if (uid == null) {
       setState(() {
         _loading = false;
         _items = [];
@@ -55,44 +58,25 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     setState(() { _loading = true; _error = null; });
 
     try {
-      // 1) récupère mes IDs d'annonces (dans l'ordre le plus récent)
-      final rows = await _sb
-          .from('logements')
-          .select('id, cree_le')
-          .eq('user_id', _uid!)
-          .order('cree_le', ascending: false);
-
-      final ids = (rows as List)
-          .map((e) => (e as Map)['id']?.toString())
-          .whereType<String>()
-          .toList();
-
-      if (ids.isEmpty) {
-        setState(() { _items = []; _loading = false; });
-        return;
-      }
-
-      // 2) Logements complets via le service (inclut les photos)
-      final list = await _svc.getManyByIds(ids);
-
-      // Conserver l’ordre (cree_le desc) de la requête précédente
-      final index = { for (var i = 0; i < ids.length; i++) ids[i]: i };
-      list.sort((a, b) => (index[a.id] ?? 1<<30).compareTo(index[b.id] ?? 1<<30));
-
-      setState(() { _items = list; _loading = false; });
+      final items = await _svc.myListings(uid);
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   void _subscribe() {
-    if (_uid == null) return;
+    final uid = _uid;
+    if (uid == null) return;
 
-    // stream en temps réel sur mes logements
+    // stream en temps réel sur MES logements → recharge la liste
     _stream = _sb
         .from('logements')
         .stream(primaryKey: ['id'])
-        .eq('user_id', _uid!)
+        .eq('user_id', uid)
         .listen((_) => _load());
   }
 
@@ -134,7 +118,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
             : '${b.prixGnf!.toStringAsFixed(0)} GNF / mois')
         : 'Prix à discuter';
     final photo  = b.photos.isEmpty ? '' : b.photos.first;
-    final place  = [b.ville, b.commune].whereType<String>().where((s) => s.isNotEmpty).join(' • ');
+    final place  = [b.ville, b.commune]
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .join(' • ');
 
     return InkWell(
       onTap: () {
@@ -169,13 +156,33 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(titre, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      titre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 4),
-                    Wrap(spacing: 6, runSpacing: -6, children: [_miniChip(mode), _miniChip(cat)]),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: -6,
+                      children: [
+                        _miniChip(mode),
+                        _miniChip(cat),
+                      ],
+                    ),
                     const SizedBox(height: 6),
-                    Text(prix, style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                    Text(
+                      prix,
+                      // ⚠️ pas de `const` ici car on utilise une couleur définie dans la classe
+                      style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 2),
-                    Text(place, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                    const SizedBox(height: 2),
+                    Text(
+                      place,
+                      style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    ),
                   ],
                 ),
               ),
@@ -187,36 +194,39 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
   }
 
   // helpers UI
-  Widget _empty(String msg) => Center(child: Padding(
-    padding: const EdgeInsets.all(24), child: Text(msg, style: const TextStyle(color: Colors.black54)),
-  ));
+  Widget _empty(String msg) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(msg, style: const TextStyle(color: Colors.black54)),
+        ),
+      );
 
   Widget _errorBox(String msg) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 40, color: Colors.red),
-          const SizedBox(height: 10),
-          Text(msg, textAlign: TextAlign.center),
-          const SizedBox(height: 10),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            label: const Text("Réessayer"),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 40, color: Colors.red),
+              const SizedBox(height: 10),
+              Text(msg, textAlign: TextAlign.center),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Réessayer"),
+              ),
+            ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 
   Widget _miniChip(String t) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: _neutral, borderRadius: BorderRadius.circular(8)),
-    child: Text(t, style: const TextStyle(fontSize: 12)),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: _neutral, borderRadius: BorderRadius.circular(8)),
+        child: Text(t, style: const TextStyle(fontSize: 12)),
+      );
 
   String _labelCat(LogementCategorie c) {
     switch (c) {
