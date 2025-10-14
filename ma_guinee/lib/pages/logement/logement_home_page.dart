@@ -46,9 +46,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
   List<Map<String, dynamic>> _mine = [];
 
   // -------- Hero / Carousel --------
-  final _heroCtrl = PageController();
+  final PageController _heroCtrl = PageController();
   int _heroIndex = 0;
   Timer? _heroTimer;
+  int? _pendingHeroIndex; // si on veut changer de page avant l’attache
 
   static const List<String> _heroImages = [
     'https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=1600&auto=format&fit=crop',
@@ -71,15 +72,34 @@ class _LogementHomePageState extends State<LogementHomePage> {
     _attachInfiniteScroll();
     _reloadAll();
 
+    // ⛑️ Démarre le timer, mais anime seulement si le controller est attaché
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final next = (_heroIndex + 1) % _heroImages.length;
+      _animateHeroTo(next);
+    });
+  }
+
+  // applique une navigation sûre au carrousel
+  void _animateHeroTo(int index) {
+    if (_heroCtrl.hasClients) {
+      // si attaché : anime
       _heroCtrl.animateToPage(
-        next,
+        index,
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOut,
       );
-    });
+    } else {
+      // sinon, mémorise et appliquera après attache
+      _pendingHeroIndex = index;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_pendingHeroIndex != null && _heroCtrl.hasClients) {
+          _heroCtrl.jumpToPage(_pendingHeroIndex!.clamp(0, _heroImages.length - 1));
+          _pendingHeroIndex = null;
+        }
+      });
+    }
   }
 
   @override
@@ -234,7 +254,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
         title: const Text("Logements en Guinée", style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // uniquement le bouton pour ouvrir le menu (drawer)
           Builder(
             builder: (ctx) => IconButton(
               tooltip: "Menu",
@@ -257,7 +276,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
             _heroBanner(),
             const SizedBox(height: 16),
 
-            // Filtres
             _modeSwitch(),
             const SizedBox(height: 10),
             _categoriesGrid(),
@@ -322,7 +340,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Bloc profil (conservé)
             Row(
               children: [
                 CircleAvatar(
@@ -346,7 +363,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
             const SizedBox(height: 16),
             const Divider(),
 
-            // === ➜ ICI : DEUX BOUTONS UNIQUEMENT ===
             const SizedBox(height: 8),
             _drawerActionButton(
               icon: Icons.favorite_border,
@@ -370,7 +386,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
               },
             ),
             const SizedBox(height: 8),
-            // (aucune autre section dans le drawer)
           ],
         ),
       ),
@@ -415,7 +430,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
       child: Stack(
         children: [
           PageView.builder(
-            controller: _heroCtrl,
+            controller: _heroCtrl, // ⬅️ même contrôleur
             itemCount: _heroImages.length,
             onPageChanged: (i) => setState(() => _heroIndex = i),
             itemBuilder: (_, i) => Stack(
@@ -560,7 +575,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   Widget _quickActions() {
-    // Favoris / Annonces retirés (déplacés dans le drawer)
     return Wrap(
       spacing: 10,
       runSpacing: 10,

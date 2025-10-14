@@ -1,10 +1,9 @@
-// lib/pages/logement/logement_detail_page.dart
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:share_plus/share_plus.dart'; // 👈 PARTAGER
+import 'package:share_plus/share_plus.dart';
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
@@ -16,7 +15,7 @@ import '../../models/utilisateur_model.dart';
 
 // pages
 import 'logement_edit_page.dart';
-import 'package:ma_guinee/pages/messages/message_chat_page.dart'; // ⬅️ ouvre le chat après l’envoi
+import 'package:ma_guinee/pages/messages/message_chat_page.dart';
 
 class LogementDetailPage extends StatefulWidget {
   const LogementDetailPage({super.key, required this.logementId});
@@ -36,14 +35,14 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   String? _error;
   int _pageIndex = 0;
 
-  bool _fav = false; // favori pour l'utilisateur courant
+  bool _fav = false;
 
   // Compose (message)
   final _msgCtrl = TextEditingController();
   bool _sending = false;
 
-  // --- signalement ---
-  bool _sendingReport = false; // 👈 anti double-clic report
+  // signalement
+  bool _sendingReport = false;
 
   // Palette
   Color get _primary => const Color(0xFF0B3A6A);
@@ -116,6 +115,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   // -------- actions --------
+  /// Ouvre la carte en centrant et en ouvrant directement l’aperçu du logement
   void _openMap() {
     final b = _bien;
     if (b == null) return;
@@ -123,17 +123,20 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       _snack("Coordonnées indisponibles pour ce bien.");
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.logementMap, arguments: {
-      'id': b.id,
-      'lat': b.lat,
-      'lng': b.lng,
-      'titre': b.titre,
-      'ville': b.ville,
-      'commune': b.commune,
-    });
+    Navigator.pushNamed(
+      context,
+      AppRoutes.logementMap,
+      arguments: {
+        'id': b.id,
+        'lat': b.lat,
+        'lng': b.lng,
+        'titre': b.titre,
+        'ville': b.ville,
+        'commune': b.commune,
+      },
+    );
   }
 
-  // ➜ Edition
   Future<void> _edit() async {
     final b = _bien;
     if (b == null) return;
@@ -169,7 +172,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     }
   }
 
-  // 🔹 COMPOSE DANS LA PAGE
+  // --------- compose + chat ----------
   void _openMessages() {
     final b = _bien;
     if (b == null) return;
@@ -190,9 +193,13 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
             children: [
               const SizedBox(height: 10),
               Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(2))),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: Row(
@@ -231,7 +238,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                         onPressed: _sending ? null : () => _sendMessage(closeAfter: true),
                         icon: _sending
                             ? const SizedBox(
-                                width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
                             : const Icon(Icons.send),
                         label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                         style: ElevatedButton.styleFrom(
@@ -252,7 +262,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     );
   }
 
-  /// ✅ Envoie le message
   Future<void> _sendMessage({bool closeAfter = false}) async {
     final b = _bien;
     if (b == null) return;
@@ -270,8 +279,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       await _sb.from('messages').insert({
         'sender_id': me,
         'receiver_id': b.userId,
-        'contexte': 'logement', // 🔁 CORRIGÉ
-        'annonce_id': b.id, // on réutilise annonce_id pour pointer le logement
+        'contexte': 'logement',
+        'annonce_id': b.id,
         'annonce_titre': b.titre,
         'contenu': body,
         'date_envoi': DateTime.now().toIso8601String(),
@@ -292,7 +301,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
           builder: (_) => MessageChatPage(
             peerUserId: b.userId,
             title: b.titre,
-            contextType: 'logement', // 🔁 CORRIGÉ
+            contextType: 'logement',
             contextId: b.id,
             contextTitle: b.titre,
           ),
@@ -354,7 +363,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   // ======= PARTAGER & SIGNALER =======
-
   void _shareBien() {
     final b = _bien;
     if (b == null) return;
@@ -465,11 +473,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     if (_sendingReport) return;
     setState(() => _sendingReport = true);
 
-    final b = _bien!; // déjà vérifié
+    final b = _bien!;
     final me = _currentUserId()!;
 
     try {
-      // anti-doublon client
       final already = await _sb
           .from('reports')
           .select('id')
@@ -490,7 +497,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         'reported_by': me,
         'reason': reason,
         'details': details.isEmpty ? null : details,
-        // infos utiles
         'ville': b.ville,
         'titre': b.titre,
         'prix': b.prixGnf,
@@ -513,8 +519,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     }
   }
 
-  // ======= / PARTAGER & SIGNALER =======
-
+  // ======= UI =======
   @override
   Widget build(BuildContext context) {
     final b = _bien;
@@ -541,10 +546,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                   break;
                 case 'share':
                   _shareBien();
-                  break; // 👈 PARTAGER
+                  break;
                 case 'report':
                   _openReportSheet();
-                  break; // 👈 SIGNALER
+                  break;
                 case 'delete':
                   _deleteBien();
                   break;
@@ -646,7 +651,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                           ),
                         ),
 
-                        // --------- barre d’actions ---------
+                        // barre d’actions
                         SafeArea(
                           top: false,
                           child: Container(
@@ -794,7 +799,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     );
   }
 
-  // Visionneuse plein écran
   void _openViewer(List<String> photos, int initial) {
     final ctrl = PageController(initialPage: initial);
     showGeneralDialog(

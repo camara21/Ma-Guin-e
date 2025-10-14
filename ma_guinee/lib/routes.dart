@@ -1,4 +1,3 @@
-// lib/routes.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,7 +21,6 @@ import 'pages/resto_page.dart' as resto_pg;
 import 'pages/register_page.dart' as register_pg;
 
 import 'pages/culte_page.dart';
-// import 'pages/favoris_page.dart'; // ❌ retiré (remplacé par Logement)
 import 'pages/login_page.dart';
 import 'pages/tourisme_page.dart';
 import 'pages/sante_page.dart';
@@ -102,12 +100,13 @@ class AppRoutes {
 
   static const String resto = '/restos';
   static const String culte = '/culte';
-  // static const String favoris = '/favoris'; // ❌ remplacé
-  static const String logement = '/logement';               // ✅ Home
-  static const String logementList = '/logement/list';      // ✅ Liste
-  static const String logementDetail = '/logement/detail';  // ✅ Détail
-  static const String logementEdit = '/logement/edit';      // ✅ Créer/éditer
-  static const String logementMap = '/logement/map';        // ✅ Carte
+
+  // ✅ LOGEMENT
+  static const String logement = '/logement';               // Home
+  static const String logementList = '/logement/list';      // Liste
+  static const String logementDetail = '/logement/detail';  // Détail
+  static const String logementEdit = '/logement/edit';      // Créer/éditer
+  static const String logementMap = '/logement/map';        // Carte
 
   static const String login = '/login';
   static const String register = '/register';
@@ -175,7 +174,7 @@ class AppRoutes {
       case resto:         return _page(const resto_pg.RestoPage());
       case culte:         return _page(const CultePage());
 
-      // ✅ LOGEMENT
+      // ===================== LOGEMENT =====================
       case logement:
         return _page(const LogementHomePage());
 
@@ -211,13 +210,31 @@ class AppRoutes {
       }
 
       case logementMap: {
-        // args: { ville?: String, commune?: String }
+        // ✅ On transmet explicitement le focus via le constructeur
         final a = _argsMap(settings);
-        return _page(LogementMapPage(
-          ville: a['ville'] as String?,
-          commune: a['commune'] as String?,
-        ));
+
+        double? _d(dynamic v) {
+          if (v == null) return null;
+          if (v is num) return v.toDouble();
+          return double.tryParse(v.toString());
+        }
+
+        return MaterialPageRoute(
+          builder: (_) => LogementMapPage(
+            // filtres éventuels (ville/commune)
+            ville: a['ville'] as String?,
+            commune: a['commune'] as String?,
+            // ---- focus précis du logement ----
+            focusId: a['id']?.toString(),
+            focusLat: _d(a['lat']),
+            focusLng: _d(a['lng']),
+            focusTitre: a['titre']?.toString(),
+            focusVille: a['ville']?.toString(),
+            focusCommune: a['commune']?.toString(),
+          ),
+        );
       }
+      // ===================== /LOGEMENT =====================
 
       // Auth / profil / divers
       case login:         return _page(const LoginPage());
@@ -244,7 +261,6 @@ class AppRoutes {
       case mesRestaurants:return _userProtected((u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []));
       case mesHotels:     return _userProtected((u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []));
       case mesCliniques:  return _userProtected((u) => MesCliniquesPage(cliniques: u.cliniques ?? []));
-
       case inscriptionResto: {
         final arg = settings.arguments;
         if (arg == null || arg is Map<String, dynamic>) {
