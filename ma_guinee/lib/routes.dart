@@ -84,6 +84,11 @@ import 'pages/logement/logement_detail_page.dart';
 import 'pages/logement/logement_edit_page.dart';
 import 'pages/logement/logement_map_page.dart';
 
+// ✅ AJOUTS ADMIN (nouveaux fichiers)
+import 'admin/admin_dashboard.dart';
+import 'admin/admin_gate.dart';
+import 'admin/content_advanced_page.dart';
+
 class AppRoutes {
   // Core
   static const String splash = '/';
@@ -96,7 +101,7 @@ class AppRoutes {
   static const String pro = '/prestataires';
   static const String carte = '/carte';
   static const String divertissement = '/divertissement';
-  static const String admin = '/administratif';
+  static const String admin = '/administratif'; // ⚠️ on ne touche pas à celle-ci
 
   static const String resto = '/restos';
   static const String culte = '/culte';
@@ -157,8 +162,32 @@ class AppRoutes {
   static const String employerOfferEdit = '/jobs/employer/offre_edit';
   static const String employerOfferCandidatures = '/jobs/employer/candidatures';
 
+  // ✅ NOUVEL ESPACE ADMIN (en plus, séparé de /administratif)
+  static const String adminCenter = '/admin';
+  static const String adminManage = '/admin/manage';
+
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
+      // ✅ Nouvelles routes admin (indépendantes de /administratif)
+      case adminCenter:
+        return MaterialPageRoute(
+          builder: (_) => const AdminGate(child: AdminDashboard()),
+        );
+
+      case adminManage: {
+        // args attendus: { table: 'logements', title?: 'Logements' }
+        final a = _argsMap(settings);
+        final table = (a['table']?.toString().trim().toLowerCase() ?? 'logements');
+        final title = (a['title']?.toString().trim().isNotEmpty == true)
+            ? a['title'].toString()
+            : _prettyServiceName(table);
+        return MaterialPageRoute(
+          builder: (_) => AdminGate(
+            child: ContentAdvancedPage(title: title, table: table),
+          ),
+        );
+      }
+
       // Core
       case splash:        return _page(const SplashScreen());
       case welcome:       return _page(const WelcomePage());
@@ -170,7 +199,7 @@ class AppRoutes {
       case pro:           return _page(const ProPage());
       case carte:         return _page(const CartePage());
       case divertissement:return _page(const DivertissementPage());
-      case admin:         return _page(const AdminPage());
+      case admin:         return _page(const AdminPage()); // ⚠️ inchangé
       case resto:         return _page(const resto_pg.RestoPage());
       case culte:         return _page(const CultePage());
 
@@ -179,7 +208,6 @@ class AppRoutes {
         return _page(const LogementHomePage());
 
       case logementList: {
-        // args: { q?: String, mode?: 'location'|'achat'|LogementMode, categorie?: 'maison'|'appartement'|'studio'|'terrain'|'autres' }
         final a = _argsMap(settings);
         final String? q = a['q'] as String?;
         final LogementMode mode = _parseMode(a['mode']);
@@ -192,7 +220,6 @@ class AppRoutes {
       }
 
       case logementDetail: {
-        // args: String id  |  {id: String}
         final a = settings.arguments;
         final id = (a is String) ? a : (a is Map ? (a['id']?.toString()) : null);
         if (id == null || id.isEmpty) return _error('ID requis pour $logementDetail');
@@ -200,7 +227,6 @@ class AppRoutes {
       }
 
       case logementEdit: {
-        // args: { existing?: LogementModel }
         final a = _argsMap(settings);
         final existing = a['existing'];
         if (existing != null && existing is! LogementModel) {
@@ -210,21 +236,16 @@ class AppRoutes {
       }
 
       case logementMap: {
-        // ✅ On transmet explicitement le focus via le constructeur
         final a = _argsMap(settings);
-
         double? _d(dynamic v) {
           if (v == null) return null;
           if (v is num) return v.toDouble();
           return double.tryParse(v.toString());
         }
-
         return MaterialPageRoute(
           builder: (_) => LogementMapPage(
-            // filtres éventuels (ville/commune)
             ville: a['ville'] as String?,
             commune: a['commune'] as String?,
-            // ---- focus précis du logement ----
             focusId: a['id']?.toString(),
             focusLat: _d(a['lat']),
             focusLng: _d(a['lng']),
@@ -261,6 +282,7 @@ class AppRoutes {
       case mesRestaurants:return _userProtected((u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []));
       case mesHotels:     return _userProtected((u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []));
       case mesCliniques:  return _userProtected((u) => MesCliniquesPage(cliniques: u.cliniques ?? []));
+
       case inscriptionResto: {
         final arg = settings.arguments;
         if (arg == null || arg is Map<String, dynamic>) {
@@ -488,4 +510,20 @@ LogementCategorie? _parseCategorieOrNull(dynamic v) {
     }
   }
   return LogementCategorie.autres;
+}
+
+// ✅ Helper lisible pour les titres de /admin/manage quand "title" n’est pas fourni
+String _prettyServiceName(String table) {
+  switch (table) {
+    case 'annonces': return 'Annonces';
+    case 'prestataires': return 'Prestataires';
+    case 'restaurants': return 'Restaurants';
+    case 'lieux': return 'Lieux (Culte / Divertissement / Tourisme)';
+    case 'cliniques': return 'Cliniques';
+    case 'hotels': return 'Hôtels';
+    case 'logements': return 'Logements';
+    case 'emplois': return 'Wali fen (Emplois)';
+    case 'events': return 'Billetterie (Events)';
+    default: return table[0].toUpperCase() + table.substring(1);
+  }
 }

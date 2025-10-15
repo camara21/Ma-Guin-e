@@ -11,13 +11,16 @@ class UtilisateurModel {
   final DateTime? dateNaissance;
   final bool cguAccepte;
 
+  // ✅ AJOUT
+  final String? role;
+
   final List<String> favoris;
   final Map<String, dynamic>? espacePrestataire;
   final List<Map<String, dynamic>> restos;
   final List<Map<String, dynamic>> hotels;
   final List<Map<String, dynamic>> cliniques;
   final List<Map<String, dynamic>> annonces;
-  final List<Map<String, dynamic>> lieux; // 🟦🟣 AJOUT pour lieux
+  final List<Map<String, dynamic>> lieux;
 
   UtilisateurModel({
     required this.id,
@@ -31,19 +34,20 @@ class UtilisateurModel {
     this.dateInscription,
     this.dateNaissance,
     this.cguAccepte = false,
+
+    // ✅ AJOUT
+    this.role,
+
     this.favoris = const [],
     this.espacePrestataire,
     this.restos = const [],
     this.hotels = const [],
     this.cliniques = const [],
     this.annonces = const [],
-    this.lieux = const [], // 🟦🟣 Constructeur
+    this.lieux = const [],
   });
 
   factory UtilisateurModel.fromJson(Map<String, dynamic> json) {
-    print("🧩 Données reçues du backend :");
-    print(json);
-
     List<Map<String, dynamic>> extractList(String key) {
       final list = json[key];
       if (list is List) {
@@ -59,13 +63,7 @@ class UtilisateurModel {
     final restos = extractList('restos');
     final hotels = extractList('hotels');
     final cliniques = extractList('cliniques');
-    final lieux = extractList('lieux'); // 🟦🟣
-
-    print("📦 Prestataire : $prestataire");
-    print("🍽️ Restos : $restos");
-    print("🏨 Hotels : $hotels");
-    print("🏥 Cliniques : $cliniques");
-    print("📍 Lieux : $lieux"); // 🟦🟣
+    final lieux = extractList('lieux');
 
     return UtilisateurModel(
       id: json['id'] as String? ?? '',
@@ -83,15 +81,17 @@ class UtilisateurModel {
           ? DateTime.tryParse(json['date_naissance'] as String)
           : null,
       cguAccepte: json['cgu_accepte'] == true,
+
+      // ✅ AJOUT : on récupère le rôle
+      role: (json['role'] as String?)?.toLowerCase(),
+
       favoris: (json['favoris'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      espacePrestataire: prestataire != null
-          ? Map<String, dynamic>.from(prestataire)
-          : null,
+      espacePrestataire: prestataire != null ? Map<String, dynamic>.from(prestataire) : null,
       restos: restos,
       hotels: hotels,
       cliniques: cliniques,
       annonces: extractList('annonces'),
-      lieux: lieux, // 🟦🟣
+      lieux: lieux,
     );
   }
 
@@ -108,13 +108,20 @@ class UtilisateurModel {
       'date_inscription': dateInscription?.toIso8601String(),
       'date_naissance': dateNaissance?.toIso8601String(),
       'cgu_accepte': cguAccepte,
+
+      // ✅ AJOUT : on renvoie le rôle
+      'role': role,
+
       'favoris': favoris,
       'espacePrestataire': espacePrestataire,
       'restos': restos,
       'hotels': hotels,
       'cliniques': cliniques,
       'annonces': annonces,
-      'lieux': lieux, // 🟦🟣 Export JSON
+      'lieux': lieux,
     };
   }
+
+  // (optionnel) petit helper
+  bool get isAdmin => role == 'admin' || role == 'owner';
 }

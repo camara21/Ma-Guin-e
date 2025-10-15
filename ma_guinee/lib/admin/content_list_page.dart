@@ -1,0 +1,171 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../supabase_client.dart';
+
+class ContentListPage extends StatefulWidget {
+  final String serviceName;   // Titre affiché
+  final String table;         // ex: 'logements', 'lieux', 'annonces'...
+  const ContentListPage({super.key, required this.serviceName, required this.table});
+
+  @override
+  State<ContentListPage> createState() => _ContentListPageState();
+}
+
+class _ContentListPageState extends State<ContentListPage> {
+  final searchC = TextEditingController();
+  bool loading = true;
+  String? error;
+  List<Map<String, dynamic>> rows = [];
+
+  String get viewName => 'v_${widget.table}_public'; // Vue publique filtrée
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    searchC.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { loading = true; error = null; });
+    try {
+      PostgrestFilterBuilder q = SB.i.from(viewName).select();
+      final s = searchC.text.trim();
+      if (s.isNotEmpty) {
+        final like = '%$s%';
+        try { q = q.ilike('titre', like); } catch (_) {}
+        try { q = q.ilike('nom', like); } catch (_) {}
+        try { q = q.ilike('description', like); } catch (_) {}
+      }
+      final data = await q.limit(100);
+      rows = (data as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      error = '$e';
+    } finally {
+      if (mounted) setState(() { loading = false; });
+    }
+  }
+
+  Future<void> _act(String action, String id, {String? reason}) async {
+    final rpc = switch (action) {
+      'hide'    => 'rpc_admin_hide_content',
+      'unhide'  => 'rpc_admin_unhide_content',
+      'delete'  => 'rpc_admin_soft_delete_content',
+      'restore' => 'rpc_admin_restore_content',
+      _ => null,
+    };
+    if (rpc == null) return;
+    try {
+      await SB.i.rpc(rpc, params: {'_table': widget.table, '_id': id, '_reason': reason});
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action "$action" effectuée.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.serviceName.isNotEmpty ? widget.serviceName : widget.table;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [ IconButton(onPressed: _load, icon: const Icon(Icons.refresh)) ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: searchC,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Rechercher (titre / nom / description)…',
+                  ),
+                  onSubmitted: (_) => _load(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(onPressed: _load, child: const Text('Filtrer')),
+            ]),
+            const SizedBox(height: 12),
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : error != null
+                      ? Center(child: Text('Erreur: $error'))
+                      : _table(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _table() {
+    if (rows.isEmpty) return const Center(child: Text('Aucune donnée.'));
+    final cols = _orderedColumns(rows.first.keys.toList());
+
+    return Card(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: [
+            for (final c in cols.take(8)) DataColumn(label: Text(c)),
+            const DataColumn(label: Text('Actions')),
+          ],
+          rows: rows.map((r) {
+            final id = (r['id'] ?? '').toString();
+            return DataRow(cells: [
+              for (final c in cols.take(8))
+                DataCell(SizedBox(width: 200, child: Text('${r[c]}'))),
+              DataCell(Row(children: [
+                IconButton(
+                  tooltip: 'Masquer',
+                  icon: const Icon(Icons.visibility_off),
+                  onPressed: () => _act('hide', id, reason: 'admin UI'),
+                ),
+                IconButton(
+                  tooltip: 'Réafficher',
+                  icon: const Icon(Icons.visibility),
+                  onPressed: () => _act('unhide', id, reason: 'admin UI'),
+                ),
+                IconButton(
+                  tooltip: 'Supprimer (soft)',
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _act('delete', id, reason: 'admin UI'),
+                ),
+                IconButton(
+                  tooltip: 'Restaurer',
+                  icon: const Icon(Icons.settings_backup_restore),
+                  onPressed: () => _act('restore', id, reason: 'admin UI'),
+                ),
+              ])),
+            ]);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  List<String> _orderedColumns(List<String> cols) {
+    final order = ['id','titre','nom','ville','created_at','date_ajout'];
+    cols.sort((a, b) {
+      final ia = order.indexOf(a), ib = order.indexOf(b);
+      if (ia == -1 && ib == -1) return a.compareTo(b);
+      if (ia == -1) return 1;
+      if (ib == -1) return -1;
+      return ia.compareTo(ib);
+    });
+    return cols;
+  }
+}
