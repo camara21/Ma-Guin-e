@@ -66,7 +66,6 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   Future<void> _initSource() async {
     _source = widget.table;
     try {
-      // on tente une lecture 0 ligne pour savoir si la vue existe
       await SB.i.from(_view).select('id').limit(0);
       _source = _view;
     } catch (_) {
@@ -76,7 +75,6 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
 
   // ───────── schema
   Future<void> _detectSchema() async {
-    // essaie de récupérer 1 ligne pour lister les colonnes
     try {
       final res = await SB.i.from(_source).select('*').limit(1);
       if (res is List && res.isNotEmpty && res.first is Map) {
@@ -120,30 +118,37 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     final builder = SB.i.from(_source).select(forCount ? 'id' : '*');
     PostgrestFilterBuilder q = builder;
 
-    // recherche plein-texte simple
+    // recherche plein-texte en OR sur les colonnes présentes
     final query = _searchC.text.trim();
     if (query.isNotEmpty) {
       final s = '%$query%';
-      for (final col in ['titre', 'nom', 'description', 'ville']) {
-        if (_cols.contains(col)) {
+      final searchable = <String>['titre', 'nom', 'description', 'ville']
+          .where(_cols.contains)
+          .toList();
+      if (searchable.isNotEmpty) {
+        final orParts = searchable.map((c) => '$c.ilike.$s').join(',');
+        try {
+          q = q.or(orParts);
+        } catch (_) {
+          // fallback: au pire, on ilike sur la première colonne dispo
           try {
-            q = q.ilike(col, s);
+            q = q.ilike(searchable.first, s);
           } catch (_) {}
         }
       }
       if (_cols.contains('id') && query.length >= 3) {
         try {
-          q = q.ilike('id', '$query%');
+          // élargit la recherche aux débuts d'UUID
+          q = q.or('id.ilike.${query.replaceAll('%', '')}%');
         } catch (_) {}
       }
     }
 
     // ville
-final city = _city; // String?
-if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
-  q = q.eq('ville', city); // city est non-null ici
-}
-
+    final city = _city;
+    if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
+      q = q.eq('ville', city);
+    }
 
     // dates
     if (_hasCreated && _range != null && _cols.contains(_sort)) {
@@ -190,16 +195,69 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
     }
   }
 
-  // ───────── suppression DÉFINITIVE sur la table physique (pas la vue)
+  // ───────── mapping table -> RPC
+  String? _rpcForTable() {
+    switch (widget.table) {
+      case 'logements':
+        return 'admin_delete_logements';
+      case 'lieux':
+        return 'admin_delete_lieux';
+      default:
+        return null; // autres tables: fallback delete normal
+    }
+  }
+
+  // ───────── suppression via RPC (centralisée)
+  Future<int> _callAdminDelete(List<String> ids) async {
+    final fn = _rpcForTable();
+    if (fn == null || ids.isEmpty) return 0;
+    final res = await SB.i.rpc(fn, params: {'p_ids': ids});
+    return (res is int) ? res : 0;
+  }
+
+  // ───────── suppression DÉFINITIVE (RPC pour logements/lieux, fallback sinon)
   Future<void> _deleteOneDefinitive(String id) async {
     setState(() => _loading = true);
     try {
-      await SB.i.from(widget.table).delete().eq('id', id);
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Supprimé définitivement.')));
+      final fn = _rpcForTable();
+      if (fn != null) {
+        final deleted = await _callAdminDelete([id]);
+        if (!mounted) return;
+        if (deleted > 0) {
+          _selected.remove(id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$deleted élément supprimé (admin).')),
+          );
+          await _load();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aucune ligne supprimée (droits/FK ?).')),
+          );
+        }
+      } else {
+        // fallback pour les autres tables
+        final res = await SB.i.from(widget.table).delete().eq('id', id).select('id');
+        final deleted = (res is List) ? res.length : 0;
+
+        if (!mounted) return;
+        if (deleted > 0) {
+          _selected.remove(id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$deleted élément supprimé.')),
+          );
+          await _load();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aucune ligne supprimée (RLS/FK ?).')),
+          );
+        }
       }
-      await _load();
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Suppression impossible: code=${e.code} msg=${e.message}')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -214,15 +272,53 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
     if (_selected.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final inList = _buildInList(_selected.toList()); // '("id1","id2")'
-      await SB.i.from(widget.table).delete().filter('id', 'in', inList);
-      _selected.clear();
+      final fn = _rpcForTable();
+      if (fn != null) {
+        final ids = _selected.toList(); // UUID en String
+        final deleted = await _callAdminDelete(ids);
+
+        if (!mounted) return;
+        if (deleted > 0) {
+          _selected.clear();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$deleted éléments supprimés (admin).')),
+          );
+          await _load();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aucune ligne supprimée (droits/FK ?).')),
+          );
+        }
+      } else {
+        // fallback pour les autres tables
+        final inList = _buildInListTyped(_selected.toList());
+        final res = await SB.i
+            .from(widget.table)
+            .delete()
+            .filter('id', 'in', inList)
+            .select('id'); // renvoie les lignes supprimées
+
+        final deleted = (res is List) ? res.length : 0;
+
+        if (!mounted) return;
+        if (deleted > 0) {
+          _selected.clear();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$deleted éléments supprimés.')),
+          );
+          await _load();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aucune ligne supprimée (RLS/FK ?).')),
+          );
+        }
+      }
+    } on PostgrestException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sélection supprimée définitivement.')),
+          SnackBar(content: Text('Suppression impossible: code=${e.code} msg=${e.message}')),
         );
       }
-      await _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -233,10 +329,16 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
     }
   }
 
-  // construit la chaîne pour l’opérateur PostgREST in()
-  String _buildInList(List<String> ids) {
-    final escaped = ids.map((e) => '"${e.replaceAll('"', r'\"')}"').join(',');
-    return '($escaped)';
+  // ───────── construit la chaîne pour l’opérateur PostgREST in() (fallback)
+  String _buildInListTyped(List<String> ids) {
+    if (ids.isEmpty) return '()';
+    final allInts = ids.every((s) => int.tryParse(s) != null);
+    if (allInts) {
+      return '(${ids.join(',')})'; // (1,2,3)
+    } else {
+      final esc = ids.map((s) => '"${s.replaceAll('"', r'\"')}"').join(',');
+      return '($esc)'; // ("uuid1","uuid2")
+    }
   }
 
   // ───────── helpers UI
@@ -293,10 +395,10 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
             IconButton(
               tooltip: 'Supprimer définitivement (sélection)',
               icon: const Icon(Icons.delete_forever),
-              onPressed: _onConfirmBulkDelete,
+              onPressed: _loading ? null : _onConfirmBulkDelete,
             ),
-          IconButton(onPressed: _exportCsv, icon: const Icon(Icons.download)),
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: _loading ? null : _exportCsv, icon: const Icon(Icons.download)),
+          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: Padding(
@@ -372,7 +474,10 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
           OutlinedButton.icon(
             icon: const Icon(Icons.date_range),
             label: Text(
-                _range == null ? 'Date (toutes)' : '${_fmtDate(_range!.start)} → ${_fmtDate(_range!.end)}'),
+              _range == null
+                  ? 'Date (toutes)'
+                  : '${_fmtDate(_range!.start)} → ${_fmtDate(_range!.end)}',
+            ),
             onPressed: _pickDateRange,
           ),
         if (_range != null)
@@ -501,35 +606,43 @@ if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
       children: [
         IconButton(
           tooltip: 'Première',
-          onPressed: _page > 0 ? () {
-            setState(() => _page = 0);
-            _load();
-          } : null,
+          onPressed: _page > 0
+              ? () {
+                  setState(() => _page = 0);
+                  _load();
+                }
+              : null,
           icon: const Icon(Icons.first_page),
         ),
         IconButton(
           tooltip: 'Précédente',
-          onPressed: _page > 0 ? () {
-            setState(() => _page--);
-            _load();
-          } : null,
+          onPressed: _page > 0
+              ? () {
+                  setState(() => _page--);
+                  _load();
+                }
+              : null,
           icon: const Icon(Icons.chevron_left),
         ),
         Text('Page ${_page + 1}/$pages'),
         IconButton(
           tooltip: 'Suivante',
-          onPressed: ((_page + 1) < pages) ? () {
-            setState(() => _page++);
-            _load();
-          } : null,
+          onPressed: ((_page + 1) < pages)
+              ? () {
+                  setState(() => _page++);
+                  _load();
+                }
+              : null,
           icon: const Icon(Icons.chevron_right),
         ),
         IconButton(
           tooltip: 'Dernière',
-          onPressed: ((_page + 1) < pages) ? () {
-            setState(() => _page = pages - 1);
-            _load();
-          } : null,
+          onPressed: ((_page + 1) < pages)
+              ? () {
+                  setState(() => _page = pages - 1);
+                  _load();
+                }
+              : null,
           icon: const Icon(Icons.last_page),
         ),
         const SizedBox(width: 12),
