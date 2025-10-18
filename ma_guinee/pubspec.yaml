@@ -90,7 +90,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/guinee_map.png
     - assets/default_avatar.png
     - assets/logo_guinee.png
     - assets/nimba.png
