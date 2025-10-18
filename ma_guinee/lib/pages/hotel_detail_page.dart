@@ -1,8 +1,12 @@
+// lib/pages/hotel_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+
+// ⬇️ importe la page de réservation (ajuste le chemin si besoin)
+import 'hotel_reservation_page.dart';
 
 class HotelDetailPage extends StatefulWidget {
   final dynamic hotelId; // UUID (String) ou autre -> stringifié
@@ -15,6 +19,8 @@ class HotelDetailPage extends StatefulWidget {
 class _HotelDetailPageState extends State<HotelDetailPage> {
   final _sb = Supabase.instance.client;
 
+  static const Color primaryColor = Color(0xFF113CFC);
+
   Map<String, dynamic>? hotel;
   bool loading = true;
   String? _error;
@@ -24,7 +30,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   final TextEditingController _avisController = TextEditingController();
   double _noteMoyenne = 0;
   List<Map<String, dynamic>> _avis = [];
-  final Map<String, Map<String, dynamic>> _userCache = {}; // auteur_id -> profil
+  final Map<String, Map<String, dynamic>> _userCache = {};
 
   // Carrousel
   final PageController _pageController = PageController();
@@ -58,12 +64,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       _error = null;
     });
     try {
-      final data = await _sb
-          .from('hotels')
-          .select()
-          .eq('id', _id)
-          .maybeSingle();
-
+      final data = await _sb.from('hotels').select().eq('id', _id).maybeSingle();
       if (!mounted) return;
       setState(() {
         hotel = data == null ? null : Map<String, dynamic>.from(data);
@@ -78,10 +79,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  // ─────────── Avis (sans jointure, batch profils)
+  // ─────────── Avis
   Future<void> _loadAvisBloc() async {
     try {
-      // 1) Avis depuis avis_hotels
       final rows = await _sb
           .from('avis_hotels')
           .select('auteur_id, etoiles, commentaire, created_at')
@@ -90,7 +90,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
       final list = List<Map<String, dynamic>>.from(rows);
 
-      // 2) Moyenne
       double moyenne = 0.0;
       if (list.isNotEmpty) {
         final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
@@ -98,7 +97,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         moyenne = s / notes.length;
       }
 
-      // 3) Batch profils auteurs (nom, prenom, photo_url)
       final ids = list
           .map((e) => e['auteur_id'])
           .whereType<String>()
@@ -164,7 +162,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
 
     try {
-      // Un seul avis par utilisateur → upsert
       await _sb.from('avis_hotels').upsert(
         {
           'hotel_id': _id,
@@ -191,7 +188,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  // ─────────── Contact / localisation / réservation
+  // ─────────── Contact / localisation
   void _contacter() async {
     final tel = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim();
     if (tel.isEmpty) {
@@ -222,13 +219,23 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  void _showReservationMessage() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Réservation"),
-        content: const Text("Le service de réservation en ligne sera bientôt disponible."),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Fermer"))],
+  // ─────────── Réserver
+  void _ouvrirReservation() {
+    final nom = (hotel?['nom'] ?? 'Hôtel').toString();
+    final telRaw = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim(); // ❌ pas de valeur par défaut
+    final address = (hotel?['adresse'] ?? hotel?['ville'] ?? '').toString();
+    final images = _imagesFromHotel();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HotelReservationPage(
+          hotelName: nom.isEmpty ? 'Hôtel' : nom,
+          phone: telRaw.isEmpty ? null : telRaw,
+          address: address.isEmpty ? null : address,
+          coverImage: images.isNotEmpty ? images.first : null,
+          primaryColor: primaryColor,
+        ),
       ),
     );
   }
@@ -340,12 +347,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     ),
                     child: Text(
                       '${current + 1}/${images.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        decoration: TextDecoration.none,
-                        decorationThickness: 0,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 11, decoration: TextDecoration.none),
                     ),
                   ),
                 ),
@@ -380,16 +382,18 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          (hotel!['nom'] ?? '').toString(),
-          style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold),
-        ),
+        title: Text((hotel!['nom'] ?? '').toString()),
         backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        titleTextStyle: const TextStyle(
+          color: primaryColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+        iconTheme: const IconThemeData(color: primaryColor),
         elevation: 1,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110), // espace pour la barre du bas
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // -------- carrousel + miniatures + compteur --------
           if (images.isNotEmpty) ...[
@@ -432,12 +436,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                       ),
                       child: Text(
                         '${_currentIndex + 1}/${images.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          decoration: TextDecoration.none,
-                          decorationThickness: 0,
-                        ),
+                        style: const TextStyle(color: Colors.white, fontSize: 11, decoration: TextDecoration.none),
                       ),
                     ),
                   ),
@@ -469,7 +468,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isActive ? const Color(0xFF113CFC) : Colors.transparent,
+                            color: isActive ? primaryColor : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -509,6 +508,23 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           ),
           const SizedBox(height: 8),
           Text("Description :\n${(hotel!['description'] ?? 'Aucune description').toString()}"),
+          const SizedBox(height: 12),
+
+          // bouton Localiser (on garde dans le corps)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _localiser,
+              icon: const Icon(Icons.map),
+              label: const Text("Localiser"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF009460),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+
           const SizedBox(height: 20),
 
           const Text("Avis client :", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -538,33 +554,61 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
           const SizedBox(height: 20),
           _buildAvisList(),
+          const SizedBox(height: 16),
+        ]),
+      ),
 
-          const SizedBox(height: 30),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _localiser,
-                icon: const Icon(Icons.map),
-                label: const Text("Localiser"),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF009460), foregroundColor: Colors.white),
-              ),
-              ElevatedButton.icon(
-                onPressed: _contacter,
-                icon: const Icon(Icons.phone),
-                label: const Text("Contacter"),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFCE1126), foregroundColor: Colors.white),
-              ),
-              ElevatedButton.icon(
-                onPressed: _showReservationMessage,
-                icon: const Icon(Icons.calendar_today),
-                label: const Text("Réserver"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+      // ✅ Barre collée en bas (même style que la page resto)
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 10,
+                offset: const Offset(0, -4),
               ),
             ],
           ),
-          const SizedBox(height: 50),
-        ]),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _contacter,
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: const Text("Contacter"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00A86B), // vert
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _ouvrirReservation,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text("Réserver"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

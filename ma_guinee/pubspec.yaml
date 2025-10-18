@@ -1,15 +1,16 @@
-
 name: ma_guinee
 description: "Plateforme moderne multi-services pour la Guinée."
-publish_to: none
+publish_to: "none"
 
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"   # recommandé pour firebase_* et url_launcher récents
+  sdk: ">=3.3.0 <4.0.0"   # OK pour firebase_* récents et url_launcher
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:          # ✅ nécessaire pour les locales (fr_FR)
     sdk: flutter
 
   cupertino_icons: ^1.0.8
@@ -57,7 +58,7 @@ dependencies:
   flutter_svg: ^2.0.10+1
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1
-  intl: ^0.19.0
+  intl: ^0.20.2                 # ✅ formats de date/heure (compatible flutter_localizations)
 
   # 🎥 Vidéo
   chewie: ^1.7.1
@@ -80,6 +81,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.2
+
+# 🛠️ Décommente en cas de conflit de versions sur intl (rare)
+# dependency_overrides:
+#   intl: ^0.20.2
 
 flutter:
   uses-material-design: true

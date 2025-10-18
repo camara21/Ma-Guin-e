@@ -7,7 +7,7 @@ import 'models/job_models.dart'; // EmploiModel
 import 'models/logement_models.dart'; // ✅ enums & model Logement
 
 // Pages principales
-import 'pages/splash_screen.dart';
+import 'pages/splash_screen.dart'; // ✅ utilisé comme route initiale "/"
 import 'pages/welcome_page.dart';
 import 'pages/home_page.dart';
 import 'pages/annonces_page.dart';
@@ -101,17 +101,17 @@ class AppRoutes {
   static const String pro = '/prestataires';
   static const String carte = '/carte';
   static const String divertissement = '/divertissement';
-  static const String admin = '/administratif'; // ⚠️ on ne touche pas à celle-ci
+  static const String admin = '/administratif'; // ⚠️ inchangé
 
   static const String resto = '/restos';
   static const String culte = '/culte';
 
   // ✅ LOGEMENT
-  static const String logement = '/logement';               // Home
-  static const String logementList = '/logement/list';      // Liste
-  static const String logementDetail = '/logement/detail';  // Détail
-  static const String logementEdit = '/logement/edit';      // Créer/éditer
-  static const String logementMap = '/logement/map';        // Carte
+  static const String logement = '/logement';
+  static const String logementList = '/logement/list';
+  static const String logementDetail = '/logement/detail';
+  static const String logementEdit = '/logement/edit';
+  static const String logementMap = '/logement/map';
 
   static const String login = '/login';
   static const String register = '/register';
@@ -162,34 +162,30 @@ class AppRoutes {
   static const String employerOfferEdit = '/jobs/employer/offre_edit';
   static const String employerOfferCandidatures = '/jobs/employer/candidatures';
 
-  // ✅ NOUVEL ESPACE ADMIN (en plus, séparé de /administratif)
+  // ✅ NOUVEL ESPACE ADMIN
   static const String adminCenter = '/admin';
   static const String adminManage = '/admin/manage';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
-      // ✅ Nouvelles routes admin (indépendantes de /administratif)
+      // ✅ Admin
       case adminCenter:
         return MaterialPageRoute(
           builder: (_) => const AdminGate(child: AdminDashboard()),
         );
-
       case adminManage: {
-        // args attendus: { table: 'logements', title?: 'Logements' }
         final a = _argsMap(settings);
         final table = (a['table']?.toString().trim().toLowerCase() ?? 'logements');
         final title = (a['title']?.toString().trim().isNotEmpty == true)
             ? a['title'].toString()
             : _prettyServiceName(table);
         return MaterialPageRoute(
-          builder: (_) => AdminGate(
-            child: ContentAdvancedPage(title: title, table: table),
-          ),
+          builder: (_) => AdminGate(child: ContentAdvancedPage(title: title, table: table)),
         );
       }
 
       // Core
-      case splash:        return _page(const SplashScreen());
+      case splash:        return _page(const SplashScreen()); // ✅ Splash en route initiale
       case welcome:       return _page(const WelcomePage());
       case mainNav:       return _page(const MainNavigationPage());
       case home:          return _page(const HomePage());
@@ -199,7 +195,7 @@ class AppRoutes {
       case pro:           return _page(const ProPage());
       case carte:         return _page(const CartePage());
       case divertissement:return _page(const DivertissementPage());
-      case admin:         return _page(const AdminPage()); // ⚠️ inchangé
+      case admin:         return _page(const AdminPage());
       case resto:         return _page(const resto_pg.RestoPage());
       case culte:         return _page(const CultePage());
 
@@ -211,7 +207,7 @@ class AppRoutes {
         final a = _argsMap(settings);
         final String? q = a['q'] as String?;
         final LogementMode mode = _parseMode(a['mode']);
-        final LogementCategorie? cat = _parseCategorieOrNull(a['categorie']); // null = pas de filtre
+        final LogementCategorie? cat = _parseCategorieOrNull(a['categorie']);
         return _page(LogementListPage(
           initialQuery: q,
           initialMode: mode,
@@ -336,7 +332,6 @@ class AppRoutes {
       // JOB
       case jobHome:        return _page(const JobHomePage());
       case jobList:        return _page(const JobsPage());
-
       case jobDetail: {
         final a = settings.arguments;
         String? jobId;
@@ -351,27 +346,21 @@ class AppRoutes {
         }
         return MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId!));
       }
-
       case myApplications: return _userProtected((_) => const apps.MyApplicationsPage());
       case cvMaker:        return _userProtected((_) => const CvMakerPage());
 
-      // ---------- ESPACE EMPLOYEUR ----------
+      // ---------- EMPLOYEUR ----------
       case employerOffers:
         return _userProtected((_) => _EmployeurGate(
               builder: (empId) => MesOffresPage(employeurId: empId),
               onMissing: const DevenirEmployeurPage(),
             ));
-
       case employerOfferEdit: {
         final arg = settings.arguments;
         return _userProtected((_) => _EmployeurGate(
               builder: (empId) {
-                if (arg == null) {
-                  return OffreEditPage(employeurId: empId);
-                }
-                if (arg is EmploiModel) {
-                  return OffreEditPage(existing: arg, employeurId: empId);
-                }
+                if (arg == null) return OffreEditPage(employeurId: empId);
+                if (arg is EmploiModel) return OffreEditPage(existing: arg, employeurId: empId);
                 return const _RouteErrorPage(
                   "Argument invalide pour /jobs/employer/offre_edit (attendu EmploiModel ou null)",
                 );
@@ -379,7 +368,6 @@ class AppRoutes {
               onMissing: const DevenirEmployeurPage(),
             ));
       }
-
       case employerOfferCandidatures: {
         final m = _argsMap(settings);
         final id    = (m['emploiId'] as String?) ?? (m['id'] as String?);
@@ -452,9 +440,7 @@ class _EmployeurGate extends StatelessWidget {
       future: svc.getEmployeurId(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         if (snap.hasError) {
           return _RouteErrorPage('Erreur: ${snap.error}');
@@ -486,11 +472,9 @@ LogementMode _parseMode(dynamic v) {
   if (v is LogementMode) return v;
   if (v is String) {
     switch (v.toLowerCase()) {
-      case 'achat':
-        return LogementMode.achat;
+      case 'achat': return LogementMode.achat;
       case 'location':
-      default:
-        return LogementMode.location;
+      default:      return LogementMode.location;
     }
   }
   return LogementMode.location;
@@ -506,13 +490,12 @@ LogementCategorie? _parseCategorieOrNull(dynamic v) {
       case 'studio': return LogementCategorie.studio;
       case 'terrain': return LogementCategorie.terrain;
       case 'autres': return LogementCategorie.autres;
-      case 'tous': return null; // important: pas de filtre
+      case 'tous': return null;
     }
   }
   return LogementCategorie.autres;
 }
 
-// ✅ Helper lisible pour les titres de /admin/manage quand "title" n’est pas fourni
 String _prettyServiceName(String table) {
   switch (table) {
     case 'annonces': return 'Annonces';

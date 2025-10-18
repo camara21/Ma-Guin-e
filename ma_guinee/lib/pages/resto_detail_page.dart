@@ -8,6 +8,9 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+// ✅ Page de réservation (appel uniquement)
+import 'restaurant_reservation_page.dart';
+
 class RestoDetailPage extends StatefulWidget {
   final String restoId; // UUID du restaurant
   const RestoDetailPage({super.key, required this.restoId});
@@ -23,15 +26,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   bool loading = true;
   String? _error;
 
-  // Avis (schéma adapté)
+  // Avis
   List<Map<String, dynamic>> _avis = []; // {auteur_id, etoiles, commentaire, created_at}
   double _noteMoyenne = 0.0;
-  bool _dejaNote = false; // l’utilisateur courant a déjà laissé un avis
+  bool _dejaNote = false;
 
-  // Cache utilisateurs: auteur_id -> {nom, prenom, photo_url}
+  // Cache profils auteurs
   final Map<String, Map<String, dynamic>> _userCache = {};
 
-  // Saisie — jamais préremplie
+  // Saisie avis
   int _noteUtilisateur = 0; // 1..5
   final _avisController = TextEditingController();
 
@@ -67,7 +70,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return const [];
   }
 
-  // Si tu actives le CDN/transformations d’images, adapte ici
+  // Si tu actives un CDN, adapte ici
   String _thumbUrl(String url) => url;
   String _fullUrl(String url) => url;
 
@@ -98,10 +101,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
-  // ───────────────────────── AVIS (table: avis_restaurants) + batch profils (sans .in_())
+  // ───────────────────────── AVIS
   Future<void> _loadAvisBloc() async {
     try {
-      // 1) Liste des avis (aucune jointure)
       final res = await _sb
           .from('avis_restaurants')
           .select('auteur_id, etoiles, commentaire, created_at')
@@ -110,7 +112,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
       final list = List<Map<String, dynamic>>.from(res);
 
-      // 2) Moyenne (sur 'etoiles')
       double moyenne = 0.0;
       if (list.isNotEmpty) {
         final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
@@ -118,11 +119,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         moyenne = sum / notes.length;
       }
 
-      // 3) L’utilisateur courant a déjà noté ? (auteur_id)
       final user = _sb.auth.currentUser;
       final deja = user != null && list.any((a) => a['auteur_id'] == user.id);
 
-      // 4) Batch profils des auteurs (nom, prenom, photo_url) — fallback sans .in_()
       final ids = list
           .map((e) => e['auteur_id'])
           .whereType<String>()
@@ -153,9 +152,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         _avis = list;
         _noteMoyenne = moyenne;
         _dejaNote = deja;
-        _userCache
-          ..clear()
-          ..addAll(fetched);
+        _userCache..clear()..addAll(fetched);
       });
     } catch (e) {
       if (!mounted) return;
@@ -187,7 +184,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
 
     try {
-      // Un seul avis par utilisateur → upsert (conflit sur restaurant_id, auteur_id)
       await _sb.from('avis_restaurants').upsert(
         {
           'restaurant_id': _id,
@@ -219,35 +215,22 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
+  // ✅ Ouvre la page de réservation (aucun fallback de numéro)
   void _reserver() {
-    final lat = (resto?['latitude'] as num?)?.toDouble();
-    final lng = (resto?['longitude'] as num?)?.toDouble();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Réservation",
-            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-        content: const Text(
-          "Réservation en ligne bientôt dispo.\n"
-          "Contactez le restaurant par téléphone ou sur place.",
+    final nom = (resto?['nom'] ?? '').toString();
+    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim(); // reste vide si absent
+    final images = _imagesFrom(resto?['images']);
+    final address = (resto?['ville'] ?? '').toString();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RestaurantReservationPage(
+          restoName: nom.isEmpty ? 'Restaurant' : nom,
+          phone: telRaw.isEmpty ? null : telRaw,   // null si pas de numéro
+          address: address.isEmpty ? null : address,
+          coverImage: images.isNotEmpty ? _fullUrl(images.first) : null,
         ),
-        actions: [
-          if (lat != null && lng != null)
-            TextButton.icon(
-              onPressed: () async {
-                final uri = Uri.parse("https://www.google.com/maps?q=$lat,$lng");
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
-              icon: const Icon(Icons.map),
-              label: const Text("Voir sur Maps"),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Fermer"),
-          ),
-        ],
       ),
     );
   }
@@ -271,7 +254,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
-  // étoiles un peu plus fines & discrètes
   Widget _buildStars(int rating, {void Function(int)? onTap}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -491,7 +473,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const Divider(height: 30),
 
-            // ---------- Avis (saisie) — même style discret + JAUNE DOUX
+            // ---------- Avis (saisie)
             const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
             if (_dejaNote)
               const Padding(
@@ -532,7 +514,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 icon: const Icon(Icons.send, size: 18, color: Colors.black87),
                 label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFDE68A), // jaune doux
+                  backgroundColor: const Color(0xFFFDE68A),
                   foregroundColor: Colors.black87,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -627,8 +609,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                         Text(
                           DateTime.tryParse(a['created_at']?.toString() ?? '')
                                   ?.toLocal()
-                                  .toString() ??
-                              '',
+                                  .toString() ?? '',
                           style: const TextStyle(fontSize: 11, color: Colors.black54),
                         ),
                       ],

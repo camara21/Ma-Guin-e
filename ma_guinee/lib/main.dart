@@ -1,4 +1,4 @@
-// main.dart — PROD (Realtime + Heartbeat + FCM) — démarrage direct Admin SANS flash
+// main.dart — PROD (Realtime + Heartbeat + FCM) — démarrage via Splash SANS flash
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -10,6 +10,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// ✅ Localizations & Intl (fr_FR)
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
 import 'routes.dart';
@@ -23,7 +27,7 @@ import 'theme/app_theme.dart';
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 String? _lastRoutePushed;
 bool _authListenerArmed = false; // on n'agit pas sur l'event initial
-DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0); // ← fenêtre anti-signedOut transitoire
+DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0); // fenêtre anti-signedOut
 
 String? _currentRouteName() {
   final ctx = navKey.currentContext;
@@ -43,7 +47,7 @@ void _pushUnique(String routeName) {
   if (_sameAsCurrentOrLast(routeName)) return;
   _lastRoutePushed = routeName;
   final nav = navKey.currentState;
-  if (nav == null) return; // nav pas prêt → ne rien faire (évite flicker)
+  if (nav == null) return; // nav pas prêt → évite flicker
   nav.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
@@ -242,35 +246,18 @@ Future<bool> isCurrentUserAdmin() async {
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
   final dest = (role == 'admin' || role == 'owner')
-      ? AppRoutes.adminCenter // /admin
-      : AppRoutes.mainNav; // nav standard
-  if (_sameAsCurrentOrLast(dest)) return; // évite tout repush inutile
+      ? AppRoutes.adminCenter
+      : AppRoutes.mainNav;
+  if (_sameAsCurrentOrLast(dest)) return;
   _pushUnique(dest);
-}
-
-// ➜ calcule la route initiale en amont (SQL direct)
-Future<String> _computeInitialRouteDirect() async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) return AppRoutes.welcome; // pas connecté
-  try {
-    final data = await Supabase.instance.client
-        .from('utilisateurs')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-    final role = (data?['role'] as String?)?.toLowerCase() ?? '';
-    if (role == 'admin' || role == 'owner') {
-      return AppRoutes.adminCenter; // → ADMIN DIRECT
-    }
-    return AppRoutes.mainNav;
-  } catch (_) {
-    return AppRoutes.mainNav; // fallback
-  }
 }
 
 // ───────────── main ─────────────
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ Intl (fr_FR) – évite LocaleDataException
+  await initializeDateFormatting('fr_FR');
 
   // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -313,9 +300,7 @@ Future<void> main() async {
     unawaited(_startHeartbeat());
   }
 
-  // Route initiale fiable (SQL direct) avant runApp
-  final initialRoute = await _computeInitialRouteDirect();
-
+  // ✅ On démarre toujours sur le Splash (route "/")
   runApp(
     MultiProvider(
       providers: [
@@ -325,12 +310,12 @@ Future<void> main() async {
           create: (_) => PrestatairesProvider()..loadPrestataires(),
         ),
       ],
-      child: MyApp(initialRoute: initialRoute),
+      child: const MyApp(),
     ),
   );
 
-  // bloquer tout repush identique au boot + fenêtre de silence
-  _lastRoutePushed = initialRoute;
+  // bloque tout repush identique au boot + fenêtre de silence
+  _lastRoutePushed = AppRoutes.splash;
   _quietUntil = DateTime.now().add(const Duration(milliseconds: 700));
 
   // Armer le listener APRÈS la 1re frame → évite la nav due à initialSession
@@ -348,14 +333,12 @@ Future<void> main() async {
       return;
     }
 
-    // Pendant ~700ms après boot, ignorer les "déconnexions" transitoires
+    // Pendant ~700ms après boot, ignorer les déconnexions transitoires
     final now = DateTime.now();
     final inQuietWindow = now.isBefore(_quietUntil);
-    final isTransientSignOut = (event == AuthChangeEvent.signedOut ||
-                                event == AuthChangeEvent.userDeleted);
-    if (inQuietWindow && isTransientSignOut) {
-      return; // évite le push /welcome → flash
-    }
+    final isTransientSignOut =
+        (event == AuthChangeEvent.signedOut || event == AuthChangeEvent.userDeleted);
+    if (inQuietWindow && isTransientSignOut) return;
 
     if (session?.user != null) {
       final uid = session!.user.id;
@@ -364,17 +347,23 @@ Future<void> main() async {
       await _startHeartbeat();
 
       await userProvider.chargerUtilisateurConnecte();
+
+      // Ne rien pousser si on est sur le splash : c’est le Splash qui redirige
+      final r = _currentRouteName();
+      if (r == AppRoutes.splash) return;
+
       await _goHomeBasedOnRole(userProvider);
     } else {
       _unsubscribeUserNotifications();
       _unsubscribeAdminKick();
       await _stopHeartbeat();
 
-      // Ne renvoyer /welcome que si on n'est pas déjà sur une page d'auth
+      // Ne renvoyer /welcome que si on n'est pas déjà sur une page d'auth ni sur le splash
       final r = _currentRouteName();
       if (r != AppRoutes.welcome &&
           r != AppRoutes.login &&
-          r != AppRoutes.register) {
+          r != AppRoutes.register &&
+          r != AppRoutes.splash) {
         _pushUnique(AppRoutes.welcome);
       }
     }
@@ -383,19 +372,31 @@ Future<void> main() async {
 
 // ───────────── App ─────────────
 class MyApp extends StatelessWidget {
-  final String initialRoute;
-  const MyApp({super.key, required this.initialRoute});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-      initialRoute: initialRoute, // route décidée par SQL
+      initialRoute: AppRoutes.splash, // route initiale = Splash
       onGenerateRoute: AppRoutes.generateRoute,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
+
+      // ✅ Localisation FR pour Material/Cupertino + formats de dates
+      locale: const Locale('fr', 'FR'),
+      supportedLocales: const [
+        Locale('fr', 'FR'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
       builder: (context, child) {
         final style = AppTheme.light.textTheme.bodyMedium!;
         return DefaultTextStyle.merge(

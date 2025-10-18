@@ -19,9 +19,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // +15% vs 44px
-  static const double _iconSize = 51;
-
   int _notificationsNonLues = 0; // ← admin-only
   int _messagesNonLus = 0;
 
@@ -86,7 +83,6 @@ class _HomePageState extends State<HomePage> {
     if (user == null) return;
 
     try {
-      // ⚠️ Filtre serveur: exclure les notifs de conversation entre utilisateurs
       final rows = await Supabase.instance.client
           .from('notifications')
           .select('id, utilisateur_id, lu, type')
@@ -97,15 +93,26 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() => _notificationsNonLues = nonLues);
     } catch (_) {}
 
-    // Si tu utilises un compteur de messages privés ailleurs
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
   }
 
-  // ---------- helpers d'icône (même style/taille pour tous) ----------
+  // ========== UI helpers ==========
+  // taille icône adaptative pour mini-écrans
+  double _adaptiveIconSize(BuildContext context) {
+    final w = MediaBox.of(context).size.width;
+    if (w < 360) return 44; // plus petit sur téléphones étroits
+    return 51;              // valeur "standard"
+  }
+
+  // carte carrée pour une géométrie stable
   Widget _iconCard(Widget child) {
+    final w = MediaBox.of(context).size.width;
+    final side = w < 360 ? 84.0 : 92.0; // réserve visuelle fixe pour l’icône
     return Container(
+      width: side,
+      height: side,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -117,7 +124,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(22), // même cadre visuel
+      alignment: Alignment.center,
       child: child,
     );
   }
@@ -148,61 +155,63 @@ class _HomePageState extends State<HomePage> {
     required IconData main,
     required Color color,
     required IconData badge,
+    required BuildContext context,
   }) {
+    final size = _adaptiveIconSize(context);
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          Center(child: Icon(main, color: color, size: _iconSize)),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(color, badge)),
+          Center(child: Icon(main, color: color, size: size)),
+          Positioned(right: 6, bottom: 6, child: _smallBadge(color, badge)),
         ],
       ),
     );
   }
 
   // Icône Jobs
-  Widget _soneyaIcon() {
+  Widget _soneyaIcon(BuildContext context) {
     const blue = Color(0xFF1976D2);
+    final size = _adaptiveIconSize(context);
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          const Center(child: Icon(Icons.work_outline, color: blue, size: _iconSize)),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(blue, Icons.description)),
+          Center(child: Icon(Icons.work_outline, color: blue, size: size)),
+          Positioned(right: 6, bottom: 6, child: _smallBadge(blue, Icons.description)),
         ],
       ),
     );
   }
 
   // ✅ Icône Logement (badge bleu cohérent)
-  Widget _logementIcon() {
+  Widget _logementIcon(BuildContext context) {
     const primary = Color(0xFF0B3A6A); // bleu profond
+    final size = _adaptiveIconSize(context);
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          const Center(child: Icon(Icons.apartment_rounded, color: primary, size: _iconSize)),
-          Positioned(right: 2, bottom: 2, child: _smallBadge(primary, Icons.location_on_rounded)),
+          Center(child: Icon(Icons.apartment_rounded, color: primary, size: size)),
+          Positioned(right: 6, bottom: 6, child: _smallBadge(primary, Icons.location_on_rounded)),
         ],
       ),
     );
   }
 
-  // Tuile utilisant un widget d'icône custom
-  Widget _serviceTileCustom(Widget iconWidget, String label, String route) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          iconWidget,
-          const SizedBox(height: 6),
-          Text(label, textAlign: TextAlign.center),
-        ],
+  // tuile “bientôt”
+  void _showComingSoon(BuildContext context,
+      {required String title, required String message}) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
       ),
     );
   }
-  // -------------------------------------------------------------------
+  // =================================
 
   @override
   Widget build(BuildContext context) {
@@ -217,15 +226,23 @@ class _HomePageState extends State<HomePage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final width = MediaQuery.of(context).size.width;
-    int crossAxisCount = 3;
-    double childAspectRatio = 1.03;
-    double spacing = 6;
-    if (width > 600) {
-      crossAxisCount = 6;
-      childAspectRatio = 1.18;
-      spacing = 10;
+    final mq = MediaBox.of(context);
+    final width = mq.size.width;
+    final textScale = mq.textScaleFactor;
+
+    int crossAxisCount = width > 600 ? 6 : 3;
+
+    // 🔧 ratio plus "haut" si petit écran ou texte agrandi → plus d'espace au label
+    double childAspectRatio;
+    if (width < 360 || textScale > 1.1) {
+      childAspectRatio = 0.82;
+    } else if (width < 420) {
+      childAspectRatio = 0.92;
+    } else {
+      childAspectRatio = 1.05;
     }
+
+    double spacing = width > 600 ? 10 : 6;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -286,7 +303,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bannière (inchangée)
+            // Bannière
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -356,186 +373,134 @@ class _HomePageState extends State<HomePage> {
               mainAxisSpacing: spacing,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                // Annonces (rouge)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.campaign,
+                    color: const Color(0xFFCE1126),
+                    badge: Icons.add,
+                    context: context,
+                  ),
+                  label: "Annonces",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.annonces),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.campaign,
-                        color: const Color(0xFFCE1126),
-                        badge: Icons.add,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Annonces", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Prestataires
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.handyman_rounded,
+                    color: const Color(0xFFFCD116),
+                    badge: Icons.build_rounded,
+                    context: context,
+                  ),
+                  label: "Prestataires",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.handyman_rounded,
-                        color: const Color(0xFFFCD116),
-                        badge: Icons.build_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Prestataires", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Services Admin (vert)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.account_balance,
+                    color: const Color(0xFF009460),
+                    badge: Icons.description_rounded,
+                    context: context,
+                  ),
+                  label: "Services Admin",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.account_balance,
-                        color: const Color(0xFF009460),
-                        badge: Icons.description_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Services Admin", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Restaurants (jaune)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.restaurant,
+                    color: const Color(0xFFFCD116),
+                    badge: Icons.delivery_dining_rounded,
+                    context: context,
+                  ),
+                  label: "Restaurants",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.resto),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.restaurant,
-                        color: const Color(0xFFFCD116),
-                        badge: Icons.delivery_dining_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Restaurants", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Lieux de culte (vert)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.mosque,
+                    color: const Color(0xFF009460),
+                    badge: Icons.schedule_rounded,
+                    context: context,
+                  ),
+                  label: "Lieux de culte",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.culte),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.mosque,
-                        color: const Color(0xFF009460),
-                        badge: Icons.schedule_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Lieux de culte", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Divertissement (rouge)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.theaters,
+                    color: const Color(0xFFCE1126),
+                    badge: Icons.music_note_rounded,
+                    context: context,
+                  ),
+                  label: "Divertissement",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.divertissement),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.theaters,
-                        color: const Color(0xFFCE1126),
-                        badge: Icons.music_note_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Divertissement", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Tourisme (vert) — nouvelle forme globe+loupe
-GestureDetector(
-  onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
-  child: Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      _iconWithBadge(
-        main: Icons.travel_explore_rounded, // ✅ forme changée
-        color: const Color(0xFF009460),     // ✅ couleur identique à avant
-        badge: Icons.place_rounded,         // petit badge discret
-      ),
-      const SizedBox(height: 6),
-      const Text("Tourisme", textAlign: TextAlign.center),
-    ],
-  ),
-),
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.travel_explore_rounded,
+                    color: const Color(0xFF009460),
+                    badge: Icons.place_rounded,
+                    context: context,
+                  ),
+                  label: "Tourisme",
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
+                ),
 
-
-                // Santé (jaune)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.local_hospital,
+                    color: const Color(0xFFFCD116),
+                    badge: Icons.health_and_safety_rounded,
+                    context: context,
+                  ),
+                  label: "Santé",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.sante),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.local_hospital,
-                        color: const Color(0xFFFCD116),
-                        badge: Icons.health_and_safety_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Santé", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // Hôtels (rouge)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.hotel,
+                    color: const Color(0xFFCE1126),
+                    badge: Icons.star_rate_rounded,
+                    context: context,
+                  ),
+                  label: "Hôtels",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.hotel),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _iconWithBadge(
-                        main: Icons.hotel,
-                        color: const Color(0xFFCE1126),
-                        badge: Icons.star_rate_rounded,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text("Hôtels", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // 🔁 Logement
-                _serviceTileCustom(_logementIcon(), "Logement", AppRoutes.logement),
+                _ServiceTile(
+                  icon: _logementIcon(context),
+                  label: "Logement",
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.logement),
+                ),
 
-                // 🔹 Emplois (Wali fen)
-                GestureDetector(
+                _ServiceTile(
+                  icon: _soneyaIcon(context),
+                  label: "Wali fen",
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const JobHomePage()),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _soneyaIcon(),
-                      const SizedBox(height: 6),
-                      const Text("Wali fen", textAlign: TextAlign.center),
-                    ],
-                  ),
                 ),
 
-                // 🔹 Billetterie (bientôt)
-                _serviceTileFuture(
-                  Icons.confirmation_num,
-                  "Billetterie",
-                  const Color(0xFFFCD116),
-                  "Un service de billetterie sera bientôt disponible pour vendre vos billets d’événements "
-                  "avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.confirmation_num,
+                    color: const Color(0xFFFCD116),
+                    badge: Icons.lock_clock,
+                    context: context,
+                  ),
+                  label: "Billetterie",
+                  onTap: () => _showComingSoon(
+                    context,
+                    title: "Billetterie",
+                    message:
+                        "Un service de billetterie sera bientôt disponible pour vendre vos billets d’événements avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
+                  ),
                 ),
               ],
             ),
@@ -544,30 +509,53 @@ GestureDetector(
       ),
     );
   }
+}
 
-  // tuile générique (utilisée pour Billetterie à venir)
-  Widget _serviceTileFuture(IconData icon, String label, Color color, String message) {
-    return GestureDetector(
-      onTap: () {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(label),
-            content: Text(message),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
-            ],
-          ),
-        );
-      },
+// ======= Widgets/utilitaires =======
+
+// tuile réutilisable : zone icône fixe + label centré, impossible de se chevaucher
+class _ServiceTile extends StatelessWidget {
+  final Widget icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ServiceTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaBox.of(context).size.width;
+    final iconZone = w < 360 ? 84.0 : 92.0;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _iconWithBadge(main: icon, color: color, badge: Icons.lock_clock),
+          SizedBox(height: iconZone, child: Center(child: icon)),
           const SizedBox(height: 6),
-          Text(label, textAlign: TextAlign.center),
+          Expanded(
+            child: Center(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+// MediaQuery “safe”
+class MediaBox {
+  static MediaQueryData of(BuildContext context) =>
+      MediaQuery.maybeOf(context) ?? const MediaQueryData();
 }
