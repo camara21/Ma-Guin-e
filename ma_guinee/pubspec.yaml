@@ -1,3 +1,4 @@
+
 name: ma_guinee
 description: "Plateforme moderne multi-services pour la Guinée."
 publish_to: none
@@ -5,7 +6,7 @@ publish_to: none
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.3.0 <4.0.0"   # recommandé pour firebase_* et url_launcher récents
 
 dependencies:
   flutter:
@@ -52,7 +53,7 @@ dependencies:
   carousel_slider: ^4.2.1
   font_awesome_flutter: ^10.7.0
   universal_html: ^2.2.4
-  cached_network_image: ^3.4.1   # <- garder UNE seule entrée ici
+  cached_network_image: ^3.4.1
   flutter_svg: ^2.0.10+1
   responsive_framework: ^1.1.1
   transparent_image: ^2.0.1
@@ -84,14 +85,11 @@ flutter:
   uses-material-design: true
 
   assets:
-    # Images existantes
     - assets/guinee_map.png
     - assets/default_avatar.png
     - assets/logo_guinee.png
     - assets/nimba.png
     - assets/jobs/hero.png
     - assets/jobs/card_cover.png
-
-    # 🆕 Polices utilisées par le PDF (accents OK)
     - assets/fonts/Inter_24pt-Regular.ttf
     - assets/fonts/Inter_24pt-Bold.ttf

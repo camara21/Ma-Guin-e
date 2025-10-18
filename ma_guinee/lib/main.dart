@@ -1,4 +1,4 @@
-// main.dart — PROD (Realtime + Heartbeat + FCM)
+// main.dart — PROD (Realtime + Heartbeat + FCM) — démarrage direct Admin SANS flash
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -22,10 +22,29 @@ import 'theme/app_theme.dart';
 // ───────────── Navigation globale ─────────────
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 String? _lastRoutePushed;
+bool _authListenerArmed = false; // on n'agit pas sur l'event initial
+DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0); // ← fenêtre anti-signedOut transitoire
+
+String? _currentRouteName() {
+  final ctx = navKey.currentContext;
+  if (ctx == null) return null;
+  final route = ModalRoute.of(ctx);
+  return route?.settings.name;
+}
+
+bool _sameAsCurrentOrLast(String routeName) {
+  final current = _currentRouteName();
+  if (current == routeName) return true;
+  if (_lastRoutePushed == routeName) return true;
+  return false;
+}
+
 void _pushUnique(String routeName) {
-  if (_lastRoutePushed == routeName) return;
+  if (_sameAsCurrentOrLast(routeName)) return;
   _lastRoutePushed = routeName;
-  navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
+  final nav = navKey.currentState;
+  if (nav == null) return; // nav pas prêt → ne rien faire (évite flicker)
+  nav.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
 // ───────────── Notifications locales ─────────────
@@ -80,21 +99,25 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 // ───────────── Realtime globals ─────────────
-RealtimeChannel? _kicksChan;   // admin_kicks
-RealtimeChannel? _notifChan;   // notifications
+RealtimeChannel? _kicksChan; // admin_kicks
+RealtimeChannel? _notifChan; // notifications
 Timer? _heartbeatTimer;
 
 // ───────────── Heartbeat ─────────────
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
   try {
-    await Supabase.instance.client
-        .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
+    await Supabase.instance.client.rpc(
+      'update_heartbeat',
+      params: {'_device': kIsWeb ? 'web' : 'flutter'},
+    );
   } catch (_) {}
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
-      await Supabase.instance.client
-          .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
+      await Supabase.instance.client.rpc(
+        'update_heartbeat',
+        params: {'_device': kIsWeb ? 'web' : 'flutter'},
+      );
     } catch (_) {}
   });
 }
@@ -172,7 +195,10 @@ Future<void> enablePushNotifications() async {
   try {
     final messaging = FirebaseMessaging.instance;
     final settings = await messaging.requestPermission(
-      alert: true, badge: true, sound: true, provisional: false,
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
     );
     if (settings.authorizationStatus != AuthorizationStatus.authorized &&
         settings.authorizationStatus != AuthorizationStatus.provisional) {
@@ -182,14 +208,17 @@ Future<void> enablePushNotifications() async {
     String? token;
     if (kIsWeb) {
       token = await messaging.getToken(
-        vapidKey: const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
+        vapidKey:
+            const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
       );
     } else {
       token = await messaging.getToken();
     }
     if (!kReleaseMode) debugPrint('FCM token: $token');
   } catch (e, st) {
-    if (!kReleaseMode) debugPrint('Erreur enablePushNotifications: $e\n$st');
+    if (!kReleaseMode) {
+      debugPrint('Erreur enablePushNotifications: $e\n$st');
+    }
   }
 }
 
@@ -213,9 +242,30 @@ Future<bool> isCurrentUserAdmin() async {
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
   final dest = (role == 'admin' || role == 'owner')
-      ? AppRoutes.adminCenter   // ton espace admin (/admin)
-      : AppRoutes.mainNav;      // nav standard
+      ? AppRoutes.adminCenter // /admin
+      : AppRoutes.mainNav; // nav standard
+  if (_sameAsCurrentOrLast(dest)) return; // évite tout repush inutile
   _pushUnique(dest);
+}
+
+// ➜ calcule la route initiale en amont (SQL direct)
+Future<String> _computeInitialRouteDirect() async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return AppRoutes.welcome; // pas connecté
+  try {
+    final data = await Supabase.instance.client
+        .from('utilisateurs')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+    final role = (data?['role'] as String?)?.toLowerCase() ?? '';
+    if (role == 'admin' || role == 'owner') {
+      return AppRoutes.adminCenter; // → ADMIN DIRECT
+    }
+    return AppRoutes.mainNav;
+  } catch (_) {
+    return AppRoutes.mainNav; // fallback
+  }
 }
 
 // ───────────── main ─────────────
@@ -228,7 +278,9 @@ Future<void> main() async {
   await _initLocalNotification();
   await _createAndroidNotificationChannel();
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-    alert: true, badge: true, sound: true,
+    alert: true,
+    badge: true,
+    sound: true,
   );
 
   // Supabase
@@ -251,7 +303,7 @@ Future<void> main() async {
 
   // Providers
   final userProvider = UserProvider();
-  await userProvider.chargerUtilisateurConnecte();
+  await userProvider.chargerUtilisateurConnecte(); // hydrate le profil
 
   // Démarrage : si déjà connecté → souscriptions + heartbeat
   final user = Supabase.instance.client.auth.currentUser;
@@ -261,23 +313,50 @@ Future<void> main() async {
     unawaited(_startHeartbeat());
   }
 
+  // Route initiale fiable (SQL direct) avant runApp
+  final initialRoute = await _computeInitialRouteDirect();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<UserProvider>.value(value: userProvider),
         ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
-        ChangeNotifierProvider(create: (_) => PrestatairesProvider()..loadPrestataires()),
+        ChangeNotifierProvider(
+          create: (_) => PrestatairesProvider()..loadPrestataires(),
+        ),
       ],
-      child: const MyApp(),
+      child: MyApp(initialRoute: initialRoute),
     ),
   );
 
-  // Redirection initiale selon le rôle (après montage de l'app)
-  scheduleMicrotask(() => _goHomeBasedOnRole(userProvider));
+  // bloquer tout repush identique au boot + fenêtre de silence
+  _lastRoutePushed = initialRoute;
+  _quietUntil = DateTime.now().add(const Duration(milliseconds: 700));
+
+  // Armer le listener APRÈS la 1re frame → évite la nav due à initialSession
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _authListenerArmed = true;
+  });
 
   // Auth state: rebrancher realtime + recharger profil + rediriger
-  Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
-    final session = event.session;
+  Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+    final event = data.event;     // AuthChangeEvent
+    final session = data.session; // Session?
+
+    // Ignorer l'événement initial du boot ou si pas encore armé
+    if (event == AuthChangeEvent.initialSession || !_authListenerArmed) {
+      return;
+    }
+
+    // Pendant ~700ms après boot, ignorer les "déconnexions" transitoires
+    final now = DateTime.now();
+    final inQuietWindow = now.isBefore(_quietUntil);
+    final isTransientSignOut = (event == AuthChangeEvent.signedOut ||
+                                event == AuthChangeEvent.userDeleted);
+    if (inQuietWindow && isTransientSignOut) {
+      return; // évite le push /welcome → flash
+    }
+
     if (session?.user != null) {
       final uid = session!.user.id;
       _subscribeUserNotifications(uid);
@@ -290,20 +369,29 @@ Future<void> main() async {
       _unsubscribeUserNotifications();
       _unsubscribeAdminKick();
       await _stopHeartbeat();
-      _pushUnique(AppRoutes.welcome);
+
+      // Ne renvoyer /welcome que si on n'est pas déjà sur une page d'auth
+      final r = _currentRouteName();
+      if (r != AppRoutes.welcome &&
+          r != AppRoutes.login &&
+          r != AppRoutes.register) {
+        _pushUnique(AppRoutes.welcome);
+      }
     }
   });
 }
 
 // ───────────── App ─────────────
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final String initialRoute;
+  const MyApp({super.key, required this.initialRoute});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navKey, // <— important pour les redirections
+      navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-      initialRoute: AppRoutes.splash,
+      initialRoute: initialRoute, // route décidée par SQL
       onGenerateRoute: AppRoutes.generateRoute,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

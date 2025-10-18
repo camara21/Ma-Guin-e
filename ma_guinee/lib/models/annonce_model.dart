@@ -12,8 +12,9 @@ class AnnonceModel {
   final String telephone;
   final List<String> images;
   final String devise;
-  final double? latitude;     // ✅ Ajout latitude
-  final double? longitude;    // ✅ Ajout longitude
+  final double? latitude;
+  final double? longitude;
+  final int views;            // ✅ compteur
   bool estFavori;
 
   AnnonceModel({
@@ -30,12 +31,18 @@ class AnnonceModel {
     this.devise = 'GNF',
     this.latitude,
     this.longitude,
+    this.views = 0,           // ✅ 0 par défaut
     this.estFavori = false,
   });
 
   static double _toDouble(dynamic v, [double fallback = 0]) {
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  static int _toInt(dynamic v, [int fallback = 0]) {
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
   }
 
   static List<String> _toImages(dynamic raw) {
@@ -66,8 +73,9 @@ class AnnonceModel {
         telephone: json['telephone'] ?? '',
         images: _toImages(json['images']),
         devise: json['devise'] ?? 'GNF',
-        latitude: json['latitude'] != null ? _toDouble(json['latitude']) : null,      // ✅
-        longitude: json['longitude'] != null ? _toDouble(json['longitude']) : null,   // ✅
+        latitude: json['latitude'] != null ? _toDouble(json['latitude']) : null,
+        longitude: json['longitude'] != null ? _toDouble(json['longitude']) : null,
+        views: _toInt(json['views'], 0),           // ✅ lu depuis la colonne
         estFavori: json['estFavori'] == true,
       );
 
@@ -85,6 +93,7 @@ class AnnonceModel {
         'devise': devise,
         'latitude': latitude,
         'longitude': longitude,
+        'views': views,                           // ✅ sérialisé
         'estFavori': estFavori,
       };
 
@@ -102,6 +111,7 @@ class AnnonceModel {
     String? devise,
     double? latitude,
     double? longitude,
+    int? views,                                   // ✅
     bool? estFavori,
   }) {
     return AnnonceModel(
@@ -118,6 +128,7 @@ class AnnonceModel {
       devise: devise ?? this.devise,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      views: views ?? this.views,                 // ✅
       estFavori: estFavori ?? this.estFavori,
     );
   }

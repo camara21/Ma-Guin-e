@@ -7,13 +7,142 @@ class CulteDetailPage extends StatelessWidget {
   final Map<String, dynamic> lieu;
   const CulteDetailPage({super.key, required this.lieu});
 
+  // ---------- Helpers ----------
+  String _norm(dynamic v) {
+    final s = (v ?? '').toString().toLowerCase().trim();
+    if (s.isEmpty) return '';
+    return s
+        .replaceAll(RegExp(r'[àáâãäå]'), 'a')
+        .replaceAll(RegExp(r'[èéêë]'), 'e')
+        .replaceAll(RegExp(r'[ìíîï]'), 'i')
+        .replaceAll(RegExp(r'[òóôõö]'), 'o')
+        .replaceAll(RegExp(r'[ùúûü]'), 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll('œ', 'oe');
+  }
+
+  bool _isMosquee() {
+    final s = _norm('${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
+    return s.contains('mosquee');
+  }
+
+  bool _isEglise() {
+    final s = _norm('${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
+    return s.contains('eglise') || s.contains('cathedrale');
+  }
+
   void _ouvrirDansGoogleMaps(double lat, double lng) async {
     final Uri uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint("Impossible d’ouvrir Google Maps");
     }
+  }
+
+  void _showDonSoonDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Merci ❤️'),
+        content: const Text(
+          "Très bientôt, vous pourrez faire un don directement depuis l'application.\n\n"
+          "Votre générosité aidera ce lieu à continuer ses actions pour la communauté.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------- Widget CTA Don ----------
+  Widget _donationSection(BuildContext context) {
+    final isMosquee = _isMosquee();
+    final isEglise  = _isEglise();
+
+    final Color accent   = isMosquee ? const Color(0xFF009460)
+                         : isEglise  ? const Color(0xFFCE1126)
+                                     : const Color(0xFF113CFC);
+
+    final IconData icon  = isMosquee ? Icons.mosque
+                         : isEglise  ? Icons.church
+                                     : Icons.handshake;
+
+    final String titre   = isMosquee ? 'Soutenez votre mosquée'
+                         : isEglise  ? 'Soutenez votre église'
+                                     : 'Soutenir ce lieu';
+
+    final String texte   = isMosquee
+        ? "« Fi sabilillah » – pour la cause d’Allah. Même un petit geste peut aider à payer l’eau, l’électricité et l’entretien afin que la mosquée reste ouverte et accueillante."
+        : isEglise
+            ? "Un geste d’amour pour l’Église : aidez aux charges, à l’accueil des fidèles et aux actions solidaires. Chaque don compte pour faire vivre la communauté."
+            : "Aidez ce lieu à continuer de servir la communauté : entretien, charges, accueil… Même une petite contribution a un grand impact.";
+
+    final String btn     = isMosquee ? 'Contribuer (fi sabilillah)'
+                         : isEglise  ? 'Faire un don'
+                                     : 'Soutenir';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [accent.withOpacity(0.10), accent.withOpacity(0.04)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withOpacity(0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: accent.withOpacity(0.15),
+                foregroundColor: accent,
+                child: Icon(icon),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                titre,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            texte,
+            style: const TextStyle(height: 1.35, fontSize: 14.5),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _showDonSoonDialog(context),
+              icon: const Icon(Icons.volunteer_activism),
+              label: Text(btn),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -29,10 +158,8 @@ class CulteDetailPage extends StatelessWidget {
             : [];
 
     // description: supporte `description`, `desc` ou `resume`.
-    final String? description = (lieu['description'] ??
-            lieu['desc'] ??
-            lieu['resume'])
-        ?.toString();
+    final String? description =
+        (lieu['description'] ?? lieu['desc'] ?? lieu['resume'])?.toString();
 
     final double latitude = (lieu['latitude'] ?? 0).toDouble();
     final double longitude = (lieu['longitude'] ?? 0).toDouble();
@@ -153,7 +280,10 @@ class CulteDetailPage extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 26),
+                // ---- Section Don (juste sous la carte) ----
+                _donationSection(context),
+
+                const SizedBox(height: 18),
                 Center(
                   child: ElevatedButton.icon(
                     onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
@@ -379,7 +509,8 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
                 child: Image.network(
                   url,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white, size: 64),
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.broken_image, color: Colors.white, size: 64),
                 ),
               ),
             ),

@@ -271,13 +271,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
+  // étoiles un peu plus fines & discrètes
   Widget _buildStars(int rating, {void Function(int)? onTap}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
         return IconButton(
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          iconSize: 22,
           icon: Icon(i < rating ? Icons.star : Icons.star_border, color: Colors.amber),
           onPressed: onTap == null ? null : () => onTap(i + 1),
         );
@@ -489,7 +491,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const Divider(height: 30),
 
-            // ---------- Avis (saisie)
+            // ---------- Avis (saisie) — même style discret + JAUNE DOUX
             const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
             if (_dejaNote)
               const Padding(
@@ -503,19 +505,39 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             TextField(
               controller: _avisController,
               maxLines: 3,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: "Votre commentaire",
-                border: OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.all(12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade400),
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
                 onPressed: _envoyerAvis,
-                icon: const Icon(Icons.send),
-                label: Text(_dejaNote ? "Mettre à jour l'avis" : "Envoyer l'avis"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                icon: const Icon(Icons.send, size: 18, color: Colors.black87),
+                label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFDE68A), // jaune doux
+                  foregroundColor: Colors.black87,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
               ),
             ),
 
@@ -569,7 +591,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const SizedBox(height: 30),
 
-            // ---------- Liste des avis (nom + photo depuis _userCache[auteur_id])
+            // ---------- Liste des avis
             const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             if (_avis.isEmpty)
@@ -616,7 +638,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               ),
 
             const SizedBox(height: 16),
-            // (aucun bouton ici : déplacé en bottomNavigationBar)
           ]),
         ),
       ),

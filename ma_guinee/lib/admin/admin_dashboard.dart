@@ -49,68 +49,103 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Future<void> _boot() async {
-    await _loadMetrics();
-    await _loadCharts();
-    await _loadTopCities();
-    await _loadOnline();
-    await _loadActiveChats();
-    await _loadReportsCounters(); // ← important pour la tuile Signalements
-  }
-
-  // ───────── metrics globales (RPC si dispo)
-  Future<void> _loadMetrics() async {
     setState(() {
       loading = true;
       error = null;
     });
     try {
-      final res = await SB.i.rpc('rpc_metrics_overview');
-      if (res is Map<String, dynamic>) {
-        metrics = res;
-      } else if (res is List && res.isNotEmpty && res.first is Map) {
-        metrics = Map<String, dynamic>.from(res.first as Map);
-      } else {
-        metrics = {};
-      }
+      // Lance les chargements (plutôt en parallèle)
+      await Future.wait([
+        _loadMetrics(),
+        _loadCharts(),
+        _loadTopCities(),
+        _loadOnline(),
+        _loadActiveChats(),
+        _loadReportsCounters(),
+      ]);
     } catch (e) {
-      error = '$e';
+      if (!mounted) return;
+      setState(() => error = '$e');
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (!mounted) return;
+      setState(() => loading = false);
+    }
+  }
+
+  // ───────── metrics globales (RPC si dispo)
+  Future<void> _loadMetrics() async {
+    try {
+      final res = await SB.i.rpc('rpc_metrics_overview');
+      Map<String, dynamic> m;
+      if (res is Map<String, dynamic>) {
+        m = res;
+      } else if (res is List && res.isNotEmpty && res.first is Map) {
+        m = Map<String, dynamic>.from(res.first as Map);
+      } else {
+        m = {};
+      }
+      if (!mounted) return;
+      setState(() {
+        metrics = m;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => error = '$e');
     }
   }
 
   // ───────── graphe J-N
   Future<void> _loadCharts() async {
     try {
-      final data = await SB.i
-          .rpc('rpc_daily_content', params: {'_table': currentTable, '_days': days});
+      final data = await SB.i.rpc(
+        'rpc_daily_content',
+        params: {'_table': currentTable, '_days': days},
+      );
       final list = (data is List) ? data : <dynamic>[];
-      series = list.map<_Point>((e) {
+      final s = list.map<_Point>((e) {
         final m = Map<String, dynamic>.from(e as Map);
-        return _Point(DateTime.parse(m['d'] as String), (m['total'] as num? ?? 0).toInt());
+        return _Point(
+          DateTime.parse(m['d'] as String),
+          (m['total'] as num? ?? 0).toInt(),
+        );
       }).toList()
         ..sort((a, b) => a.d.compareTo(b.d));
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        series = s;
+      });
     } catch (_) {
-      series = [];
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        series = [];
+      });
     }
   }
 
   // ───────── top villes
   Future<void> _loadTopCities() async {
     try {
-      final data = await SB.i
-          .rpc('rpc_top_cities', params: {'_table': currentTable, '_limit': 8});
+      final data = await SB.i.rpc(
+        'rpc_top_cities',
+        params: {'_table': currentTable, '_limit': 8},
+      );
       final list = (data is List) ? data : <dynamic>[];
-      topCities = list.map<_TopCity>((e) {
+      final cities = list.map<_TopCity>((e) {
         final m = Map<String, dynamic>.from(e as Map);
-        return _TopCity((m['ville'] ?? '-') as String, (m['total'] as num? ?? 0).toInt());
+        return _TopCity(
+          (m['ville'] ?? '-') as String,
+          (m['total'] as num? ?? 0).toInt(),
+        );
       }).toList();
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        topCities = cities;
+      });
     } catch (_) {
-      topCities = [];
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        topCities = [];
+      });
     }
   }
 
@@ -119,7 +154,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     try {
       final data = await SB.i.rpc('rpc_online_users');
       final list = (data is List) ? data : <dynamic>[];
-      onlineUsers = list.map<_OnlineUser>((e) {
+      final users = list.map<_OnlineUser>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _OnlineUser(
           (m['user_id'] ?? '').toString(),
@@ -128,20 +163,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
           (m['ip'] ?? '') as String,
         );
       }).toList();
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        onlineUsers = users;
+      });
     } catch (_) {
-      onlineUsers = [];
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        onlineUsers = [];
+      });
     }
   }
 
   // ───────── active chats
   Future<void> _loadActiveChats() async {
     try {
-      final data =
-          await SB.i.rpc('rpc_active_chats', params: {'_minutes': 60, '_limit': 10});
+      final data = await SB.i.rpc(
+        'rpc_active_chats',
+        params: {'_minutes': 60, '_limit': 10},
+      );
       final list = (data is List) ? data : <dynamic>[];
-      activeChats = list.map<_ActiveChat>((e) {
+      final chats = list.map<_ActiveChat>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _ActiveChat(
           (m['context_type'] ?? '-') as String,
@@ -149,10 +191,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
           (m['messages'] as num? ?? 0).toInt(),
         );
       }).toList();
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        activeChats = chats;
+      });
     } catch (_) {
-      activeChats = [];
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        activeChats = [];
+      });
     }
   }
 
@@ -174,6 +221,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           .lt('created_at', end.toIso8601String());
       final today = (todayRes as List).length;
 
+      if (!mounted) return;
       // patch dans metrics au besoin
       metrics ??= {};
       final m = Map<String, dynamic>.from(metrics!);
@@ -189,12 +237,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Future<void> _refreshAll() async {
-    await _loadMetrics();
-    await _loadCharts();
-    await _loadTopCities();
-    await _loadOnline();
-    await _loadActiveChats();
-    await _loadReportsCounters();
+    await Future.wait([
+      _loadMetrics(),
+      _loadCharts(),
+      _loadTopCities(),
+      _loadOnline(),
+      _loadActiveChats(),
+      _loadReportsCounters(),
+    ]);
   }
 
   @override
@@ -218,12 +268,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
           IconButton(
             tooltip: 'Déconnexion',
             onPressed: () async {
+              // IMPORTANT :
+              // 1) On se contente de signOut
+              // 2) PAS de navigation ici → le listener global (main.dart)
+              //    va gérer la redirection proprement (évite double push/flash)
               await SB.i.auth.signOut();
-              if (!mounted) return;
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                AppRoutes.splash,
-                (route) => false,
-              );
             },
             icon: const Icon(Icons.logout),
           ),
@@ -510,8 +559,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     right: 10,
                     top: 10,
                     child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(999),
@@ -532,8 +580,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return InkWell(
           onTap: () {
             Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) =>
-                  ContentAdvancedPage(title: s.name, table: s.table),
+              builder: (_) => ContentAdvancedPage(title: s.name, table: s.table),
             ));
           },
           child: withBadge,
@@ -607,8 +654,12 @@ class _LineChartPainter extends CustomPainter {
     if (pts.isEmpty) return;
 
     const margin = 24.0;
-    final area =
-        Rect.fromLTWH(margin, margin, size.width - 2 * margin, size.height - 2 * margin);
+    final area = Rect.fromLTWH(
+      margin,
+      margin,
+      size.width - 2 * margin,
+      size.height - 2 * margin,
+    );
 
     final axis = Paint()
       ..color = const Color(0xFFBDBDBD)

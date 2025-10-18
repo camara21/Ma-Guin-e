@@ -26,34 +26,54 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final supabase = Supabase.instance.client;
       final email = _emailController.text.trim().toLowerCase();
+
       final res = await supabase.auth.signInWithPassword(
         email: email,
         password: _passwordController.text,
       );
 
-      if (res.user == null) {
-        throw AuthException("Email ou mot de passe incorrect");
+      final user = res.user;
+      if (user == null) {
+        throw const AuthException("Email ou mot de passe incorrect");
       }
 
+      // Met à jour ton provider (utile pour le reste de l’app)
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.mainNav,
-          (_) => false,
-        );
+      // 🔑 Lis le rôle DIRECTEMENT en SQL pour choisir la bonne route SANS passer par Home
+      String dest = AppRoutes.mainNav;
+      try {
+        final row = await supabase
+            .from('utilisateurs')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        final role = (row?['role'] as String?)?.toLowerCase() ?? '';
+        if (role == 'admin' || role == 'owner') {
+          dest = AppRoutes.adminCenter; // -> /admin direct
+        }
+      } catch (_) {
+        // En cas d'erreur SQL on tombe sur mainNav, mais on n’envoie JAMAIS Home d’abord.
+        dest = AppRoutes.mainNav;
       }
+
+      if (!mounted) return;
+
+      // ⛔️ Pas de passage via Home : on remplace toute la stack par la destination finale
+      Navigator.of(context).pushNamedAndRemoveUntil(dest, (_) => false);
     } on AuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur : ${e.toString()}")),
       );
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -88,14 +108,8 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
-                // Logo ajouté
-                Image.asset(
-                  'assets/logo_guinee.png',
-                  height: 80,
-                  fit: BoxFit.contain,
-                ),
+                Image.asset('assets/logo_guinee.png', height: 80, fit: BoxFit.contain),
                 const SizedBox(height: 16),
-
                 const Text(
                   "Bienvenue sur Ma Guinée !",
                   style: TextStyle(
@@ -115,11 +129,8 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: "Email",
                     filled: true,
                     fillColor: Colors.white,
-                    prefixIcon:
-                        const Icon(Icons.email, color: Color(0xFFCE1126)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                    prefixIcon: const Icon(Icons.email, color: Color(0xFFCE1126)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
                   ),
                   validator: (val) =>
                       val == null || !val.contains('@') ? "Email invalide" : null,
@@ -134,21 +145,15 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: "Mot de passe",
                     filled: true,
                     fillColor: Colors.white,
-                    prefixIcon:
-                        const Icon(Icons.lock, color: Color(0xFF009460)),
+                    prefixIcon: const Icon(Icons.lock, color: Color(0xFF009460)),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
+                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
                         color: Colors.grey,
                       ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
                   ),
                   validator: (val) =>
                       val == null || val.length < 6 ? "Mot de passe trop court" : null,
@@ -158,8 +163,7 @@ class _LoginPageState extends State<LoginPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/reset_password'),
+                    onPressed: () => Navigator.pushNamed(context, '/reset_password'),
                     child: const Text(
                       "Mot de passe oublié ?",
                       style: TextStyle(
@@ -182,21 +186,13 @@ class _LoginPageState extends State<LoginPage> {
                             padding: const EdgeInsets.symmetric(vertical: 15),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFCE1126),
-                                  Color(0xFFFCD116),
-                                  Color(0xFF009460),
-                                ],
+                                colors: [Color(0xFFCE1126), Color(0xFFFCD116), Color(0xFF009460)],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
                               ),
                               borderRadius: BorderRadius.circular(28),
                               boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 5,
-                                  offset: Offset(0, 2),
-                                ),
+                                BoxShadow(color: Colors.black12, blurRadius: 5, offset: Offset(0, 2)),
                               ],
                             ),
                             child: const Center(
@@ -215,10 +211,8 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                 const SizedBox(height: 22),
 
-                // Bouton "Créer un compte" discret
                 TextButton(
-                  onPressed: () =>
-                      Navigator.pushNamed(context, AppRoutes.register),
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: Size.zero,

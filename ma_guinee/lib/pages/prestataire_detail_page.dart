@@ -42,6 +42,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     _loadAvis();
   }
 
+  @override
+  void dispose() {
+    _avisController.dispose();
+    super.dispose();
+  }
+
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
@@ -98,13 +104,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
-  // ——— AVIS : lecture (nouveau schéma) ———
+  // ——— AVIS : lecture ———
   Future<void> _loadAvis() async {
     try {
       final id = widget.data['id']?.toString();
       if (id == null || id.isEmpty) return;
 
-      // 1) Avis
       final res = await _client
           .from('avis_prestataires')
           .select('auteur_id, etoiles, commentaire, created_at')
@@ -113,7 +118,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
       final list = List<Map<String, dynamic>>.from(res);
 
-      // 2) Moyenne
       final notes = list
           .map<int>((e) => (e['etoiles'] as num?)?.toInt() ?? 0)
           .where((n) => n > 0)
@@ -121,7 +125,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       final moyenne =
           notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
 
-      // 3) Auteurs (batch via .or)
       final ids = list
           .map((e) => e['auteur_id'])
           .where((v) => v != null)
@@ -148,19 +151,16 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         _usersById = usersById;
         _noteMoyenne = moyenne;
       });
-    } catch (e) {
-      // silencieux mais tu peux _snack(e.toString());
-    }
+    } catch (_) {}
   }
 
-  // ——— AVIS : insert/update (1 seul par user) ———
+  // ——— AVIS : upsert ———
   Future<void> _ajouterOuModifierAvis({
     required String prestataireId,
     required String utilisateurId,
     required int note,
     required String commentaire,
   }) async {
-    // Upsert direct (conflit sur prestataire_id + auteur_id)
     await _client.from('avis_prestataires').upsert(
       {
         'prestataire_id': prestataireId,
@@ -434,6 +434,25 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
+  // Étoiles plus fines
+  Widget _starsInput() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          iconSize: 22,
+          icon: Icon(
+            i < _noteUtilisateur ? Icons.star : Icons.star_border,
+            color: Colors.amber,
+          ),
+          onPressed: () => setState(() => _noteUtilisateur = i + 1),
+        );
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
@@ -599,33 +618,50 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               const SizedBox(height: 16),
               const Text("Laisser un avis",
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              Row(
-                children: List.generate(5, (i) {
-                  return IconButton(
-                    icon: Icon(
-                      i < _noteUtilisateur ? Icons.star : Icons.star_border,
-                      color: Colors.amber,
-                    ),
-                    onPressed: () => setState(() => _noteUtilisateur = i + 1),
-                  );
-                }),
-              ),
+
+              _starsInput(),
+
               TextField(
                 controller: _avisController,
-                maxLines: 2,
-                decoration: const InputDecoration(
+                maxLines: 3,
+                decoration: InputDecoration(
                   hintText: "Votre avis",
-                  border: OutlineInputBorder(),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  contentPadding: const EdgeInsets.all(12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.grey.shade400),
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: _envoyerAvis,
-                icon: const Icon(Icons.send),
-                label: const Text("Envoyer"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFCD116),
-                  foregroundColor: Colors.black,
+              const SizedBox(height: 8),
+
+              // ▼▼ Bouton jaune discret ▼▼
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton.icon(
+                  onPressed: _envoyerAvis,
+                  icon: const Icon(Icons.send, size: 18, color: Colors.black87),
+                  label: const Text("Envoyer"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFDE68A), // jaune doux (amber-300)
+                    foregroundColor: Colors.black87,
+                    elevation: 0,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                 ),
               ),
             ],

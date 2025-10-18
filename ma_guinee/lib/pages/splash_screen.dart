@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
-import '../routes.dart';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../routes.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,19 +11,31 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  Timer? _t;
+  bool _navigated = false; // ← empêche tout deuxième push
+
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 5000), _handleRedirect); // 5 secondes
+    // Garde ton délai (5s). Tu pourras le réduire plus tard si besoin.
+    _t = Timer(const Duration(milliseconds: 5000), _handleRedirectOnce);
   }
 
-  void _handleRedirect() {
+  void _handleRedirectOnce() {
+    if (_navigated || !mounted) return; // ← sécurité anti-double
+    _navigated = true;
+
     final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      Navigator.pushReplacementNamed(context, AppRoutes.mainNav);
-    } else {
-      Navigator.pushReplacementNamed(context, AppRoutes.welcome);
-    }
+    final dest = (user != null) ? AppRoutes.mainNav : AppRoutes.welcome;
+
+    // replacement = on remplace le splash (pas d’empilement)
+    Navigator.of(context).pushReplacementNamed(dest);
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel(); // ← évite un callback tardif après dispose
+    super.dispose();
   }
 
   @override
@@ -34,58 +46,36 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Logo SANS glow
-            Image.asset(
-              'assets/logo_guinee.png',
-              height: 180,
-            ),
-
+            Image.asset('assets/logo_guinee.png', height: 180),
             const SizedBox(height: 38),
-
-            // Texte principal AVEC glow
             Text(
               "Soneya",
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 letterSpacing: 2,
                 shadows: [
-                  Shadow(
-                    blurRadius: 5,
-                    color: Colors.white.withOpacity(0.95),
-                  ),
-                  Shadow(
-                    blurRadius: 8,
-                    color: Colors.white.withOpacity(0.5),
-                  ),
+                  Shadow(blurRadius: 5, color: Colors.white.withOpacity(0.95)),
+                  Shadow(blurRadius: 8, color: Colors.white.withOpacity(0.5)),
                 ],
               ),
-              textAlign: TextAlign.center,
             ),
-
             const SizedBox(height: 10),
-
-            // Slogan AVEC glow
             Text(
               "Là où tout commence",
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w400,
                 color: Colors.white.withOpacity(0.92),
                 letterSpacing: 1.1,
                 shadows: [
-                  Shadow(
-                    blurRadius: 3,
-                    color: Colors.white.withOpacity(0.85),
-                  ),
-                  Shadow(
-                    blurRadius: 5,
-                    color: Colors.white.withOpacity(0.32),
-                  ),
+                  Shadow(blurRadius: 3, color: Colors.white.withOpacity(0.85)),
+                  Shadow(blurRadius: 5, color: Colors.white.withOpacity(0.32)),
                 ],
               ),
-              textAlign: TextAlign.center,
             ),
           ],
         ),

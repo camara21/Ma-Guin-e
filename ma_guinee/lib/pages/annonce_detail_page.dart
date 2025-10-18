@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+
 import 'package:ma_guinee/models/annonce_model.dart';
 import 'package:ma_guinee/pages/messages_annonce_page.dart';
 import 'package:share_plus/share_plus.dart';
@@ -21,40 +23,45 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   // ── Storage / URLs publics ─────────────────────────────────────
   static const String _annonceBucket = 'annonce-photos';
   String _publicUrl(String p) {
-    // Si c’est déjà une URL http(s), on renvoie tel quel
     if (p.startsWith('http://') || p.startsWith('https://')) return p;
-
-    // Sinon on fabrique l’URL publique depuis le bucket
     final path = p.startsWith('$_annonceBucket/')
         ? p.substring(_annonceBucket.length + 1)
         : p;
-    return Supabase.instance.client.storage.from(_annonceBucket).getPublicUrl(path);
+    return _sb.storage.from(_annonceBucket).getPublicUrl(path);
   }
 
   // UI
   final PageController _pageController = PageController();
-  int _currentImageIndex = 0; // compteur 1/N dès la première image
+  int _currentImageIndex = 0;
 
   // Données
   Map<String, dynamic>? vendeur;
   late Future<List<AnnonceModel>> _futureSimilaires;
   late Future<List<AnnonceModel>> _futureSellerAnnonces;
 
+  // Vues (compteur stocké dans public.annonces.views)
+  int _views = 0;            // toujours visible (0 par défaut)
+  bool _viewLogged = false;  // éviter l’incrément 2x dans la session
+
   // Style
   static const Color kPrimary = Color(0xFF1E3FCF);
   Color get _bg => Colors.grey.shade50;
 
-  bool _sendingReport = false;
-
   bool get _isOwner => _sb.auth.currentUser?.id == widget.annonce.userId;
   String? get _meId => _sb.auth.currentUser?.id;
+
+  // ── Format prix 10.000, 300.000 ───────────────────────────────
+  String _fmtInt(num v) =>
+      NumberFormat('#,##0', 'en_US').format(v.round()).replaceAll(',', '.');
 
   @override
   void initState() {
     super.initState();
+    _views = widget.annonce.views; // valeur DB ou 0 depuis le modèle
     _chargerInfosVendeur();
     _futureSimilaires = _fetchAnnoncesSimilaires();
     _futureSellerAnnonces = _fetchSellerAnnonces();
+    _incrementerVueEtCharger(); // incrémente côté serveur et récupère la valeur exacte
   }
 
   @override
@@ -63,34 +70,73 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     super.dispose();
   }
 
-  // ─── Récup (inchangé) ─────────────────────────────────────────
+  // ─── Incrément compteur (RPC: public.increment_annonce_view) ──
+  Future<void> _incrementerVueEtCharger() async {
+    if (_viewLogged) return;
+    _viewLogged = true;
+
+    try {
+      final v = await _sb.rpc('increment_annonce_view', params: {
+        '_annonce_id': widget.annonce.id,
+      });
+      if (v is int && mounted) setState(() => _views = v);
+    } catch (_) {
+      // Silencieux: si erreur (offline/droits), on garde la valeur actuelle.
+      // L’UI reste propre (au moins 0).
+    }
+  }
+
+  // ─── Récup vendeur & annonces ─────────────────────────────────
   Future<void> _chargerInfosVendeur() async {
-    final data = await _sb.from('utilisateurs').select().eq('id', widget.annonce.userId).maybeSingle();
-    if (mounted && data is Map<String, dynamic>) {
-      setState(() => vendeur = data);
+    try {
+      final data = await _sb
+          .from('utilisateurs')
+          .select()
+          .eq('id', widget.annonce.userId)
+          .maybeSingle();
+      if (mounted && data is Map<String, dynamic>) {
+        setState(() => vendeur = data);
+      }
+    } catch (_) {
+      // On laisse vendeur = null, des messages clairs sont gérés dans le widget
     }
   }
 
   Future<List<AnnonceModel>> _fetchAnnoncesSimilaires() async {
-    final raw = await _sb
-        .from('annonces')
-        .select()
-        .eq('ville', widget.annonce.ville)
-        .neq('id', widget.annonce.id)
-        .limit(5);
-    final list = raw is List ? raw : <dynamic>[];
-    return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
+    try {
+      final raw = await _sb
+          .from('annonces')
+          .select()
+          .eq('ville', widget.annonce.ville)
+          .neq('id', widget.annonce.id)
+          .limit(5);
+      final list = raw is List ? raw : <dynamic>[];
+      return list
+          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      // En cas d’erreur réseau, renvoyer liste vide (un message s’affiche)
+      return <AnnonceModel>[];
+    }
   }
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
-    final raw = await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
-    final list = raw is List ? raw : <dynamic>[];
-    return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
+    try {
+      final raw = await _sb
+          .from('annonces')
+          .select()
+          .eq('user_id', widget.annonce.userId);
+      final list = raw is List ? raw : <dynamic>[];
+      return list
+          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return <AnnonceModel>[];
+    }
   }
 
   // ─── Header images + actions ──────────────────────────────────
   Widget _imagesHeader() {
-    // On convertit toutes les images en URL publiques
     final photos = widget.annonce.images.map(_publicUrl).toList();
     final hasImages = photos.isNotEmpty;
 
@@ -112,14 +158,16 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       width: double.infinity,
                       errorBuilder: (_, __, ___) => Container(
                         color: Colors.grey.shade200,
-                        child: const Center(child: Icon(Icons.image_not_supported)),
+                        child: const Center(
+                            child: Icon(Icons.image_not_supported)),
                       ),
                     ),
                   ),
                 )
               : Container(
                   color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.image, size: 60, color: Colors.grey)),
+                  child: const Center(
+                      child: Icon(Icons.image, size: 60, color: Colors.grey)),
                 ),
         ),
 
@@ -129,11 +177,18 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             right: 16,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-              child: Text('${_currentImageIndex + 1}/${photos.length}', style: const TextStyle(color: Colors.white)),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1}/${photos.length}',
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
           ),
 
+        // Back
         Positioned(
           top: 12,
           left: 12,
@@ -146,6 +201,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           ),
         ),
 
+        // Actions
         Positioned(
           top: 12,
           right: 12,
@@ -154,8 +210,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               CircleAvatar(
                 backgroundColor: Colors.black54,
                 child: IconButton(
-                  icon: Icon(widget.annonce.estFavori ? Icons.favorite : Icons.favorite_border, color: Colors.white),
-                  onPressed: () => setState(() => widget.annonce.estFavori = !widget.annonce.estFavori),
+                  icon: Icon(
+                    widget.annonce.estFavori
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    color: Colors.white,
+                  ),
+                  onPressed: () => setState(
+                    () => widget.annonce.estFavori = !widget.annonce.estFavori,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -164,9 +227,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 child: PopupMenuButton<String>(
                   color: Colors.white,
                   icon: const Icon(Icons.more_vert, color: Colors.white),
-                  onSelected: (v) => v == 'share' ? _shareAnnonce() : _openReportSheet(),
+                  onSelected: (v) =>
+                      v == 'share' ? _shareAnnonce() : _openReportSheet(),
                   itemBuilder: (_) => _isOwner
-                      ? const [PopupMenuItem(value: 'share', child: Text('Partager'))]
+                      ? const [
+                          PopupMenuItem(value: 'share', child: Text('Partager')),
+                        ]
                       : const [
                           PopupMenuItem(value: 'share', child: Text('Partager')),
                           PopupMenuItem(value: 'report', child: Text('Signaler')),
@@ -218,7 +284,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     final a = widget.annonce;
     Share.share([
       a.titre,
-      '${a.prix.toInt()} ${a.devise}',
+      '${_fmtInt(a.prix)} ${a.devise}',
       if (a.ville.isNotEmpty) 'Ville : ${a.ville}',
       if (a.description.isNotEmpty) a.description,
     ].join('\n'));
@@ -226,37 +292,61 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   void _openReportSheet() {
     if (_meId == null) return _snack('Connexion requise pour signaler.');
-    if (_isOwner) return _snack('Vous ne pouvez pas signaler votre propre annonce.');
+    if (_isOwner) {
+      return _snack('Vous ne pouvez pas signaler votre propre annonce.');
+    }
 
-    final reasons = ['Fausse annonce', 'Tentative de fraude', 'Contenu inapproprié', 'Mauvaise expérience', 'Usurpation d’identité', 'Autre'];
+    final reasons = [
+      'Fausse annonce',
+      'Tentative de fraude',
+      'Contenu inapproprié',
+      'Mauvaise expérience',
+      'Usurpation d’identité',
+      'Autre'
+    ];
     final ctrl = TextEditingController();
     String selected = reasons.first;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => Padding(
-          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Signaler cette annonce', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const Text('Signaler cette annonce',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: reasons
-                    .map((r) => ChoiceChip(label: Text(r), selected: selected == r, onSelected: (_) => setLocal(() => selected = r)))
+                    .map((r) => ChoiceChip(
+                          label: Text(r),
+                          selected: selected == r,
+                          onSelected: (_) => setLocal(() => selected = r),
+                        ))
                     .toList(),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: ctrl,
                 maxLines: 4,
-                decoration: const InputDecoration(hintText: 'Expliquez brièvement… (facultatif)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  hintText: 'Expliquez brièvement… (facultatif)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -268,22 +358,25 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     backgroundColor: kPrimary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: () async {
                     Navigator.pop(ctx);
+                    final a = widget.annonce;
                     await _sb.from('reports').insert({
                       'context': 'annonce',
-                      'cible_id': widget.annonce.id,
-                      'owner_id': widget.annonce.userId,
+                      'cible_id': a.id,
+                      'owner_id': a.userId,
                       'reported_by': _meId!,
                       'reason': selected,
                       'details': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
-                      'ville': widget.annonce.ville,
-                      'titre': widget.annonce.titre,
-                      'prix': widget.annonce.prix,
-                      'devise': widget.annonce.devise,
-                      'telephone': widget.annonce.telephone,
+                      'ville': a.ville,
+                      'titre': a.titre,
+                      'prix': a.prix,
+                      'devise': a.devise,
+                      'telephone': a.telephone,
                       'created_at': DateTime.now().toIso8601String(),
                     });
                     _snack('Signalement envoyé. Merci.');
@@ -302,16 +395,30 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSellerAnnonces,
       builder: (ctx, snap) {
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              "Désolé, impossible de charger les informations du vendeur pour l’instant. "
+              "Vérifiez votre connexion puis réessayez.",
+              style: TextStyle(color: Colors.black54),
+            ),
+          );
+        }
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
-        final autres = (snap.data ?? []).where((a) => a.id != widget.annonce.id).toList();
+
+        final toutes = (snap.data ?? []);
+        final totalAnnonces = toutes.length; // ✅ total
 
         final u = vendeur ?? {};
         final prenom = (u['prenom'] ?? '').toString().trim();
         final nom = (u['nom'] ?? '').toString().trim();
         final fallback = (u['name'] ?? u['username'] ?? '').toString().trim();
-        final displayName = ('$prenom $nom').trim().isNotEmpty ? ('$prenom $nom').trim() : (fallback.isNotEmpty ? fallback : 'Utilisateur');
+        final displayName = ('$prenom $nom').trim().isNotEmpty
+            ? ('$prenom $nom').trim()
+            : (fallback.isNotEmpty ? fallback : 'Utilisateur');
 
         final photo = (u['photo_url'] ?? '').toString().trim();
         final hasPhoto = photo.isNotEmpty && photo.startsWith('http');
@@ -333,7 +440,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 child: hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
               ),
               title: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text("$membreDepuis • ${autres.length} annonces"),
+              subtitle: Text([
+                if (membreDepuis.isNotEmpty) membreDepuis,
+                '$totalAnnonces ${totalAnnonces > 1 ? 'annonces' : 'annonce'}'
+              ].join(' • ')),
             ),
           ],
         );
@@ -346,10 +456,21 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSellerAnnonces,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              "Nous n’arrivons pas à charger les autres annonces du vendeur. "
+              "Veuillez réessayer plus tard.",
+              style: TextStyle(color: Colors.black54),
+            ),
+          );
+        }
         if (snap.connectionState != ConnectionState.done) {
           return const SizedBox.shrink();
         }
-        final list = (snap.data ?? []).where((a) => a.id != widget.annonce.id).toList();
+        final list =
+            (snap.data ?? []).where((a) => a.id != widget.annonce.id).toList();
         if (list.isEmpty) return const SizedBox.shrink();
 
         return Column(
@@ -357,7 +478,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Les autres annonces de ce vendeur', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: Text('Les autres annonces de ce vendeur',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             SizedBox(
               height: 180,
@@ -367,12 +489,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
                   final a = list[i];
-                  final thumb = a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
+                  final thumb =
+                      a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
 
                   return GestureDetector(
                     onTap: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(builder: (_) => AnnonceDetailPage(annonce: a)),
+                      MaterialPageRoute(
+                        builder: (_) => AnnonceDetailPage(annonce: a),
+                      ),
                     ),
                     child: Container(
                       width: 150,
@@ -385,7 +510,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                         children: [
                           if (thumb != null)
                             ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(8)),
                               child: Image.network(
                                 thumb,
                                 height: 90,
@@ -395,7 +521,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                                   height: 90,
                                   width: 150,
                                   color: Colors.grey.shade200,
-                                  child: const Icon(Icons.image_not_supported),
+                                  child:
+                                      const Icon(Icons.image_not_supported),
                                 ),
                               ),
                             )
@@ -405,7 +532,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               width: 150,
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade200,
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(8)),
                               ),
                               child: const Icon(Icons.image),
                             ),
@@ -415,12 +543,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               a.titre,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text("${a.prix.toInt()} ${a.devise}", style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                            child: Text("${_fmtInt(a.prix)} ${a.devise}",
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.black54)),
                           ),
                         ],
                       ),
@@ -440,6 +571,16 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSimilaires,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              "Un problème empêche le chargement des annonces similaires. Réessayez plus tard.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black54),
+            ),
+          );
+        }
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -447,7 +588,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         if (list.isEmpty) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text("Pas d'annonce similaire pour ce produit dans votre ville.", textAlign: TextAlign.center),
+            child: Text(
+              "Pas d'annonce similaire pour ce produit dans votre ville.",
+              textAlign: TextAlign.center,
+            ),
           );
         }
         return Column(
@@ -455,7 +599,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text("D’autres annonces qui pourraient vous intéresser", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              child: Text("D’autres annonces qui pourraient vous intéresser",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             ),
             SizedBox(
               height: 200,
@@ -465,20 +610,35 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
                   final a = list[i];
-                  final thumb = a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
+                  final thumb =
+                      a.images.isNotEmpty ? _publicUrl(a.images.first) : null;
 
                   return GestureDetector(
-                    onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => AnnonceDetailPage(annonce: a))),
+                    onTap: () => Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AnnonceDetailPage(annonce: a),
+                      ),
+                    ),
                     child: Container(
                       width: 160,
-                      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (thumb != null)
                             ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                              child: Image.network(thumb, height: 100, width: 160, fit: BoxFit.cover),
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(8)),
+                              child: Image.network(
+                                thumb,
+                                height: 100,
+                                width: 160,
+                                fit: BoxFit.cover,
+                              ),
                             )
                           else
                             Container(
@@ -486,18 +646,27 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               width: 160,
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade200,
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(8)),
                               ),
                               child: const Icon(Icons.image),
                             ),
                           const SizedBox(height: 4),
                           Padding(
                             padding: const EdgeInsets.all(8),
-                            child: Text(a.titre, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            child: Text(
+                              a.titre,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text("${a.prix.toInt()} ${a.devise}", style: const TextStyle(color: Colors.black54)),
+                            child: Text("${_fmtInt(a.prix)} ${a.devise}",
+                                style:
+                                    const TextStyle(color: Colors.black54)),
                           ),
                         ],
                       ),
@@ -523,7 +692,13 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         decoration: BoxDecoration(
           color: _bg,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, -4))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            )
+          ],
         ),
         child: Row(
           children: [
@@ -533,7 +708,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: const BorderSide(color: kPrimary),
                   foregroundColor: kPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () {
                   final me = _meId;
@@ -564,13 +740,20 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   backgroundColor: kPrimary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () async {
                   final tel = a.telephone.trim();
-                  if (tel.isEmpty) return _snack('Numéro de téléphone indisponible.');
+                  if (tel.isEmpty) {
+                    _snack('Numéro de téléphone indisponible.');
+                    return;
+                  }
                   final ok = await canLaunchUrl(Uri.parse('tel:$tel'));
-                  if (!ok) return _snack('Impossible d’ouvrir l’application Téléphone.');
+                  if (!ok) {
+                    _snack("Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
+                    return;
+                  }
                   await launchUrl(Uri.parse('tel:$tel'));
                 },
                 icon: const Icon(Icons.call),
@@ -597,9 +780,56 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
               children: [
-                Text(a.titre, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                Text(
+                  a.titre,
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 8),
-                Text('${a.prix.toInt()} ${a.devise} • ${a.ville}', style: const TextStyle(fontSize: 16, color: Colors.black54)),
+
+                // Prix visible + Ville + Vues (compteur rapproché du bord droit)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '${_fmtInt(a.prix)} ${a.devise}',
+                              style: const TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.black87, // prix très lisible
+                              ),
+                            ),
+                            TextSpan(
+                              text: '  •  ${a.ville}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.black54, // ville en second plan
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8), // ← rapproché
+                      child: Row(
+                        children: [
+                          const Icon(Icons.remove_red_eye_outlined,
+                              size: 18, color: Colors.black45),
+                          const SizedBox(width: 4),
+                          Text('${_fmtInt(_views)} vues',
+                              style: const TextStyle(
+                                  fontSize: 13, color: Colors.black54)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
                 const SizedBox(height: 16),
                 Text(a.description),
                 const SizedBox(height: 18),
@@ -623,5 +853,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 }
