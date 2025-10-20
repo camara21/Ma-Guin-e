@@ -9,8 +9,40 @@ import 'cgu_bottom_sheet.dart';
 import '../services/message_service.dart';
 import '../routes.dart';
 
-// ✅ Jobs
+// Jobs
 import 'package:ma_guinee/pages/jobs/job_home_page.dart';
+
+/// --- Palette locale (indépendante) ---
+/// Accueil / App
+const _kMainPrimary         = Color(0xFF0077B6);
+const _kMainSecondary       = Color(0xFF00B4D8);
+// Santé
+const _kSantePrimary        = Color(0xFF009460);
+// Restaurants
+const _kRestoPrimary        = Color(0xFFE76F51);
+// Tourisme
+const _kTourismePrimary     = Color(0xFFDAA520);
+// Hôtels
+const _kHotelsPrimary       = Color(0xFF264653);
+// Billetterie / Évents
+const _kEventPrimary        = Color(0xFF7B2CBF);
+const _kEventSecondary      = Color(0xFFB5179E);
+// Prestataires
+const _kPrestatairesPrimary = Color(0xFF0F766E);
+// Annonces
+const _kAnnoncesPrimary     = Color(0xFF1E3A8A);
+// Messages (si besoin ailleurs)
+// const _kMessagesPrimary  = Color(0xFF2563EB);
+// Notifications
+const _kNotifPrimary        = Color(0xFFB91C1C);
+// Carte / Lieux / Logement
+const _kMapPrimary          = Color(0xFF2B6CB0);
+// Transport (non utilisé ici)
+// const _kTransportPrimary = Color(0xFF0E7490);
+// Aide
+const _kAidePrimary         = Color(0xFF475569);
+// Commerce (Jobs / Wali fen)
+const _kCommercePrimary     = Color(0xFF6B21A8);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,7 +51,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _notificationsNonLues = 0; // ← admin-only
+  int _notificationsNonLues = 0; // admin-only
   int _messagesNonLus = 0;
 
   StreamSubscription<List<Map<String, dynamic>>>? _notifSub;
@@ -62,18 +94,12 @@ class _HomePageState extends State<HomePage> {
 
     _notifSub?.cancel();
 
-    // Stream filtré côté serveur : user + type != message
     _notifSub = Supabase.instance.client
         .from('notifications:utilisateur_id=eq.${user.id}&type=neq.message')
-        .stream(primaryKey: ['id'])
-        .listen((rows) {
+        .stream(primaryKey: ['id']).listen((rows) {
       if (!mounted) return;
 
-      final nonLues = rows.where((n) {
-        final lu = n['lu'] == true;
-        return !lu; // type!=message déjà filtré dans le canal
-      }).length;
-
+      final nonLues = rows.where((n) => n['lu'] != true).length;
       setState(() => _notificationsNonLues = nonLues);
     });
   }
@@ -99,17 +125,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ========== UI helpers ==========
-  // taille icône adaptative pour mini-écrans
   double _adaptiveIconSize(BuildContext context) {
     final w = MediaBox.of(context).size.width;
-    if (w < 360) return 44; // plus petit sur téléphones étroits
-    return 51;              // valeur "standard"
+    if (w < 360) return 44;
+    return 51;
   }
 
-  // carte carrée pour une géométrie stable
   Widget _iconCard(Widget child) {
     final w = MediaBox.of(context).size.width;
-    final side = w < 360 ? 84.0 : 92.0; // réserve visuelle fixe pour l’icône
+    final side = w < 360 ? 84.0 : 92.0;
     return Container(
       width: side,
       height: side,
@@ -129,7 +153,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Badge discret : reprend EXACTEMENT la couleur de l’icône principale
   Widget _smallBadge(Color bgColor, IconData icon) {
     return Container(
       width: 16,
@@ -150,7 +173,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Icône Material + badge accordé à la couleur principale
   Widget _iconWithBadge({
     required IconData main,
     required Color color,
@@ -169,37 +191,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Icône Jobs
+  // Icône Jobs (Wali fen) -> commerce
   Widget _soneyaIcon(BuildContext context) {
-    const blue = Color(0xFF1976D2);
     final size = _adaptiveIconSize(context);
+    const color = _kCommercePrimary;
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          Center(child: Icon(Icons.work_outline, color: blue, size: size)),
-          Positioned(right: 6, bottom: 6, child: _smallBadge(blue, Icons.description)),
+          Icon(Icons.work_outline, color: color, size: size),
+          Positioned(right: 6, bottom: 6, child: _smallBadge(color, Icons.description)),
         ],
       ),
     );
   }
 
-  // ✅ Icône Logement (badge bleu cohérent)
+  // Icône Logement -> map
   Widget _logementIcon(BuildContext context) {
-    const primary = Color(0xFF0B3A6A); // bleu profond
     final size = _adaptiveIconSize(context);
+    const primary = _kMapPrimary;
     return _iconCard(
       Stack(
         clipBehavior: Clip.none,
         children: [
-          Center(child: Icon(Icons.apartment_rounded, color: primary, size: size)),
+          Icon(Icons.apartment_rounded, color: primary, size: size),
           Positioned(right: 6, bottom: 6, child: _smallBadge(primary, Icons.location_on_rounded)),
         ],
       ),
     );
   }
 
-  // tuile “bientôt”
   void _showComingSoon(BuildContext context,
       {required String title, required String message}) {
     showDialog(
@@ -207,7 +228,9 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))
+        ],
       ),
     );
   }
@@ -232,7 +255,6 @@ class _HomePageState extends State<HomePage> {
 
     int crossAxisCount = width > 600 ? 6 : 3;
 
-    // 🔧 ratio plus "haut" si petit écran ou texte agrandi → plus d'espace au label
     double childAspectRatio;
     if (width < 360 || textScale > 1.1) {
       childAspectRatio = 0.82;
@@ -250,7 +272,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          "Bienvenue ${utilisateur.prenom} 👋",
+          "Bienvenue ${utilisateur.prenom}",
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -259,15 +281,16 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
-          // 🔔 Notifications (admin-only) avec compteur rouge
+          // Notifications (admin-only) avec compteur rouge
           Padding(
             padding: const EdgeInsets.only(top: 8.0, right: 4),
             child: Stack(
               alignment: Alignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.notifications, color: Color(0xFFCE1126)),
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.notifications),
+                  icon: const Icon(Icons.notifications, color: _kNotifPrimary),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.notifications),
                 ),
                 if (_notificationsNonLues > 0)
                   Positioned(
@@ -293,7 +316,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.help_outline, color: Color(0xFF113CFC)),
+            icon: const Icon(Icons.help_outline, color: _kMainPrimary),
             onPressed: () => Navigator.pushNamed(context, AppRoutes.aide),
           ),
         ],
@@ -303,7 +326,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bannière
+            // Bannière Accueil -> mainPrimary → mainSecondary
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -318,7 +341,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFCE1126), Color(0xFFFCD116)],
+                  colors: [_kMainPrimary, _kMainSecondary],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -343,7 +366,12 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 34,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        shadows: [Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                        shadows: [
+                          Shadow(
+                              color: Colors.black26,
+                              blurRadius: 6,
+                              offset: Offset(0, 2))
+                        ],
                       ),
                     ),
                   ),
@@ -356,7 +384,12 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 16,
                         color: Colors.white,
                         fontWeight: FontWeight.w400,
-                        shadows: [Shadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 1))],
+                        shadows: [
+                          Shadow(
+                              color: Colors.black12,
+                              blurRadius: 6,
+                              offset: Offset(0, 1))
+                        ],
                       ),
                     ),
                   ),
@@ -376,121 +409,111 @@ class _HomePageState extends State<HomePage> {
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.campaign,
-                    color: const Color(0xFFCE1126),
+                    color: _kAnnoncesPrimary,
                     badge: Icons.add,
                     context: context,
                   ),
                   label: "Annonces",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.annonces),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.handyman_rounded,
-                    color: const Color(0xFFFCD116),
+                    color: _kPrestatairesPrimary,
                     badge: Icons.build_rounded,
                     context: context,
                   ),
                   label: "Prestataires",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.account_balance,
-                    color: const Color(0xFF009460),
+                    color: _kAidePrimary, // admin visuel sobre (gris bleuté)
                     badge: Icons.description_rounded,
                     context: context,
                   ),
                   label: "Services Admin",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.restaurant,
-                    color: const Color(0xFFFCD116),
+                    color: _kRestoPrimary,
                     badge: Icons.delivery_dining_rounded,
                     context: context,
                   ),
                   label: "Restaurants",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.resto),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.mosque,
-                    color: const Color(0xFF009460),
+                    color: _kMapPrimary,
                     badge: Icons.schedule_rounded,
                     context: context,
                   ),
                   label: "Lieux de culte",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.culte),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.theaters,
-                    color: const Color(0xFFCE1126),
+                    color: _kEventPrimary,
                     badge: Icons.music_note_rounded,
                     context: context,
                   ),
                   label: "Divertissement",
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.divertissement),
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.divertissement),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.travel_explore_rounded,
-                    color: const Color(0xFF009460),
+                    color: _kTourismePrimary,
                     badge: Icons.place_rounded,
                     context: context,
                   ),
                   label: "Tourisme",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.tourisme),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.local_hospital,
-                    color: const Color(0xFFFCD116),
+                    color: _kSantePrimary,
                     badge: Icons.health_and_safety_rounded,
                     context: context,
                   ),
                   label: "Santé",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.sante),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.hotel,
-                    color: const Color(0xFFCE1126),
+                    color: _kHotelsPrimary,
                     badge: Icons.star_rate_rounded,
                     context: context,
                   ),
                   label: "Hôtels",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.hotel),
                 ),
-
                 _ServiceTile(
-                  icon: _logementIcon(context),
+                  icon: _logementIcon(context), // _kMapPrimary
                   label: "Logement",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.logement),
                 ),
-
                 _ServiceTile(
-                  icon: _soneyaIcon(context),
+                  icon: _soneyaIcon(context), // _kCommercePrimary
                   label: "Wali fen",
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const JobHomePage()),
                   ),
                 ),
-
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.confirmation_num,
-                    color: const Color(0xFFFCD116),
+                    color: _kEventSecondary, // billetterie
                     badge: Icons.lock_clock,
                     context: context,
                   ),
@@ -499,7 +522,7 @@ class _HomePageState extends State<HomePage> {
                     context,
                     title: "Billetterie",
                     message:
-                        "Un service de billetterie sera bientôt disponible pour vendre vos billets d’événements avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
+                        "Un service de billetterie sera bientôt disponible pour vendre vos billets d'événements avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
                   ),
                 ),
               ],
@@ -513,7 +536,6 @@ class _HomePageState extends State<HomePage> {
 
 // ======= Widgets/utilitaires =======
 
-// tuile réutilisable : zone icône fixe + label centré, impossible de se chevaucher
 class _ServiceTile extends StatelessWidget {
   final Widget icon;
   final String label;
@@ -554,7 +576,7 @@ class _ServiceTile extends StatelessWidget {
   }
 }
 
-// MediaQuery “safe”
+// MediaQuery "safe"
 class MediaBox {
   static MediaQueryData of(BuildContext context) =>
       MediaQuery.maybeOf(context) ?? const MediaQueryData();

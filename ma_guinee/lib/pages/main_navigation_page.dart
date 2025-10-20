@@ -10,6 +10,12 @@ import 'carte_page.dart';
 import 'messages_page.dart';
 import 'profile_page.dart';
 
+// Palette (Ma Guinée)
+const Color kBleu = Color(0xFF113CFC);
+// const Color kJaune = Color(0xFFFCD116); // utile si besoin plus tard
+// const Color kVert  = Color(0xFF009460);
+// const Color kRouge = Color(0xFFCE1126);
+
 // Pastille du badge (affiche le nombre)
 class Badge extends StatelessWidget {
   final int count;
@@ -54,7 +60,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // Stream du badge Messages (nombre non lus)
+    // Stream du badge Messages (nombre de messages non lus)
     final Stream<int> badgeStream =
         (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
 
@@ -64,7 +70,15 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       const MessagesPage(),
       user != null
           ? ProfilePage(user: user)
-          : const Center(child: Text("Connectez-vous pour accéder à votre profil")),
+          : const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  "Connectez-vous pour accéder à votre profil",
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
     ];
 
     return WillPopScope(
@@ -82,22 +96,21 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
 
-          // Couleurs
-          selectedItemColor: Colors.red,
+          // Couleurs harmonisées
+          selectedItemColor: kBleu,
           unselectedItemColor: Colors.grey,
 
-          // TAILLE DES ICÔNES (↑)
+          // Taille des icônes
           iconSize: 30, // taille de base
           selectedIconTheme: const IconThemeData(size: 34),
           unselectedIconTheme: const IconThemeData(size: 28),
 
-          // (optionnel) Lisibilité labels
+          // Lisibilité des labels
           selectedFontSize: 12,
           unselectedFontSize: 12,
 
           items: [
             const BottomNavigationBarItem(
-              // Laisser le thème gérer la couleur (retire color: Colors.red)
               icon: Icon(Icons.home),
               label: 'Accueil',
             ),

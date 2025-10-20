@@ -1,8 +1,16 @@
+// lib/pages/sante_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+
+import 'sante_rdv_page.dart';
+
+/// Palette Santé
+const kHealthYellow = Color(0xFFFCD116);
+const kHealthGreen  = Color(0xFF009460);
+const kNeutralBorder = Color(0xFFE5E7EB);
 
 class SanteDetailPage extends StatefulWidget {
   final dynamic cliniqueId; // accepte int OU String (UUID)
@@ -29,7 +37,6 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   Future<void> _loadClinique() async {
     setState(() => loading = true);
 
-    // Laisse l'id dans son type d'origine (int si la colonne est int, String si UUID)
     final data = await Supabase.instance.client
         .from('cliniques')
         .select()
@@ -108,38 +115,56 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   }
   // -----------------------------------
 
-  void _contacterCentre(String numero) async {
-    final tel = numero.toString();
-    if (tel.isEmpty) return;
-    final uri = Uri.parse('tel:$tel');
+  // -------- Actions --------
+  Future<void> _contacterCentre(String numero) async {
+    final cleaned = numero.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleaned.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Numéro indisponible.")),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: cleaned);
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  void _ouvrirCarte() {
+  Future<void> _ouvrirCarte() async {
     final lat = (clinique?['latitude'] as num?)?.toDouble();
     final lng = (clinique?['longitude'] as num?)?.toDouble();
-    if (lat != null && lng != null) {
-      final url = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-      launchUrl(url);
-    } else {
+    if (lat == null || lng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Coordonnées non disponibles")),
+        const SnackBar(content: Text("Coordonnées non disponibles.")),
       );
+      return;
+    }
+    final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  void _prendreRendezVous() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Prise de rendez-vous'),
-        content: const Text("La fonctionnalité sera bientôt disponible."),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+  void _ouvrirRdv() {
+    final nom = (clinique?['nom'] ?? 'Centre médical').toString();
+    final tel = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
+    final address = (clinique?['adresse'] ?? clinique?['ville'] ?? '').toString();
+    final images = _imagesFromClinique();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SanteRdvPage(
+          cliniqueName: nom.isEmpty ? 'Centre médical' : nom,
+          phone: tel.trim().isEmpty ? null : tel.trim(),
+          address: address.trim().isEmpty ? null : address.trim(),
+          coverImage: images.isNotEmpty ? images.first : null,
+          primaryColor: kHealthGreen,
+        ),
       ),
     );
   }
+  // ------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -151,31 +176,43 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     }
 
     // Casts sûrs
-    final String nom = (clinique?['nom'] ?? 'Centre médical').toString();
+    final String nom =
+        (clinique?['nom'] ?? 'Centre médical').toString();
     final String ville = (clinique?['ville'] ?? 'Ville inconnue').toString();
-    final String specialites =
-        (clinique?['specialites'] ?? clinique?['description'] ?? 'Spécialité non renseignée').toString();
+    final String specialites = (clinique?['specialites'] ??
+            clinique?['description'] ??
+            'Spécialité non renseignée')
+        .toString();
     final List<String> images = _imagesFromClinique();
     final String horaires = (clinique?['horaires'] ??
-            "Lundi - Vendredi : 8h à 18h\nSamedi : 8h à 13h\nDimanche : Fermé")
+            "Lundi - Vendredi : 8h – 18h\nSamedi : 8h – 13h\nDimanche : Fermé")
         .toString();
-    final String tel = (clinique?['tel'] ?? '').toString();
+    final String tel = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
 
     final isWide = MediaQuery.of(context).size.width > 600;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(nom, style: const TextStyle(color: Color(0xFF009460), fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Color(0xFF009460)),
-        elevation: 1,
+        title: Text(nom, style: const TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [kHealthYellow, kHealthGreen], // JAUNE → VERT
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+          ),
+        ),
+        centerTitle: true,
       ),
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 700),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(16,16,16,120), // espace bas pour la barre d’actions
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // -------- Carrousel + miniatures + compteur --------
               if (images.isNotEmpty) ...[
@@ -250,7 +287,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: isActive ? const Color(0xFF113CFC) : Colors.transparent,
+                                color: isActive ? kHealthGreen : Colors.transparent,
                                 width: 2,
                               ),
                             ),
@@ -274,77 +311,98 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
                   child: Container(
                     height: 220,
                     color: Colors.grey.shade300,
-                    child: const Center(child: Icon(Icons.local_hospital, size: 70, color: Colors.grey)),
+                    child: const Center(
+                      child: Icon(Icons.local_hospital, size: 70, color: Colors.grey),
+                    ),
                   ),
                 ),
               // ---------------------------------------------------
 
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
               Text(
                 nom,
                 style: TextStyle(
-                  fontSize: isWide ? 30 : 26,
+                  fontSize: isWide ? 28 : 24,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFF113CFC),
+                  color: kHealthGreen,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Row(children: [
-                const Icon(Icons.location_city, color: Color(0xFFCE1126)),
+                const Icon(Icons.location_city, color: kHealthYellow),
                 const SizedBox(width: 8),
                 Text(ville),
               ]),
-              const SizedBox(height: 20),
 
+              const SizedBox(height: 18),
               const Text("Spécialités :", style: TextStyle(fontWeight: FontWeight.w600)),
               Text(specialites),
-              const SizedBox(height: 18),
 
+              const SizedBox(height: 16),
               const Text("Horaires :", style: TextStyle(fontWeight: FontWeight.w600)),
               Text(horaires),
-              const SizedBox(height: 28),
 
-              Row(children: [
-                if (tel.isNotEmpty)
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.call),
-                      label: const Text("Contacter"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF009460),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                      ),
-                      onPressed: () => _contacterCentre(tel),
-                    ),
-                  ),
-                if (tel.isNotEmpty) const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.calendar_month),
-                    label: const Text("Rendez-vous"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFCE1126),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    ),
-                    onPressed: _prendreRendezVous,
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 22),
-
+              const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: _ouvrirCarte,
                 icon: const Icon(Icons.map),
                 label: const Text("Localiser sur la carte"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFCD116),
+                  backgroundColor: kHealthYellow,
                   foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ]),
+          ),
+        ),
+      ),
+
+      // -------- Barre d’actions collée en bas (Appeler / Rendez-vous) --------
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 10,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: tel.trim().isEmpty ? null : () => _contacterCentre(tel),
+                  icon: const Icon(Icons.call_rounded),
+                  label: const Text("Appeler"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kHealthGreen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _ouvrirRdv,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text("Rendez-vous"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kHealthYellow,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

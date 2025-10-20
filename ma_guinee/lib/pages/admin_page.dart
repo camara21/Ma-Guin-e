@@ -4,11 +4,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 // ================== Palette Guinée ==================
-const kGNFRed    = Color(0xFFCE1126);
+const kGNFRed = Color(0xFFCE1126);
 const kGNFYellow = Color(0xFFFCD116);
-const kGNFGreen  = Color(0xFF009460);
-const kInk       = Color(0xFF0B1220);
-const kBg        = Color(0xFFF7F8FA);
+const kGNFGreen = Color(0xFF009460);
+const kInk = Color(0xFF0B1220);
+const kBg = Color(0xFFF7F8FA);
 
 // ================== Modèles ==================
 class Demarche {
@@ -42,15 +42,9 @@ final List<String> kConakryPhotos = [
   "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=1600",
   "https://images.unsplash.com/photo-1482192505345-5655af888cc4?q=80&w=1600",
   "https://images.unsplash.com/photo-1520975922219-b2c1d0d4f6b1?q=80&w=1600",
-  "https://images.unsplash.com/photo-1482192505345-5655af888cc4?q=80&w=1600",
   "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=1600",
   "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600",
   "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1600",
-  "https://images.unsplash.com/photo-1536890274785-1b7f76b83161?q=80&w=1600",
-  "https://images.unsplash.com/photo-1500043357865-c6b8827edf5a?q=80&w=1600",
-  "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=1600",
-  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600",
-  "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600",
 ];
 
 final List<Demarche> kDemarches = [
@@ -72,9 +66,9 @@ final List<Demarche> kDemarches = [
       "Enrôlement biométrique (photo, empreintes, signature).",
       "Retrait de la carte à la date indiquée.",
     ],
-    cout: "1ère demande parfois gratuite (vérifier au guichet).",
+    cout: "1ère demande parfois gratuite (à vérifier au guichet).",
     delai: "≈ 3 jours ouvrables (variable).",
-    lieux: "Commissariats/centres d’enrôlement (MSPC).",
+    lieux: "Commissariats / centres d’enrôlement (MSPC).",
     liens: [
       {"label": "Service Public GN", "url": "https://service-public.gov.gn"},
     ],
@@ -125,7 +119,7 @@ final List<Demarche> kDemarches = [
     ],
     cout: "Montant fixé localement.",
     delai: "Variable selon la commune/centre.",
-    lieux: "Mairie/centre d’état civil ou commissariat.",
+    lieux: "Mairie / centre d’état civil ou commissariat.",
     liens: [
       {"label": "Service Public GN", "url": "https://service-public.gov.gn"},
     ],
@@ -190,20 +184,20 @@ class _AdminPageState extends State<AdminPage> {
   final TextEditingController _search = TextEditingController();
   List<Demarche> _filtered = List.of(kDemarches);
 
+  /// Retire les accents/ligatures FR les plus courants pour une recherche tolérante.
   String _normalize(String s) {
+    final lower = s.trim().toLowerCase();
     const map = {
-      'à':'a','â':'a','ä':'a','ã':'a','á':'a','å':'a','À':'a','Â':'a','Ä':'a','Ã':'a','Á':'a','Å':'a',
-      'æ':'ae','Æ':'ae',
-      'ç':'c','Ç':'c',
-      'é':'e','è':'e','ê':'e','ë':'e','É':'e','È':'e','Ê':'e','Ë':'e',
-      'î':'i','ï':'i','ì':'i','í':'i','Î':'i','Ï':'i','Ì':'i','Í':'i',
-      'ô':'o','ö':'o','ò':'o','ó':'o','õ':'o','Ô':'o','Ö':'o','Ò':'o','Ó':'o','Õ':'o',
-      'œ':'oe','Œ':'oe',
-      'ù':'u','û':'u','ü':'u','ú':'u','Ù':'u','Û':'u','Ü':'u','Ú':'u',
-      'ñ':'n','Ñ':'n'
+      'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a', 'ã': 'a',
+      'ç': 'c',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'î': 'i', 'ï': 'i', 'ì': 'i', 'í': 'i',
+      'ô': 'o', 'ö': 'o', 'ò': 'o', 'ó': 'o',
+      'ù': 'u', 'û': 'u', 'ü': 'u', 'ú': 'u',
+      'œ': 'oe',
     };
     final b = StringBuffer();
-    for (final r in s.trim().toLowerCase().runes) {
+    for (final r in lower.runes) {
       final ch = String.fromCharCode(r);
       b.write(map[ch] ?? ch);
     }
@@ -214,9 +208,12 @@ class _AdminPageState extends State<AdminPage> {
     final query = _normalize(q);
     setState(() {
       _filtered = kDemarches.where((d) {
-        final hay = [d.titre, d.resume, d.documents.join(' '), d.etapes.join(' ')]
-            .map(_normalize)
-            .join(' ');
+        final hay = [
+          d.titre,
+          d.resume,
+          d.documents.join(' '),
+          d.etapes.join(' ')
+        ].map(_normalize).join(' ');
         return hay.contains(query);
       }).toList();
     });
@@ -235,8 +232,10 @@ class _AdminPageState extends State<AdminPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.8,
-        title: const Text('Services administratifs',
-            style: TextStyle(color: kInk, fontWeight: FontWeight.w800)),
+        title: const Text(
+          'Services administratifs',
+          style: TextStyle(color: kInk, fontWeight: FontWeight.w800),
+        ),
         iconTheme: const IconThemeData(color: kInk),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4),
@@ -260,7 +259,6 @@ class _AdminPageState extends State<AdminPage> {
             child: _SearchField(controller: _search, onChanged: _applyFilter),
           ),
           const SizedBox(height: 12),
-          // >>> Nouvelle bannière Conakry
           const _ConakryBanner(),
           const SizedBox(height: 8),
           Expanded(
@@ -288,9 +286,11 @@ class DemarcheDetailPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.8,
-        title: Text(demarche.titre,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: kInk, fontWeight: FontWeight.w800)),
+        title: Text(
+          demarche.titre,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: kInk, fontWeight: FontWeight.w800),
+        ),
         iconTheme: const IconThemeData(color: kInk),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
@@ -334,7 +334,10 @@ class DemarcheDetailPage extends StatelessWidget {
           if (demarche.delai != null)
             _InfoTile(icon: Icons.schedule, label: "Délai", value: demarche.delai!),
           if (demarche.lieux != null)
-            _InfoTile(icon: Icons.location_on, label: "Où s’adresser ?", value: demarche.lieux!),
+            _InfoTile(
+                icon: Icons.location_on,
+                label: "Où s’adresser ?",
+                value: demarche.lieux!),
           if (demarche.remarques != null)
             _SectionCard(
               title: "Remarques",
@@ -406,7 +409,6 @@ class _SearchField extends StatelessWidget {
 // -------- Bannière défilante Conakry --------
 class _ConakryBanner extends StatefulWidget {
   const _ConakryBanner();
-
   @override
   State<_ConakryBanner> createState() => _ConakryBannerState();
 }
@@ -468,17 +470,18 @@ class _ConakryBannerState extends State<_ConakryBanner> {
                             child: const Icon(Icons.image_not_supported, color: Colors.black45),
                           ),
                         ),
-                        // voile sombre + titre
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Colors.black.withOpacity(.25), Colors.black.withOpacity(.05)],
+                              colors: [
+                                Colors.black.withOpacity(.25),
+                                Colors.black.withOpacity(.05)
+                              ],
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
                             ),
                           ),
                         ),
-                        // ruban tricolore discret en haut
                         Align(
                           alignment: Alignment.topCenter,
                           child: Container(
@@ -490,7 +493,6 @@ class _ConakryBannerState extends State<_ConakryBanner> {
                             ),
                           ),
                         ),
-                        // label ville
                         const Positioned(
                           left: 12,
                           bottom: 12,
@@ -583,27 +585,40 @@ class _DemarcheTileGuinea extends StatelessWidget {
               leading: Container(
                 width: 44,
                 height: 44,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     colors: [kGNFRed, Color(0xFFAA0E1E)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  boxShadow: const [BoxShadow(color: Color(0x22CE1126), blurRadius: 10, offset: Offset(0, 6))],
+                  boxShadow: [
+                    BoxShadow(color: Color(0x22CE1126), blurRadius: 10, offset: Offset(0, 6))
+                  ],
                 ),
                 child: Icon(d.icone, color: Colors.white),
               ),
-              title: Text(d.titre, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kInk)),
+              title: Text(
+                d.titre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kInk),
+              ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Text(d.resume, maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: kInk.withOpacity(.7))),
+                child: Text(
+                  d.resume,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: kInk.withOpacity(.7)),
+                ),
               ),
               trailing: Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: kGNFRed.withOpacity(.08), borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(
+                  color: kGNFRed.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: const Icon(Icons.arrow_forward_ios, size: 16, color: kGNFRed),
               ),
             ),
@@ -631,7 +646,8 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kGNFGreen)),
+            Text(title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kGNFGreen)),
             const SizedBox(height: 8),
             child,
           ],
@@ -650,9 +666,15 @@ class _Bullet extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Padding(padding: EdgeInsets.only(top: 6), child: Icon(Icons.circle, size: 6, color: kGNFGreen)),
-          SizedBox(width: 8),
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Icon(Icons.circle, size: 6, color: kGNFGreen),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+          ),
         ],
       ),
     );
@@ -679,11 +701,15 @@ class _StepItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(11),
               border: const Border.fromBorderSide(BorderSide(color: kGNFYellow, width: 1)),
             ),
-            child: const Text('',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kGNFYellow)),
+            child: Text(
+              '$index',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kGNFYellow),
+            ),
           ),
           const SizedBox(width: 10),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk))),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+          ),
         ],
       ),
     );
@@ -702,9 +728,11 @@ class _InfoTile extends StatelessWidget {
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
-        leading: const CircleAvatar(backgroundColor: kGNFGreen, child: Icon(Icons.info, color: Colors.white)),
-        title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kGNFGreen)),
-        subtitle: Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+        leading: CircleAvatar(backgroundColor: kGNFGreen, child: Icon(icon, color: Colors.white)),
+        title: Text(label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kGNFGreen)),
+        subtitle: Text(value,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
       ),
     );
   }
@@ -725,7 +753,8 @@ class _ExplainerSection extends StatelessWidget {
         children: [
           Container(
             height: 160,
-            decoration: BoxDecoration(color: kInk.withOpacity(0.04), borderRadius: BorderRadius.circular(16)),
+            decoration:
+                BoxDecoration(color: kInk.withOpacity(0.04), borderRadius: BorderRadius.circular(16)),
             child: Center(
               child: Icon(
                 demarche.mediaType == 'lottie' ? Icons.animation : Icons.play_circle_fill_rounded,
@@ -757,7 +786,10 @@ class _ExplainerSection extends StatelessWidget {
           ),
           if (demarche.mediaCaption != null) ...[
             const SizedBox(height: 6),
-            Text(demarche.mediaCaption!, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk.withOpacity(.7))),
+            Text(
+              demarche.mediaCaption!,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk.withOpacity(.7)),
+            ),
           ],
         ],
       ),

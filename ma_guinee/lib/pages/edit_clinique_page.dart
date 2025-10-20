@@ -10,12 +10,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditCliniquePage extends StatefulWidget {
   final Map<String, dynamic>? clinique;
-  final bool autoAskLocation; // ✅ pour déclencher la géoloc auto à l’ouverture
+  final bool autoAskLocation; // pour déclencher la géoloc auto à l’ouverture
   const EditCliniquePage({super.key, this.clinique, this.autoAskLocation = false});
 
   @override
   State<EditCliniquePage> createState() => _EditCliniquePageState();
 }
+
+// Palette Santé / Cliniques
+const Color santePrimary = Color(0xFF00897B);
+const Color santeSecondary = Color(0xFF80CBC4);
+const Color santeOnPrimary = Color(0xFFFFFFFF);
+const Color santeOnSecondary = Color(0xFF000000);
 
 class _EditCliniquePageState extends State<EditCliniquePage> {
   late TextEditingController nomController;
@@ -28,7 +34,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   late TextEditingController latitudeController;
   late TextEditingController longitudeController;
 
-  // nouvelles images choisies (préviews + fichiers)
+  // nouvelles images choisies (prévisualisations + fichiers)
   final List<_LocalImg> _local = [];
   // images déjà en ligne (URLs publiques)
   List<String> imagesUrls = [];
@@ -51,11 +57,11 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     longitudeController = TextEditingController(text: c['longitude']?.toString() ?? '');
     imagesUrls = (c['images'] as List?)?.cast<String>() ?? [];
 
-    // snack astuce + auto-géoloc si demandé
+    // astuce + auto-géoloc si demandé
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("📍 Placez-vous dans la clinique pour une meilleure géolocalisation."),
+          content: Text("Astuce : placez-vous dans la clinique pour une meilleure géolocalisation."),
           duration: Duration(seconds: 4),
         ),
       );
@@ -103,9 +109,8 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
         }
       }
       setState(() {});
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Position détectée ✔")),
+        const SnackBar(content: Text("Position détectée !")),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -117,7 +122,9 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   // ---------- Images ----------
   Future<void> _pickImages({bool fromCamera = false}) async {
     final picker = ImagePicker();
-    final XFile? one = fromCamera ? await picker.pickImage(source: ImageSource.camera, imageQuality: 80) : null;
+    final XFile? one = fromCamera
+        ? await picker.pickImage(source: ImageSource.camera, imageQuality: 80)
+        : null;
     final List<XFile> many = !fromCamera ? await picker.pickMultiImage(imageQuality: 80) : [];
 
     final files = [
@@ -167,25 +174,27 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     final alt = '$_bucket/';
     final j = url.indexOf(alt);
     if (j != -1) return url.substring(j + alt.length);
-    return null;
-    // on n’inclut JAMAIS le nom du bucket dans objectPath à l’upload
+    return null; // ne jamais inclure le nom du bucket dans objectPath à l’upload
   }
 
   Future<String?> _uploadOne(Uint8List bytes, String userId) async {
     try {
       final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
       String ext = 'bin';
-      if (mime.contains('jpeg')) ext = 'jpg';
-      else if (mime.contains('png')) ext = 'png';
-      else if (mime.contains('webp')) ext = 'webp';
-      else if (mime.contains('gif')) ext = 'gif';
+      if (mime.contains('jpeg')) {
+        ext = 'jpg';
+      } else if (mime.contains('png')) {
+        ext = 'png';
+      } else if (mime.contains('webp')) {
+        ext = 'webp';
+      } else if (mime.contains('gif')) {
+        ext = 'gif';
+      }
 
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/$ts.$ext';
 
-      await Supabase.instance.client.storage
-          .from(_bucket)
-          .uploadBinary(
+      await Supabase.instance.client.storage.from(_bucket).uploadBinary(
             objectPath,
             bytes,
             fileOptions: FileOptions(upsert: true, contentType: mime),
@@ -295,18 +304,17 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    final bleuMaGuinee = const Color(0xFF113CFC);
-    final jauneMaGuinee = const Color(0xFFFCD116);
-    final vert = const Color(0xFF009460);
     final enEdition = widget.clinique != null;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(enEdition ? "Modifier la clinique" : "Inscription Clinique",
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          enEdition ? "Modifier la clinique" : "Inscription Clinique",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: santePrimary),
         actions: [
           if (enEdition)
             IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: _delete),
@@ -325,8 +333,8 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                     icon: const Icon(Icons.my_location),
                     label: const Text("Détecter ma position"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: bleuMaGuinee,
-                      foregroundColor: Colors.white,
+                      backgroundColor: santePrimary,
+                      foregroundColor: santeOnPrimary,
                     ),
                   ),
                 ),
@@ -340,19 +348,23 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                   runSpacing: 10,
                   children: [
                     // existantes
-                    ...imagesUrls.asMap().entries.map((e) => _Thumb(
-                          child: Image.network(e.value, fit: BoxFit.cover),
-                          onRemove: () => _removeImageOnline(e.key),
-                        )),
-                    // nouvelles (préviews mémoire)
-                    ..._local.asMap().entries.map((e) => _Thumb(
-                          child: Image.memory(e.value.bytes, fit: BoxFit.cover),
-                          onRemove: () => _removeLocalAt(e.key),
-                        )),
+                    ...imagesUrls.asMap().entries.map(
+                          (e) => _Thumb(
+                            child: Image.network(e.value, fit: BoxFit.cover),
+                            onRemove: () => _removeImageOnline(e.key),
+                          ),
+                        ),
+                    // nouvelles (prévisualisations mémoire)
+                    ..._local.asMap().entries.map(
+                          (e) => _Thumb(
+                            child: Image.memory(e.value.bytes, fit: BoxFit.cover),
+                            onRemove: () => _removeLocalAt(e.key),
+                          ),
+                        ),
                     // bouton ajout
                     _AddThumb(
-                      color: jauneMaGuinee,
-                      iconColor: bleuMaGuinee,
+                      color: santeSecondary,
+                      iconColor: santePrimary,
                       onPickMulti: () => _pickImages(),
                       onPickCamera: () => _pickImages(fromCamera: true),
                     ),
@@ -360,15 +372,15 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                 ),
 
                 const SizedBox(height: 16),
-                _buildTextField(nomController, "Nom de la clinique *", bleuMaGuinee),
-                _buildTextField(villeController, "Ville *", bleuMaGuinee),
-                _buildTextField(adresseController, "Adresse *", bleuMaGuinee),
-                _buildTextField(telephoneController, "Téléphone *", bleuMaGuinee),
-                _buildTextField(descriptionController, "Description", bleuMaGuinee, maxLines: 3),
-                _buildTextField(specialitesController, "Spécialités", bleuMaGuinee),
-                _buildTextField(horairesController, "Horaires d'ouverture", bleuMaGuinee),
-                _buildTextField(latitudeController, "Latitude", bleuMaGuinee),
-                _buildTextField(longitudeController, "Longitude", bleuMaGuinee),
+                _buildTextField(nomController, "Nom de la clinique *", santePrimary),
+                _buildTextField(villeController, "Ville *", santePrimary),
+                _buildTextField(adresseController, "Adresse *", santePrimary),
+                _buildTextField(telephoneController, "Téléphone *", santePrimary),
+                _buildTextField(descriptionController, "Description", santePrimary, maxLines: 3),
+                _buildTextField(specialitesController, "Spécialités", santePrimary),
+                _buildTextField(horairesController, "Horaires d'ouverture", santePrimary),
+                _buildTextField(latitudeController, "Latitude", santePrimary),
+                _buildTextField(longitudeController, "Longitude", santePrimary),
 
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
@@ -376,8 +388,8 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                   icon: const Icon(Icons.save),
                   label: const Text("Enregistrer"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: vert,
-                    foregroundColor: Colors.white,
+                    backgroundColor: santePrimary,
+                    foregroundColor: santeOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     textStyle: const TextStyle(fontWeight: FontWeight.bold),
@@ -388,8 +400,12 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, Color color,
-      {int maxLines = 1}) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    Color color, {
+    int maxLines = 1,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
@@ -399,6 +415,9 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
           labelText: label,
           border: const OutlineInputBorder(),
           labelStyle: TextStyle(color: color),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: color, width: 2),
+          ),
         ),
       ),
     );
@@ -484,7 +503,11 @@ class _AddThumb extends StatelessWidget {
           onPressed: onPickCamera,
           icon: const Icon(Icons.photo_camera_outlined, size: 18),
           label: const Text("Prendre"),
-          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10)),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: santePrimary,
+            side: const BorderSide(color: santePrimary),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
         ),
       ],
     );

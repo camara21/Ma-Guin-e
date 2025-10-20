@@ -11,9 +11,9 @@ class JobsPage extends StatefulWidget {
 }
 
 class _JobsPageState extends State<JobsPage> {
-  // 🎨 Palette Ma Guinée
+  // Palette Ma Guinée
   static const kBlue = Color(0xFF1976D2);
-  static const kBg   = Color(0xFFF6F7F9);
+  static const kBg = Color(0xFFF6F7F9);
 
   final _qCtrl = TextEditingController();
   final _communeAutreCtrl = TextEditingController();
@@ -33,19 +33,19 @@ class _JobsPageState extends State<JobsPage> {
     // Spécial
     'Conakry',
     // Région de Boké
-    'Boké','Boffa','Fria','Gaoual','Koundara',
+    'Boké', 'Boffa', 'Fria', 'Gaoual', 'Koundara',
     // Région de Kindia
-    'Kindia','Coyah','Dubréka','Forécariah','Télimélé',
+    'Kindia', 'Coyah', 'Dubréka', 'Forécariah', 'Télimélé',
     // Région de Labé
-    'Labé','Koubia','Lélouma','Mali','Tougué',
+    'Labé', 'Koubia', 'Lélouma', 'Mali', 'Tougué',
     // Région de Mamou
-    'Mamou','Dalaba','Pita',
+    'Mamou', 'Dalaba', 'Pita',
     // Région de Faranah
-    'Faranah','Dabola','Dinguiraye','Kissidougou',
+    'Faranah', 'Dabola', 'Dinguiraye', 'Kissidougou',
     // Région de Kankan
-    'Kankan','Kérouané','Kouroussa','Mandiana','Siguiri',
+    'Kankan', 'Kérouané', 'Kouroussa', 'Mandiana', 'Siguiri',
     // Région de Nzérékoré
-    'Nzérékoré','Beyla','Guéckédou','Lola','Macenta','Yomou',
+    'Nzérékoré', 'Beyla', 'Guéckédou', 'Lola', 'Macenta', 'Yomou',
   ];
 
   // ---------- Communes par ville
@@ -101,7 +101,14 @@ class _JobsPageState extends State<JobsPage> {
   };
 
   static const List<String> _contrats = <String>[
-    'CDI','CDD','Stage','Alternance','Journalier','Freelance','Temps partiel','Saisonnier',
+    'CDI',
+    'CDD',
+    'Stage',
+    'Alternance',
+    'Journalier',
+    'Freelance',
+    'Temps partiel',
+    'Saisonnier',
   ];
 
   @override
@@ -121,9 +128,10 @@ class _JobsPageState extends State<JobsPage> {
     return _svc.chercher(
       q: _qCtrl.text.trim().isEmpty ? null : _qCtrl.text.trim(),
       ville: _ville,
-      commune: _commune ?? (_showCommuneAutre && _communeAutreCtrl.text.trim().isNotEmpty
-          ? _communeAutreCtrl.text.trim()
-          : null),
+      commune: _commune ??
+          (_showCommuneAutre && _communeAutreCtrl.text.trim().isNotEmpty
+              ? _communeAutreCtrl.text.trim()
+              : null),
       typeContrat: _contrat,
       teletravail: _teletravail == 'Peu importe'
           ? null
@@ -172,7 +180,8 @@ class _JobsPageState extends State<JobsPage> {
             controller: _qCtrl,
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => _doSearch(),
-            decoration: _dec('Rechercher un poste (ex: Développeur)', icon: Icons.search),
+            decoration:
+                _dec('Rechercher un poste (ex : Développeur)', icon: Icons.search),
           ),
 
           const SizedBox(height: 16),
@@ -206,10 +215,13 @@ class _JobsPageState extends State<JobsPage> {
                 isExpanded: true,
                 decoration: _dec('Commune', icon: Icons.place_outlined),
                 items: (() {
-                  final list = (_ville != null && _communesByVille.containsKey(_ville))
-                      ? [..._communesByVille[_ville]!, 'Autre commune…']
-                      : <String>[];
-                  return list.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList();
+                  final list =
+                      (_ville != null && _communesByVille.containsKey(_ville))
+                          ? [..._communesByVille[_ville]!, 'Autre commune…']
+                          : <String>[];
+                  return list
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                      .toList();
                 })(),
                 onChanged: _ville == null
                     ? null
@@ -236,11 +248,13 @@ class _JobsPageState extends State<JobsPage> {
               DropdownButtonFormField<String>(
                 value: _teletravail,
                 isExpanded: true,
-                decoration: _dec('Télétravail', icon: Icons.home_work_outlined),
+                decoration:
+                    _dec('Télétravail', icon: Icons.home_work_outlined),
                 items: const ['Peu importe', 'Oui', 'Non']
                     .map((o) => DropdownMenuItem(value: o, child: Text(o)))
                     .toList(),
-                onChanged: (t) => setState(() => _teletravail = t ?? 'Peu importe'),
+                onChanged: (t) =>
+                    setState(() => _teletravail = t ?? 'Peu importe'),
               ),
             ];
 
@@ -257,10 +271,12 @@ class _JobsPageState extends State<JobsPage> {
             }
             return Column(
               children: [
-                ...children.map((w) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: w,
-                    )),
+                ...children.map(
+                  (w) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: w,
+                  ),
+                ),
               ],
             );
           }),
@@ -269,7 +285,8 @@ class _JobsPageState extends State<JobsPage> {
             const SizedBox(height: 6),
             TextField(
               controller: _communeAutreCtrl,
-              decoration: _dec('Préciser la commune', icon: Icons.edit_location_alt_outlined),
+              decoration: _dec('Préciser la commune',
+                  icon: Icons.edit_location_alt_outlined),
             ),
           ],
 
@@ -283,7 +300,8 @@ class _JobsPageState extends State<JobsPage> {
                 backgroundColor: kBlue,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _doSearch,
               icon: const Icon(Icons.search),
@@ -310,7 +328,8 @@ class _JobsPageState extends State<JobsPage> {
               }
               final items = snap.data ?? const <EmploiModel>[];
               if (items.isEmpty) {
-                return const Text('Aucune offre trouvée — elles seront bientôt disponibles.');
+                return const Text(
+                    'Aucune offre trouvée — elles seront bientôt disponibles.');
               }
               return ListView.separated(
                 shrinkWrap: true,
@@ -325,7 +344,8 @@ class _JobsPageState extends State<JobsPage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => JobDetailPage(jobId: e.id)),
+                        MaterialPageRoute(
+                            builder: (_) => JobDetailPage(jobId: e.id)),
                       );
                     },
                   );
@@ -386,16 +406,20 @@ class _JobCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     if (subtitle.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.black54)),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.black54),
+                      ),
                     ],
                   ],
                 ),

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../models/job_models.dart';
 import '../../../services/jobs_service.dart';
-import '../../../utils/format.dart';                  // <- gnf()
-import '../candidatures_page.dart';                  // ✅ on navigue directement
+import '../../../utils/format.dart'; // <- gnf()
+import '../candidatures_page.dart'; // navigation directe
 import 'offre_edit_page.dart';
 import 'profil_employeur_page.dart';
 
@@ -17,10 +17,10 @@ class MesOffresPage extends StatefulWidget {
 }
 
 class _MesOffresPageState extends State<MesOffresPage> {
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
-  static const kGreen  = Color(0xFF009460);
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
+  static const kGreen = Color(0xFF009460);
 
   final _svc = JobsService();
   List<EmploiModel> _items = [];
@@ -55,9 +55,12 @@ class _MesOffresPageState extends State<MesOffresPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Supprimer l’offre ?'),
-        content: Text('“${job.titre}” sera définitivement supprimée.'),
+        content: Text('« ${job.titre} » sera définitivement supprimée.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
@@ -126,7 +129,8 @@ class _MesOffresPageState extends State<MesOffresPage> {
                   final ok = await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => OffreEditPage(employeurId: widget.employeurId),
+                      builder: (_) =>
+                          OffreEditPage(employeurId: widget.employeurId),
                     ),
                   );
                   if (ok == true) _load();
@@ -140,7 +144,6 @@ class _MesOffresPageState extends State<MesOffresPage> {
                     itemBuilder: (_, i) => _OfferCard(
                       job: _items[i],
                       onOpenCandidatures: () async {
-                        // ✅ Navigation directe vers la liste des candidatures
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -192,8 +195,8 @@ class _OfferCard extends StatelessWidget {
       final base = max != null ? '${gnf(min)} - ${gnf(max)}' : gnf(min);
       return '$base / mois';
     }
-    return 'à négocier';
-  }
+    return 'À négocier';
+    }
 
   bool _isActive(EmploiModel j) {
     try {
@@ -209,8 +212,9 @@ class _OfferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statutActif = _isActive(job);
-    final statusColor = statutActif ? _MesOffresPageState.kGreen : Colors.black54;
-    final statusText  = statutActif ? 'Active' : 'Inactive';
+    final statusColor =
+        statutActif ? _MesOffresPageState.kGreen : Colors.black54;
+    final statusText = statutActif ? 'Active' : 'Inactive';
 
     final sousTitre =
         '${job.ville}${job.commune != null && job.commune!.isNotEmpty ? ', ${job.commune}' : ''} • ${job.typeContrat.toUpperCase()}';
@@ -325,7 +329,8 @@ class _StatusChip extends StatelessWidget {
           children: [
             Icon(Icons.circle, size: 8, color: color),
             const SizedBox(width: 6),
-            Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+            Text(text,
+                style: TextStyle(color: color, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -351,7 +356,8 @@ class _EmptyState extends StatelessWidget {
           ),
           child: Column(
             children: const [
-              Icon(Icons.work_outline, size: 56, color: _MesOffresPageState.kBlue),
+              Icon(Icons.work_outline,
+                  size: 56, color: _MesOffresPageState.kBlue),
               SizedBox(height: 12),
               Text(
                 'Aucune offre pour le moment',

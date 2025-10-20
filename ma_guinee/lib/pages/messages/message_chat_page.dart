@@ -13,10 +13,10 @@ import '../../pages/logement/logement_detail_page.dart';
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
     super.key,
-    required this.peerUserId,   // id de l'interlocuteur
-    required this.title,        // titre dans l'appbar
-    required this.contextType,  // 'logement' | 'prestataire'
-    required this.contextId,    // id du logement / prestataire
+    required this.peerUserId, // id de l'interlocuteur
+    required this.title, // titre dans l'appbar
+    required this.contextType, // 'logement' | 'prestataire'
+    required this.contextId, // id du logement / prestataire
     this.contextTitle,
   });
 
@@ -36,9 +36,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
   // même pattern que la page détail
   final LogementService _logSvc = LogementService();
 
-  // État messages
+  // état messages
   final _msgCtrl = TextEditingController();
-  final _scroll  = ScrollController();
+  final _scroll = ScrollController();
   late Stream<List<_Msg>> _stream;
   bool _sending = false;
 
@@ -52,8 +52,11 @@ class _MessageChatPageState extends State<MessageChatPage> {
   @override
   void initState() {
     super.initState();
-    _stream = Stream.periodic(const Duration(seconds: 2)).asyncMap((_) => _fetchThread());
-    _offerFuture = _showOfferCard ? _fetchLogementHeaderViaService(widget.contextId) : Future.value(null);
+    _stream = Stream.periodic(const Duration(seconds: 2))
+        .asyncMap((_) => _fetchThread());
+    _offerFuture = _showOfferCard
+        ? _fetchLogementHeaderViaService(widget.contextId)
+        : Future.value(null);
   }
 
   @override
@@ -81,15 +84,16 @@ class _MessageChatPageState extends State<MessageChatPage> {
       // première image (souvent déjà en URL publique via le service)
       String? imageUrl;
       if (bien.photos.isNotEmpty) {
-        final first = bien.photos.firstWhere((p) => p.trim().isNotEmpty, orElse: () => '');
+        final first =
+            bien.photos.firstWhere((p) => p.trim().isNotEmpty, orElse: () => '');
         if (first.isNotEmpty) {
           imageUrl = first.startsWith('http')
               ? first
-              : _sb.storage
-                  .from('logements')
-                  .getPublicUrl(first.startsWith('logements/')
-                      ? first.substring('logements/'.length)
-                      : first);
+              : _sb.storage.from('logements').getPublicUrl(
+                    first.startsWith('logements/')
+                        ? first.substring('logements/'.length)
+                        : first,
+                  );
         }
       }
 
@@ -99,10 +103,12 @@ class _MessageChatPageState extends State<MessageChatPage> {
       if (v != null) {
         if (v >= 1000000) {
           final m = (v / 1000000).toStringAsFixed(1).replaceAll('.0', '');
-          prixLabel = bien.mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
+          prixLabel =
+              bien.mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
         } else {
           final s = v.toStringAsFixed(0);
-          prixLabel = bien.mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
+          prixLabel =
+              bien.mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
         }
       }
 
@@ -136,11 +142,13 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
     final sel = await _sb
         .from('messages')
-        .select('id,sender_id,receiver_id,contenu,contexte,annonce_id,prestataire_id,date_envoi,lu')
+        .select(
+            'id,sender_id,receiver_id,contenu,contexte,annonce_id,prestataire_id,date_envoi,lu')
         .or(pair)
         .eq('contexte', _ctx)
         // logement réutilise annonce_id
-        .eq(_ctx == 'prestataire' ? 'prestataire_id' : 'annonce_id', widget.contextId)
+        .eq(_ctx == 'prestataire' ? 'prestataire_id' : 'annonce_id',
+            widget.contextId)
         .order('date_envoi', ascending: true);
 
     final rows = (sel as List).cast<Map<String, dynamic>>();
@@ -181,11 +189,15 @@ class _MessageChatPageState extends State<MessageChatPage> {
       };
       if (_ctx == 'prestataire') {
         data['prestataire_id'] = widget.contextId;
-        if (widget.contextTitle != null) data['prestataire_name'] = widget.contextTitle;
+        if (widget.contextTitle != null) {
+          data['prestataire_name'] = widget.contextTitle;
+        }
       } else {
         // logement => stocké dans annonce_id
         data['annonce_id'] = widget.contextId;
-        if (widget.contextTitle != null) data['annonce_titre'] = widget.contextTitle;
+        if (widget.contextTitle != null) {
+          data['annonce_titre'] = widget.contextTitle;
+        }
       }
 
       await _sb.from('messages').insert(data);
@@ -201,7 +213,8 @@ class _MessageChatPageState extends State<MessageChatPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur envoi: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur d’envoi : $e')));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -224,20 +237,22 @@ class _MessageChatPageState extends State<MessageChatPage> {
                   return const SizedBox(height: 4);
                 }
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 8, left: 12, right: 12, top: 10),
+                  padding:
+                      const EdgeInsets.only(bottom: 8, left: 12, right: 12, top: 10),
                   child: _OfferMessageBubble(
                     offer: off,
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => LogementDetailPage(logementId: off.id)),
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                LogementDetailPage(logementId: off.id)),
                       );
                     },
                   ),
                 );
               },
             ),
-
           Expanded(
             child: StreamBuilder<List<_Msg>>(
               stream: _stream,
@@ -245,7 +260,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
                 final msgs = snap.data ?? const <_Msg>[];
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+                  if (_scroll.hasClients) {
+                    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+                  }
                 });
 
                 return ListView.builder(
@@ -255,13 +272,16 @@ class _MessageChatPageState extends State<MessageChatPage> {
                   itemBuilder: (_, i) {
                     final m = msgs[i];
                     final mine = (m.senderId == me);
-                    return _Bubble(isMine: mine, body: m.body, time: _fmtTime(context, m.dateEnvoi));
+                    return _Bubble(
+                      isMine: mine,
+                      body: m.body,
+                      time: _fmtTime(context, m.dateEnvoi),
+                    );
                   },
                 );
               },
             ),
           ),
-
           SafeArea(
             top: false,
             child: Padding(
@@ -282,7 +302,8 @@ class _MessageChatPageState extends State<MessageChatPage> {
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
                       ),
                     ),
                   ),
@@ -290,7 +311,11 @@ class _MessageChatPageState extends State<MessageChatPage> {
                   ElevatedButton.icon(
                     onPressed: _sending ? null : _send,
                     icon: _sending
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.send),
                     label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                   ),
@@ -372,7 +397,9 @@ class _OfferMessageBubble extends StatelessWidget {
                     const SizedBox(height: 2),
                     if (offer.ville.isNotEmpty || offer.commune.isNotEmpty)
                       Text(
-                        [offer.ville, offer.commune].where((e) => e.isNotEmpty).join(' • '),
+                        [offer.ville, offer.commune]
+                            .where((e) => e.isNotEmpty)
+                            .join(' • '),
                         style: TextStyle(color: fg.withOpacity(.75)),
                       ),
                   ],
@@ -409,7 +436,8 @@ class _Bubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
           color: isMine ? bgMine : bgOther,
           borderRadius: BorderRadius.only(
@@ -428,7 +456,9 @@ class _Bubble extends StatelessWidget {
               alignment: Alignment.bottomRight,
               child: Text(
                 time,
-                style: TextStyle(fontSize: 10, color: (isMine ? fgMine : fgOther).withOpacity(.7)),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: (isMine ? fgMine : fgOther).withOpacity(.7)),
               ),
             ),
           ],

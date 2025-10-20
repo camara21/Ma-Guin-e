@@ -12,7 +12,7 @@ class MessagesAnnoncePage extends StatefulWidget {
   final String annonceId;
   final String annonceTitre;
   final String receiverId; // id du destinataire (vendeur)
-  final String senderId;   // mon id (expéditeur)
+  final String senderId; // mon id (expéditeur)
 
   const MessagesAnnoncePage({
     super.key,
@@ -46,9 +46,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   String? _publicUrl(String bucket, String? path) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    final objectPath = path.startsWith('$bucket/')
-        ? path.substring(bucket.length + 1)
-        : path;
+    final objectPath =
+        path.startsWith('$bucket/') ? path.substring(bucket.length + 1) : path;
     return _sb.storage.from(bucket).getPublicUrl(objectPath);
   }
   // ===================================
@@ -69,7 +68,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     super.dispose();
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Realtime (insert + update)
   void _listenRealtime() {
     _channel?.unsubscribe();
@@ -92,7 +90,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            final r = (payload.newRecord ?? payload.oldRecord) ?? const <String, dynamic>{};
+            final r = (payload.newRecord ?? payload.oldRecord) ??
+                const <String, dynamic>{};
             if ((r['contexte'] == 'annonce') &&
                 (r['annonce_id']?.toString() == widget.annonceId)) {
               _loadAndMarkRead();
@@ -102,7 +101,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         .subscribe();
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Carte produit à afficher en haut du chat
   Future<_AnnonceCard?> _fetchAnnonceCard() async {
     try {
@@ -113,7 +111,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           .maybeSingle();
 
       if (row == null) {
-        // fallback minimal (l’annonce a pu être supprimée/RLS)
+        // fallback minimal
         return _AnnonceCard(
           id: widget.annonceId,
           titre: widget.annonceTitre,
@@ -123,21 +121,25 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         );
       }
 
-      // ─── images : List<String> | List<Map> | JSON string ───
+      // images : List<String> | List<Map> | JSON string
       List<String> images = const <String>[];
       final rawImages = row['images'];
 
       List<String> _stringifyList(dynamic v) {
         if (v is List) {
-          return v.map((e) {
-            if (e == null) return '';
-            if (e is String) return e;
-            if (e is Map) {
-              final m = Map<String, dynamic>.from(e);
-              return (m['path'] ?? m['url'] ?? m['publicUrl'] ?? '').toString();
-            }
-            return e.toString();
-          }).where((s) => s.isNotEmpty).toList();
+          return v
+              .map((e) {
+                if (e == null) return '';
+                if (e is String) return e;
+                if (e is Map) {
+                  final m = Map<String, dynamic>.from(e);
+                  return (m['path'] ?? m['url'] ?? m['publicUrl'] ?? '')
+                      .toString();
+                }
+                return e.toString();
+              })
+              .where((s) => s.isNotEmpty)
+              .toList();
         }
         return const <String>[];
       }
@@ -151,15 +153,15 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         } catch (_) {/* ignore */}
       }
 
-      // 🔁 chemin -> URL publique
-      final String? image = images.isNotEmpty
-          ? _publicUrl(_annonceBucket, images.first)
-          : null;
+      // chemin -> URL publique
+      final String? image =
+          images.isNotEmpty ? _publicUrl(_annonceBucket, images.first) : null;
 
       final prix = row['prix'];
       final devise = (row['devise'] ?? '').toString();
-      final prixLabel =
-          (prix is num) ? '${prix.toInt()} ${devise.isEmpty ? 'GNF' : devise}' : null;
+      final prixLabel = (prix is num)
+          ? '${prix.toInt()} ${devise.isEmpty ? 'GNF' : devise}'
+          : null;
 
       return _AnnonceCard(
         id: (row['id'] ?? '').toString(),
@@ -179,7 +181,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Charger l'historique + marquer LU
   Future<void> _loadAndMarkRead() async {
     if (!mounted) return;
@@ -227,7 +228,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     });
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Envoi
   Future<void> _send() async {
     final text = _ctrl.text.trim();
@@ -264,7 +264,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Supprimer POUR MOI (soft delete J+30)
   Future<void> _deleteForMe(String messageId) async {
     try {
@@ -282,10 +281,10 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Ouvrir détail annonce (fallback si RLS/supprimée)
   Future<void> _openAnnonceDetail(_AnnonceCard a) async {
-    final row = await _sb.from('annonces').select().eq('id', a.id).maybeSingle();
+    final row =
+        await _sb.from('annonces').select().eq('id', a.id).maybeSingle();
 
     if (row != null) {
       final model = AnnonceModel.fromJson(Map<String, dynamic>.from(row));
@@ -315,7 +314,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Bulle + long-press supprimer pour moi
   Widget _bubble(Map<String, dynamic> m) {
     final me = m['sender_id']?.toString() == widget.senderId;
@@ -332,11 +330,15 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                 builder: (_) => AlertDialog(
                   title: const Text('Supprimer ce message ?'),
                   content: const Text(
-                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. L’autre personne le verra encore jusque-là.",
+                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. L'autre personne le verra encore jusque-là.",
                   ),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer pour moi')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Supprimer pour moi')),
                   ],
                 ),
               ) ??
@@ -344,8 +346,10 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           if (ok) await _deleteForMe(id);
         },
         child: Container(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-          margin: EdgeInsets.only(top: 7, bottom: 7, left: me ? 40 : 12, right: me ? 12 : 40),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78),
+          margin: EdgeInsets.only(
+              top: 7, bottom: 7, left: me ? 40 : 12, right: me ? 12 : 40),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           decoration: BoxDecoration(
             color: myColor,
@@ -355,18 +359,24 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
               bottomLeft: Radius.circular(me ? 16 : 6),
               bottomRight: Radius.circular(me ? 6 : 16),
             ),
-            boxShadow: [if (me) BoxShadow(color: Colors.blue.shade100, blurRadius: 2, offset: const Offset(0, 1))],
+            boxShadow: [
+              if (me)
+                BoxShadow(
+                    color: Colors.blue.shade100,
+                    blurRadius: 2,
+                    offset: const Offset(0, 1))
+            ],
           ),
           child: Text(
             (m['contenu'] ?? '').toString(),
-            style: TextStyle(color: me ? Colors.white : Colors.black87, fontSize: 15),
+            style: TextStyle(
+                color: me ? Colors.white : Colors.black87, fontSize: 15),
           ),
         ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     const bleuMaGuinee = Color(0xFF113CFC);
@@ -382,7 +392,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         ),
         title: Text(
           widget.annonceTitre,
-          style: const TextStyle(color: bleuMaGuinee, fontWeight: FontWeight.bold, fontSize: 17),
+          style: const TextStyle(
+              color: bleuMaGuinee, fontWeight: FontWeight.bold, fontSize: 17),
         ),
         iconTheme: const IconThemeData(color: bleuMaGuinee),
       ),
@@ -403,7 +414,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             child: Text(
                               "Aucune discussion pour cette annonce.\nÉcrivez un message pour commencer.",
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                              style:
+                                  TextStyle(color: Colors.grey[600], fontSize: 16),
                             ),
                           );
                         }
@@ -415,10 +427,12 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             if (hasCard && i == 0) {
                               final a = snap.data!;
                               return Padding(
-                                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 12, 12, 4),
                                 child: _AnnonceMessageCard(
                                   annonce: a,
-                                  onTap: () => _openAnnonceDetail(a),
+                                  // CORRECTION: utiliser un bloc qui retourne void
+                                  onTap: () { _openAnnonceDetail(a); },
                                 ),
                               );
                             }
@@ -431,7 +445,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                   ),
                   Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       children: [
                         Expanded(
@@ -462,7 +477,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             padding: const EdgeInsets.all(13),
                             elevation: 2,
                           ),
-                          child: const Icon(Icons.send, color: Colors.white, size: 20),
+                          child: const Icon(Icons.send,
+                              color: Colors.white, size: 20),
                         ),
                       ],
                     ),
@@ -474,7 +490,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   }
 }
 
-// ─── Modèles / widgets
+// Modèles / widgets
 class _AnnonceCard {
   final String id;
   final String titre;
@@ -520,14 +536,15 @@ class _AnnonceMessageCard extends StatelessWidget {
           child: Row(
             children: [
               (annonce.imageUrl == null || annonce.imageUrl!.isEmpty)
-                  ? Container(width: 110, height: 86, color: Colors.grey.shade300)
+                  ? Container(
+                      width: 110, height: 86, color: Colors.grey.shade300)
                   : Image.network(
                       annonce.imageUrl!,
                       width: 110,
                       height: 86,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          Container(width: 110, height: 86, color: Colors.grey.shade300),
+                      errorBuilder: (_, __, ___) => Container(
+                          width: 110, height: 86, color: Colors.grey.shade300),
                     ),
               const SizedBox(width: 10),
               Expanded(
@@ -540,7 +557,8 @@ class _AnnonceMessageCard extends StatelessWidget {
                         annonce.titre.isEmpty ? 'Annonce' : annonce.titre,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+                        style:
+                            TextStyle(fontWeight: FontWeight.w700, color: fg),
                       ),
                       if (annonce.prixLabel != null) ...[
                         const SizedBox(height: 4),
@@ -554,7 +572,8 @@ class _AnnonceMessageCard extends StatelessWidget {
                       ],
                       const SizedBox(height: 2),
                       if (annonce.ville.isNotEmpty)
-                        Text(annonce.ville, style: TextStyle(color: fg.withOpacity(.75))),
+                        Text(annonce.ville,
+                            style: TextStyle(color: fg.withOpacity(.75))),
                     ],
                   ),
                 ),

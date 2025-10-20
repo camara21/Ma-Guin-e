@@ -14,6 +14,12 @@ class EditRestoPage extends StatefulWidget {
   State<EditRestoPage> createState() => _EditRestoPageState();
 }
 
+// Palette Restaurants
+const Color restoPrimary = Color(0xFFFFA000);
+const Color restoSecondary = Color(0xFFFFD180);
+const Color restoOnPrimary = Color(0xFFFFFFFF);
+const Color restoOnSecondary = Color(0xFF000000);
+
 class _EditRestoPageState extends State<EditRestoPage> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
@@ -37,7 +43,8 @@ class _EditRestoPageState extends State<EditRestoPage> {
     super.initState();
     nomController = TextEditingController(text: widget.resto['nom'] ?? '');
     villeController = TextEditingController(text: widget.resto['ville'] ?? '');
-    descriptionController = TextEditingController(text: widget.resto['description'] ?? '');
+    descriptionController =
+        TextEditingController(text: widget.resto['description'] ?? '');
     telController = TextEditingController(text: widget.resto['tel'] ?? '');
     latitude = widget.resto['latitude'];
     longitude = widget.resto['longitude'];
@@ -59,7 +66,9 @@ class _EditRestoPageState extends State<EditRestoPage> {
           return;
         }
       }
-      Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      Position pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
       latitude = pos.latitude;
       longitude = pos.longitude;
       List<Placemark> placemarks = await placemarkFromCoordinates(latitude!, longitude!);
@@ -122,7 +131,8 @@ class _EditRestoPageState extends State<EditRestoPage> {
     final storage = Supabase.instance.client.storage.from('restaurant_photos');
     List<String> newUrls = [];
     for (var file in files) {
-      final filename = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+      final filename =
+          '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       await storage.upload(filename, file);
       final url = storage.getPublicUrl(filename);
       newUrls.add(url);
@@ -134,7 +144,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci de cliquer sur « Détecter ma position ».")),
+        const SnackBar(content: Text("Merci de cliquer sur « Détecter ma position »."))
       );
       return;
     }
@@ -143,19 +153,16 @@ class _EditRestoPageState extends State<EditRestoPage> {
     final uploadedUrls = await _uploadImages();
     final allUrls = [...urls, ...uploadedUrls];
 
-    await Supabase.instance.client
-        .from('restaurants')
-        .update({
-          'nom': nomController.text,
-          'ville': villeController.text,
-          'tel': telController.text,
-          'description': descriptionController.text,
-          'latitude': latitude,
-          'longitude': longitude,
-          'adresse': adresse,
-          'images': allUrls,
-        })
-        .eq('id', widget.resto['id']);
+    await Supabase.instance.client.from('restaurants').update({
+      'nom': nomController.text,
+      'ville': villeController.text,
+      'tel': telController.text,
+      'description': descriptionController.text,
+      'latitude': latitude,
+      'longitude': longitude,
+      'adresse': adresse,
+      'images': allUrls,
+    }).eq('id', widget.resto['id']);
 
     setState(() => loading = false);
     if (mounted) {
@@ -178,15 +185,16 @@ class _EditRestoPageState extends State<EditRestoPage> {
 
   @override
   Widget build(BuildContext context) {
-    final Color bleuMaGuinee = const Color(0xFF113CFC);
-    final Color orange = const Color(0xFFF39C12);
-    final Color rouge = const Color(0xFFCE1126);
+    const Color danger = Color(0xFFCE1126);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Modifier le restaurant", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Modifier le restaurant",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: restoPrimary),
         elevation: 1,
       ),
       body: loading
@@ -198,8 +206,12 @@ class _EditRestoPageState extends State<EditRestoPage> {
                 child: ListView(
                   children: [
                     const Text(
-                      "Pour plus de précision, placez-vous à l'intérieur du restaurant puis cliquez sur « Détecter ma position ». ",
-                      style: TextStyle(color: Colors.blueGrey, fontSize: 14, fontWeight: FontWeight.w600),
+                      "Pour plus de précision, placez-vous à l’intérieur du restaurant puis cliquez sur « Détecter ma position ».",
+                      style: TextStyle(
+                        color: Colors.blueGrey,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 9),
                     ElevatedButton.icon(
@@ -209,10 +221,12 @@ class _EditRestoPageState extends State<EditRestoPage> {
                           ? const Text("Recherche de la position…")
                           : const Text("Détecter ma position"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: orange,
-                        foregroundColor: Colors.white,
+                        backgroundColor: restoPrimary,
+                        foregroundColor: restoOnPrimary,
                         textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                     if (latitude != null && longitude != null)
@@ -228,60 +242,99 @@ class _EditRestoPageState extends State<EditRestoPage> {
                         ),
                       ),
                     const SizedBox(height: 12),
+
+                    // Nom
                     TextFormField(
                       controller: nomController,
                       decoration: InputDecoration(
                         labelText: "Nom du restaurant",
-                        labelStyle: TextStyle(color: bleuMaGuinee),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        labelStyle: const TextStyle(color: restoPrimary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: restoPrimary, width: 2),
+                        ),
                       ),
                       validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
                     const SizedBox(height: 13),
+
+                    // Ville
                     TextFormField(
                       controller: villeController,
                       decoration: InputDecoration(
                         labelText: "Ville",
-                        labelStyle: TextStyle(color: bleuMaGuinee),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        labelStyle: const TextStyle(color: restoPrimary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: restoPrimary, width: 2),
+                        ),
                       ),
                       validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
                     const SizedBox(height: 13),
+
+                    // Téléphone
                     TextFormField(
                       controller: telController,
                       decoration: InputDecoration(
                         labelText: "Téléphone",
-                        labelStyle: TextStyle(color: bleuMaGuinee),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        labelStyle: const TextStyle(color: restoPrimary),
+                        prefixIcon: const Icon(Icons.phone, color: restoSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: restoPrimary, width: 2),
+                        ),
                       ),
                       keyboardType: TextInputType.phone,
                       validator: (v) => v!.isEmpty ? "Champ obligatoire" : null,
                     ),
                     const SizedBox(height: 13),
+
+                    // Description
                     TextFormField(
                       controller: descriptionController,
                       decoration: InputDecoration(
                         labelText: "Description",
-                        labelStyle: TextStyle(color: bleuMaGuinee),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        labelStyle: const TextStyle(color: restoPrimary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: restoPrimary, width: 2),
+                        ),
                       ),
                       maxLines: 3,
                     ),
                     const SizedBox(height: 18),
-                    const Text("Photos du restaurant :", style: TextStyle(fontWeight: FontWeight.bold)),
+
+                    const Text(
+                      "Photos du restaurant :",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        // existantes
                         ...List.generate(urls.length, (idx) {
                           final url = urls[idx];
                           return Stack(
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.network(url, width: 70, height: 70, fit: BoxFit.cover),
+                                child: Image.network(
+                                  url,
+                                  width: 70,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                               Positioned(
                                 top: 0,
@@ -289,24 +342,31 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                 child: InkWell(
                                   onTap: () => _removeImage(idx, isNetwork: true),
                                   child: Container(
-                                    decoration: BoxDecoration(
-                                      color: rouge,
+                                    decoration: const BoxDecoration(
+                                      color: danger,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.close, color: Colors.white, size: 17),
+                                    child: const Icon(Icons.close,
+                                        color: Colors.white, size: 17),
                                   ),
                                 ),
                               ),
                             ],
                           );
                         }),
+                        // nouvelles locales
                         ...List.generate(files.length, (idx) {
                           final file = files[idx];
                           return Stack(
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.file(file, width: 70, height: 70, fit: BoxFit.cover),
+                                child: Image.file(
+                                  file,
+                                  width: 70,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                               Positioned(
                                 top: 0,
@@ -314,17 +374,19 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                 child: InkWell(
                                   onTap: () => _removeImage(idx),
                                   child: Container(
-                                    decoration: BoxDecoration(
-                                      color: rouge,
+                                    decoration: const BoxDecoration(
+                                      color: danger,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.close, color: Colors.white, size: 17),
+                                    child: const Icon(Icons.close,
+                                        color: Colors.white, size: 17),
                                   ),
                                 ),
                               ),
                             ],
                           );
                         }),
+                        // bouton ajout
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
@@ -333,24 +395,27 @@ class _EditRestoPageState extends State<EditRestoPage> {
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: bleuMaGuinee),
+                              border: Border.all(color: restoPrimary),
                             ),
-                            child: Icon(Icons.add_a_photo, size: 32, color: orange),
+                            child: const Icon(Icons.add_a_photo, size: 32, color: restoPrimary),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 28),
+
                     ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.save),
                       label: const Text("Enregistrer les modifications"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: bleuMaGuinee,
-                        foregroundColor: Colors.white,
+                        backgroundColor: restoPrimary,
+                        foregroundColor: restoOnPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ],

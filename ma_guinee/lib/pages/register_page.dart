@@ -1,7 +1,9 @@
+// lib/pages/register_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:country_picker/country_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:intl/date_symbol_data_local.dart'; // ⬅️ Pour la locale française
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../routes.dart';
@@ -21,6 +23,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _telephoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
   DateTime? _selectedDate;
   String? _selectedGenre;
   Country? _selectedCountry;
@@ -29,14 +32,37 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void initState() {
     super.initState();
-    initializeDateFormatting('fr'); // ⬅️ Initialise le formatage français
+    initializeDateFormatting('fr');
   }
 
-  void _selectDate() async {
+  // ---- Décoration arrondie réutilisable (couleurs fixes) ----
+  InputDecoration _dec(String label) {
+    final baseBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide(color: Colors.grey.shade300),
+    );
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.grey[50],
+      border: baseBorder,
+      enabledBorder: baseBorder,
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Color(0xFF0077B6), // mainPrimary
+          width: 1.6,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
+  Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      locale: const Locale('fr'), // ⬅️ calendrier en français
+      locale: const Locale('fr'),
       initialDate: DateTime(now.year - 18),
       firstDate: DateTime(1900),
       lastDate: now,
@@ -44,55 +70,41 @@ class _RegisterPageState extends State<RegisterPage> {
     if (picked != null) setState(() => _selectedDate = picked);
   }
 
-  Widget _buildCountrySelector() {
-    return InkWell(
-      onTap: () {
-        showCountryPicker(
-          context: context,
-          showPhoneCode: true,
-          onSelect: (Country country) {
-            setState(() => _selectedCountry = country);
-          },
-        );
-      },
-      child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: "Pays",
-          border: OutlineInputBorder(),
-        ),
-        child: Text(
-          _selectedCountry != null
-              ? '${_selectedCountry!.flagEmoji} ${_selectedCountry!.name} (+${_selectedCountry!.phoneCode})'
-              : "Sélectionner un pays",
-        ),
-      ),
+  Future<void> _pickCountry() async {
+    showCountryPicker(
+      context: context,
+      showPhoneCode: true,
+      onSelect: (c) => setState(() => _selectedCountry = c),
     );
   }
 
   Future<void> _soumettreInscription() async {
-    if (!_formKey.currentState!.validate() || _selectedDate == null || _selectedCountry == null) {
+    if (!_formKey.currentState!.validate() ||
+        _selectedDate == null ||
+        _selectedCountry == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez remplir tous les champs obligatoires.")),
+        const SnackBar(
+          content: Text('Veuillez remplir tous les champs obligatoires.'),
+        ),
       );
       return;
     }
 
     setState(() => _loading = true);
-
     try {
       final supabase = Supabase.instance.client;
 
-      // Création du compte
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
-      final signUpResponse = await supabase.auth.signUp(email: email, password: password);
-
+      final signUpResponse =
+          await supabase.auth.signUp(email: email, password: password);
       final userId = signUpResponse.user?.id;
       if (userId == null) {
-        throw Exception("Erreur lors de la création du compte. Email déjà utilisé ?");
+        throw Exception(
+          'Erreur lors de la création du compte. E-mail déjà utilisé ?',
+        );
       }
 
-      // Insertion dans la table utilisateurs
       await supabase.from('utilisateurs').insert({
         'id': userId,
         'prenom': _prenomController.text.trim(),
@@ -106,36 +118,35 @@ class _RegisterPageState extends State<RegisterPage> {
         'date_inscription': DateTime.now().toIso8601String(),
       });
 
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text("Inscription réussie"),
-            content: const Text("Votre compte a été créé avec succès !"),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pushNamedAndRemoveUntil(
-                      context, AppRoutes.mainNav, (_) => false);
-                },
-                child: const Text("OK"),
-              ),
-            ],
-          ),
-        );
-      }
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Inscription réussie'),
+          content: const Text('Votre compte a été créé avec succès !'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, AppRoutes.mainNav, (_) => false);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     } on AuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur d'authentification : ${e.message}")),
       );
     } on PostgrestException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur base : ${e.message}")),
+        SnackBar(content: Text('Erreur base : ${e.message}')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur : ${e.toString()}")),
+        SnackBar(content: Text('Erreur : $e')),
       );
     } finally {
       setState(() => _loading = false);
@@ -156,7 +167,22 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Créer un compte")),
+      // AppBar blanc + éléments bleus fixes
+      appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        title: const Text(
+          'Créer un compte',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        centerTitle: true,
+        elevation: 0.6,
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF0077B6), // mainPrimary
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
+        ),
+      ),
+
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -165,114 +191,117 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               TextFormField(
                 controller: _prenomController,
-                decoration: const InputDecoration(labelText: "Prénom", border: OutlineInputBorder()),
-                validator: (val) => val!.isEmpty ? "Champ requis" : null,
+                decoration: _dec('Prénom'),
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Champ requis' : null,
                 textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 12),
+
               TextFormField(
                 controller: _nomController,
-                decoration: const InputDecoration(labelText: "Nom", border: OutlineInputBorder()),
-                validator: (val) => val!.isEmpty ? "Champ requis" : null,
+                decoration: _dec('Nom'),
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Champ requis' : null,
                 textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 12),
+
               TextFormField(
                 controller: _emailController,
-                decoration: const InputDecoration(labelText: "Email", border: OutlineInputBorder()),
+                decoration: _dec('E-mail'),
                 keyboardType: TextInputType.emailAddress,
-                validator: (val) =>
-                    val == null || !val.contains('@') ? "Email invalide" : null,
+                validator: (v) =>
+                    (v == null || !v.contains('@')) ? 'E-mail invalide' : null,
               ),
               const SizedBox(height: 12),
-              _buildCountrySelector(),
-              const SizedBox(height: 12),
+
+              // Pays (champ readOnly arrondi)
               TextFormField(
-                controller: _telephoneController,
-                decoration: const InputDecoration(labelText: "Téléphone", border: OutlineInputBorder()),
-                keyboardType: TextInputType.phone,
-                validator: (val) => val!.isEmpty ? "Téléphone requis" : null,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: "Genre", border: OutlineInputBorder()),
-                value: _selectedGenre,
-                items: const [
-                  DropdownMenuItem(value: "Homme", child: Text("Homme")),
-                  DropdownMenuItem(value: "Femme", child: Text("Femme")),
-                ],
-                onChanged: (value) => setState(() => _selectedGenre = value),
-                validator: (val) => val == null ? "Genre requis" : null,
-              ),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: _selectDate,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: "Date de naissance",
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _selectedDate == null
-                        ? "Sélectionner une date"
-                        : DateFormat('dd MMMM yyyy', 'fr').format(_selectedDate!), // ⬅️ Français
-                  ),
+                readOnly: true,
+                onTap: _pickCountry,
+                decoration: _dec('Pays').copyWith(
+                  hintText: _selectedCountry != null
+                      ? '${_selectedCountry!.flagEmoji} ${_selectedCountry!.name} (+${_selectedCountry!.phoneCode})'
+                      : 'Sélectionner un pays',
+                  suffixIcon: const Icon(Icons.public),
                 ),
               ),
               const SizedBox(height: 12),
+
               TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: "Mot de passe", border: OutlineInputBorder()),
-                obscureText: true,
-                validator: (val) => val!.length < 6 ? "Minimum 6 caractères" : null,
+                controller: _telephoneController,
+                decoration: _dec('Téléphone'),
+                keyboardType: TextInputType.phone,
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Téléphone requis' : null,
               ),
               const SizedBox(height: 12),
+
+              DropdownButtonFormField<String>(
+                decoration: _dec('Genre'),
+                value: _selectedGenre,
+                items: const [
+                  DropdownMenuItem(value: 'Homme', child: Text('Homme')),
+                  DropdownMenuItem(value: 'Femme', child: Text('Femme')),
+                ],
+                onChanged: (v) => setState(() => _selectedGenre = v),
+                validator: (v) => v == null ? 'Genre requis' : null,
+              ),
+              const SizedBox(height: 12),
+
+              // Date de naissance (champ readOnly arrondi)
+              TextFormField(
+                readOnly: true,
+                onTap: _pickDate,
+                decoration: _dec('Date de naissance').copyWith(
+                  hintText: _selectedDate == null
+                      ? 'Sélectionner une date'
+                      : DateFormat('dd MMMM yyyy', 'fr').format(_selectedDate!),
+                  suffixIcon: const Icon(Icons.calendar_month),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _passwordController,
+                decoration: _dec('Mot de passe'),
+                obscureText: true,
+                validator: (v) =>
+                    (v == null || v.length < 6) ? 'Minimum 6 caractères' : null,
+              ),
+              const SizedBox(height: 12),
+
               TextFormField(
                 controller: _confirmPasswordController,
-                decoration: const InputDecoration(labelText: "Confirmer le mot de passe", border: OutlineInputBorder()),
+                decoration: _dec('Confirmer le mot de passe'),
                 obscureText: true,
-                validator: (val) => val != _passwordController.text
-                    ? "Les mots de passe ne correspondent pas"
+                validator: (v) => v != _passwordController.text
+                    ? 'Les mots de passe ne correspondent pas'
                     : null,
               ),
               const SizedBox(height: 24),
+
               _loading
                   ? const Center(child: CircularProgressIndicator())
                   : SizedBox(
                       width: double.infinity,
-                      child: GestureDetector(
-                        onTap: _soumettreInscription,
-                        child: Container(
+                      child: ElevatedButton(
+                        onPressed: _soumettreInscription,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0077B6), // mainPrimary
+                          foregroundColor: const Color(0xFFFFFFFF), // onPrimary
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFFE53935),
-                                Color(0xFFFFEB3B),
-                                Color(0xFF43A047),
-                              ],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            borderRadius: BorderRadius.circular(26),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 6,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
                           ),
-                          child: const Center(
-                            child: Text(
-                              "S'inscrire",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 19,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
+                          elevation: 2,
+                        ),
+                        child: const Text(
+                          "S'inscrire",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),

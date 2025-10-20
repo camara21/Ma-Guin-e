@@ -24,6 +24,11 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
 
+  // ===== Palette Hôtels (spécifique à cette page) =====
+  static const Color hotelsPrimary   = Color(0xFF264653);
+  static const Color hotelsSecondary = Color(0xFF2A9D8F);
+  static const Color onPrimary       = Colors.white;
+
   String nom = '';
   String adresse = '';
   String ville = '';
@@ -39,9 +44,6 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
   final List<XFile> _pickedImages = [];
   static const String _bucket = 'hotel-photos';
-
-  Color get primary => const Color(0xFF7B1FA2); // purple
-  Color get danger => const Color(0xFFE53935);
 
   @override
   void initState() {
@@ -62,11 +64,10 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
   // -------------------- Localisation --------------------
   Future<void> _detectLocation() async {
-    // Astuce AVANT
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          "Astuce : placez-vous À L’INTÉRIEUR de l’hôtel pour enregistrer sa position exacte.",
+          "Astuce : placez-vous à l’intérieur de l’hôtel pour enregistrer sa position exacte.",
         ),
         duration: Duration(seconds: 2),
       ),
@@ -93,9 +94,10 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       latitude = pos.latitude;
       longitude = pos.longitude;
 
-      // Geocoding → adresse + ville
+      // Geocoding : adresse + ville
       try {
-        final placemarks = await placemarkFromCoordinates(latitude!, longitude!);
+        final placemarks =
+            await placemarkFromCoordinates(latitude!, longitude!);
         if (placemarks.isNotEmpty) {
           final p = placemarks.first;
           adresse = [
@@ -111,10 +113,10 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
       setState(() {});
 
-      // Message APRÈS
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Position récupérée. Touchez la carte pour ajuster si besoin."),
+          content:
+              Text("Position récupérée. Touchez la carte pour ajuster si besoin."),
           duration: Duration(seconds: 2),
         ),
       );
@@ -150,7 +152,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(snap.data!, width: 70, height: 70, fit: BoxFit.cover),
+            child: Image.memory(snap.data!,
+                width: 70, height: 70, fit: BoxFit.cover),
           );
         },
       );
@@ -166,14 +169,17 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     final urls = <String>[];
 
     for (final img in _pickedImages) {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
       final objectPath = '$uid/$fileName';
 
       if (kIsWeb) {
         final bytes = await img.readAsBytes();
-        await storage.uploadBinary(objectPath, bytes, fileOptions: const FileOptions(upsert: true));
+        await storage.uploadBinary(objectPath, bytes,
+            fileOptions: const FileOptions(upsert: true));
       } else {
-        await storage.upload(objectPath, File(img.path), fileOptions: const FileOptions(upsert: true));
+        await storage.upload(objectPath, File(img.path),
+            fileOptions: const FileOptions(upsert: true));
       }
       urls.add(storage.getPublicUrl(objectPath));
     }
@@ -186,7 +192,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Clique sur "Détecter ma position" ou choisis manuellement sur la carte.'),
+          content: Text(
+              'Cliquez sur "Détecter ma position" ou choisissez manuellement sur la carte.'),
         ),
       );
       return;
@@ -220,15 +227,16 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         data['created_at'] = DateTime.now().toIso8601String();
         await Supabase.instance.client.from('hotels').insert(data);
 
-        // Dialog succès
         if (mounted) {
           await showDialog(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text("Succès"),
-              content: const Text("Hôtel enregistré avec succès ✅"),
+              content: const Text("Hôtel enregistré avec succès."),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("OK")),
               ],
             ),
           );
@@ -237,15 +245,16 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         final id = widget.hotel!['id'];
         await Supabase.instance.client.from('hotels').update(data).eq('id', id);
 
-        // Dialog succès
         if (mounted) {
           await showDialog(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text("Succès"),
-              content: const Text("Hôtel mis à jour avec succès ✅"),
+              content: const Text("Hôtel mis à jour avec succès."),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("OK")),
               ],
             ),
           );
@@ -255,7 +264,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -267,9 +277,10 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(
-        title: Text(widget.hotel == null ? 'Inscription Hôtel' : 'Modifier Hôtel'),
+        title:
+            Text(widget.hotel == null ? 'Inscription Hôtel' : 'Modifier Hôtel'),
         backgroundColor: Colors.white,
-        foregroundColor: primary,
+        foregroundColor: hotelsPrimary,
         elevation: 1,
       ),
       body: _loading
@@ -288,10 +299,11 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     ElevatedButton.icon(
                       onPressed: _gettingLocation ? null : _detectLocation,
                       icon: const Icon(Icons.location_on),
-                      label: Text(_gettingLocation ? 'Recherche en cours…' : 'Détecter ma position'),
+                      label: Text(
+                          _gettingLocation ? 'Recherche en cours…' : 'Détecter ma position'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: hotelsPrimary,
+                        foregroundColor: onPrimary,
                       ),
                     ),
                     if (latitude != null && longitude != null) ...[
@@ -300,7 +312,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                       Text('Longitude : $longitude'),
                       if (adresse.isNotEmpty) Text('Adresse : $adresse'),
                       const SizedBox(height: 12),
-                      const Text("Position sur la carte :", style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text("Position sur la carte :",
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
                       SizedBox(
                         height: 220,
@@ -323,7 +336,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                           ),
                           children: [
                             TileLayer(
-                              urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              urlTemplate:
+                                  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                               subdomains: const ['a', 'b', 'c'],
                             ),
                             MarkerLayer(
@@ -332,7 +346,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                                   width: 40.0,
                                   height: 40.0,
                                   point: LatLng(latitude!, longitude!),
-                                  child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                                  child: const Icon(Icons.location_on,
+                                      color: Colors.red, size: 40),
                                 ),
                               ],
                             ),
@@ -343,56 +358,66 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     ],
                     TextFormField(
                       initialValue: nom,
-                      decoration: const InputDecoration(labelText: "Nom de l'hôtel"),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      decoration:
+                          const InputDecoration(labelText: "Nom de l'hôtel"),
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => nom = v ?? '',
                     ),
                     TextFormField(
                       initialValue: adresse,
                       decoration: const InputDecoration(labelText: 'Adresse'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => adresse = v ?? '',
                     ),
                     TextFormField(
                       initialValue: ville,
                       decoration: const InputDecoration(labelText: 'Ville'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => ville = v ?? '',
                     ),
                     TextFormField(
                       initialValue: telephone,
-                      decoration: const InputDecoration(labelText: 'Téléphone'),
+                      decoration:
+                          const InputDecoration(labelText: 'Téléphone'),
                       keyboardType: TextInputType.phone,
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                       onSaved: (v) => telephone = v ?? '',
                     ),
                     TextFormField(
                       initialValue: description,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration:
+                          const InputDecoration(labelText: 'Description'),
                       maxLines: 3,
                       onSaved: (v) => description = v ?? '',
                     ),
                     TextFormField(
                       initialValue: prix,
-                      decoration: const InputDecoration(labelText: 'Prix moyen (ex: 500 000 GNF)'),
+                      decoration: const InputDecoration(
+                          labelText: 'Prix moyen (ex: 500 000 GNF)'),
                       onSaved: (v) => prix = v ?? '',
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Text("Nombre d'étoiles :"),
+                        const Text("Nombre d’étoiles :"),
                         const SizedBox(width: 12),
                         DropdownButton<int>(
                           value: etoiles,
                           onChanged: (v) => setState(() => etoiles = v!),
                           items: [1, 2, 3, 4, 5]
-                              .map((e) => DropdownMenuItem(value: e, child: Text('$e ⭐')))
+                              .map((e) => DropdownMenuItem(
+                                  value: e, child: Text('$e ★')))
                               .toList(),
                         ),
                       ],
                     ),
                     const SizedBox(height: 18),
-                    const Text('Photos de l’hôtel :', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Photos de l’hôtel :',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 8,
@@ -410,7 +435,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close, size: 14, color: Colors.white),
+                                    child: Icon(Icons.close,
+                                        size: 14, color: Colors.white),
                                   ),
                                 ),
                               ),
@@ -426,7 +452,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: Icon(Icons.add_a_photo, size: 30, color: primary),
+                            child: const Icon(Icons.add_a_photo, size: 30),
                           ),
                         ),
                       ],
@@ -435,12 +461,14 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.save),
-                      label: Text(widget.hotel == null ? 'Enregistrer' : 'Mettre à jour'),
+                      label: Text(
+                          widget.hotel == null ? 'Enregistrer' : 'Mettre à jour'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: hotelsPrimary,
+                        foregroundColor: onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
                   ],

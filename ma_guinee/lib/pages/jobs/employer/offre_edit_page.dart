@@ -16,7 +16,7 @@ class OffreEditPage extends StatefulWidget {
 }
 
 class _OffreEditPageState extends State<OffreEditPage> {
-  // 🎨 Palette
+  // Palette
   static const kBlue = Color(0xFF1976D2);
   static const kBg   = Color(0xFFF6F7F9);
 
@@ -101,18 +101,18 @@ class _OffreEditPageState extends State<OffreEditPage> {
     }
 
     final payload = {
-      'employeur_id'    : widget.employeurId, // indispensable pour RLS
-      'titre'           : _titre.text.trim(),
-      'ville'           : _ville.value,
-      'commune'         : _commune.value,
-      'type_contrat'    : _contrat.value, // slug ENUM
-      'teletravail'     : _remote,
-      'salaire_min_gnf' : _salMin.text.isEmpty ? null : num.tryParse(_salMin.text),
-      'salaire_max_gnf' : _salMax.text.isEmpty ? null : num.tryParse(_salMax.text),
-      'description'     : _description.text.trim(),
-      'exigences'       : _exigences.text.trim().isEmpty ? null : _exigences.text.trim(),
-      'avantages'       : _avantages.text.trim().isEmpty ? null : _avantages.text.trim(),
-      'date_limite'     : dateForDb(_dateLimite), // 'YYYY-MM-DD' ou null
+      'employeur_id': widget.employeurId,           // indispensable pour RLS
+      'titre'       : _titre.text.trim(),
+      'ville'       : _ville.value,
+      'commune'     : _commune.value,
+      'type_contrat': _contrat.value,               // slug ENUM
+      'teletravail' : _remote,
+      'salaire_min_gnf': _salMin.text.isEmpty ? null : num.tryParse(_salMin.text),
+      'salaire_max_gnf': _salMax.text.isEmpty ? null : num.tryParse(_salMax.text),
+      'description' : _description.text.trim(),
+      'exigences'   : _exigences.text.trim().isEmpty ? null : _exigences.text.trim(),
+      'avantages'   : _avantages.text.trim().isEmpty ? null : _avantages.text.trim(),
+      'date_limite' : dateForDb(_dateLimite),       // 'YYYY-MM-DD' ou null
     };
 
     setState(() => _saving = true);
@@ -125,8 +125,9 @@ class _OffreEditPageState extends State<OffreEditPage> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Échec de l’enregistrement : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Échec de l’enregistrement : $e')),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -138,8 +139,7 @@ class _OffreEditPageState extends State<OffreEditPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Supprimer l’offre ?'),
-        content: const Text(
-            'Cette action supprimera aussi les candidatures liées (cascade).'),
+        content: const Text('Cette action supprimera aussi les candidatures liées (cascade).'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
@@ -187,7 +187,7 @@ class _OffreEditPageState extends State<OffreEditPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: .5,
-        title: Text(widget.existing == null ? 'Nouvelle offre' : 'Modifier l\'offre'),
+        title: Text(widget.existing == null ? 'Nouvelle offre' : 'Modifier l’offre'),
         actions: [
           if (widget.existing != null)
             IconButton(
@@ -266,9 +266,7 @@ class _OffreEditPageState extends State<OffreEditPage> {
                   child: TextFormField(
                     controller: _salMin,
                     keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
-                    ],
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: _dec('Salaire minimum (GNF / mois)', Icons.attach_money),
                   ),
                 ),
@@ -277,9 +275,7 @@ class _OffreEditPageState extends State<OffreEditPage> {
                   child: TextFormField(
                     controller: _salMax,
                     keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
-                    ],
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: _dec('Salaire maximum (GNF / mois)', Icons.money_outlined),
                   ),
                 ),
@@ -340,10 +336,7 @@ class _OffreEditPageState extends State<OffreEditPage> {
                 subtitle: Text(
                   _dateLimite == null ? 'Non définie' : (dateForDb(_dateLimite!)!),
                 ),
-                trailing: TextButton(
-                  onPressed: _pickDateLimite,
-                  child: const Text('Choisir'),
-                ),
+                trailing: TextButton(onPressed: _pickDateLimite, child: const Text('Choisir')),
               ),
             ),
 
@@ -360,7 +353,8 @@ class _OffreEditPageState extends State<OffreEditPage> {
                 onPressed: _saving ? null : _save,
                 child: _saving
                     ? const SizedBox(
-                        height: 18, width: 18,
+                        height: 18,
+                        width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Enregistrer'),

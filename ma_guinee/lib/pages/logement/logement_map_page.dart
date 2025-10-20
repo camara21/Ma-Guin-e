@@ -15,7 +15,7 @@ class LogementMapPage extends StatefulWidget {
     super.key,
     this.ville,
     this.commune,
-    // 🔥 focus précis (passé par la route)
+    // focus précis (passé par la route)
     this.focusId,
     this.focusLat,
     this.focusLng,
@@ -52,10 +52,11 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   // Thème
   Color get _primary => const Color(0xFF0B3A6A);
-  Color get _accent  => const Color(0xFFE1005A);
-  bool  get _isDark  => Theme.of(context).brightness == Brightness.dark;
-  Color get _bg      => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _chipBg  => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _accent => const Color(0xFFE1005A);
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
+  Color get _chipBg =>
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   @override
   void initState() {
@@ -64,10 +65,13 @@ class _LogementMapPageState extends State<LogementMapPage> {
   }
 
   Future<void> _init() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     await _getMe();
     await _load();
-    await _focusIfNeeded(); // centre + ouvre l’aperçu si focus fourni
+    await _focusIfNeeded(); // centre + ouvre l’aperçu si un focus est fourni
   }
 
   Future<void> _load() async {
@@ -78,10 +82,16 @@ class _LogementMapPageState extends State<LogementMapPage> {
         limit: 400,
       );
       if (!mounted) return;
-      setState(() { _items = list; _loading = false; });
+      setState(() {
+        _items = list;
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -89,9 +99,14 @@ class _LogementMapPageState extends State<LogementMapPage> {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
       var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
       if (p == LocationPermission.denied || p == LocationPermission.deniedForever) return;
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
       _me = LatLng(pos.latitude, pos.longitude);
     } catch (_) {}
   }
@@ -140,17 +155,22 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   void _fitAll() {
     try {
-      final pts = _items.map((e) {
-        if (e.lat == null || e.lng == null) return null;
-        return LatLng(e.lat!, e.lng!);
-      }).whereType<LatLng>().toList();
+      final pts = _items
+          .map((e) {
+            if (e.lat == null || e.lng == null) return null;
+            return LatLng(e.lat!, e.lng!);
+          })
+          .whereType<LatLng>()
+          .toList();
 
       if (pts.isEmpty) {
         _map.move(const LatLng(9.5412, -13.6773), 12);
         return;
       }
       final b = LatLngBounds.fromPoints(pts);
-      _map.fitCamera(CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(48)));
+      _map.fitCamera(
+        CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(48)),
+      );
     } catch (_) {}
   }
 
@@ -158,42 +178,70 @@ class _LogementMapPageState extends State<LogementMapPage> {
     if (v == null) return 'Prix à discuter';
     final s = _thousands(v.toInt());
     return perMonth ? '$s GNF / mois' : '$s GNF';
-    }
+  }
 
   String _fmtShort(num? v, {bool perMonth = false}) {
     if (v == null) return '—';
-    double n = v.toDouble(); String suf = '';
-    if (n >= 1e9) { n/=1e9; suf='B'; }
-    else if (n >= 1e6) { n/=1e6; suf='M'; }
-    else if (n >= 1e3) { n/=1e3; suf='k'; }
+    double n = v.toDouble();
+    String suf = '';
+    if (n >= 1e9) {
+      n /= 1e9;
+      suf = 'B';
+    } else if (n >= 1e6) {
+      n /= 1e6;
+      suf = 'M';
+    } else if (n >= 1e3) {
+      n /= 1e3;
+      suf = 'k';
+    }
     final s = (n % 1 == 0) ? n.toStringAsFixed(0) : n.toStringAsFixed(1);
     return perMonth ? '$s$suf/mois' : '$s$suf';
   }
 
   String _thousands(int n) {
-    final s = n.toString(); final b = StringBuffer(); int c = 0;
-    for (int i = s.length - 1; i >= 0; i--) { b.write(s[i]); if (++c==3 && i!=0){ b.write('.'); c=0; } }
+    final s = n.toString();
+    final b = StringBuffer();
+    int c = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      b.write(s[i]);
+      if (++c == 3 && i != 0) {
+        b.write('.');
+        c = 0;
+      }
+    }
     return b.toString().split('').reversed.join();
   }
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = [widget.ville, widget.commune].whereType<String>().join(' • ');
+    final subtitle = [widget.ville, widget.commune]
+        .whereType<String>()
+        .join(' • ');
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         backgroundColor: _primary,
-        title: const Text('Carte des logements', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Carte des logements',
+          style: TextStyle(color: Colors.white),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(onPressed: _init, tooltip: 'Rafraîchir', icon: const Icon(Icons.refresh, color: Colors.white)),
+          IconButton(
+            onPressed: _init,
+            tooltip: 'Rafraîchir',
+            icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(subtitle.isEmpty ? 'Guinée' : subtitle, style: const TextStyle(color: Colors.white70)),
+            child: Text(
+              subtitle.isEmpty ? 'Guinée' : subtitle,
+              style: const TextStyle(color: Colors.white70),
+            ),
           ),
         ),
       ),
@@ -212,13 +260,15 @@ class _LogementMapPageState extends State<LogementMapPage> {
                       children: [
                         if (_style == _MapStyle.voyager)
                           TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                             userAgentPackageName: 'com.example.ma_guinee',
                             subdomains: const ['a', 'b', 'c'],
                           )
                         else
                           TileLayer(
-                            urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                            urlTemplate:
+                                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                             userAgentPackageName: 'com.example.ma_guinee',
                           ),
 
@@ -233,12 +283,24 @@ class _LogementMapPageState extends State<LogementMapPage> {
                             zoomToBoundsOnClick: true,
                             builder: (context, markers) => Container(
                               decoration: BoxDecoration(
-                                color: _primary, shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 8, offset: const Offset(0, 4))],
+                                color: _primary,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.20),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  )
+                                ],
                               ),
                               alignment: Alignment.center,
-                              child: Text('${markers.length}',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: Text(
+                                '${markers.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -246,23 +308,47 @@ class _LogementMapPageState extends State<LogementMapPage> {
                         if (_me != null)
                           MarkerLayer(markers: [
                             Marker(
-                              point: _me!, width: 80, height: 95,
-                              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                Container(
-                                  decoration: BoxDecoration(border: Border.all(color: Colors.blueAccent, width: 3), shape: BoxShape.circle),
-                                  child: const CircleAvatar(
-                                    radius: 20, backgroundColor: Colors.white,
-                                    child: Icon(Icons.person_pin_circle, color: Colors.blueAccent, size: 28),
+                              point: _me!,
+                              width: 80,
+                              height: 95,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                          color: Colors.blueAccent, width: 3),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: Colors.white,
+                                      child: Icon(
+                                        Icons.person_pin_circle,
+                                        color: Colors.blueAccent,
+                                        size: 28,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(8)),
-                                  child: const Text('Moi',
-                                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                                ),
-                              ]),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text(
+                                      'Moi',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ]),
 
@@ -271,8 +357,14 @@ class _LogementMapPageState extends State<LogementMapPage> {
                           MarkerLayer(markers: [
                             Marker(
                               point: LatLng(widget.focusLat!, widget.focusLng!),
-                              width: 60, height: 60, alignment: Alignment.topCenter,
-                              child: const Icon(Icons.location_on, size: 40, color: Color(0xFFE1005A)),
+                              width: 60,
+                              height: 60,
+                              alignment: Alignment.topCenter,
+                              child: const Icon(
+                                Icons.location_on,
+                                size: 40,
+                                color: Color(0xFFE1005A),
+                              ),
                             ),
                           ]),
                       ],
@@ -280,19 +372,34 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
                     // switch style
                     Positioned(
-                      top: 12, right: 12,
+                      top: 12,
+                      right: 12,
                       child: SafeArea(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: _isDark ? const Color(0xFF121826).withOpacity(0.85) : Colors.white.withOpacity(0.95),
+                            color: _isDark
+                                ? const Color(0xFF121826).withOpacity(0.85)
+                                : Colors.white.withOpacity(0.95),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _isDark ? const Color(0xFF2A3242) : const Color(0xFFE6E6E6)),
+                            border: Border.all(
+                              color: _isDark
+                                  ? const Color(0xFF2A3242)
+                                  : const Color(0xFFE6E6E6),
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              _styleButton('Voyager',  _style == _MapStyle.voyager,  () => setState(() => _style = _MapStyle.voyager)),
-                              _styleButton('Satellite', _style == _MapStyle.satellite, () => setState(() => _style = _MapStyle.satellite)),
+                              _styleButton(
+                                'Voyager',
+                                _style == _MapStyle.voyager,
+                                () => setState(() => _style = _MapStyle.voyager),
+                              ),
+                              _styleButton(
+                                'Satellite',
+                                _style == _MapStyle.satellite,
+                                () => setState(() => _style = _MapStyle.satellite),
+                              ),
                             ],
                           ),
                         ),
@@ -301,12 +408,19 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
                     // FAB
                     Positioned(
-                      bottom: 24, right: 18,
+                      bottom: 24,
+                      right: 18,
                       child: FloatingActionButton(
-                        onPressed: () { if (_me != null) _map.move(_me!, 15); },
-                        backgroundColor: Colors.blueAccent, elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        child: const Icon(Icons.my_location), tooltip: 'Ma position',
+                        onPressed: () {
+                          if (_me != null) _map.move(_me!, 15);
+                        },
+                        backgroundColor: Colors.blueAccent,
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.my_location),
+                        tooltip: 'Ma position',
                       ),
                     ),
                   ],
@@ -316,14 +430,23 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   Widget _styleButton(String label, bool active, VoidCallback onTap) {
     return InkWell(
-      borderRadius: BorderRadius.circular(10), onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: active ? _primary : Colors.transparent, borderRadius: BorderRadius.circular(10)),
-        child: Text(label,
+        decoration: BoxDecoration(
+          color: active ? _primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
           style: TextStyle(
-            color: active ? Colors.white : (_isDark ? const Color(0xFFBFC6D1) : const Color(0xFF222222)),
-            fontWeight: FontWeight.w700, fontSize: 13, letterSpacing: 0.2,
+            color: active
+                ? Colors.white
+                : (_isDark ? const Color(0xFFBFC6D1) : const Color(0xFF222222)),
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            letterSpacing: 0.2,
           ),
         ),
       ),
@@ -336,68 +459,104 @@ class _LogementMapPageState extends State<LogementMapPage> {
       if (b.lat == null || b.lng == null) continue;
       final p = LatLng(b.lat!, b.lng!);
       final photo = (b.photos.isNotEmpty) ? b.photos.first : null;
-      final priceShort = _fmtShort(b.prixGnf, perMonth: b.mode == LogementMode.location);
+      final priceShort =
+          _fmtShort(b.prixGnf, perMonth: b.mode == LogementMode.location);
 
-      out.add(Marker(
-        point: p, width: 70, height: 92, alignment: Alignment.topCenter,
-        child: GestureDetector(
-          onTap: () => _showPreview(b),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Stack(clipBehavior: Clip.none, children: [
-              Container(
-                width: 60, height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 8, offset: const Offset(0, 4))],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: photo == null
-                    ? Container(color: const Color(0xFFEFEFEF), child: const Icon(Icons.home_rounded, color: Colors.black38))
-                    : Image.network(photo, fit: BoxFit.cover),
-              ),
-              Positioned(
-                bottom: -6, left: 0, right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _primary,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: Text(priceShort,
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+      out.add(
+        Marker(
+          point: p,
+          width: 70,
+          height: 92,
+          alignment: Alignment.topCenter,
+          child: GestureDetector(
+            onTap: () => _showPreview(b),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Stack(clipBehavior: Clip.none, children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.20),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
                   ),
+                  clipBehavior: Clip.antiAlias,
+                  child: photo == null
+                      ? Container(
+                          color: const Color(0xFFEFEFEF),
+                          child: const Icon(
+                            Icons.home_rounded,
+                            color: Colors.black38,
+                          ),
+                        )
+                      : Image.network(photo, fit: BoxFit.cover),
+                ),
+                Positioned(
+                  bottom: -6,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _primary,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Text(
+                        priceShort,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: Colors.black.withOpacity(0.12)),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                child: Transform.rotate(
+                  angle: 0.785398, // 45°
+                  child: Container(color: Colors.white),
                 ),
               ),
             ]),
-            const SizedBox(height: 10),
-            Container(
-              width: 12, height: 12,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: Colors.black.withOpacity(0.12)),
-                borderRadius: BorderRadius.circular(2),
-              ),
-              child: Transform.rotate(angle: 0.785398, child: Container(color: Colors.white)),
-            ),
-          ]),
+          ),
         ),
-      ));
+      );
     }
     return out;
   }
 
   void _showPreview(LogementModel b) {
     final price = (b.prixGnf != null)
-        ? (b.mode == LogementMode.achat ? _fmtGNF(b.prixGnf) : _fmtGNF(b.prixGnf, perMonth: true))
+        ? (b.mode == LogementMode.achat
+            ? _fmtGNF(b.prixGnf)
+            : _fmtGNF(b.prixGnf, perMonth: true))
         : 'Prix à discuter';
 
     showModalBottomSheet(
       context: context,
       backgroundColor: _isDark ? const Color(0xFF0B1220) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -409,9 +568,17 @@ class _LogementMapPageState extends State<LogementMapPage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: SizedBox(
-                    width: 92, height: 92,
+                    width: 92,
+                    height: 92,
                     child: (b.photos.isEmpty)
-                        ? Container(color: _chipBg, child: const Icon(Icons.image, color: Colors.black26, size: 32))
+                        ? Container(
+                            color: _chipBg,
+                            child: const Icon(
+                              Icons.image,
+                              color: Colors.black26,
+                              size: 32,
+                            ),
+                          )
                         : Image.network(b.photos.first, fit: BoxFit.cover),
                   ),
                 ),
@@ -420,36 +587,66 @@ class _LogementMapPageState extends State<LogementMapPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(b.titre, maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      Text(
+                        b.titre,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Wrap(
-                        spacing: 6, runSpacing: -6, crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: -6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _miniChip(b.mode == LogementMode.achat ? 'Achat' : 'Location'),
+                          _miniChip(
+                              b.mode == LogementMode.achat ? 'Achat' : 'Location'),
                           _miniChip(_labelCat(b.categorie)),
                           if (b.chambres != null) _miniChip('${b.chambres} ch'),
-                          if (b.superficieM2 != null) _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                          if (b.superficieM2 != null)
+                            _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Text([b.ville, b.commune].whereType<String>().join(' • '),
-                          style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      Text(
+                        [b.ville, b.commune].whereType<String>().join(' • '),
+                        style: const TextStyle(color: Colors.black54, fontSize: 12),
+                      ),
                     ],
                   ),
                 ),
               ]),
               const SizedBox(height: 10),
               Row(children: [
-                Text(price, style: TextStyle(color: _accent, fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  price,
+                  style: TextStyle(
+                    color: _accent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 const Spacer(),
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Fermer'),
+                ),
                 const SizedBox(width: 6),
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, AppRoutes.logementDetail, arguments: b.id);
+                    Navigator.pushNamed(
+                      context,
+                      AppRoutes.logementDetail,
+                      arguments: b.id,
+                    );
                   },
                   icon: const Icon(Icons.chevron_right),
                   label: const Text('Voir la fiche'),
@@ -470,11 +667,16 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   String _labelCat(LogementCategorie c) {
     switch (c) {
-      case LogementCategorie.maison: return 'Maison';
-      case LogementCategorie.appartement: return 'Appartement';
-      case LogementCategorie.studio: return 'Studio';
-      case LogementCategorie.terrain: return 'Terrain';
-      case LogementCategorie.autres: return 'Autres';
+      case LogementCategorie.maison:
+        return 'Maison';
+      case LogementCategorie.appartement:
+        return 'Appartement';
+      case LogementCategorie.studio:
+        return 'Studio';
+      case LogementCategorie.terrain:
+        return 'Terrain';
+      case LogementCategorie.autres:
+        return 'Autres';
     }
   }
 
@@ -490,7 +692,10 @@ class _LogementMapPageState extends State<LogementMapPage> {
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: _init,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Réessayer'),

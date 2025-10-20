@@ -46,18 +46,18 @@ class _CartePageState extends State<CartePage> {
     setState(() => _loading = true);
     await _getMaPosition();
 
-    // ➜ Requêtes séparées, une par catégorie/table
-    await _chargerHotels();            // public.hotels
-    await _chargerRestaurants();       // public.restaurants
-    await _chargerCliniques();         // public.cliniques
-    await _chargerTourisme();          // public.lieux (tourisme)
-    await _chargerCulte();             // public.lieux (culte)
-    await _chargerDivertissement();    // public.lieux (divertissement)
+    // Requêtes séparées, une par catégorie/table
+    await _chargerHotels(); // public.hotels
+    await _chargerRestaurants(); // public.restaurants
+    await _chargerCliniques(); // public.cliniques
+    await _chargerTourisme(); // public.lieux (tourisme)
+    await _chargerCulte(); // public.lieux (culte)
+    await _chargerDivertissement(); // public.lieux (divertissement)
 
     if (!mounted) return;
     setState(() => _loading = false);
 
-    // Log pour contrôle
+    // Log de contrôle
     debugPrint('[CARTE] hotels=${_data['hotels']?.length} '
         'restos=${_data['restos']?.length} '
         'sante=${_data['sante']?.length} '
@@ -75,9 +75,11 @@ class _CartePageState extends State<CartePage> {
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) return;
 
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium);
       _maPosition = LatLng(pos.latitude, pos.longitude);
     } catch (_) {/* silencieux */}
   }
@@ -93,7 +95,8 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['hotels'] = List<Map<String, dynamic>>.from(res as List));
+      setState(
+          () => _data['hotels'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       _toast('Erreur hôtels : $e');
     }
@@ -106,7 +109,8 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['restos'] = List<Map<String, dynamic>>.from(res as List));
+      setState(
+          () => _data['restos'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       _toast('Erreur restaurants : $e');
     }
@@ -119,13 +123,14 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['sante'] = List<Map<String, dynamic>>.from(res as List));
+      setState(
+          () => _data['sante'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       _toast('Erreur cliniques : $e');
     }
   }
 
-  // ——— LIEUX : on fait une requête PAR catégorie avec des mots-clés tolérants ———
+  // LIEUX : on fait une requête PAR catégorie avec des mots-clés tolérants
   static const _colsLieux = '''
     id, nom, latitude, longitude, images, ville, description, adresse, contact,
     type, categorie, photo_url, created_at
@@ -142,7 +147,8 @@ class _CartePageState extends State<CartePage> {
           )
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['tourisme'] = List<Map<String, dynamic>>.from(res as List));
+      setState(() =>
+          _data['tourisme'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       // si table absente, on ignore
     }
@@ -154,13 +160,14 @@ class _CartePageState extends State<CartePage> {
           .from('lieux')
           .select(_colsLieux)
           .or(
-            // “culte”, “mosquée”, “église”, “cathé”, “temple”, “sanctuaire”…
-            'type.ilike.%culte%,type.ilike.%mosqu%,type.ilike.%egl%,type.ilike.%égl%,type.ilike.%cath%,type.ilike.%temple%,type.ilike.%sanct%,'
-            'categorie.ilike.%culte%,categorie.ilike.%mosqu%,categorie.ilike.%egl%,categorie.ilike.%égl%,categorie.ilike.%cath%,categorie.ilike.%temple%,categorie.ilike.%sanct%',
+            // "culte", "mosquée", "église", "cathédrale", "temple", "sanctuaire"…
+            'type.ilike.%culte%,type.ilike.%mosqu%,type.ilike.%egl%,type.ilike.%Ã©Â©Ã†â€™Â©gl%,type.ilike.%cath%,type.ilike.%temple%,type.ilike.%sanct%,'
+            'categorie.ilike.%culte%,categorie.ilike.%mosqu%,categorie.ilike.%egl%,categorie.ilike.%Ã©Â©Ã†â€™Â©gl%,categorie.ilike.%cath%,categorie.ilike.%temple%,categorie.ilike.%sanct%',
           )
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['culte'] = List<Map<String, dynamic>>.from(res as List));
+      setState(
+          () => _data['culte'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       // ignore
     }
@@ -172,13 +179,14 @@ class _CartePageState extends State<CartePage> {
           .from('lieux')
           .select(_colsLieux)
           .or(
-            // “divert”, “loisir”, “bar”, “club”, “ciné”, “théâtre”, “lounge”, “parc”
-            'type.ilike.%diver%,type.ilike.%loisir%,type.ilike.%bar%,type.ilike.%club%,type.ilike.%cine%,type.ilike.%ciné%,type.ilike.%theat%,type.ilike.%théât%,type.ilike.%lounge%,type.ilike.%parc%,'
-            'categorie.ilike.%diver%,categorie.ilike.%loisir%,categorie.ilike.%bar%,categorie.ilike.%club%,categorie.ilike.%cine%,categorie.ilike.%ciné%,categorie.ilike.%theat%,categorie.ilike.%théât%,categorie.ilike.%lounge%,categorie.ilike.%parc%',
+            // "divertissement", "loisir", "bar", "club", "ciné", "théâtre", "lounge", "parc"…
+            'type.ilike.%diver%,type.ilike.%loisir%,type.ilike.%bar%,type.ilike.%club%,type.ilike.%cine%,type.ilike.%cinÃ©Â©Ã†â€™Â©%,type.ilike.%theat%,type.ilike.%thÃ©Â©Ã†â€™Â©Ã©Â©Ã†â€™Â¢t%,type.ilike.%lounge%,type.ilike.%parc%,'
+            'categorie.ilike.%diver%,categorie.ilike.%loisir%,categorie.ilike.%bar%,categorie.ilike.%club%,categorie.ilike.%cine%,categorie.ilike.%cinÃ©Â©Ã†â€™Â©%,categorie.ilike.%theat%,categorie.ilike.%thÃ©Â©Ã†â€™Â©Ã©Â©Ã†â€™Â¢t%,categorie.ilike.%lounge%,categorie.ilike.%parc%',
           )
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(() => _data['divertissement'] = List<Map<String, dynamic>>.from(res as List));
+      setState(() => _data['divertissement'] =
+          List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       // ignore
     }
@@ -208,8 +216,16 @@ class _CartePageState extends State<CartePage> {
   }
 
   String _firstImage(Map<String, dynamic> lieu, {required String categorie}) {
-    // différentes colonnes possibles selon tables
-    final keys = ['images', 'photos', 'photo_url', 'image_url', 'cover', 'logo', 'image'];
+    // Différentes colonnes possibles selon les tables
+    final keys = [
+      'images',
+      'photos',
+      'photo_url',
+      'image_url',
+      'cover',
+      'logo',
+      'image'
+    ];
     for (final k in keys) {
       final v = lieu[k];
       final imgs = _imagesFrom(v);
@@ -243,7 +259,8 @@ class _CartePageState extends State<CartePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Image.network(
@@ -261,13 +278,15 @@ class _CartePageState extends State<CartePage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
               child: Text(
                 nom,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
             if (ville.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Text(ville, style: TextStyle(color: Colors.grey.shade700)),
+                child:
+                    Text(ville, style: TextStyle(color: Colors.grey.shade700)),
               ),
           ],
         ),
@@ -281,7 +300,8 @@ class _CartePageState extends State<CartePage> {
               Navigator.pop(context);
               final page = _buildDetailPage(categorie, lieu);
               if (page != null) {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+                Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => page));
               }
             },
             child: const Text('Voir la fiche'),
@@ -327,7 +347,7 @@ class _CartePageState extends State<CartePage> {
     if (_categorieSelectionnee == 'tous') {
       addMarkers('hotels', _data['hotels'] ?? []);
       addMarkers('restos', _data['restos'] ?? []);
-      addMarkers('sante',  _data['sante']  ?? []);
+      addMarkers('sante', _data['sante'] ?? []);
       addMarkers('tourisme', _data['tourisme'] ?? []);
       addMarkers('culte', _data['culte'] ?? []);
       addMarkers('divertissement', _data['divertissement'] ?? []);
@@ -349,24 +369,37 @@ class _CartePageState extends State<CartePage> {
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.blueAccent, width: 3),
                   shape: BoxShape.circle,
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+                  boxShadow: const [
+                    BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 4,
+                        offset: Offset(0, 2))
+                  ],
                 ),
                 child: CircleAvatar(
                   radius: 28,
                   backgroundColor: Colors.white,
-                  backgroundImage: userPhotoUrl.isNotEmpty ? NetworkImage(userPhotoUrl) : null,
+                  backgroundImage: userPhotoUrl.isNotEmpty
+                      ? NetworkImage(userPhotoUrl)
+                      : null,
                   child: userPhotoUrl.isEmpty
-                      ? const Icon(Icons.person_pin_circle, color: Colors.blueAccent, size: 35)
+                      ? const Icon(Icons.person_pin_circle,
+                          color: Colors.blueAccent, size: 35)
                       : null,
                 ),
               ),
               const SizedBox(height: 5),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                    color: Colors.blueAccent,
+                    borderRadius: BorderRadius.circular(10)),
                 child: Text(
                   userNom,
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -381,7 +414,10 @@ class _CartePageState extends State<CartePage> {
       appBar: AppBar(
         title: const Text(
           "Carte interactive",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, letterSpacing: 0.4),
+          style: TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.4),
         ),
         elevation: 1.2,
         backgroundColor: Colors.white,
@@ -390,7 +426,11 @@ class _CartePageState extends State<CartePage> {
           if (_loading)
             const Padding(
               padding: EdgeInsets.only(right: 12),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+              child: Center(
+                  child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
             ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -406,18 +446,25 @@ class _CartePageState extends State<CartePage> {
                   value: _categorieSelectionnee,
                   icon: const Icon(Icons.expand_more, color: Colors.black),
                   dropdownColor: Colors.white,
-                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      color: Colors.black, fontWeight: FontWeight.w600),
                   items: const [
                     DropdownMenuItem(value: 'tous', child: Text("Tous")),
                     DropdownMenuItem(value: 'hotels', child: Text("Hôtels")),
-                    DropdownMenuItem(value: 'restos', child: Text("Restaurants")),
+                    DropdownMenuItem(
+                        value: 'restos', child: Text("Restaurants")),
                     DropdownMenuItem(value: 'sante', child: Text("Santé")),
-                    DropdownMenuItem(value: 'tourisme', child: Text("Tourisme")),
-                    DropdownMenuItem(value: 'culte', child: Text("Lieux de culte")),
-                    DropdownMenuItem(value: 'divertissement', child: Text("Divertissement")),
+                    DropdownMenuItem(
+                        value: 'tourisme', child: Text("Tourisme")),
+                    DropdownMenuItem(
+                        value: 'culte', child: Text("Lieux de culte")),
+                    DropdownMenuItem(
+                        value: 'divertissement', child: Text("Divertissement")),
                   ],
                   onChanged: (val) {
-                    if (val != null) setState(() => _categorieSelectionnee = val);
+                    if (val != null) {
+                      setState(() => _categorieSelectionnee = val);
+                    }
                   },
                 ),
               ),
@@ -449,7 +496,8 @@ class _CartePageState extends State<CartePage> {
               onPressed: _centrerSurMaPosition,
               backgroundColor: Colors.blueAccent,
               elevation: 5,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
               child: const Icon(Icons.my_location),
               tooltip: "Ma position",
             ),
@@ -482,13 +530,20 @@ class _CartePageState extends State<CartePage> {
   // Couleurs par catégorie
   Color _getColorByCategorie(String categorie) {
     switch (categorie) {
-      case 'hotels':         return const Color(0xFF7E57C2); // violet
-      case 'restos':         return const Color(0xFFFFA000); // orange
-      case 'sante':          return const Color(0xFF00897B); // teal
-      case 'tourisme':       return const Color(0xFF1E88E5); // bleu
-      case 'culte':          return const Color(0xFF43A047); // vert
-      case 'divertissement': return const Color(0xFFE53935); // rouge
-      default:               return Colors.grey;
+      case 'hotels':
+        return const Color(0xFF7E57C2); // violet
+      case 'restos':
+        return const Color(0xFFFFA000); // orange
+      case 'sante':
+        return const Color(0xFF00897B); // teal
+      case 'tourisme':
+        return const Color(0xFF1E88E5); // bleu
+      case 'culte':
+        return const Color(0xFF43A047); // vert
+      case 'divertissement':
+        return const Color(0xFFE53935); // rouge
+      default:
+        return Colors.grey;
     }
   }
 }

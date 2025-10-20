@@ -14,36 +14,36 @@ class ProfilEmployeurPage extends StatefulWidget {
 }
 
 class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
-  // 🎨 Palette alignée avec tes pages
+  // Palette alignée avec le reste de l'app
   static const kBlue = Color(0xFF1976D2);
-  static const kBg   = Color(0xFFF6F7F9);
+  static const kBg = Color(0xFFF6F7F9);
 
-  // Storage
-  static const String _bucket = 'logos'; // ⚠️ bucket public conseillé
+  // Bucket storage (public conseillé pour les logos)
+  static const String _bucket = 'logos';
 
   final _svc = EmployeurService();
-  final _sb  = Supabase.instance.client;
+  final _sb = Supabase.instance.client;
 
   // Champs
-  final _nom     = TextEditingController();
-  final _tel     = TextEditingController();
-  final _email   = TextEditingController();
-  final _ville   = TextEditingController();
+  final _nom = TextEditingController();
+  final _tel = TextEditingController();
+  final _email = TextEditingController();
+  final _ville = TextEditingController();
   final _commune = TextEditingController();
   final _secteur = TextEditingController();
-  final _siteWeb = TextEditingController();   // si colonne existe
-  final _logoUrl = TextEditingController();   // si colonne existe
+  final _siteWeb = TextEditingController(); // si colonne existe
+  final _logoUrl = TextEditingController(); // si colonne existe
 
   Map<String, dynamic>? _row;
   String? _employeurId;
 
   bool _loading = true;
-  bool _saving  = false;
+  bool _saving = false;
   bool _uploadingLogo = false;
 
   bool get _hasSiteWebColumn => _row?.containsKey('site_web') == true;
-  bool get _hasLogoColumn    => _row?.containsKey('logo_url') == true;
-  bool get _hasLogo          => _logoUrl.text.trim().isNotEmpty;
+  bool get _hasLogoColumn => _row?.containsKey('logo_url') == true;
+  bool get _hasLogo => _logoUrl.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -69,12 +69,14 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
     try {
       final r = await _svc.getEmployeurRow();
       _row = r ?? {};
-      _employeurId = (_row?['id'] ?? '').toString().isEmpty ? null : _row!['id'].toString();
+      _employeurId = (_row?['id'] ?? '').toString().isEmpty
+          ? null
+          : _row!['id'].toString();
 
-      _nom.text     = (_row?['nom'] ?? '').toString();
-      _tel.text     = (_row?['telephone'] ?? '').toString();
-      _email.text   = (_row?['email'] ?? '').toString();
-      _ville.text   = (_row?['ville'] ?? '').toString();
+      _nom.text = (_row?['nom'] ?? '').toString();
+      _tel.text = (_row?['telephone'] ?? '').toString();
+      _email.text = (_row?['email'] ?? '').toString();
+      _ville.text = (_row?['ville'] ?? '').toString();
       _commune.text = (_row?['commune'] ?? '').toString();
       _secteur.text = (_row?['secteur'] ?? '').toString();
 
@@ -108,7 +110,7 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
       put('commune', _commune.text);
       put('secteur', _secteur.text);
       if (_hasSiteWebColumn) put('site_web', _siteWeb.text);
-      if (_hasLogoColumn)    put('logo_url', _logoUrl.text);
+      if (_hasLogoColumn) put('logo_url', _logoUrl.text);
 
       if (changes.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -130,11 +132,13 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
     }
   }
 
-  // ─────────────────────────── Upload du logo ───────────────────────────
+  // Upload du logo
   Future<void> _changeLogoFromGallery() async {
     if (!_hasLogoColumn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La colonne "logo_url" est absente côté base.')),
+        const SnackBar(
+          content: Text('La colonne "logo_url" est absente côté base.'),
+        ),
       );
       return;
     }
@@ -161,11 +165,11 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
         return;
       }
 
-      // 2) Récupérer (ou forcer) l’employeur_id pour ranger par dossier
+      // 2) Récupérer/assurer l’employeur_id pour ranger par dossier
       String? employeurId = _employeurId;
       if ((employeurId == null || employeurId.isEmpty)) {
-        // Si jamais pas encore d’entrée, on en crée une minimaliste avec un nom par défaut
-        final fallbackName = _nom.text.trim().isEmpty ? 'Mon entreprise' : _nom.text.trim();
+        final fallbackName =
+            _nom.text.trim().isEmpty ? 'Mon entreprise' : _nom.text.trim();
         employeurId = await _svc.ensureEmployeurId(nom: fallbackName);
         _employeurId = employeurId;
       }
@@ -173,21 +177,21 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
       // 3) Deviner contentType
       String _contentTypeFor(String name) {
         final n = name.toLowerCase();
-        if (n.endsWith('.png'))  return 'image/png';
+        if (n.endsWith('.png')) return 'image/png';
         if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
         if (n.endsWith('.webp')) return 'image/webp';
-        if (n.endsWith('.gif'))  return 'image/gif';
+        if (n.endsWith('.gif')) return 'image/gif';
         return 'application/octet-stream';
       }
 
       // 4) Construire un chemin unique dans le bucket
       final ext = (() {
         final n = (file.name).toLowerCase();
-        if (n.endsWith('.png'))  return 'png';
-        if (n.endsWith('.jpg'))  return 'jpg';
+        if (n.endsWith('.png')) return 'png';
+        if (n.endsWith('.jpg')) return 'jpg';
         if (n.endsWith('.jpeg')) return 'jpeg';
         if (n.endsWith('.webp')) return 'webp';
-        if (n.endsWith('.gif'))  return 'gif';
+        if (n.endsWith('.gif')) return 'gif';
         return 'bin';
       })();
 
@@ -204,10 +208,10 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
             ),
           );
 
-      // 6) URL publique (simple, car bucket public)
+      // 6) URL publique (bucket public)
       final publicUrl = _sb.storage.from(_bucket).getPublicUrl(path);
 
-      // 7) Enregistrer en base immédiatement
+      // 7) Mise à jour en base
       await _svc.updateEmployeur({'logo_url': publicUrl});
 
       if (!mounted) return;
@@ -215,7 +219,7 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
         _logoUrl.text = publicUrl;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logo mis à jour ✅')),
+        const SnackBar(content: Text('Logo mis à jour…')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -250,7 +254,8 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: kBlue, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         fillColor: Colors.white,
         filled: true,
       );
@@ -287,12 +292,14 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
                         (_hasLogo)
                             ? CircleAvatar(
                                 radius: 28,
-                                backgroundImage: NetworkImage(_logoUrl.text.trim()),
+                                backgroundImage:
+                                    NetworkImage(_logoUrl.text.trim()),
                               )
                             : const CircleAvatar(
                                 radius: 28,
                                 backgroundColor: kBlue,
-                                child: Icon(Icons.business, color: Colors.white),
+                                child:
+                                    Icon(Icons.business, color: Colors.white),
                               ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -312,13 +319,16 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _uploadingLogo ? null : _changeLogoFromGallery,
+                        onPressed:
+                            _uploadingLogo ? null : _changeLogoFromGallery,
                         icon: _uploadingLogo
                             ? const SizedBox(
-                                height: 16, width: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2))
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
                             : const Icon(Icons.add_a_photo),
-                        label: Text(_uploadingLogo ? 'Import...' : 'Changer le logo'),
+                        label: Text(_uploadingLogo ? 'Import…' : 'Changer le logo'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: kBlue,
                           side: const BorderSide(color: kBlue),
@@ -334,7 +344,7 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('Supprimer le logo'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red.shade700,
+                            foregroundColor: Colors.red,
                             side: BorderSide(color: Colors.red.shade300),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
@@ -346,26 +356,29 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
                 const SizedBox(height: 14),
 
                 // --- Autres champs
-                TextField(controller: _tel,     decoration: _dec('Téléphone')),
+                TextField(controller: _tel, decoration: _dec('Téléphone')),
                 const SizedBox(height: 10),
-                TextField(controller: _email,   decoration: _dec('Email')),
+                TextField(controller: _email, decoration: _dec('Email')),
                 const SizedBox(height: 10),
-                TextField(controller: _ville,   decoration: _dec('Ville')),
+                TextField(controller: _ville, decoration: _dec('Ville')),
                 const SizedBox(height: 10),
                 TextField(controller: _commune, decoration: _dec('Commune')),
                 const SizedBox(height: 10),
                 TextField(controller: _secteur, decoration: _dec('Secteur')),
                 const SizedBox(height: 10),
 
-                // Affichés même si non présents ; ils ne seront pas envoyés si la colonne n’existe pas
-                TextField(controller: _siteWeb, decoration: _dec('Site web (https://...)')),
+                // Affichés même si les colonnes n'existent pas (ne seront pas envoyés si absentes)
+                TextField(
+                  controller: _siteWeb,
+                  decoration: _dec('Site web (https://...)'),
+                ),
                 const SizedBox(height: 10),
 
                 // Logo URL (lecture seule, mis à jour après upload)
                 TextField(
                   controller: _logoUrl,
                   readOnly: true,
-                  decoration: _dec('Logo (URL — rempli après import)').copyWith(
+                  decoration: _dec('Logo (URL, rempli après import)').copyWith(
                     suffixIcon: _hasLogo
                         ? IconButton(
                             onPressed: _removeLogo,
@@ -389,8 +402,10 @@ class _ProfilEmployeurPageState extends State<ProfilEmployeurPage> {
                     onPressed: _saving ? null : _save,
                     child: _saving
                         ? const SizedBox(
-                            height: 18, width: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
                         : const Text('Enregistrer'),
                   ),

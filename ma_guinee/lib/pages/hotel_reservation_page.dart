@@ -1,3 +1,4 @@
+// lib/pages/hotel_reservation_page.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
@@ -5,10 +6,10 @@ import 'package:intl/date_symbol_data_local.dart';
 
 class HotelReservationPage extends StatefulWidget {
   final String hotelName;
-  final String? phone;        // téléphone de l’hôtel (affiché, pas prérempli)
-  final String? address;      // optionnel
-  final String? coverImage;   // optionnel (URL)
-  final Color primaryColor;   // pour matcher le thème de la page détail
+  final String? phone;      // téléphone (affiché, jamais prérempli)
+  final String? address;    // optionnel
+  final String? coverImage; // optionnel (URL)
+  final Color primaryColor; // couleur de thème côté Hôtel
 
   const HotelReservationPage({
     super.key,
@@ -16,7 +17,8 @@ class HotelReservationPage extends StatefulWidget {
     this.phone,
     this.address,
     this.coverImage,
-    this.primaryColor = const Color(0xFF113CFC),
+    // Couleur service Hôtels
+    this.primaryColor = const Color(0xFF264653),
   });
 
   @override
@@ -42,7 +44,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   final _notesCtrl = TextEditingController();
 
   // Préférences
-  String _bed = 'Peu importe'; // Lit
+  String _bed = 'Peu importe';
   String _smoking = 'Non-fumeur';
   final _bedOptions = const ['Peu importe', 'Lit double', 'Lits jumeaux', 'King', 'Queen'];
 
@@ -51,7 +53,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   @override
   void initState() {
     super.initState();
-    initializeDateFormatting('fr_FR'); // garde-fou hot-restart
+    initializeDateFormatting('fr_FR');
   }
 
   @override
@@ -75,15 +77,14 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   }
 
   void _showNotAvailableSheet() {
-    final dtArrival = DateTime(_checkIn.year, _checkIn.month, _checkIn.day, _arrivalTime.hour, _arrivalTime.minute);
     final nights = _checkOut.difference(_checkIn).inDays;
     final resume = StringBuffer()
       ..writeln('Demande de réservation')
       ..writeln('Hôtel : ${widget.hotelName}')
       ..writeln('Arrivée : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkIn)} à ${_arrivalTime.format(context)}')
-      ..writeln('Départ : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkOut)}  (${nights} nuit${nights>1?'s':''})')
-      ..writeln('Chambres : $_rooms  |  Occupants : $_adults adulte(s)${_children>0?' + $_children enfant(s)':''}')
-      ..writeln('Lit : $_bed  |  ${_smoking}')
+      ..writeln('Départ : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkOut)}  (${nights} nuit${nights > 1 ? 's' : ''})')
+      ..writeln('Chambres : $_rooms  |  Occupants : $_adults adulte(s)${_children > 0 ? ' + $_children enfant(s)' : ''}')
+      ..writeln('Lit : $_bed  |  $_smoking')
       ..write(_notesCtrl.text.isNotEmpty ? '\nNotes : ${_notesCtrl.text}' : '');
 
     final phone = (widget.phone ?? '').trim();
@@ -97,7 +98,9 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
         final scheme = Theme.of(context).colorScheme;
         return Padding(
           padding: EdgeInsets.only(
-            left: 16, right: 16, top: 8,
+            left: 16,
+            right: 16,
+            top: 8,
             bottom: MediaQuery.of(context).viewInsets.bottom + 24,
           ),
           child: Column(
@@ -122,8 +125,8 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                   phoneNumber: phone,
                   onCall: () => _call(phone),
                   primaryColor: widget.primaryColor,
-                ),
-              if (phone.isEmpty)
+                )
+              else
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -193,7 +196,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
       context: context,
       initialTime: _arrivalTime,
       helpText: "Heure d'arrivée",
-      initialEntryMode: TimePickerEntryMode.dial, // ✅ évite le bug de saisie manuelle
+      initialEntryMode: TimePickerEntryMode.dial,
       builder: (context, child) {
         final mq = MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true);
         return MediaQuery(data: mq, child: _themePicker(child));
@@ -244,7 +247,6 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
           SliverToBoxAdapter(
             child: _HeroBanner(
               title: widget.hotelName,
-              // 👉 Montrer le numéro de l’hôtel si présent, sinon l’adresse, sinon un sous-titre générique
               subtitle: (widget.phone?.trim().isNotEmpty ?? false)
                   ? widget.phone!.trim()
                   : (widget.address ?? "Sélectionnez vos dates et préférences"),
@@ -399,7 +401,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                             controller: _notesCtrl,
                             maxLines: 4,
                             decoration: const InputDecoration(
-                              labelText: "Notes (heure arrivée tardive, préférences, etc.)",
+                              labelText: "Notes (arrivée tardive, préférences, etc.)",
                               alignLabelWithHint: true,
                               prefixIcon: Icon(Icons.note_alt_outlined),
                             ),
@@ -416,7 +418,9 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                         contentPadding: EdgeInsets.zero,
                         value: _accept,
                         onChanged: (v) => setState(() => _accept = v ?? false),
-                        title: const Text("J’accepte d’être contacté(e) par l’hôtel pour finaliser ma demande."),
+                        title: const Text(
+                          "J’accepte d’être contacté(e) par l’hôtel pour finaliser ma demande.",
+                        ),
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
                     ),
@@ -432,8 +436,14 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
       bottomSheet: Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          boxShadow: [BoxShadow(blurRadius: 16, color: Colors.black.withOpacity(.08), offset: const Offset(0, -4))],
+          color: scheme.surface,
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 16,
+              color: Colors.black.withOpacity(.08),
+              offset: const Offset(0, -4),
+            )
+          ],
         ),
         child: SafeArea(
           top: false,
@@ -446,7 +456,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                   label: const Text("Réserver"),
                   style: FilledButton.styleFrom(
                     backgroundColor: widget.primaryColor,
-                    foregroundColor: Colors.white,
+                    foregroundColor: Colors.white, // ✅ plus de onPrimary
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
@@ -459,7 +469,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   }
 }
 
-// ======== Widgets réutilisables (mêmes styles que resto) ========
+// ============= Widgets réutilisables =============
 
 class _Section extends StatelessWidget {
   final String title;
@@ -467,7 +477,12 @@ class _Section extends StatelessWidget {
   final Widget? trailing;
   final Color primaryColor;
 
-  const _Section({required this.title, required this.child, this.trailing, required this.primaryColor});
+  const _Section({
+    required this.title,
+    required this.child,
+    this.trailing,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -501,7 +516,13 @@ class _HeroBanner extends StatelessWidget {
   final String subtitle;
   final String? imageUrl;
   final Color primaryColor;
-  const _HeroBanner({required this.title, required this.subtitle, this.imageUrl, required this.primaryColor});
+
+  const _HeroBanner({
+    required this.title,
+    required this.subtitle,
+    this.imageUrl,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -538,19 +559,23 @@ class _HeroBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: Colors.white,
-                    )),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    color: Colors.white,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white70)),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70),
+                ),
               ],
             ),
           ),
@@ -566,7 +591,12 @@ class _TileButton extends StatelessWidget {
   final VoidCallback onTap;
   final Color primaryColor;
 
-  const _TileButton({required this.icon, required this.label, required this.onTap, required this.primaryColor});
+  const _TileButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -598,7 +628,13 @@ class _CounterCard extends StatelessWidget {
   final int value;
   final ValueChanged<int> onChanged;
   final Color primaryColor;
-  const _CounterCard({required this.title, required this.value, required this.onChanged, required this.primaryColor});
+
+  const _CounterCard({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -631,7 +667,12 @@ class _CallCard extends StatelessWidget {
   final String phoneNumber;
   final VoidCallback onCall;
   final Color primaryColor;
-  const _CallCard({required this.phoneNumber, required this.onCall, required this.primaryColor});
+
+  const _CallCard({
+    required this.phoneNumber,
+    required this.onCall,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +706,7 @@ class _CallCard extends StatelessWidget {
             label: const Text("Appeler"),
             style: FilledButton.styleFrom(
               backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
+              foregroundColor: Colors.white, // ✅ plus de onPrimary
             ),
           ),
         ],

@@ -1,3 +1,5 @@
+import 'dart:async'; // TimeoutException
+import 'dart:io';    // SocketException
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +15,9 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  static const _primary = Color(0xFF0077B6);
+  static const _onPrimary = Color(0xFFFFFFFF);
+
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -26,21 +31,19 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final supabase = Supabase.instance.client;
       final email = _emailController.text.trim().toLowerCase();
+      final password = _passwordController.text.trim();
 
-      final res = await supabase.auth.signInWithPassword(
-        email: email,
-        password: _passwordController.text,
-      );
+      final res = await supabase.auth
+          .signInWithPassword(email: email, password: password)
+          .timeout(const Duration(seconds: 15));
 
       final user = res.user;
       if (user == null) {
-        throw const AuthException("Email ou mot de passe incorrect");
+        throw const AuthException('Email ou mot de passe incorrect.');
       }
 
-      // Met à jour ton provider (utile pour le reste de l’app)
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
-      // 🔑 Lis le rôle DIRECTEMENT en SQL pour choisir la bonne route SANS passer par Home
       String dest = AppRoutes.mainNav;
       try {
         final row = await supabase
@@ -51,30 +54,46 @@ class _LoginPageState extends State<LoginPage> {
 
         final role = (row?['role'] as String?)?.toLowerCase() ?? '';
         if (role == 'admin' || role == 'owner') {
-          dest = AppRoutes.adminCenter; // -> /admin direct
+          dest = AppRoutes.adminCenter;
         }
       } catch (_) {
-        // En cas d'erreur SQL on tombe sur mainNav, mais on n’envoie JAMAIS Home d’abord.
         dest = AppRoutes.mainNav;
       }
 
       if (!mounted) return;
-
-      // ⛔️ Pas de passage via Home : on remplace toute la stack par la destination finale
       Navigator.of(context).pushNamedAndRemoveUntil(dest, (_) => false);
+    } on SocketException {
+      if (!mounted) return;
+      _toast("Aucune connexion Internet. Vérifiez vos données mobiles ou le Wi-Fi.");
+    } on TimeoutException {
+      if (!mounted) return;
+      _toast("La connexion a expiré. Réessayez lorsque vous avez Internet.");
     } on AuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-    } catch (e) {
+      final raw = (e.message ?? '').toLowerCase();
+      String msg = "Une erreur d'authentification est survenue.";
+      if (raw.contains('invalid login') ||
+          raw.contains('invalid credentials') ||
+          raw.contains('email or password') ||
+          raw.contains('invalid email or password')) {
+        msg = "Email ou mot de passe incorrect.";
+      } else if (raw.contains('email not confirmed') ||
+          raw.contains('not confirmed')) {
+        msg = "Votre e-mail n'est pas encore confirmé. Consultez votre boîte mail.";
+      } else if (raw.isNotEmpty) {
+        msg = e.message!;
+      }
+      _toast(msg);
+    } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur : ${e.toString()}")),
-      );
+      _toast("Erreur inattendue. Veuillez réessayer.");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
@@ -82,6 +101,26 @@ class _LoginPageState extends State<LoginPage> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // Décoration champs avec couleurs fixes
+  InputDecoration _dec(String label, {IconData? icon}) {
+    final baseBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(30),
+      borderSide: BorderSide(color: Colors.grey.shade300),
+    );
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.white,
+      prefixIcon: icon != null ? Icon(icon, color: _primary) : null,
+      border: baseBorder,
+      enabledBorder: baseBorder,
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(30),
+        borderSide: const BorderSide(color: _primary, width: 1.6),
+      ),
+    );
   }
 
   @override
@@ -94,12 +133,12 @@ class _LoginPageState extends State<LoginPage> {
         title: const Text(
           "Connexion",
           style: TextStyle(
-            color: Color(0xFF113CFC),
+            color: _primary,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: _primary),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -108,66 +147,58 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
-                Image.asset('assets/logo_guinee.png', height: 80, fit: BoxFit.contain),
-                const SizedBox(height: 16),
-                const Text(
-                  "Bienvenue sur Ma Guinée !",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF113CFC),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                Image.asset('assets/logo_guinee.png',
+                    height: 80, fit: BoxFit.contain),
                 const SizedBox(height: 22),
 
+                // Email
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
                   style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: "Email",
-                    filled: true,
-                    fillColor: Colors.white,
-                    prefixIcon: const Icon(Icons.email, color: Color(0xFFCE1126)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
-                  ),
-                  validator: (val) =>
-                      val == null || !val.contains('@') ? "Email invalide" : null,
+                  decoration: _dec("E-mail", icon: Icons.email),
+                  validator: (val) {
+                    final v = (val ?? '').trim();
+                    if (v.isEmpty || !v.contains('@')) return "E-mail invalide";
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 18),
 
+                // Mot de passe
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  autofillHints: const [AutofillHints.password],
                   style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: "Mot de passe",
-                    filled: true,
-                    fillColor: Colors.white,
-                    prefixIcon: const Icon(Icons.lock, color: Color(0xFF009460)),
+                  decoration: _dec("Mot de passe", icon: Icons.lock).copyWith(
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                         color: Colors.grey,
                       ),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
                   ),
-                  validator: (val) =>
-                      val == null || val.length < 6 ? "Mot de passe trop court" : null,
+                  validator: (val) => val == null || val.trim().length < 6
+                      ? "Mot de passe trop court"
+                      : null,
                 ),
                 const SizedBox(height: 6),
 
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Navigator.pushNamed(context, '/reset_password'),
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/reset_password'),
                     child: const Text(
                       "Mot de passe oublié ?",
                       style: TextStyle(
-                        color: Color(0xFF009460),
+                        color: _primary,
                         fontWeight: FontWeight.w600,
                         decoration: TextDecoration.underline,
                       ),
@@ -176,45 +207,42 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 16),
 
+                // Bouton Connexion (tap simple)
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : SizedBox(
                         width: double.infinity,
-                        child: GestureDetector(
-                          onTap: _seConnecter,
-                          child: Container(
+                        child: ElevatedButton(
+                          onPressed: _seConnecter,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primary,
+                            foregroundColor: _onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 15),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFCE1126), Color(0xFFFCD116), Color(0xFF009460)],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(28),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black12, blurRadius: 5, offset: Offset(0, 2)),
-                              ],
                             ),
-                            child: const Center(
-                              child: Text(
-                                "Connexion",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                  letterSpacing: 1.1,
-                                ),
-                              ),
+                            elevation: 2,
+                          ),
+                          child: const Text(
+                            "Connexion",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              letterSpacing: 1.1,
                             ),
                           ),
                         ),
                       ),
+
                 const SizedBox(height: 22),
 
+                // Lien création de compte
                 TextButton(
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.register),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: Size.zero,
                   ),
                   child: const Text(
@@ -222,7 +250,6 @@ class _LoginPageState extends State<LoginPage> {
                     style: TextStyle(
                       color: Colors.grey,
                       fontSize: 14,
-                      fontWeight: FontWeight.normal,
                       decoration: TextDecoration.underline,
                     ),
                   ),

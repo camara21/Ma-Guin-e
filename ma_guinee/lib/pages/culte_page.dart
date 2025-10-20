@@ -27,6 +27,7 @@ class _CultePageState extends State<CultePage> {
   String? _villeGPS;
   bool _locationDenied = false;
 
+  /// Conserve ta couleur
   static const primaryColor = Color(0xFF113CFC);
 
   @override
@@ -77,7 +78,9 @@ class _CultePageState extends State<CultePage> {
 
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
-    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
+      return null;
+    }
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * (pi / 180);
     final dLon = (lon2 - lon1) * (pi / 180);
@@ -97,7 +100,6 @@ class _CultePageState extends State<CultePage> {
     try {
       await _getLocation();
 
-      // ✅ Plus de colonne "tags" ici : on prend tout, c'est sûr et simple
       final res = await Supabase.instance.client
           .from('lieux')
           .select('*')
@@ -106,7 +108,7 @@ class _CultePageState extends State<CultePage> {
 
       final list = List<Map<String, dynamic>>.from(res);
 
-      // Ajout de la distance en mètres
+      // Ajout de la distance
       if (_position != null) {
         for (final l in list) {
           final lat = (l['latitude'] as num?)?.toDouble();
@@ -115,7 +117,7 @@ class _CultePageState extends State<CultePage> {
               _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
         }
 
-        // Mosquées d’abord, puis même ville, puis distance, puis nom
+        // Tri : mosquées d'abord, puis même ville, puis distance, puis nom
         list.sort((a, b) {
           final aMosq = _isMosquee(a);
           final bMosq = _isMosquee(b);
@@ -136,7 +138,7 @@ class _CultePageState extends State<CultePage> {
           return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
         });
       } else {
-        // Pas de position : mosquées d’abord puis nom
+        // Pas de position : mosquées d'abord puis nom
         list.sort((a, b) {
           final aMosq = _isMosquee(a);
           final bMosq = _isMosquee(b);
@@ -160,16 +162,16 @@ class _CultePageState extends State<CultePage> {
 
   // ---------------- Filtre -----------------------
   void _applyFilter(String q) {
-    final lower = _norm(q);
+    final lower = _folded(q);
     setState(() {
       _query = q;
       _filtered = _allLieux.where((l) {
-        final nom = _norm(l['nom']);
-        final ville = _norm(l['ville']);
-        final type = _norm(l['type']);
-        final cat = _norm(l['categorie']);
-        final sous = _norm(l['sous_categorie']);
-        final desc = _norm(l['description']);
+        final nom = _folded(l['nom']);
+        final ville = _folded(l['ville']);
+        final type = _folded(l['type']);
+        final cat = _folded(l['categorie']);
+        final sous = _folded(l['sous_categorie']);
+        final desc = _folded(l['description']);
         final all = '$nom $ville $type $cat $sous $desc';
         return all.contains(lower);
       }).toList();
@@ -177,32 +179,44 @@ class _CultePageState extends State<CultePage> {
   }
   // ----------------------------------------------
 
-  // ---------- Détection & icônes (accent-proof) ----------
-  String _norm(dynamic v) {
+  // ---------- Détection & icônes ----------
+  /// Remplace accents français courants → lettres simples, lowercase.
+  String _folded(dynamic v) {
     final s = (v ?? '').toString().toLowerCase().trim();
     if (s.isEmpty) return '';
-    return s
-        .replaceAll(RegExp(r'[àáâãäå]'), 'a')
-        .replaceAll(RegExp(r'[èéêë]'), 'e')
-        .replaceAll(RegExp(r'[ìíîï]'), 'i')
-        .replaceAll(RegExp(r'[òóôõö]'), 'o')
-        .replaceAll(RegExp(r'[ùúûü]'), 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll('œ', 'oe');
+    const map = {
+      'à': 'a', 'á': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+      'ç': 'c',
+      'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
+      'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+      'ñ': 'n',
+      'ò': 'o', 'ó': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+      'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
+      'ý': 'y', 'ÿ': 'y',
+      'œ': 'oe',
+    };
+    final buf = StringBuffer();
+    for (final ch in s.split('')) {
+      buf.write(map[ch] ?? ch);
+    }
+    return buf.toString();
   }
 
   bool _isMosquee(Map<String, dynamic> l) {
-    final s = _norm('${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
+    final s = _folded(
+        '${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
     return s.contains('mosquee');
   }
 
   bool _isEglise(Map<String, dynamic> l) {
-    final s = _norm('${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
+    final s = _folded(
+        '${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
     return s.contains('eglise') || s.contains('cathedrale');
   }
 
   bool _isSanctuaire(Map<String, dynamic> l) {
-    final s = _norm('${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
+    final s = _folded(
+        '${l['type']} ${l['sous_categorie']} ${l['categorie']} ${l['description']} ${l['nom']}');
     return s.contains('sanctuaire') || s.contains('temple');
   }
 
@@ -216,7 +230,7 @@ class _CultePageState extends State<CultePage> {
   Color _iconColor(Map<String, dynamic> l) {
     if (_isMosquee(l)) return const Color(0xFF009460); // vert
     if (_isEglise(l)) return const Color(0xFFCE1126); // rouge
-    return Colors.indigo; // par défaut
+    return Colors.indigo; // défaut
   }
   // --------------------------------------------------------
 
@@ -236,7 +250,7 @@ class _CultePageState extends State<CultePage> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        backgroundColor: primaryColor,
+        backgroundColor: primaryColor, // ✅ conserve la couleur
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 1.2,
         actions: [
@@ -352,23 +366,26 @@ class _CultePageState extends State<CultePage> {
                                                 ),
                                                 child: Row(
                                                   mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    const Icon(Icons.location_on,
+                                                  children: const [
+                                                    Icon(Icons.location_on,
                                                         size: 14, color: Colors.white),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      ville,
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
+                                                    SizedBox(width: 4),
                                                   ],
                                                 ),
                                               ),
                                             ),
+                                          if (ville.isNotEmpty)
+                                            Positioned(
+                                              left: 34,
+                                              top: 12,
+                                              child: Text(
+                                                ville,
+                                                style: const TextStyle(
+                                                    color: Colors.white, fontSize: 12),
+                                              ),
+                                            ),
 
-                                          // Badge icône type (droite) → 🕌 / ⛪ / 🛕
+                                          // Badge icône type (droite)
                                           Positioned(
                                             right: 8,
                                             top: 8,
@@ -395,8 +412,7 @@ class _CultePageState extends State<CultePage> {
 
                                     // TEXTE
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 8),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
@@ -438,7 +454,7 @@ class _CultePageState extends State<CultePage> {
                                               ],
                                             ],
                                           ),
-                                          // Tag (=type) bleu
+                                          // Tag (=type) en bleu (ta couleur)
                                           if ((lieu['type'] ?? '').toString().isNotEmpty)
                                             Padding(
                                               padding: const EdgeInsets.only(top: 2),

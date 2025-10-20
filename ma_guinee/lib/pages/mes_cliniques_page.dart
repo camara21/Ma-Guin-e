@@ -12,6 +12,10 @@ class MesCliniquesPage extends StatefulWidget {
 }
 
 class _MesCliniquesPageState extends State<MesCliniquesPage> {
+  // Palette Santé
+  static const Color kHealthGreen = Color(0xFF009460);
+  static const Color kHealthYellow = Color(0xFFFCD116);
+
   List<Map<String, dynamic>> cliniques = [];
 
   @override
@@ -53,20 +57,41 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
     }
   }
 
+  void _mesRendezVousPasActif() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Mes rendez-vous : fonctionnalité bientôt disponible.")),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bleuMaGuinee = const Color(0xFF113CFC);
-    final jauneMaGuinee = const Color(0xFFFCD116);
-    final vertMaGuinee = const Color(0xFF009460);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Mes Cliniques', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Mes Cliniques',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
-        foregroundColor: vertMaGuinee,
+        foregroundColor: kHealthGreen,
         elevation: 1,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: kHealthGreen),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed: _mesRendezVousPasActif, // non actif pour l’instant
+              icon: const Icon(Icons.event_note, size: 18, color: kHealthGreen),
+              label: const Text(
+                "Mes rendez-vous",
+                style: TextStyle(color: kHealthGreen, fontWeight: FontWeight.w600),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: kHealthGreen,
+              ),
+            ),
+          ),
+        ],
       ),
       body: cliniques.isEmpty
           ? Center(
@@ -78,7 +103,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
           : ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
               itemCount: cliniques.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFe0e0e0)),
+              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE0E0E0)),
               itemBuilder: (context, index) {
                 final clinique = cliniques[index];
                 return Card(
@@ -89,13 +114,13 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     leading: CircleAvatar(
                       radius: 26,
-                      backgroundColor: jauneMaGuinee,
-                      child: Icon(Icons.local_hospital, color: bleuMaGuinee, size: 27),
+                      backgroundColor: kHealthYellow, // JAUNE santé
+                      child: const Icon(Icons.local_hospital, color: kHealthGreen, size: 27),
                     ),
                     title: Text(
                       clinique['nom'] ?? '',
-                      style: TextStyle(
-                        color: bleuMaGuinee,
+                      style: const TextStyle(
+                        color: kHealthGreen, // VERT santé
                         fontWeight: FontWeight.w600,
                         fontSize: 18,
                       ),
@@ -117,7 +142,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                       children: [
                         IconButton(
                           tooltip: "Modifier",
-                          icon: Icon(Icons.edit, color: bleuMaGuinee),
+                          icon: const Icon(Icons.edit, color: kHealthGreen),
                           onPressed: () => _editClinique(clinique),
                         ),
                         IconButton(
@@ -156,14 +181,14 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
               },
             ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: bleuMaGuinee,
+        backgroundColor: kHealthGreen, // VERT santé
         foregroundColor: Colors.white,
         onPressed: () async {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => const EditCliniquePage(
-                autoAskLocation: true, // ✅ création: demande auto de localisation
+                autoAskLocation: true, // création: demande auto de localisation
               ),
             ),
           );

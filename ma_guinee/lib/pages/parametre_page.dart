@@ -54,7 +54,10 @@ class _ParametrePageState extends State<ParametrePage> {
         if (!ok) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Permission refusée ou échec d'activation.")),
+              const SnackBar(
+                content:
+                    Text("Permission refusée ou échec d'activation."),
+              ),
             );
           }
           setState(() => _notifEnabled = false);
@@ -65,7 +68,7 @@ class _ParametrePageState extends State<ParametrePage> {
         await _saveNotifPref(true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Notifications activées.")),
+            const SnackBar(content: Text('Notifications activées.')),
           );
         }
       } else {
@@ -74,14 +77,14 @@ class _ParametrePageState extends State<ParametrePage> {
         await _saveNotifPref(false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Notifications désactivées.")),
+            const SnackBar(content: Text('Notifications désactivées.')),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erreur: $e")),
+          SnackBar(content: Text('Erreur : $e')),
         );
       }
       setState(() => _notifEnabled = !_notifEnabled);
@@ -119,12 +122,15 @@ class _ParametrePageState extends State<ParametrePage> {
       }
       if (token == null) return false;
 
-      // iOS natif: afficher les notifs en foreground
-      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-        alert: true, badge: true, sound: true,
+      // iOS natif : afficher les notifications au premier plan
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
       );
 
-      // (Optionnel) Enregistrer le token côté serveur/Supabase
+      // (Optionnel) Enregistrer le token côté serveur / Supabase
       // await Supabase.instance.client.from('user_tokens').upsert({
       //   'user_id': widget.user.id,
       //   'token': token,
@@ -151,7 +157,7 @@ class _ParametrePageState extends State<ParametrePage> {
       // Supprimer le token local
       await messaging.deleteToken();
 
-      // Éteindre l’auto-init pour éviter une récréation du token
+      // Éteindre l’auto-init pour éviter une recréation du token
       await messaging.setAutoInitEnabled(false);
     } catch (_) {
       // Ignorer
@@ -165,7 +171,7 @@ class _ParametrePageState extends State<ParametrePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          "Paramètres",
+          'Paramètres',
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -177,15 +183,19 @@ class _ParametrePageState extends State<ParametrePage> {
         children: [
           Card(
             elevation: 0.5,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Column(
               children: [
                 // --- Toggle Notifications push ---
                 SwitchListTile.adaptive(
-                  secondary: const Icon(Icons.notifications_active, color: Colors.teal),
-                  title: const Text("Notifications push"),
+                  secondary: const Icon(Icons.notifications_active,
+                      color: Colors.teal),
+                  title: const Text('Notifications push'),
                   subtitle: Text(
-                    _notifEnabled ? "Recevoir les notifications" : "Notifications désactivées",
+                    _notifEnabled
+                        ? 'Recevoir les notifications'
+                        : 'Notifications désactivées',
                   ),
                   value: _notifEnabled,
                   onChanged: isLoading ? null : _onToggleNotifications,
@@ -194,7 +204,7 @@ class _ParametrePageState extends State<ParametrePage> {
 
                 ListTile(
                   leading: const Icon(Icons.person, color: Colors.blue),
-                  title: const Text("Modifier mon profil"),
+                  title: const Text('Modifier mon profil'),
                   onTap: () async {
                     final modified = await Navigator.push(
                       context,
@@ -203,7 +213,8 @@ class _ParametrePageState extends State<ParametrePage> {
                       ),
                     );
                     if (modified == true) {
-                      await Provider.of<UserProvider>(context, listen: false).chargerUtilisateurConnecte();
+                      await Provider.of<UserProvider>(context, listen: false)
+                          .chargerUtilisateurConnecte();
                       if (mounted) Navigator.pop(context, true);
                     }
                   },
@@ -212,30 +223,43 @@ class _ParametrePageState extends State<ParametrePage> {
 
                 ListTile(
                   leading: const Icon(Icons.lock_reset, color: Colors.orange),
-                  title: const Text("Mot de passe oublié ?"),
+                  title: const Text('Mot de passe oublié ?'),
                   onTap: () async {
-                    await Supabase.instance.client.auth.resetPasswordForEmail(widget.user.email);
+                    await Supabase.instance.client.auth
+                        .resetPasswordForEmail(widget.user.email);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Un lien de réinitialisation a été envoyé par email.")),
+                      const SnackBar(
+                        content: Text(
+                          'Un lien de réinitialisation a été envoyé par e-mail.',
+                        ),
+                      ),
                     );
                   },
                 ),
                 const Divider(height: 0),
 
                 ListTile(
-                  leading: const Icon(Icons.delete_forever, color: Colors.red, size: 28),
-                  title: const Text("Supprimer mon compte", style: TextStyle(color: Colors.red)),
+                  leading: const Icon(Icons.delete_forever,
+                      color: Colors.red, size: 28),
+                  title: const Text('Supprimer mon compte',
+                      style: TextStyle(color: Colors.red)),
                   onTap: () async {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text("Supprimer mon compte"),
-                        content: const Text("Cette action est irréversible. Es-tu sûr de vouloir supprimer ton compte ?"),
+                        title: const Text('Supprimer mon compte'),
+                        content: const Text(
+                          'Cette action est irréversible. Es-tu sûr de vouloir supprimer ton compte ?',
+                        ),
                         actions: [
-                          TextButton(child: const Text("Annuler"), onPressed: () => Navigator.of(ctx).pop(false)),
                           TextButton(
-                            child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
+                            child: const Text('Annuler'),
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                          ),
+                          TextButton(
+                            child: const Text('Supprimer',
+                                style: TextStyle(color: Colors.red)),
                             onPressed: () => Navigator.of(ctx).pop(true),
                           ),
                         ],
@@ -243,18 +267,30 @@ class _ParametrePageState extends State<ParametrePage> {
                     );
                     if (confirm == true) {
                       try {
-                        await Supabase.instance.client.from('utilisateurs').delete().eq('id', widget.user.id);
-                        await Supabase.instance.client.auth.admin.deleteUser(widget.user.id);
+                        await Supabase.instance.client
+                            .from('utilisateurs')
+                            .delete()
+                            .eq('id', widget.user.id);
+                        await Supabase.instance.client.auth.admin
+                            .deleteUser(widget.user.id);
                         await Supabase.instance.client.auth.signOut();
                         if (!mounted) return;
-                        Navigator.of(context).popUntil((route) => route.isFirst);
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Compte supprimé avec succès.")),
+                          const SnackBar(
+                            content:
+                                Text('Compte supprimé avec succès.'),
+                          ),
                         );
                       } catch (e) {
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Erreur lors de la suppression : $e")),
+                          SnackBar(
+                            content: Text(
+                              'Erreur lors de la suppression : $e',
+                            ),
+                          ),
                         );
                       }
                     }

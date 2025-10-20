@@ -20,7 +20,12 @@ class AnnonceDetailPage extends StatefulWidget {
 class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   final _sb = Supabase.instance.client;
 
-  // ── Storage / URLs publics ─────────────────────────────────────
+  // ---------- Palette ANNONCES ----------
+  static const Color kPrimary = Color(0xFF1E3A8A);   // annoncesPrimary
+  static const Color kSecondary = Color(0xFF60A5FA); // annoncesSecondary
+  static const Color kOnPrimary = Colors.white;
+
+  // ---------- Storage ----------
   static const String _annonceBucket = 'annonce-photos';
   String _publicUrl(String p) {
     if (p.startsWith('http://') || p.startsWith('https://')) return p;
@@ -40,28 +45,27 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   late Future<List<AnnonceModel>> _futureSellerAnnonces;
 
   // Vues (compteur stocké dans public.annonces.views)
-  int _views = 0;            // toujours visible (0 par défaut)
-  bool _viewLogged = false;  // éviter l’incrément 2x dans la session
+  int _views = 0; // toujours visible (0 par défaut)
+  bool _viewLogged = false; // éviter double incrément
 
   // Style
-  static const Color kPrimary = Color(0xFF1E3FCF);
-  Color get _bg => Colors.grey.shade50;
+  Color get _bg => const Color(0xFFF8F8FB);
 
   bool get _isOwner => _sb.auth.currentUser?.id == widget.annonce.userId;
   String? get _meId => _sb.auth.currentUser?.id;
 
-  // ── Format prix 10.000, 300.000 ───────────────────────────────
+  // Format prix 10.000, 300.000
   String _fmtInt(num v) =>
       NumberFormat('#,##0', 'en_US').format(v.round()).replaceAll(',', '.');
 
   @override
   void initState() {
     super.initState();
-    _views = widget.annonce.views; // valeur DB ou 0 depuis le modèle
+    _views = widget.annonce.views;
     _chargerInfosVendeur();
     _futureSimilaires = _fetchAnnoncesSimilaires();
     _futureSellerAnnonces = _fetchSellerAnnonces();
-    _incrementerVueEtCharger(); // incrémente côté serveur et récupère la valeur exacte
+    _incrementerVueEtCharger();
   }
 
   @override
@@ -70,23 +74,21 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     super.dispose();
   }
 
-  // ─── Incrément compteur (RPC: public.increment_annonce_view) ──
+  // ---------- Compteur de vues ----------
   Future<void> _incrementerVueEtCharger() async {
     if (_viewLogged) return;
     _viewLogged = true;
-
     try {
       final v = await _sb.rpc('increment_annonce_view', params: {
         '_annonce_id': widget.annonce.id,
       });
       if (v is int && mounted) setState(() => _views = v);
     } catch (_) {
-      // Silencieux: si erreur (offline/droits), on garde la valeur actuelle.
-      // L’UI reste propre (au moins 0).
+      // silencieux
     }
   }
 
-  // ─── Récup vendeur & annonces ─────────────────────────────────
+  // ---------- Vendeur & listes ----------
   Future<void> _chargerInfosVendeur() async {
     try {
       final data = await _sb
@@ -97,9 +99,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (mounted && data is Map<String, dynamic>) {
         setState(() => vendeur = data);
       }
-    } catch (_) {
-      // On laisse vendeur = null, des messages clairs sont gérés dans le widget
-    }
+    } catch (_) {}
   }
 
   Future<List<AnnonceModel>> _fetchAnnoncesSimilaires() async {
@@ -115,17 +115,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (_) {
-      // En cas d’erreur réseau, renvoyer liste vide (un message s’affiche)
       return <AnnonceModel>[];
     }
   }
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
     try {
-      final raw = await _sb
-          .from('annonces')
-          .select()
-          .eq('user_id', widget.annonce.userId);
+      final raw =
+          await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
       final list = raw is List ? raw : <dynamic>[];
       return list
           .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
@@ -135,7 +132,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     }
   }
 
-  // ─── Header images + actions ──────────────────────────────────
+  // ---------- Header images + actions ----------
   Widget _imagesHeader() {
     final photos = widget.annonce.images.map(_publicUrl).toList();
     final hasImages = photos.isNotEmpty;
@@ -248,7 +245,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   void _openViewer(int index) {
     final photos = widget.annonce.images.map(_publicUrl).toList();
-
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -335,6 +331,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     .map((r) => ChoiceChip(
                           label: Text(r),
                           selected: selected == r,
+                          selectedColor: kSecondary.withOpacity(.25),
                           onSelected: (_) => setLocal(() => selected = r),
                         ))
                     .toList(),
@@ -356,7 +353,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   label: const Text('Envoyer le signalement'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kPrimary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: kOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -390,14 +387,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  // ─── Fiche vendeur ────────────────────────────────────────────
+  // ---------- Fiche vendeur ----------
   Widget _buildVendeurComplet() {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSellerAnnonces,
       builder: (ctx, snap) {
         if (snap.hasError) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
               "Désolé, impossible de charger les informations du vendeur pour l’instant. "
               "Vérifiez votre connexion puis réessayez.",
@@ -410,7 +407,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         }
 
         final toutes = (snap.data ?? []);
-        final totalAnnonces = toutes.length; // ✅ total
+        final totalAnnonces = toutes.length;
 
         final u = vendeur ?? {};
         final prenom = (u['prenom'] ?? '').toString().trim();
@@ -437,9 +434,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 radius: 24,
                 backgroundColor: Colors.grey.shade300,
                 backgroundImage: hasPhoto ? NetworkImage(photo) : null,
-                child: hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
+                child:
+                    hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
               ),
-              title: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(displayName,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text([
                 if (membreDepuis.isNotEmpty) membreDepuis,
                 '$totalAnnonces ${totalAnnonces > 1 ? 'annonces' : 'annonce'}'
@@ -451,14 +450,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  // ─── Autres annonces du vendeur ───────────────────────────────
+  // ---------- Autres annonces du vendeur ----------
   Widget _buildAutresDuVendeur() {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSellerAnnonces,
       builder: (context, snap) {
         if (snap.hasError) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
             child: Text(
               "Nous n’arrivons pas à charger les autres annonces du vendeur. "
               "Veuillez réessayer plus tard.",
@@ -521,8 +520,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                                   height: 90,
                                   width: 150,
                                   color: Colors.grey.shade200,
-                                  child:
-                                      const Icon(Icons.image_not_supported),
+                                  child: const Icon(Icons.image_not_supported),
                                 ),
                               ),
                             )
@@ -566,7 +564,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  // ─── Similaires ────────────────────────────────────────────────
+  // ---------- Similaires ----------
   Widget _buildAnnoncesSimilaires() {
     return FutureBuilder<List<AnnonceModel>>(
       future: _futureSimilaires,
@@ -589,7 +587,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              "Pas d'annonce similaire pour ce produit dans votre ville.",
+              "Pas d’annonce similaire pour ce produit dans votre ville.",
               textAlign: TextAlign.center,
             ),
           );
@@ -599,8 +597,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text("D’autres annonces qui pourraient vous intéresser",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              child: Text(
+                "D’autres annonces qui pourraient vous intéresser",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ),
             SizedBox(
               height: 200,
@@ -665,8 +665,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text("${_fmtInt(a.prix)} ${a.devise}",
-                                style:
-                                    const TextStyle(color: Colors.black54)),
+                                style: const TextStyle(color: Colors.black54)),
                           ),
                         ],
                       ),
@@ -681,7 +680,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  // ─── Barre d’actions bas ──────────────────────────────────────
+  // ---------- Barre d’actions bas ----------
   Widget _bottomActions() {
     if (_isOwner) return const SizedBox.shrink();
     final a = widget.annonce;
@@ -738,7 +737,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kPrimary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: kOnPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -751,7 +750,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   }
                   final ok = await canLaunchUrl(Uri.parse('tel:$tel'));
                   if (!ok) {
-                    _snack("Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
+                    _snack(
+                        "Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
                     return;
                   }
                   await launchUrl(Uri.parse('tel:$tel'));
@@ -766,7 +766,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
-  // ─── Build ────────────────────────────────────────────────────
+  // ---------- Build ----------
   @override
   Widget build(BuildContext context) {
     final a = widget.annonce;
@@ -782,12 +782,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               children: [
                 Text(
                   a.titre,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w700),
+                  style:
+                      const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
 
-                // Prix visible + Ville + Vues (compteur rapproché du bord droit)
+                // Prix + Ville + Vues
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -800,14 +800,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               style: const TextStyle(
                                 fontSize: 19,
                                 fontWeight: FontWeight.w800,
-                                color: Colors.black87, // prix très lisible
+                                color: Colors.black87,
                               ),
                             ),
                             TextSpan(
                               text: '  •  ${a.ville}',
                               style: const TextStyle(
                                 fontSize: 16,
-                                color: Colors.black54, // ville en second plan
+                                color: Colors.black54,
                               ),
                             ),
                           ],
@@ -815,7 +815,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(right: 8), // ← rapproché
+                      padding: const EdgeInsets.only(right: 8),
                       child: Row(
                         children: [
                           const Icon(Icons.remove_red_eye_outlined,

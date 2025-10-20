@@ -1,3 +1,4 @@
+// lib/pages/prestataire_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,12 @@ import 'package:share_plus/share_plus.dart';
 import 'package:postgrest/postgrest.dart' show PostgrestException;
 
 import 'messages_prestataire_page.dart';
+
+/// === Palette Prestataires ===
+const Color prestatairesPrimary = Color(0xFF0F766E);
+const Color prestatairesSecondary = Color(0xFF14B8A6);
+const Color prestatairesOnPrimary = Color(0xFFFFFFFF);
+const Color prestatairesOnSecondary = Color(0xFF000000);
 
 class PrestataireDetailPage extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -15,7 +22,7 @@ class PrestataireDetailPage extends StatefulWidget {
 }
 
 class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
-  // ——— Etats locaux ———
+  // États locaux
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
 
@@ -29,7 +36,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
   bool _sending = false;
 
-  static const Color kPrimary = Color(0xFF113CFC);
   static const Color kDivider = Color(0xFFEAEAEA);
   static const String _avatarBucket = 'profile-photos';
 
@@ -104,7 +110,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
-  // ——— AVIS : lecture ———
+  // AVIS : lecture
   Future<void> _loadAvis() async {
     try {
       final id = widget.data['id']?.toString();
@@ -154,7 +160,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     } catch (_) {}
   }
 
-  // ——— AVIS : upsert ———
+  // AVIS : upsert
   Future<void> _ajouterOuModifierAvis({
     required String prestataireId,
     required String utilisateurId,
@@ -179,7 +185,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     if (prestataireId.isEmpty) return _snack("Fiche prestataire invalide.");
 
     if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
-      return _snack("Veuillez noter et commenter.");
+      return _snack("Veuillez attribuer une note et écrire un commentaire.");
     }
 
     try {
@@ -197,11 +203,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       await _loadAvis();
       _snack("Merci pour votre avis !");
     } catch (e) {
-      _snack("Erreur lors de l’envoi : $e");
+      _snack("Erreur lors de l'envoi de l'avis : $e");
     }
   }
 
-  // ——— Actions ———
+  // Actions
   Future<void> _call(String? input) async {
     if (_isOwner) return _snack("Action non autorisée pour votre propre fiche.");
 
@@ -218,6 +224,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
     String normalized = onlyDigits;
     if (normalized.startsWith('+')) {
+      // ok
     } else if (normalized.startsWith('224')) {
       normalized = '+$normalized';
     } else if (normalized.startsWith('0')) {
@@ -301,8 +308,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       'Tentative de fraude',
       'Contenu inapproprié',
       'Mauvaise expérience',
-      'Usurpation d’identité',
-      'Autre'
+      "Usurpation d'identité",
+      'Autre',
     ];
     final TextEditingController ctrl = TextEditingController();
     String selected = reasons.first;
@@ -337,6 +344,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                         .map((r) => ChoiceChip(
                               label: Text(r),
                               selected: selected == r,
+                              selectedColor: prestatairesSecondary,
                               onSelected: (_) => setLocalState(() => selected = r),
                             ))
                         .toList(),
@@ -355,10 +363,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.report_gmailerrorred),
-                      label: Text(_sending ? 'Envoi en cours…' : 'Envoyer le signalement'),
+                      label:
+                          Text(_sending ? 'Envoi en cours…' : 'Envoyer le signalement'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: kPrimary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: prestatairesPrimary,
+                        foregroundColor: prestatairesOnPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -423,18 +432,18 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       if (e.code == '23505' || msg.contains('duplicate')) {
         _snack('Vous avez déjà signalé cette fiche.');
       } else if (e.code == '42501') {
-        _snack("Accès refusé : vérifie les règles RLS/policies.");
+        _snack("Accès refusé : vérifiez les règles RLS/policies.");
       } else {
         _snack('Erreur serveur: ${e.message ?? e.toString()}');
       }
     } catch (e) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) setState(() => _sending = false);
-      if (mounted) _snack('Impossible d’envoyer le signalement ($e)');
+      if (mounted) _snack("Impossible d'envoyer le signalement ($e)");
     }
   }
 
-  // Étoiles plus fines
+  // Étoiles input
   Widget _starsInput() {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -450,6 +459,17 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           onPressed: () => setState(() => _noteUtilisateur = i + 1),
         );
       }),
+    );
+  }
+
+  // Étoiles en lecture
+  Widget _starsRead(int value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        5,
+        (i) => Icon(i < value ? Icons.star : Icons.star_border, size: 16, color: Colors.amber),
+      ),
     );
   }
 
@@ -475,10 +495,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.7,
-        iconTheme: const IconThemeData(color: kPrimary),
+        iconTheme: const IconThemeData(color: prestatairesPrimary),
         title: Text(
           fullName.isNotEmpty ? fullName : 'Prestataire',
-          style: const TextStyle(color: kPrimary, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: prestatairesPrimary, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
@@ -506,7 +526,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              if ((photo).isNotEmpty)
+              if (photo.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: Image.network(photo, height: 200, fit: BoxFit.cover),
@@ -514,16 +534,16 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               const SizedBox(height: 16),
               if (metier.isNotEmpty)
                 Text(metier,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600)),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
-              Row(
-                children: [
-                  const Icon(Icons.location_on, color: Colors.red),
-                  const SizedBox(width: 4),
-                  Text(ville, style: const TextStyle(fontSize: 16)),
-                ],
-              ),
+              if (ville.isNotEmpty)
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(ville, style: const TextStyle(fontSize: 16)),
+                  ],
+                ),
               const SizedBox(height: 14),
               if (description.isNotEmpty) Text(description),
               const SizedBox(height: 20),
@@ -536,13 +556,13 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _openChat,
-                          icon: const Icon(Icons.chat_bubble_outline, color: kPrimary),
+                          icon: const Icon(Icons.chat_bubble_outline, color: prestatairesPrimary),
                           label: const Text(
                             "Message",
-                            style: TextStyle(color: kPrimary, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: prestatairesPrimary, fontWeight: FontWeight.w600),
                           ),
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: kPrimary, width: 1.5),
+                            side: const BorderSide(color: prestatairesPrimary, width: 1.5),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -560,7 +580,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: kPrimary,
+                            backgroundColor: prestatairesPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -599,14 +619,15 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                        backgroundImage:
+                            avatar.isNotEmpty ? NetworkImage(avatar) : null,
                         child: avatar.isEmpty ? const Icon(Icons.person) : null,
                       ),
-                      title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}"),
+                      title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}".trim()),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("$note ⭐️"),
+                          _starsRead(note),
                           if ((a['commentaire'] ?? '').toString().isNotEmpty)
                             Text(a['commentaire'].toString()),
                         ],
@@ -645,7 +666,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               ),
               const SizedBox(height: 8),
 
-              // ▼▼ Bouton jaune discret ▼▼
               Align(
                 alignment: Alignment.centerRight,
                 child: ElevatedButton.icon(
@@ -656,8 +676,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                     backgroundColor: const Color(0xFFFDE68A), // jaune doux (amber-300)
                     foregroundColor: Colors.black87,
                     elevation: 0,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),

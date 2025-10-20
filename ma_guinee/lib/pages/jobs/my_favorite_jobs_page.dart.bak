@@ -1,0 +1,355 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'job_detail_page.dart';
+import 'jobs_page.dart';
+
+class MyFavoriteJobsPage extends StatefulWidget {
+  const MyFavoriteJobsPage({super.key});
+
+  @override
+  State<MyFavoriteJobsPage> createState() => _MyFavoriteJobsPageState();
+}
+
+class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+
+  late Future<List<Map<String, dynamic>>> _data;
+  final Set<String> _favSet = {}; // emploi_id favoris chargÃ©Â©Ã†â€™Â©s
+
+  @override
+  void initState() {
+    super.initState();
+    _data = _load();
+  }
+
+  // ---------- UTIL ----------
+  String _formatRelative(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      final diff = DateTime.now().toLocal().difference(d);
+      if (diff.inMinutes < 60)
+        return 'ajoutÃ©Â©Ã†â€™Â© il y a ${diff.inMinutes} min';
+      if (diff.inHours < 24) return 'ajoutÃ©Â©Ã†â€™Â© il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'ajoutÃ©Â©Ã†â€™Â© il y a ${diff.inDays} j';
+      return 'ajoutÃ©Â©Ã†â€™Â© le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _subtitle(Map<String, dynamic> m) {
+    final v = (m['ville'] ?? '').toString();
+    final t = (m['type_contrat'] ?? '').toString();
+    if (v.isEmpty && t.isEmpty) return '';
+    if (v.isEmpty) return t;
+    if (t.isEmpty) return v;
+    return '$v Ã©Â©Â¢â‚¬Å¡Â¬Â¢ $t';
+  }
+
+  // ---------- DATA ----------
+  Future<List<Map<String, dynamic>>> _load() async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) return [];
+
+    // 1) Favoris du user
+    final favRows = await sb
+        .from('emplois_favoris')
+        .select('emploi_id, date_ajout')
+        .eq('utilisateur_id', uid)
+        .order('date_ajout', ascending: false);
+
+    final favs = (favRows as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    if (favs.isEmpty) return [];
+
+    // MÃ©Â©Ã†â€™Â©moriser dans le set local (pour lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢icÃ©Â©Ã†â€™Â´ne cÃ©Â©â‚¬Â¦â€šÂ¬Ã…â€œur).
+    _favSet
+      ..clear()
+      ..addAll(favs.map((e) => (e['emploi_id'] ?? '').toString()));
+
+    final emploiIds = _favSet.toList();
+
+    // 2) RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â©rer les emplois
+    final inList = '(${emploiIds.map((e) => '"$e"').join(',')})';
+    final emploisRows = await sb
+        .from('emplois')
+        .select('id, titre, ville, type_contrat, employeur_id, cree_le')
+        .filter('id', 'in', inList);
+
+    final emploiById = <String, Map<String, dynamic>>{};
+    for (final r in (emploisRows as List? ?? const [])) {
+      final m = Map<String, dynamic>.from(r);
+      final id = (m['id'] ?? '').toString();
+      if (id.isNotEmpty) emploiById[id] = m;
+    }
+
+    // 3) Employeurs (nom + logo)
+    final empIds = emploiById.values
+        .map((m) => (m['employeur_id'] ?? '').toString())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final empById = <String, Map<String, dynamic>>{};
+    if (empIds.isNotEmpty) {
+      final inEmp = '(${empIds.map((e) => '"$e"').join(',')})';
+      final emps = await sb
+          .from('employeurs')
+          .select('id, nom, logo_url')
+          .filter('id', 'in', inEmp);
+      for (final e in (emps as List? ?? const [])) {
+        final m = Map<String, dynamic>.from(e);
+        final id = (m['id'] ?? '').toString();
+        if (id.isNotEmpty) empById[id] = m;
+      }
+    }
+
+    // 4) Merge final (tri par date_ajout DESC conservÃ©Â©Ã†â€™Â©)
+    final out = <Map<String, dynamic>>[];
+    for (final f in favs) {
+      final jobId = (f['emploi_id'] ?? '').toString();
+      final favAt = (f['date_ajout'] ?? '').toString();
+      final job = emploiById[jobId];
+      if (job == null) continue;
+      final emp = empById[(job['employeur_id'] ?? '').toString()];
+      out.add({
+        'emploi_id': jobId,
+        'titre': job['titre'] ?? '',
+        'ville': job['ville'] ?? '',
+        'type_contrat': job['type_contrat'] ?? '',
+        'cree_le': job['cree_le'],
+        'employeur_nom': emp?['nom'] ?? '',
+        'logo_url': emp?['logo_url'] ?? '',
+        'date_ajout': favAt,
+      });
+    }
+
+    return out;
+  }
+
+  Future<void> _removeFavorite(String jobId) async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await sb.from('emplois_favoris').delete().match({
+        'utilisateur_id': uid,
+        'emploi_id': jobId,
+      });
+      setState(() {
+        _favSet.remove(jobId);
+        _data = _load(); // refresh
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('RetirÃ©Â©Ã†â€™Â© des favoris.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors du retrait : $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0.5,
+        title: const Text('Mes favoris'),
+        actions: [
+          IconButton(
+            tooltip: 'Explorer les offres',
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const JobsPage()),
+            ),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _data,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Erreur de chargement : ${snap.error}',
+                  style: const TextStyle(color: Colors.red)),
+            );
+          }
+
+          final items = snap.data ?? const [];
+          if (items.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.favorite_border, color: kBlue, size: 52),
+                      const SizedBox(height: 10),
+                      const Text('Aucun favori pour le moment',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Ajoutez des offres Ã©Â©Ã†â€™  vos favoris en touchant le cÃ©Â©â‚¬Â¦â€šÂ¬Ã…â€œur.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const JobsPage()),
+                        ),
+                        icon: const Icon(Icons.search),
+                        label: const Text('Explorer les offres'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, i) {
+              final m = items[i];
+              final jobId = (m['emploi_id'] ?? '').toString();
+              final hasLogo =
+                  (m['logo_url'] ?? '').toString().trim().isNotEmpty;
+              final subtitle = _subtitle(m);
+              final addedAgo =
+                  _formatRelative((m['date_ajout'] ?? '').toString());
+
+              return Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: jobId.isEmpty
+                      ? null
+                      : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => JobDetailPage(jobId: jobId)),
+                          ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        // Logo
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.black12),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: hasLogo
+                              ? Image.network(
+                                  (m['logo_url'] ?? '').toString(),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      const Icon(Icons.work_outline),
+                                )
+                              : const Icon(Icons.work_outline),
+                        ),
+                        const SizedBox(width: 12),
+                        // Textes
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text((m['titre'] ?? '').toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              if ((m['employeur_nom'] ?? '')
+                                  .toString()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  (m['employeur_nom'] ?? '').toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                              if (subtitle.isNotEmpty ||
+                                  addedAgo.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    if (subtitle.isNotEmpty)
+                                      Expanded(
+                                        child: Text(
+                                          subtitle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              color: Colors.black54),
+                                        ),
+                                      ),
+                                    if (subtitle.isNotEmpty &&
+                                        addedAgo.isNotEmpty)
+                                      const SizedBox(width: 8),
+                                    if (addedAgo.isNotEmpty)
+                                      Text(
+                                        addedAgo,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black45,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        // Actions
+                        IconButton(
+                          tooltip: 'Retirer des favoris',
+                          icon: const Icon(Icons.favorite),
+                          color: Colors.red,
+                          onPressed: jobId.isEmpty
+                              ? null
+                              : () => _removeFavorite(jobId),
+                        ),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

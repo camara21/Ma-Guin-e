@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
-import 'messages_annonce_page.dart';         // pour les ANNONCES
-import 'messages/message_chat_page.dart';   // pour LOGEMENT & PRESTATAIRE
+import 'messages_annonce_page.dart'; // ANNONCES
+import 'messages/message_chat_page.dart'; // LOGEMENT & PRESTATAIRE
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
@@ -30,21 +30,25 @@ class _MessagesPageState extends State<MessagesPage> {
 
   DateTime _asDate(dynamic v) {
     if (v is DateTime) return v;
-    if (v is String) { final d = DateTime.tryParse(v); if (d != null) return d; }
+    if (v is String) {
+      final d = DateTime.tryParse(v);
+      if (d != null) return d;
+    }
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   String _dateLabel(dynamic v) {
     final d = _asDate(v).toLocal();
-    final dd = d.day.toString().padLeft(2,'0');
-    final mm = d.month.toString().padLeft(2,'0');
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
     return '$dd/$mm/${d.year}';
   }
 
   String _initials(Map<String, dynamic>? u) {
     final p = (u?['prenom'] ?? '').toString().trim();
     final n = (u?['nom'] ?? '').toString().trim();
-    final s = '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
+    final s =
+        '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
     return s.isNotEmpty ? s : '·';
   }
 
@@ -56,7 +60,13 @@ class _MessagesPageState extends State<MessagesPage> {
 
   String? _rawPath(Map<String, dynamic>? u) {
     if (u == null) return null;
-    for (final k in const ['photo_path','photo_url','image_url','avatar_url','photo']) {
+    for (final k in const [
+      'photo_path',
+      'photo_url',
+      'image_url',
+      'avatar_url',
+      'photo'
+    ]) {
       final v = u[k]?.toString();
       if (v != null && v.isNotEmpty && !v.startsWith('http')) return v;
     }
@@ -79,13 +89,15 @@ class _MessagesPageState extends State<MessagesPage> {
 
     String? path = _rawPath(u);
     if (path != null) {
-      if (path.startsWith('$_avatarBucket/')) path = path.substring(_avatarBucket.length + 1);
+      if (path.startsWith('$_avatarBucket/')) {
+        path = path.substring(_avatarBucket.length + 1);
+      }
       final url = _publicUrl(path);
       _avatarCache[userId] = url;
       return url;
     }
 
-    for (final ext in const ['jpg','png','jpeg']) {
+    for (final ext in const ['jpg', 'png', 'jpeg']) {
       final guess = 'u/$userId.$ext';
       final url = _publicUrl(guess);
       _avatarCache[userId] = url;
@@ -113,7 +125,11 @@ class _MessagesPageState extends State<MessagesPage> {
   Future<void> _loadConversations() async {
     final me = _sb.auth.currentUser;
     if (me == null) {
-      setState(() { _conversations = []; _utilisateurs = {}; _loading = false; });
+      setState(() {
+        _conversations = [];
+        _utilisateurs = {};
+        _loading = false;
+      });
       return;
     }
 
@@ -142,7 +158,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
         final gkey = '$ctx-$ctxId-$otherId';
         if (!grouped.containsKey(gkey) ||
-            _asDate(msg['date_envoi']).isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
+            _asDate(msg['date_envoi'])
+                .isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
           grouped[gkey] = msg;
         }
       }
@@ -152,7 +169,8 @@ class _MessagesPageState extends State<MessagesPage> {
       try {
         users = await _sb
             .from('utilisateurs')
-            .select('id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
+            .select(
+                'id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
             .inFilter('id', participantIds.toList());
       } catch (_) {
         try {
@@ -172,17 +190,27 @@ class _MessagesPageState extends State<MessagesPage> {
         for (final u in (users as List? ?? const []))
           u['id'].toString(): Map<String, dynamic>.from(u as Map)
       };
-      for (final id in participantIds) { unawaited(_resolveAvatarForUser(id)); }
+      for (final id in participantIds) {
+        unawaited(_resolveAvatarForUser(id));
+      }
 
       final list = grouped.values.toList()
-        ..sort((a,b) => _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
+        ..sort((a, b) =>
+            _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
 
       if (!mounted) return;
-      setState(() { _conversations = list; _loading = false; });
+      setState(() {
+        _conversations = list;
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       debugPrint('loadConversations error: $e');
-      setState(() { _conversations = []; _utilisateurs = {}; _loading = false; });
+      setState(() {
+        _conversations = [];
+        _utilisateurs = {};
+        _loading = false;
+      });
     }
   }
 
@@ -190,9 +218,15 @@ class _MessagesPageState extends State<MessagesPage> {
     _channel?.unsubscribe();
     _channel = _sb
         .channel('public:messages')
-        .onPostgresChanges(event: PostgresChangeEvent.insert, schema: 'public', table: 'messages',
+        .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'messages',
             callback: (_) => _loadConversations())
-        .onPostgresChanges(event: PostgresChangeEvent.update, schema: 'public', table: 'messages',
+        .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'messages',
             callback: (_) => _loadConversations())
         .subscribe();
   }
@@ -211,14 +245,18 @@ class _MessagesPageState extends State<MessagesPage> {
           .from('messages')
           .update({'lu': true})
           .eq('contexte', ctx)
-          .eq(isAnnonceOrLogement ? 'annonce_id' : 'prestataire_id',
-              isAnnonceOrLogement ? convo['annonce_id'] : convo['prestataire_id'])
+          .eq(
+              isAnnonceOrLogement ? 'annonce_id' : 'prestataire_id',
+              isAnnonceOrLogement
+                  ? convo['annonce_id']
+                  : convo['prestataire_id'])
           .eq('receiver_id', me.id)
           .eq('sender_id', otherId);
 
       final idx = _conversations.indexOf(convo);
       if (idx != -1 && mounted) {
-        setState(() => _conversations[idx] = {..._conversations[idx], 'lu': true});
+        setState(
+            () => _conversations[idx] = {..._conversations[idx], 'lu': true});
       }
       _messageService.unreadChanged.add(null);
     } catch (e) {
@@ -228,16 +266,22 @@ class _MessagesPageState extends State<MessagesPage> {
 
   Future<bool> _confirmDelete() async {
     return await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Supprimer la conversation ?'),
-        content: const Text("Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
-        ],
-      ),
-    ) ?? false;
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Supprimer la conversation ?'),
+            content: const Text(
+                "Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Supprimer')),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _deleteConversation({
@@ -264,23 +308,31 @@ class _MessagesPageState extends State<MessagesPage> {
 
       if (!mounted) return;
       setState(() => _conversations.remove(convo));
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Conversation supprimée.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Conversation supprimée.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    const primary = Color(0xFF2563EB);    // messagesPrimary
+    const onPrimary = Color(0xFFFFFFFF);  // messagesOnPrimary
+    const secondary = Color(0xFF93C5FD);  // messagesSecondary
+
     final me = _sb.auth.currentUser;
     final filter = _searchCtrl.text.toLowerCase();
 
     final list = _conversations.where((m) {
       final contenu = (m['contenu'] ?? '').toString().toLowerCase();
-      final otherId = (m['sender_id'] == me?.id) ? m['receiver_id'] : m['sender_id'];
+      final otherId =
+          (m['sender_id'] == me?.id) ? m['receiver_id'] : m['sender_id'];
       final u = _utilisateurs[otherId];
-      final nom = ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
+      final nom =
+          ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
       return contenu.contains(filter) || nom.contains(filter);
     }).toList();
 
@@ -288,8 +340,11 @@ class _MessagesPageState extends State<MessagesPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
-        title: const Text("Messages", style: TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.w600)),
+        iconTheme: const IconThemeData(color: primary),
+        title: const Text(
+          "Messages",
+          style: TextStyle(color: primary, fontWeight: FontWeight.w600),
+        ),
       ),
       body: Column(
         children: [
@@ -297,10 +352,18 @@ class _MessagesPageState extends State<MessagesPage> {
             padding: const EdgeInsets.all(8),
             child: TextField(
               controller: _searchCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Rechercher…',
-                prefixIcon: Icon(Icons.search, color: Color(0xFF113CFC)),
-                border: OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.search, color: primary),
+                filled: true,
+                fillColor: secondary.withOpacity(0.12),
+                border: const OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: secondary.withOpacity(0.6)),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: primary, width: 1.6),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -316,12 +379,16 @@ class _MessagesPageState extends State<MessagesPage> {
                         itemBuilder: (ctx, i) {
                           final m = list[i];
 
-                          final isUnread = (m['receiver_id'] == me?.id) && (m['lu'] != true);
-                          final otherId = (m['sender_id'] == me?.id) ? m['receiver_id'] : m['sender_id'];
+                          final isUnread =
+                              (m['receiver_id'] == me?.id) && (m['lu'] != true);
+                          final otherId = (m['sender_id'] == me?.id)
+                              ? m['receiver_id']
+                              : m['sender_id'];
 
                           final utilisateur = _utilisateurs[otherId];
                           final interlocutorName = (utilisateur != null)
-                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}"
+                                  .trim()
                               : "Utilisateur";
 
                           final subtitle = (m['contenu'] ?? '').toString();
@@ -339,7 +406,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final convKey = ValueKey<String>([
                             (m['contexte'] ?? '').toString(),
-                            (m['annonce_id'] ?? m['prestataire_id'] ?? '').toString(),
+                            (m['annonce_id'] ?? m['prestataire_id'] ?? '')
+                                .toString(),
                             userId,
                           ].join('-'));
 
@@ -347,53 +415,84 @@ class _MessagesPageState extends State<MessagesPage> {
                             key: convKey,
                             direction: DismissDirection.endToStart,
                             confirmDismiss: (_) => _confirmDelete(),
-                            onDismissed: (_) => _deleteConversation(convo: m, otherId: userId),
+                            onDismissed: (_) =>
+                                _deleteConversation(convo: m, otherId: userId),
                             background: Container(
                               color: Colors.red,
                               alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: const Icon(Icons.delete, color: Colors.white),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child:
+                                  const Icon(Icons.delete, color: Colors.white),
                             ),
                             child: ListTile(
                               onLongPress: () async {
                                 final ok = await _confirmDelete();
-                                if (ok) await _deleteConversation(convo: m, otherId: userId);
+                                if (ok) {
+                                  await _deleteConversation(
+                                      convo: m, otherId: userId);
+                                }
                               },
                               leading: Stack(
                                 children: [
                                   ClipOval(
                                     child: SizedBox(
-                                      width: 44, height: 44,
+                                      width: 44,
+                                      height: 44,
                                       child: (photoUrl == null)
                                           ? _initialsAvatar(initials)
                                           : Image.network(
                                               photoUrl,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => _initialsAvatar(initials),
+                                              errorBuilder: (_, __, ___) =>
+                                                  _initialsAvatar(initials),
                                             ),
                                     ),
                                   ),
                                   if (isUnread)
                                     const Positioned(
-                                      right: 0, top: 0,
-                                      child: CircleAvatar(radius: 6, backgroundColor: Colors.red),
+                                      right: 0,
+                                      top: 0,
+                                      child: CircleAvatar(
+                                        radius: 6,
+                                        backgroundColor: primary,
+                                      ),
                                     ),
                                 ],
                               ),
-                              title: Text(interlocutorName),
-                              subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              trailing: Text(dateLabel, style: const TextStyle(fontSize: 12)),
+                              title: Text(
+                                interlocutorName,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Text(
+                                dateLabel,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
                               onTap: () async {
-                                await _markThreadAsRead(convo: m, otherId: userId);
+                                await _markThreadAsRead(
+                                    convo: m, otherId: userId);
 
-                                final contexte = (m['contexte'] ?? '').toString();
+                                final contexte =
+                                    (m['contexte'] ?? '').toString();
 
                                 if (contexte == 'annonce') {
-                                  // → Chat d'ANNONCE
-                                  final annonceId = (m['annonce_id'] ?? '').toString();
-                                  final annonceTitre = ((m['annonce_titre'] ?? '') as String).trim().isNotEmpty
-                                      ? (m['annonce_titre'] as String)
-                                      : 'Annonce';
+                                  // Chat d'ANNONCE
+                                  final annonceId =
+                                      (m['annonce_id'] ?? '').toString();
+                                  final annonceTitre =
+                                      ((m['annonce_titre'] ?? '') as String)
+                                              .trim()
+                                              .isNotEmpty
+                                          ? (m['annonce_titre'] as String)
+                                          : 'Annonce';
 
                                   await Navigator.push(
                                     context,
@@ -407,26 +506,30 @@ class _MessagesPageState extends State<MessagesPage> {
                                     ),
                                   );
                                 } else if (contexte == 'logement') {
-                                  // → Chat de LOGEMENT (ouvre une carte logement dans MessageChatPage)
-                                  final logementId = (m['annonce_id'] ?? '').toString(); // on réutilise annonce_id
-                                  final logementTitre = ((m['annonce_titre'] ?? '') as String).trim().isNotEmpty
-                                      ? (m['annonce_titre'] as String)
-                                      : 'Logement';
+                                  // Chat de LOGEMENT (ouvre une carte logement)
+                                  final logementId = (m['annonce_id'] ?? '')
+                                      .toString(); // réutilise annonce_id
+                                  final logementTitre =
+                                      ((m['annonce_titre'] ?? '') as String)
+                                              .trim()
+                                              .isNotEmpty
+                                          ? (m['annonce_titre'] as String)
+                                          : 'Logement';
 
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => MessageChatPage(
                                         peerUserId: userId,
-                                        title: logementTitre,       // titre de l’appbar = titre logement
+                                        title: logementTitre,
                                         contextType: 'logement',
-                                        contextId: logementId,      // id du logement
+                                        contextId: logementId,
                                         contextTitle: logementTitre,
                                       ),
                                     ),
                                   );
                                 } else {
-                                  // → Chat PRESTATAIRE (générique)
+                                  // Chat PRESTATAIRE (générique)
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -434,7 +537,8 @@ class _MessagesPageState extends State<MessagesPage> {
                                         peerUserId: userId,
                                         title: interlocutorName,
                                         contextType: 'prestataire',
-                                        contextId: (m['prestataire_id'] ?? '').toString(),
+                                        contextId: (m['prestataire_id'] ?? '')
+                                            .toString(),
                                         contextTitle: interlocutorName,
                                       ),
                                     ),
@@ -454,8 +558,14 @@ class _MessagesPageState extends State<MessagesPage> {
   }
 
   Widget _initialsAvatar(String initials) => Container(
-        color: const Color(0xFF113CFC),
+        color: const Color(0xFF2563EB), // messagesPrimary
         alignment: Alignment.center,
-        child: Text(initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Color(0xFFFFFFFF), // onPrimary
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       );
 }

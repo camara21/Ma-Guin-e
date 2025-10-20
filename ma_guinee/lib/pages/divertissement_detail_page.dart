@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
@@ -13,31 +12,15 @@ class DivertissementDetailPage extends StatefulWidget {
 }
 
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
-  // Saisie
-  int _note = 0; // 1..5
-  final TextEditingController _avisController = TextEditingController();
+  static const Color kPrimary = Colors.deepPurple;
 
-  // Avis
-  double _noteMoyenne = 0.0;
-  List<Map<String, dynamic>> _avisList = []; // {auteur_id, etoiles, commentaire, created_at}
-  final Map<String, Map<String, dynamic>> _usersById = {}; // auteur_id -> {prenom, nom, photo_url}
+  // Avis (facultatif ici – structure prête si tu veux brancher Supabase plus tard)
+  int _note = 0;
+  final TextEditingController _avisController = TextEditingController();
 
   // Galerie
   final PageController _pageController = PageController();
   int _currentImage = 0;
-
-  final _sb = Supabase.instance.client;
-
-  bool _isUuid(String s) {
-    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-    return r.hasMatch(s);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAvisBloc();
-  }
 
   @override
   void dispose() {
@@ -46,158 +29,41 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     super.dispose();
   }
 
-  // ─────────── Charger avis + profils (table: avis_lieux)
-  Future<void> _loadAvisBloc() async {
-    try {
-      final lieuId = widget.lieu['id']?.toString();
-      if (lieuId == null || !_isUuid(lieuId)) return;
-
-      // 1) Avis (aucune jointure)
-      final rows = await _sb
-          .from('avis_lieux')
-          .select('auteur_id, etoiles, commentaire, created_at')
-          .eq('lieu_id', lieuId)
-          .order('created_at', ascending: false);
-
-      final list = List<Map<String, dynamic>>.from(rows);
-
-      // 2) Moyenne
-      double moyenne = 0.0;
-      if (list.isNotEmpty) {
-        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        final sum = notes.fold<double>(0.0, (a, b) => a + b);
-        moyenne = sum / notes.length;
-      }
-
-      // 3) Profils auteurs (batch via .or)
-      final ids = list
-          .map((e) => e['auteur_id'])
-          .whereType<String>()
-          .where(_isUuid)
-          .toSet()
-          .toList();
-
-      Map<String, Map<String, dynamic>> fetched = {};
-      if (ids.isNotEmpty) {
-        final orFilter = ids.map((id) => 'id.eq.$id').join(',');
-        final profs = await _sb
-            .from('utilisateurs')
-            .select('id, prenom, nom, photo_url, avatar_url')
-            .or(orFilter);
-
-        for (final p in List<Map<String, dynamic>>.from(profs)) {
-          final id = (p['id'] ?? '').toString();
-          fetched[id] = {
-            'prenom': p['prenom'],
-            'nom': p['nom'],
-            'photo_url': p['photo_url'] ?? p['avatar_url'],
-          };
-        }
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _avisList = list;
-        _noteMoyenne = moyenne;
-        _usersById
-          ..clear()
-          ..addAll(fetched);
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement avis: $e')),
-      );
-    }
-  }
-
-  // ─────────── Envoyer / MAJ avis (1 par utilisateur)
-  Future<void> _envoyerAvis() async {
-    final avis = _avisController.text.trim();
-    if (_note == 0 || avis.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci de noter et écrire un avis.")),
-      );
-      return;
-    }
-
-    final user = _sb.auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez vous connecter pour laisser un avis.")),
-      );
-      return;
-    }
-
-    final lieuId = widget.lieu['id']?.toString() ?? '';
-    if (!_isUuid(lieuId)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("ID du lieu invalide.")),
-      );
-      return;
-    }
-
-    try {
-      await _sb.from('avis_lieux').upsert(
-        {
-          'lieu_id': lieuId,
-          'auteur_id': user.id,
-          'etoiles': _note,
-          'commentaire': avis,
-        },
-        onConflict: 'lieu_id,auteur_id',
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci pour votre avis !")),
-      );
-
-      setState(() {
-        _note = 0;
-        _avisController.clear();
-      });
-      FocusScope.of(context).unfocus();
-      await _loadAvisBloc();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'envoi: $e")),
-      );
-    }
-  }
-
-  // ─────────── Téléphone / Carte
-  void _callPhone(BuildContext context) async {
+  // ---------- Téléphone + Maps ----------
+  void _callPhone() async {
     final raw = (widget.lieu['contact'] ?? widget.lieu['telephone'] ?? '').toString();
     final phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
-    if (phone.isNotEmpty && await canLaunchUrl(Uri.parse('tel:$phone'))) {
-      await launchUrl(Uri.parse('tel:$phone'), mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro non disponible ou invalide")),
-      );
+    if (phone.isNotEmpty) {
+      final uri = Uri.parse('tel:$phone');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Numéro non disponible ou invalide")),
+    );
   }
 
-  void _openMap(BuildContext context) async {
+  void _openMap() async {
     final lat = (widget.lieu['latitude'] as num?)?.toDouble();
     final lon = (widget.lieu['longitude'] as num?)?.toDouble();
     if (lat != null && lon != null) {
-      final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
+      final uri =
+          Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
       }
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Coordonnées GPS non disponibles")),
-      );
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Coordonnées GPS non disponibles")),
+    );
   }
 
-  // ─────────── Images helpers
+  // ---------- Images ----------
   List<String> _images(Map<String, dynamic> lieu) {
     if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
       return (lieu['images'] as List).map((e) => e.toString()).toList();
@@ -206,7 +72,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
-  // --------- PLEIN ÉCRAN (PhotoViewGallery) ----------
+  // ---------- Plein écran ----------
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     showDialog(
       context: context,
@@ -264,7 +130,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       },
     );
   }
-  // ---------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -272,22 +137,95 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final horaires = (lieu['horaires'] ?? "Non renseigné").toString();
     final images = _images(lieu);
 
+    final String nom = (lieu['nom'] ?? '').toString();
+    final String ville = (lieu['ville'] ?? '').toString();
+    final String ambiance =
+        (lieu['categorie'] ?? lieu['type'] ?? '').toString();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          (lieu['nom'] ?? '').toString(),
-        style: const TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+          nom,
+          overflow: TextOverflow.ellipsis,
+        ),
+        backgroundColor: kPrimary,
+        foregroundColor: Colors.white,
+        elevation: 0.8,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
+
+      // === Barre d’actions FIXE en bas (Contacter / Itinéraire) ===
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: const Border(top: BorderSide(color: Color(0xFFEAEAEA))),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.06),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              )
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _callPhone,
+                  icon: const Icon(Icons.phone, size: 18, color: kPrimary),
+                  label: const Text(
+                    "Contacter",
+                    style: TextStyle(
+                      color: kPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: kPrimary, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openMap,
+                  icon: const Icon(Icons.map, size: 18, color: Colors.white),
+                  label: const Text(
+                    "Itinéraire",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(22),
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 110), // place pour la barre fixe
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ---------- Images (carrousel + miniatures + plein écran)
+            // ---------- Galerie ----------
             if (images.isNotEmpty) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(13),
@@ -309,7 +247,9 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => Container(
                                 color: Colors.grey.shade300,
-                                child: const Center(child: Icon(Icons.image_not_supported)),
+                                child: const Center(
+                                  child: Icon(Icons.image_not_supported),
+                                ),
                               ),
                             ),
                           ),
@@ -321,14 +261,20 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                         right: 8,
                         top: 8,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.45),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Text(
                             '${_currentImage + 1}/${images.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -360,7 +306,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isActive ? const Color(0xFF113CFC) : Colors.transparent,
+                              color: isActive ? kPrimary : Colors.transparent,
                               width: 2,
                             ),
                           ),
@@ -384,154 +330,111 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 child: Container(
                   height: 200,
                   color: Colors.grey.shade300,
-                  child: const Center(child: Icon(Icons.image_not_supported, size: 60)),
+                  child: const Center(
+                    child: Icon(Icons.image_not_supported, size: 60),
+                  ),
                 ),
               ),
 
             const SizedBox(height: 20),
 
-            // ---------- Infos générales
+            // ---------- Infos ----------
             Text(
-              (lieu['nom'] ?? '').toString(),
+              nom,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
-
-            if ((lieu['ambiance'] ?? '').toString().isNotEmpty) ...[
+            if (ambiance.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                (lieu['ambiance']).toString(),
+                ambiance,
                 style: const TextStyle(fontSize: 15, color: Colors.grey),
               ),
             ],
-            const SizedBox(height: 18),
-
+            const SizedBox(height: 14),
             Row(
               children: [
-                const Icon(Icons.location_on, color: Color(0xFFCE1126), size: 21),
+                const Icon(Icons.location_on, color: kPrimary, size: 21),
                 const SizedBox(width: 7),
-                Text((lieu['ville'] ?? '').toString(),
-                    style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                Text(
+                  ville,
+                  style: const TextStyle(fontSize: 15, color: Colors.black87),
+                ),
               ],
             ),
-            const SizedBox(height: 18),
-
+            const SizedBox(height: 14),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.access_time, color: Color(0xFF113CFC)),
+                const Icon(Icons.access_time, color: kPrimary),
                 const SizedBox(width: 8),
-                Expanded(child: Text(horaires, style: const TextStyle(fontSize: 15))),
+                Expanded(
+                  child: Text(
+                    horaires,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 20),
-
-            if (_noteMoyenne > 0)
-              Text("⭐ Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} / 5",
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-
-            // ---------- Liste des avis (avec nom + photo)
-            if (_avisList.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text("Avis des visiteurs :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              ..._avisList.map((a) {
-                final uid = (a['auteur_id'] ?? '').toString();
-                final u = _usersById[uid] ?? const {};
-                final prenom = (u['prenom'] ?? '').toString();
-                final nom = (u['nom'] ?? '').toString();
-                final photo = (u['photo_url'] ?? '').toString();
-                final name = ('$prenom $nom').trim().isEmpty ? 'Utilisateur' : ('$prenom $nom').trim();
-                final note = (a['etoiles'] as num?)?.toInt() ?? 0;
-
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
-                    child: photo.isEmpty ? const Icon(Icons.person) : null,
-                  ),
-                  title: Text(name),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("$note ⭐️"),
-                      if ((a['commentaire'] ?? '').toString().isNotEmpty)
-                        Text(a['commentaire'].toString()),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 18),
-            ],
 
             const Divider(height: 30),
 
-            // ---------- Avis (saisie)
-            const Text("Notez ce lieu :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            // ---------- Saisie avis (UI locale) ----------
+            const Text(
+              "Notez ce lieu :",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             Row(
               children: List.generate(5, (index) {
                 return IconButton(
-                  icon: Icon(index < _note ? Icons.star : Icons.star_border, color: Colors.amber),
+                  icon: Icon(
+                    index < _note ? Icons.star : Icons.star_border,
+                    color: Colors.amber,
+                  ),
                   onPressed: () => setState(() => _note = index + 1),
                   splashRadius: 21,
                 );
               }),
             ),
             const SizedBox(height: 8),
-
             TextField(
               controller: _avisController,
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: "Écrivez votre avis ici...",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 fillColor: Colors.grey[100],
                 filled: true,
               ),
             ),
-
             const SizedBox(height: 10),
             ElevatedButton.icon(
-              onPressed: _envoyerAvis,
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Avis enregistré localement (démo)."),
+                  ),
+                );
+                setState(() {
+                  _note = 0;
+                  _avisController.clear();
+                });
+              },
               icon: const Icon(Icons.send),
               label: const Text("Envoyer l'avis"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
+                backgroundColor: kPrimary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 18),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 11, horizontal: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 elevation: 1.5,
               ),
-            ),
-
-            const SizedBox(height: 22),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _callPhone(context),
-                    icon: const Icon(Icons.phone),
-                    label: const Text("Appeler"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFCE1126),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _openMap(context),
-                    icon: const Icon(Icons.map),
-                    label: const Text("Voir sur la carte"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF009460),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),

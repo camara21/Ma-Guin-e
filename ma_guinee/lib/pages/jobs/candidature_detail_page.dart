@@ -7,12 +7,12 @@ class CandidatureDetailPage extends StatelessWidget {
   const CandidatureDetailPage({super.key, required this.candidature});
   final Map<String, dynamic> candidature;
 
-  // 🎨 Palette commune
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
+  // Palette commune (conservée)
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
   static const kYellow = Color(0xFFFCD116);
-  static const kGreen  = Color(0xFF009460);
+  static const kGreen = Color(0xFF009460);
 
   static final _sb = Supabase.instance.client;
 
@@ -29,7 +29,7 @@ class CandidatureDetailPage extends StatelessWidget {
         return;
       }
 
-      // Si public on a déjà une URL, sinon on génère un lien signé à partir du path
+      // Si public on a déjà une URL ; sinon on génère un lien signé depuis le path privé.
       final String url = (isPublic || raw.startsWith('http'))
           ? raw
           : await _sb.storage.from('cvs').createSignedUrl(raw, 300);
@@ -74,13 +74,13 @@ class CandidatureDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final prenom   = (candidature['prenom'] ?? '').toString().trim();
-    final nom      = (candidature['nom'] ?? '').toString().trim();
+    final prenom = (candidature['prenom'] ?? '').toString().trim();
+    final nom = (candidature['nom'] ?? '').toString().trim();
     final fullName = ([prenom, nom]..removeWhere((s) => s.isEmpty)).join(' ');
-    final tel      = (candidature['telephone'] ?? '').toString();
-    final email    = (candidature['email'] ?? '').toString();
-    final lettre   = (candidature['lettre'] ?? '').toString();
-    final statut   = (candidature['statut'] ?? '').toString();
+    final tel = (candidature['telephone'] ?? '').toString();
+    final email = (candidature['email'] ?? '').toString();
+    final lettre = (candidature['lettre'] ?? '').toString();
+    final statut = (candidature['statut'] ?? '').toString();
 
     return Scaffold(
       backgroundColor: kBg,
@@ -111,6 +111,7 @@ class CandidatureDetailPage extends StatelessWidget {
             label: 'Email',
             value: email.isNotEmpty ? email : '—',
           ),
+
           // Statut avec pastille colorée
           Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -240,7 +241,8 @@ class _StatusChip extends StatelessWidget {
           children: [
             Icon(Icons.circle, size: 8, color: color),
             const SizedBox(width: 6),
-            Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+            Text(text,
+                style: TextStyle(color: color, fontWeight: FontWeight.w600)),
           ],
         ),
       ),

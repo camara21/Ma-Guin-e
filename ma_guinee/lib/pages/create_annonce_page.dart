@@ -6,6 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Palette Annonces
+const Color annoncesPrimary = Color(0xFF1E3A8A);
+const Color annoncesSecondary = Color(0xFF60A5FA);
+const Color annoncesOnPrimary = Color(0xFFFFFFFF);
+const Color annoncesOnSecondary = Color(0xFF000000);
+
 class CreateAnnoncePage extends StatefulWidget {
   const CreateAnnoncePage({super.key});
 
@@ -71,14 +77,24 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(13),
-            child: Image.memory(snap.data!, width: 90, height: 90, fit: BoxFit.cover),
+            child: Image.memory(
+              snap.data!,
+              width: 90,
+              height: 90,
+              fit: BoxFit.cover,
+            ),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(13),
-        child: Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover),
+        child: Image.file(
+          File(file.path),
+          width: 90,
+          height: 90,
+          fit: BoxFit.cover,
+        ),
       );
     }
   }
@@ -103,11 +119,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
     if (_images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ajoutez au moins une photo")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Ajoutez au moins une photo")),
+      );
       return;
     }
     if (_selectedCategoryId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Catégorie introuvable")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Catégorie introuvable")),
+      );
       return;
     }
 
@@ -135,7 +155,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       );
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur : $e")),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -148,10 +170,14 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: annoncesPrimary),
         title: const Text(
           'Déposer une annonce',
-          style: TextStyle(color: Color(0xFF113CFC), fontWeight: FontWeight.bold, fontSize: 21),
+          style: TextStyle(
+            color: annoncesPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 21,
+          ),
         ),
       ),
       body: _loading
@@ -167,12 +193,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       controller: _titreController,
                       decoration: const InputDecoration(
                         labelText: 'Titre',
-                        prefixIcon: Icon(Icons.edit_outlined, color: Color(0xFF113CFC)),
+                        prefixIcon:
+                            Icon(Icons.edit_outlined, color: annoncesPrimary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
-                      validator: (v) => v!.isEmpty ? 'Entrez un titre' : null,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Entrez un titre' : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -182,12 +212,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       maxLines: 4,
                       decoration: const InputDecoration(
                         labelText: 'Description',
-                        prefixIcon: Icon(Icons.description, color: Color(0xFF113CFC)),
+                        prefixIcon:
+                            Icon(Icons.description, color: annoncesPrimary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
-                      validator: (v) => v!.isEmpty ? 'Entrez une description' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Entrez une description'
+                          : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -197,12 +232,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Prix (GNF)',
-                        prefixIcon: Icon(Icons.price_change, color: Color(0xFF009460)),
+                        prefixIcon:
+                            Icon(Icons.price_change, color: annoncesPrimary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
-                      validator: (v) => v == null || v.trim().isEmpty ? 'Indiquez un prix' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Indiquez un prix'
+                          : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -211,12 +251,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       controller: _villeController,
                       decoration: const InputDecoration(
                         labelText: 'Ville',
-                        prefixIcon: Icon(Icons.location_on, color: Color(0xFF113CFC)),
+                        prefixIcon:
+                            Icon(Icons.location_on, color: annoncesPrimary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
-                      validator: (v) => v == null || v.trim().isEmpty ? 'Entrez une ville' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Entrez une ville'
+                          : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -226,12 +271,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       keyboardType: TextInputType.phone,
                       decoration: const InputDecoration(
                         labelText: 'Téléphone',
-                        prefixIcon: Icon(Icons.phone, color: Color(0xFFFCD116)),
+                        prefixIcon:
+                            Icon(Icons.phone, color: annoncesSecondary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
-                      validator: (v) => v == null || v.trim().isEmpty ? 'Entrez un numéro' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Entrez un numéro'
+                          : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -240,10 +290,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       value: _selectedCategoryId,
                       decoration: const InputDecoration(
                         labelText: 'Catégorie',
-                        prefixIcon: Icon(Icons.category_outlined, color: Color(0xFFCE1126)),
+                        prefixIcon: Icon(Icons.category_outlined,
+                            color: annoncesSecondary),
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
                       ),
                       items: _categories
                           .map((cat) => DropdownMenuItem<int>(
@@ -251,12 +304,19 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                                 child: Text(cat['nom'] ?? 'Inconnu'),
                               ))
                           .toList(),
-                      onChanged: (val) => setState(() => _selectedCategoryId = val),
+                      onChanged: (val) =>
+                          setState(() => _selectedCategoryId = val),
                     ),
                     const SizedBox(height: 24),
 
                     // PHOTOS
-                    const Text("Photos", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF113CFC))),
+                    const Text(
+                      "Photos",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: annoncesPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 10,
@@ -274,23 +334,29 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                                   child: const CircleAvatar(
                                     radius: 13,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close, size: 16, color: Colors.white),
+                                    child: Icon(Icons.close,
+                                        size: 16, color: Colors.white),
                                   ),
                                 ),
                               ),
                             ],
                           ),
+                        // Bouton d'ajout (⚠️ pas de "InkWell," orphelin)
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
                             width: 90,
                             height: 90,
                             decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFF113CFC)),
+                              border: Border.all(color: annoncesPrimary),
                               borderRadius: BorderRadius.circular(13),
                               color: const Color(0xFFF8F6F9),
                             ),
-                            child: const Icon(Icons.add_a_photo, size: 28, color: Color(0xFF113CFC)),
+                            child: const Icon(
+                              Icons.add_a_photo,
+                              size: 28,
+                              color: annoncesPrimary,
+                            ),
                           ),
                         ),
                       ],
@@ -303,10 +369,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       icon: const Icon(Icons.send),
                       label: const Text("Publier l'annonce"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF113CFC),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
+                        backgroundColor: annoncesPrimary,
+                        foregroundColor: annoncesOnPrimary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 38, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(17),
+                        ),
                       ),
                     ),
                   ],

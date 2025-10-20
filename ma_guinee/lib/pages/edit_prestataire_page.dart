@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// --- Palette Prestataires ---
+const Color prestatairePrimary = Color(0xFF113CFC);
+const Color prestataireSecondary = Color(0xFFFCD116);
+const Color prestataireOnPrimary = Color(0xFFFFFFFF);
+const Color prestataireOnSecondary = Color(0xFF000000);
+
 class EditPrestatairePage extends StatefulWidget {
   final Map<String, dynamic> prestataire;
   const EditPrestatairePage({super.key, required this.prestataire});
@@ -23,11 +29,16 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
   @override
   void initState() {
     super.initState();
-    jobController = TextEditingController(text: widget.prestataire['metier'] ?? widget.prestataire['job'] ?? '');
-    villeController = TextEditingController(text: widget.prestataire['ville'] ?? widget.prestataire['city'] ?? '');
-    phoneController = TextEditingController(text: widget.prestataire['phone'] ?? '');
-    descriptionController = TextEditingController(text: widget.prestataire['description'] ?? '');
-    _imageUrl = widget.prestataire['image'] ?? widget.prestataire['photo_url'] ?? '';
+    jobController = TextEditingController(
+        text: widget.prestataire['metier'] ?? widget.prestataire['job'] ?? '');
+    villeController = TextEditingController(
+        text: widget.prestataire['ville'] ?? widget.prestataire['city'] ?? '');
+    phoneController =
+        TextEditingController(text: widget.prestataire['phone'] ?? '');
+    descriptionController =
+        TextEditingController(text: widget.prestataire['description'] ?? '');
+    _imageUrl =
+        widget.prestataire['image'] ?? widget.prestataire['photo_url'] ?? '';
   }
 
   @override
@@ -43,9 +54,20 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
     if (job == null) return '';
     final Map<String, List<String>> categories = {
       'Artisans & BTP': [
-        'Maçon', 'Plombier', 'Électricien', 'Soudeur', 'Charpentier',
-        'Couvreur', 'Peintre en bâtiment', 'Mécanicien', 'Menuisier',
-        'Vitrier', 'Tôlier', 'Carreleur', 'Poseur de fenêtres/portes', 'Ferrailleur',
+        'MaÃ©Â©Ã†â€™Â§on',
+        'Plombier',
+        'Ã©Â©Ã†â€™â€šÂ¬Â°lectricien',
+        'Soudeur',
+        'Charpentier',
+        'Couvreur',
+        'Peintre en bÃ©Â©Ã†â€™Â¢timent',
+        'MÃ©Â©Ã†â€™Â©canicien',
+        'Menuisier',
+        'Vitrier',
+        'TÃ©Â©Ã†â€™Â´lier',
+        'Carreleur',
+        'Poseur de fenÃ©Â©Ã†â€™Âªtres/portes',
+        'Ferrailleur',
       ],
       // ... (autres catégories inchangées)
     };
@@ -57,7 +79,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
 
   Future<void> _pickImageAndUpload() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final picked =
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked == null) return;
 
     setState(() {
@@ -70,32 +93,33 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw "Utilisateur non connecté.";
       final fileExt = picked.path.split('.').last.toLowerCase();
-      final prestataireId = widget.prestataire['id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final prestataireId = widget.prestataire['id'] ??
+          DateTime.now().millisecondsSinceEpoch.toString();
       final fileName = 'presta_$prestataireId.$fileExt';
-      // *** CHEMIN DOIT COMMENCER PAR L’ID UTILISATEUR ! ***
+      // *** CHEMIN DOIT COMMENCER PAR L'ID UTILISATEUR ! ***
       final filePath = '$userId/$fileName';
 
       final bytes = await picked.readAsBytes();
 
       await supabase.storage.from('prestataire-photos').uploadBinary(
-        filePath,
-        bytes,
-        fileOptions: FileOptions(
-          upsert: true,
-          metadata: {'owner': userId}, // bonus, pas obligatoire
-        ),
-      );
+            filePath,
+            bytes,
+            fileOptions: FileOptions(
+              upsert: true,
+              metadata: {'owner': userId},
+            ),
+          );
 
-      final publicUrl = supabase.storage.from('prestataire-photos').getPublicUrl(filePath);
+      final publicUrl =
+          supabase.storage.from('prestataire-photos').getPublicUrl(filePath);
 
       await supabase
           .from('prestataires')
-          .update({'image': publicUrl})
-          .eq('id', prestataireId);
+          .update({'image': publicUrl}).eq('id', prestataireId);
 
       setState(() {
         _imageUrl = publicUrl;
-        _photoFile = null; // ← CORRECTION ICI pour forcer l'affichage direct de l'image réseau
+        _photoFile = null; // forcer l'affichage direct de l'image réseau
         _isUploading = false;
       });
 
@@ -115,7 +139,9 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
     final prestataireId = widget.prestataire['id'];
     final metier = jobController.text.trim();
 
-    if (metier.isEmpty || villeController.text.trim().isEmpty || phoneController.text.trim().isEmpty) {
+    if (metier.isEmpty ||
+        villeController.text.trim().isEmpty ||
+        phoneController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Tous les champs obligatoires doivent être remplis.")),
       );
@@ -150,14 +176,19 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
         title: const Text("Supprimer ce profil prestataire ?"),
         content: const Text("Cette action est irréversible."),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Annuler")),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
               final supabase = Supabase.instance.client;
               final prestataireId = widget.prestataire['id'];
               try {
-                await supabase.from('prestataires').delete().eq('id', prestataireId);
+                await supabase
+                    .from('prestataires')
+                    .delete()
+                    .eq('id', prestataireId);
                 Navigator.pop(context, true);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Prestataire supprimé.")),
@@ -177,17 +208,19 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
 
   @override
   Widget build(BuildContext context) {
-    final Color bleuMaGuinee = const Color(0xFF113CFC);
-    final Color vert = const Color(0xFF009460);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Modifier mon espace prestataire", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Modifier mon espace prestataire",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: prestatairePrimary),
         actions: [
-          IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: _delete),
+          IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: _delete),
         ],
         elevation: 1,
       ),
@@ -203,7 +236,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
                       ? FileImage(_photoFile!)
                       : (_imageUrl != null && _imageUrl!.isNotEmpty)
                           ? NetworkImage(_imageUrl!)
-                          : const AssetImage('assets/avatar.png') as ImageProvider,
+                          : const AssetImage('assets/avatar.png')
+                              as ImageProvider,
                   backgroundColor: Colors.grey[200],
                 ),
                 Positioned(
@@ -213,14 +247,17 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
                     onTap: _isUploading ? null : _pickImageAndUpload,
                     child: Container(
                       padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
                       child: _isUploading
                           ? const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Icon(Icons.edit, color: bleuMaGuinee, size: 22),
+                          : const Icon(Icons.edit, color: prestatairePrimary, size: 22),
                     ),
                   ),
                 ),
@@ -233,7 +270,10 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             decoration: InputDecoration(
               labelText: "Métier *",
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              labelStyle: TextStyle(color: bleuMaGuinee),
+              labelStyle: const TextStyle(color: prestatairePrimary),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: prestatairePrimary, width: 2),
+              ),
             ),
           ),
           const SizedBox(height: 15),
@@ -242,7 +282,10 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             decoration: InputDecoration(
               labelText: "Ville *",
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              labelStyle: TextStyle(color: bleuMaGuinee),
+              labelStyle: const TextStyle(color: prestatairePrimary),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: prestatairePrimary, width: 2),
+              ),
             ),
           ),
           const SizedBox(height: 15),
@@ -251,7 +294,11 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             decoration: InputDecoration(
               labelText: "Téléphone *",
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              labelStyle: TextStyle(color: bleuMaGuinee),
+              labelStyle: const TextStyle(color: prestatairePrimary),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: prestatairePrimary, width: 2),
+              ),
+              prefixIcon: const Icon(Icons.phone, color: prestataireSecondary),
             ),
             keyboardType: TextInputType.phone,
           ),
@@ -262,7 +309,10 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             decoration: InputDecoration(
               labelText: "Description",
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              labelStyle: TextStyle(color: bleuMaGuinee),
+              labelStyle: const TextStyle(color: prestatairePrimary),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: prestatairePrimary, width: 2),
+              ),
             ),
           ),
           const SizedBox(height: 28),
@@ -271,8 +321,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             icon: const Icon(Icons.save),
             label: const Text("Enregistrer les modifications"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: vert,
-              foregroundColor: Colors.white,
+              backgroundColor: prestatairePrimary,
+              foregroundColor: prestataireOnPrimary,
               padding: const EdgeInsets.symmetric(vertical: 15),
               textStyle: const TextStyle(fontWeight: FontWeight.bold),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

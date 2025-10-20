@@ -1,0 +1,808 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'jobs_page.dart';
+import 'job_detail_page.dart';
+
+// Ã©Â©Â¢Ã©â€¦Â¡ Ã©Â©Â¯Â¸Â alias pour Ã©Â©Ã†â€™Â©viter collisions
+import 'my_applications_page.dart' as apps;
+import 'my_favorite_jobs_page.dart' as favs;
+
+import '../cv/cv_maker_page.dart';
+import 'employer/mes_offres_page.dart';
+import 'employer/devenir_employeur_page.dart';
+
+import 'package:ma_guinee/services/jobs_service.dart';
+import 'package:ma_guinee/models/job_models.dart';
+
+class JobHomePage extends StatefulWidget {
+  const JobHomePage({super.key});
+  @override
+  State<JobHomePage> createState() => _JobHomePageState();
+}
+
+class _JobHomePageState extends State<JobHomePage> {
+  // Palette
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
+  static const kGreen = Color(0xFF009460);
+
+  final _svc = JobsService();
+  late Future<List<EmploiModel>> _recent;
+
+  // Ã©Â©Ã†â€™Â©tat local des favoris (emploi_id)
+  Set<String> _favSet = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _recent = _loadRecent();
+  }
+
+  bool get _isMobile {
+    final w = MediaQuery.maybeOf(context)?.size.width ?? 800;
+    return w < 600;
+  }
+
+  Future<List<EmploiModel>> _loadRecent() {
+    return _svc.chercher(limit: 12, offset: 0);
+  }
+
+  // enrichir (nom + logo) si EmploiModel expose employeurId
+  Future<Map<String, Map<String, String>>> _loadEmployeursMeta(
+    List<EmploiModel> items,
+  ) async {
+    final sb = Supabase.instance.client;
+    try {
+      final ids = <String>{};
+      for (final e in items) {
+        try {
+          final dyn = e as dynamic;
+          final id = dyn.employeurId?.toString();
+          if (id != null && id.isNotEmpty) ids.add(id);
+        } catch (_) {}
+      }
+      if (ids.isEmpty) return {};
+
+      final inList = '(${ids.map((e) => '"$e"').join(',')})';
+      final rows = await sb
+          .from('employeurs')
+          .select('id, nom, logo_url')
+          .filter('id', 'in', inList);
+
+      final out = <String, Map<String, String>>{};
+      for (final r in (rows as List? ?? const [])) {
+        final m = Map<String, dynamic>.from(r);
+        final id = (m['id'] ?? '').toString();
+        out[id] = {
+          'nom': (m['nom'] ?? '').toString(),
+          'logo': (m['logo_url'] ?? '').toString(),
+        };
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // charge l'Ã©Â©Ã†â€™Â©tat des favoris (public.emplois_favoris)
+  Future<Set<String>> _loadFavSetFor(List<EmploiModel> items) async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) return {};
+    final ids =
+        items.map((e) => e.id).where((s) => s.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+    final inList = '(${ids.map((e) => '"$e"').join(',')})';
+    final rows = await sb
+        .from('emplois_favoris')
+        .select('emploi_id')
+        .eq('utilisateur_id', uid)
+        .filter('emploi_id', 'in', inList);
+    final out = <String>{};
+    for (final r in (rows as List? ?? const [])) {
+      final id = (r['emploi_id'] ?? '').toString();
+      if (id.isNotEmpty) out.add(id);
+    }
+    return out;
+  }
+
+  // toggle favori
+  Future<void> _toggleFavorite(String jobId) async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Connectez-vous pour ajouter des favoris.')),
+      );
+      return;
+    }
+    final isFav = _favSet.contains(jobId);
+    try {
+      if (isFav) {
+        await sb.from('emplois_favoris').delete().match({
+          'utilisateur_id': uid,
+          'emploi_id': jobId,
+        });
+        setState(() => _favSet.remove(jobId));
+      } else {
+        await sb.from('emplois_favoris').insert({
+          'utilisateur_id': uid,
+          'emploi_id': jobId,
+        });
+        setState(() => _favSet.add(jobId));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur favoris : $e')),
+      );
+    }
+  }
+
+  Future<void> _openEmployeur() async {
+    final sb = Supabase.instance.client;
+    final uid = sb.auth.currentUser?.id;
+
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Veuillez vous connecter pour accÃ©Â©Ã†â€™Â©der Ã©Â©Ã†â€™  lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢espace employeur.')),
+      );
+      return;
+    }
+
+    try {
+      final row = await sb
+          .from('employeurs')
+          .select('id')
+          .eq('proprietaire', uid)
+          .maybeSingle();
+
+      if (!mounted) return;
+      if (row != null && row['id'] != null) {
+        final String employeurId = row['id'] as String;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => MesOffresPage(employeurId: employeurId)),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DevenirEmployeurPage()),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Erreur dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢accÃ©Â©Ã†â€™Â¨s Ã©Â©Ã†â€™  lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢espace employeur : $e')),
+      );
+    }
+  }
+
+  PopupMenuButton<int> _mobileMenu() {
+    return PopupMenuButton<int>(
+      icon: const Icon(Icons.menu_rounded),
+      onSelected: (v) {
+        switch (v) {
+          case 1:
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const apps.MyApplicationsPage()));
+            break;
+          case 2:
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const favs.MyFavoriteJobsPage()));
+            break;
+          case 3:
+            _openEmployeur();
+            break;
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 1,
+          child: ListTile(
+            leading: Icon(Icons.assignment_turned_in_outlined),
+            title: Text('Mes candidatures'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 2,
+          child: ListTile(
+            leading: Icon(Icons.favorite_border),
+            title: Text('Mes favoris'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 3,
+          child: ListTile(
+            leading: Icon(Icons.business_center_outlined),
+            title: Text('Espace employeur'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ------- Helpers date relative -------
+  String _formatRelative(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      final diff = DateTime.now().toLocal().difference(d);
+      if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
+      if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'il y a ${diff.inDays} j';
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _relativeFromEmploi(EmploiModel e) {
+    try {
+      final dyn = e as dynamic;
+      final iso = (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)
+          ?.toString();
+      return _formatRelative(iso);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = _isMobile;
+
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0.5,
+        title: const Text('Emplois'),
+        actions: [
+          if (isMobile) _mobileMenu(),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _HeroJobs(
+            titleTop: 'La GuinÃ©Â©Ã†â€™Â©e recrute',
+            titleBottom: 'choisis ton avenir',
+            onSearchTap: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const JobsPage())),
+            imageAsset: 'assets/jobs/hero.png',
+          ),
+          const SizedBox(height: 12),
+
+          if (!isMobile)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _PillAction(
+                  icon: Icons.assignment_turned_in,
+                  label: 'Mes candidatures',
+                  color: kGreen,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const apps.MyApplicationsPage())),
+                ),
+                _PillAction(
+                  icon: Icons.favorite_border,
+                  label: 'Mes favoris',
+                  color: kRed,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const favs.MyFavoriteJobsPage())),
+                ),
+                _PillAction(
+                  icon: Icons.business_center,
+                  label: 'Espace employeur',
+                  color: kRed,
+                  onTap: _openEmployeur,
+                ),
+              ],
+            ),
+
+          const SizedBox(height: 16),
+
+          // Bloc CV
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: const Row(
+              children: [
+                Icon(Icons.file_present, color: kBlue, size: 26),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Pas de CV ? CrÃ©Â©Ã†â€™Â©ez-le en 2 minutes et postulez tout de suite.',
+                    style: TextStyle(color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kBlue,
+                side: const BorderSide(color: kBlue),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const CvMakerPage())),
+              child: const Text('CrÃ©Â©Ã†â€™Â©er mon CV'),
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          Text('DerniÃ©Â©Ã†â€™Â¨res offres',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+
+          // ====== LISTE VITRINE ======
+          FutureBuilder<List<EmploiModel>>(
+            future: _recent,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snap.hasError) {
+                return const Text('Impossible de charger les offres.');
+              }
+
+              final items = snap.data ?? const <EmploiModel>[];
+              if (items.isEmpty) {
+                return const Text(
+                    'Aucune offre disponible pour lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢instant.');
+              }
+
+              return FutureBuilder<Map<String, Map<String, String>>>(
+                future: _loadEmployeursMeta(items),
+                builder: (context, metaSnap) {
+                  final meta = metaSnap.data ?? {};
+
+                  // charge l'Ã©Â©Ã†â€™Â©tat favoris pour la liste
+                  return FutureBuilder<Set<String>>(
+                    future: _loadFavSetFor(items),
+                    builder: (context, favSnap) {
+                      if (favSnap.hasData) {
+                        _favSet = favSnap.data!;
+                      }
+                      final useFav = favSnap.data ?? _favSet;
+
+                      return ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, i) {
+                          final e = items[i];
+                          String empId = '';
+                          try {
+                            empId =
+                                ((e as dynamic).employeurId ?? '').toString();
+                          } catch (_) {}
+                          final company = meta[empId]?['nom'] ?? '';
+                          final logo = meta[empId]?['logo'] ?? '';
+                          final isFav = useFav.contains(e.id);
+
+                          return _JobCardVitrine(
+                            title: e.titre,
+                            company: company,
+                            subtitle: _formatVilleContrat(e),
+                            meta: _relativeFromEmploi(e), // date relative
+                            logoUrl: logo,
+                            bannerUrl: null,
+                            favorite: isFav,
+                            onFavoriteTap: () => _toggleFavorite(e.id),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => JobDetailPage(jobId: e.id)),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatVilleContrat(EmploiModel e) {
+    final parts = <String>[];
+    if (e.ville.isNotEmpty) parts.add(e.ville);
+    if (e.typeContrat.isNotEmpty) parts.add(e.typeContrat);
+    return parts.join(' Ã©Â©Â¢â‚¬Å¡Â¬Â¢ ');
+  }
+}
+
+// ================== HERO ==================
+class _HeroJobs extends StatelessWidget {
+  const _HeroJobs({
+    required this.titleTop,
+    required this.titleBottom,
+    required this.onSearchTap,
+    this.imageAsset = 'assets/jobs/hero.png',
+  });
+
+  final String titleTop;
+  final String titleBottom;
+  final VoidCallback onSearchTap;
+  final String imageAsset;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width *
+        MediaQuery.of(context).devicePixelRatio;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Image.asset(
+              imageAsset,
+              fit: BoxFit.cover,
+              cacheWidth: w.round(),
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.black.withOpacity(0.65),
+                    Colors.black.withOpacity(0.15),
+                    Colors.black.withOpacity(0.55),
+                  ],
+                  stops: const [0, .5, 1],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 16,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: RichText(
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                    shadows: const [
+                      Shadow(
+                          color: Colors.black54,
+                          blurRadius: 6,
+                          offset: Offset(0, 2)),
+                    ],
+                  ),
+                  children: const [
+                    TextSpan(text: 'La GuinÃ©Â©Ã†â€™Â©e recrute\n'),
+                    TextSpan(
+                        text: 'choisis ton avenir',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
+            child: Material(
+              color: Colors.white,
+              elevation: 3,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                onTap: onSearchTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
+                  child: Row(
+                    children: const [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Trouver mon job',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.w800)),
+                            SizedBox(height: 4),
+                            Text(
+                                'MÃ©Â©Ã†â€™Â©tier, entreprise, compÃ©Â©Ã†â€™Â©tenceÃ©Â©Â¢â‚¬Å¡Â¬Â¦',
+                                style: TextStyle(
+                                    color: Colors.black45, fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.black,
+                        child:
+                            Icon(Icons.search, color: Colors.white, size: 22),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================== UI helpers ==================
+class _PillAction extends StatelessWidget {
+  const _PillAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: StadiumBorder(side: BorderSide(color: color.withOpacity(.45))),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(label),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===================== Carte "vitrine" (logo cover + cÃ©Â©â‚¬Â¦â€šÂ¬Ã…â€œur) =====================
+class _JobCardVitrine extends StatelessWidget {
+  const _JobCardVitrine({
+    required this.title,
+    required this.company,
+    required this.subtitle,
+    required this.meta,
+    required this.onTap,
+    required this.favorite,
+    required this.onFavoriteTap,
+    this.logoUrl,
+    this.bannerUrl,
+  });
+
+  final String title;
+  final String company;
+  final String subtitle;
+  final String meta; // date relative
+  final String?
+      logoUrl; // utilisÃ©Â©Ã†â€™Â© en badge ou banniÃ©Â©Ã†â€™Â¨re fallback
+  final String?
+      bannerUrl; // banniÃ©Â©Ã†â€™Â¨re dÃ©Â©Ã†â€™Â©diÃ©Â©Ã†â€™Â©e si dispo
+  final bool favorite;
+  final VoidCallback onFavoriteTap;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLogo = (logoUrl ?? '').trim().isNotEmpty;
+    final hasBanner = (bannerUrl ?? '').trim().isNotEmpty;
+
+    // Si pas de banniÃ©Â©Ã†â€™Â¨re mais un logo Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ banniÃ©Â©Ã†â€™Â¨re = logo recadrÃ©Â©Ã†â€™Â© en cover
+    final bool useLogoAsBanner = !hasBanner && hasLogo;
+
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final double bannerHeight = isMobile ? 110 : 140;
+    final double badgeSize = isMobile ? 36 : 42;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ===== BANNIÃ©Â©Ã†â€™Ã©â€¹â‚¬ RE =====
+            SizedBox(
+              height: bannerHeight,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasBanner)
+                    Image.network(
+                      bannerUrl!.trim(),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                    )
+                  else if (useLogoAsBanner)
+                    Container(
+                      color: Colors.white,
+                      child: Image.network(
+                        logoUrl!.trim(),
+                        fit: BoxFit.cover, // remplit et recadre
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.work_outline,
+                            size: 40,
+                            color: Colors.black45),
+                      ),
+                    )
+                  else
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF4F6F9), Color(0xFFE9EDF3)],
+                        ),
+                      ),
+                    ),
+
+                  // Badge logo uniquement si on n'utilise pas dÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  le logo en banniÃ©Â©Ã†â€™Â¨re
+                  if (!useLogoAsBanner && hasLogo)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: const [
+                            BoxShadow(blurRadius: 8, color: Colors.black12)
+                          ],
+                        ),
+                        child: SizedBox(
+                          width: badgeSize,
+                          height: badgeSize,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              logoUrl!.trim(),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.work_outline, size: 22),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // CÃ©Â©â‚¬Â¦â€šÂ¬Ã…â€œur favoris
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: IconButton(
+                      onPressed: onFavoriteTap,
+                      icon: Icon(
+                          favorite ? Icons.favorite : Icons.favorite_border,
+                          size: 18),
+                      color: favorite ? Colors.red : Colors.black87,
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.all(6),
+                        minimumSize: const Size(32, 32),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ===== Texte + bouton =====
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                  if (company.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(company,
+                        style: const TextStyle(color: Colors.black54)),
+                  ],
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: const TextStyle(color: Colors.black54)),
+                  ],
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(meta,
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.black45)),
+                  ],
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton(
+                      onPressed: onTap,
+                      child: const Text('Voir lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢offre'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -2,13 +2,13 @@
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ pour limiter aux chiffres
+import 'package:flutter/services.dart'; // pour limiter aux chiffres
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:postgrest/postgrest.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/jobs_service.dart';
 
-/// ───────────────────────────────────────────────────────────────────
 /// Format montant avec des points: 1.000 / 25.000 / 1.250.000
 String _fmtMontant(dynamic v) {
   if (v == null) return '';
@@ -24,7 +24,6 @@ String _fmtMontant(dynamic v) {
   }
   return b.toString().split('').reversed.join();
 }
-/// ───────────────────────────────────────────────────────────────────
 
 class JobDetailPage extends StatefulWidget {
   const JobDetailPage({super.key, required this.jobId});
@@ -35,32 +34,32 @@ class JobDetailPage extends StatefulWidget {
 }
 
 class _JobDetailPageState extends State<JobDetailPage> {
-  // 🎨 Palette
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
+  // Palette
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
   static const kYellow = Color(0xFFFCD116);
-  static const kGreen  = Color(0xFF009460);
+  static const kGreen = Color(0xFF009460);
 
   final _svc = JobsService();
-  final _sb  = Supabase.instance.client;
+  final _sb = Supabase.instance.client;
 
   Map<String, dynamic>? job;
   Map<String, dynamic>? employer;
   bool _loading = true;
 
-  // ⭐ Favori
+  // Favori
   bool _isFavorite = false;
   bool _togglingFav = false;
 
-  // 👤 Candidature rapide
+  // Candidature rapide
   final _firstNameCtrl = TextEditingController();
-  final _lastNameCtrl  = TextEditingController();
-  final _phoneCtrl     = TextEditingController();
-  final _emailCtrl     = TextEditingController();
-  final _letterCtrl    = TextEditingController();
+  final _lastNameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _letterCtrl = TextEditingController();
 
-  // 📎 CV
+  // CV
   String? _cvBucket; // 'cvs' ou 'cvs_public'
   String? _cvPath;
   String? _cvName;
@@ -85,31 +84,38 @@ class _JobDetailPageState extends State<JobDetailPage> {
     super.dispose();
   }
 
-  // ───────────────── DATA ─────────────────
+  // ----------- DATA utils -----------
   String _relative(String? iso) {
     if (iso == null || iso.isEmpty) return '';
     try {
       final d = DateTime.parse(iso).toLocal();
       final diff = DateTime.now().toLocal().difference(d);
       if (diff.inMinutes < 60) return 'publié il y a ${diff.inMinutes} min';
-      if (diff.inHours   < 24) return 'publié il y a ${diff.inHours} h';
-      if (diff.inDays    < 7)  return 'publié il y a ${diff.inDays} j';
-      final dd = d.day.toString().padLeft(2,'0');
-      final mm = d.month.toString().padLeft(2,'0');
+      if (diff.inHours < 24) return 'publié il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'publié il y a ${diff.inDays} j';
+      final dd = d.day.toString().padLeft(2, '0');
+      final mm = d.month.toString().padLeft(2, '0');
       return 'publié le $dd/$mm/${d.year}';
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
   }
 
-  String _relativeFromJob(Map<String,dynamic> j) {
-    final iso = (j['cree_le'] ?? j['created_at'] ?? j['createdAt'] ?? j['creeLe'])?.toString();
+  String _relativeFromJob(Map<String, dynamic> j) {
+    final iso =
+        (j['cree_le'] ?? j['created_at'] ?? j['createdAt'] ?? j['creeLe'])
+            ?.toString();
     return _relative(iso);
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final j = await _svc.sb.from('emplois').select('*')
-          .eq('id', widget.jobId).maybeSingle();
+      final j = await _svc.sb
+          .from('emplois')
+          .select('*')
+          .eq('id', widget.jobId)
+          .maybeSingle();
 
       Map<String, dynamic>? emp;
       final empId = j?['employeur_id'];
@@ -117,7 +123,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
         emp = await _svc.employeur(empId.toString());
       }
 
-      // état favori → public.emplois_favoris (par utilisateur)
+      // état favori (table public.emplois_favoris)
       bool fav = false;
       final uid = _sb.auth.currentUser?.id;
       if (uid != null) {
@@ -132,10 +138,10 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
       if (!mounted) return;
       setState(() {
-        job         = j == null ? null : Map<String, dynamic>.from(j as Map);
-        employer    = emp;
+        job = j == null ? null : Map<String, dynamic>.from(j as Map);
+        employer = emp;
         _isFavorite = fav;
-        _loading    = false;
+        _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -174,7 +180,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
   }
 
-  // ───────────────── CV ─────────────────
+  // ----------- CV upload -----------
   String _sanitizeFileName(String name) =>
       name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
 
@@ -204,27 +210,30 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
 
     try {
-      final userId   = _sb.auth.currentUser?.id ?? 'anonymous';
+      final userId = _sb.auth.currentUser?.id ?? 'anonymous';
       final safeName = _sanitizeFileName(file.name);
-      final path     = '$userId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
-      final bucket   = _cvPublic ? 'cvs_public' : 'cvs';
+      final path = '$userId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final bucket = _cvPublic ? 'cvs_public' : 'cvs';
 
       await _sb.storage.from(bucket).uploadBinary(
-        path, bytes,
-        fileOptions: FileOptions(
-          upsert: false,
-          cacheControl: '3600',
-          contentType: _guessContentType(file.name),
-        ),
-      );
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              upsert: false,
+              cacheControl: '3600',
+              contentType: _guessContentType(file.name),
+            ),
+          );
 
       if (!mounted) return;
       setState(() {
-        _cvName   = file.name;
+        _cvName = file.name;
         _cvBucket = bucket;
-        _cvPath   = path;
+        _cvPath = path;
       });
-      _toast(_cvPublic ? 'CV public ajouté ✅' : 'CV ajouté (privé) ✅');
+      _toast(_cvPublic
+          ? 'CV public ajouté…'
+          : 'CV ajouté (privé)…');
     } catch (e) {
       _toast('Échec upload CV : $e');
     }
@@ -239,7 +248,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
       } else {
         url = await _sb.storage.from('cvs').createSignedUrl(_cvPath!, 300);
       }
-      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final ok =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (!ok) _toast('Impossible d’ouvrir le CV.');
     } catch (_) {
       _toast('Aperçu du CV indisponible.');
@@ -248,62 +258,80 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
   Future<void> _removeCv() async {
     if (_cvPath == null || _cvBucket == null) {
-      setState(() { _cvName = _cvPath = _cvBucket = null; });
+      setState(() {
+        _cvName = _cvPath = _cvBucket = null;
+      });
       return;
     }
     try {
       await _sb.storage.from(_cvBucket!).remove([_cvPath!]);
       if (!mounted) return;
-      setState(() { _cvName = _cvPath = _cvBucket = null; });
+      setState(() {
+        _cvName = _cvPath = _cvBucket = null;
+      });
       _toast('CV retiré.');
     } catch (e) {
       _toast('Suppression impossible : $e');
     }
   }
 
-  // ───────────────── Candidature ─────────────────
+  // ----------- Candidature -----------
   Future<void> _submit() async {
     final user = _sb.auth.currentUser;
-    if (user == null) { _toast('Veuillez vous connecter pour postuler.'); return; }
+    if (user == null) {
+      _toast('Veuillez vous connecter pour postuler.');
+      return;
+    }
 
     final prenom = _firstNameCtrl.text.trim();
-    final nom    = _lastNameCtrl.text.trim();
-    final phone  = _phoneCtrl.text.trim();
-    final email  = _emailCtrl.text.trim();
+    final nom = _lastNameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final lettre = _letterCtrl.text.trim();
-    if (prenom.isEmpty || nom.isEmpty) { _toast('Prénom et Nom sont requis'); return; }
-    if (phone.isEmpty) { _toast('Téléphone requis'); return; }
-    if (_cvPath == null || _cvBucket == null) { _toast('Merci de joindre votre CV'); return; }
+    if (prenom.isEmpty || nom.isEmpty) {
+      _toast('Prénom et Nom sont requis');
+      return;
+    }
+    if (phone.isEmpty) {
+      _toast('Téléphone requis');
+      return;
+    }
+    if (_cvPath == null || _cvBucket == null) {
+      _toast('Merci de joindre votre CV');
+      return;
+    }
 
     final String cvValue = (_cvBucket == 'cvs_public')
         ? _sb.storage.from('cvs_public').getPublicUrl(_cvPath!)
         : _cvPath!;
 
     try {
-      // ✅ Colonnes conformes à ta table
+      // Colonnes conformes au schéma (candidat_id)
       await _svc.sb.from('candidatures').insert({
-        'emploi_id' : widget.jobId,
-        'candidat'  : user.id,      // <- IMPORTANT
-        'prenom'    : prenom,
-        'nom'       : nom,
-        'telephone' : phone,
-        if (email.isNotEmpty)  'email'  : email,
-        if (lettre.isNotEmpty) 'lettre' : lettre,
-        'cv_url'    : cvValue,
+        'emploi_id': widget.jobId,
+        'candidat_id': user.id, // <- cohérent avec la lecture
+        'prenom': prenom,
+        'nom': nom,
+        'telephone': phone,
+        if (email.isNotEmpty) 'email': email,
+        if (lettre.isNotEmpty) 'lettre': lettre,
+        'cv_url': cvValue,
       });
       if (!mounted) return;
-      _toast('Candidature envoyée ✅');
+      _toast('Candidature envoyée…');
       Navigator.pop(context);
     } catch (e) {
       final msg = e.toString();
-      final isUnique =
-          (e is PostgrestException && e.code == '23505') ||
-          msg.contains('23505') || msg.contains('candidatures_emploi_id_candidat_key');
-      _toast(isUnique ? 'Vous avez déjà postulé à cette offre.' : 'Envoi impossible : $e');
+      final isUnique = (e is PostgrestException && e.code == '23505') ||
+          msg.contains('23505') ||
+          msg.contains('candidatures_emploi_id_candidat_key');
+      _toast(isUnique
+          ? 'Vous avez déjà postulé à cette offre.'
+          : 'Envoi impossible : $e');
     }
   }
 
-  // ───────────────── UI ─────────────────
+  // ----------- UI -----------
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -314,21 +342,21 @@ class _JobDetailPageState extends State<JobDetailPage> {
     }
 
     final j = job!;
-    final title       = (j['titre'] ?? 'Offre').toString();
-    final ville       = (j['ville'] ?? '').toString();
-    final commune     = (j['commune'] ?? '').toString();
-    final contrat     = (j['type_contrat'] ?? '').toString();
+    final title = (j['titre'] ?? 'Offre').toString();
+    final ville = (j['ville'] ?? '').toString();
+    final commune = (j['commune'] ?? '').toString();
+    final contrat = (j['type_contrat'] ?? '').toString();
     final teletravail = j['teletravail'] == true;
 
-    final salMin         = j['salaire_min_gnf'];
-    final salMax         = j['salaire_max_gnf'];
+    final salMin = j['salaire_min_gnf'];
+    final salMax = j['salaire_max_gnf'];
     final periodeSalaire = (j['periode_salaire'] ?? 'mois').toString();
 
     final description = (j['description'] ?? '').toString();
-    final exigences   = (j['exigences'] ?? '').toString();
-    final avantages   = (j['avantages'] ?? '').toString();
+    final exigences = (j['exigences'] ?? '').toString();
+    final avantages = (j['avantages'] ?? '').toString();
 
-    // 👉 libellé salaire explicite
+    // libellé salaire explicite
     String salaireText() {
       final per = (periodeSalaire.isEmpty ? 'mois' : periodeSalaire);
       if (salMin != null && salMax != null) {
@@ -341,8 +369,9 @@ class _JobDetailPageState extends State<JobDetailPage> {
       return 'Salaire : à négocier';
     }
 
-    final logoUrl = (employer?['logo_url'] as String?) ?? (employer?['logo'] as String?);
-    final publie  = _relativeFromJob(j);
+    final logoUrl =
+        (employer?['logo_url'] as String?) ?? (employer?['logo'] as String?);
+    final publie = _relativeFromJob(j);
 
     return Scaffold(
       backgroundColor: kBg,
@@ -353,7 +382,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
         title: Text(title, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: _isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            tooltip:
+                _isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
             onPressed: _togglingFav ? null : _toggleFavorite,
             icon: Icon(
               _isFavorite ? Icons.favorite : Icons.favorite_border,
@@ -377,9 +407,11 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   onPressed: _togglingFav ? null : _toggleFavorite,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _isFavorite ? kRed : Colors.black87,
-                    side: BorderSide(color: _isFavorite ? kRed : Colors.black26),
+                    side:
+                        BorderSide(color: _isFavorite ? kRed : Colors.black26),
                   ),
-                  child: Icon(_isFavorite ? Icons.favorite : Icons.favorite_border),
+                  child: Icon(
+                      _isFavorite ? Icons.favorite : Icons.favorite_border),
                 ),
               ),
               const SizedBox(width: 10),
@@ -403,9 +435,10 @@ class _JobDetailPageState extends State<JobDetailPage> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 120), // espace pr le CTA bas
+          padding:
+              const EdgeInsets.fromLTRB(16, 12, 16, 120), // espace pour le CTA bas
           children: [
-            // ── En-tête
+            // En-tête
             _Card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -413,11 +446,14 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   Row(
                     children: [
                       if (logoUrl != null && logoUrl.trim().isNotEmpty)
-                        CircleAvatar(radius: 22, backgroundImage: NetworkImage(logoUrl))
+                        CircleAvatar(
+                            radius: 22, backgroundImage: NetworkImage(logoUrl))
                       else
                         const CircleAvatar(
-                          radius: 22, backgroundColor: kBlue,
-                          child: Icon(Icons.business, color: Colors.white, size: 20),
+                          radius: 22,
+                          backgroundColor: kBlue,
+                          child: Icon(Icons.business,
+                              color: Colors.white, size: 20),
                         ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -426,35 +462,50 @@ class _JobDetailPageState extends State<JobDetailPage> {
                           children: [
                             Text(
                               (employer?['nom'] ?? 'Employeur').toString(),
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 16),
                             ),
                             if (publie.isNotEmpty)
-                              Text(publie, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                              Text(publie,
+                                  style: const TextStyle(
+                                      color: Colors.black45, fontSize: 12)),
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-
                   Wrap(
-                    spacing: 8, runSpacing: 8,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      _Tag(icon: Icons.place, text: commune.isNotEmpty ? '$ville, $commune' : ville),
+                      _Tag(
+                          icon: Icons.place,
+                          text:
+                              commune.isNotEmpty ? '$ville, $commune' : ville),
                       if (contrat.isNotEmpty)
-                        _Tag(icon: Icons.badge_outlined, text: contrat.toUpperCase()),
-                      // 💰 Salaire explicite
+                        _Tag(
+                            icon: Icons.badge_outlined,
+                            text: contrat.toUpperCase()),
+                      // Salaire explicite
                       _Tag(icon: Icons.payments_outlined, text: salaireText()),
                       _Tag(
-                        icon: teletravail ? Icons.home_work_outlined : Icons.pin_drop_outlined,
+                        icon: teletravail
+                            ? Icons.home_work_outlined
+                            : Icons.pin_drop_outlined,
                         text: teletravail ? 'Télétravail' : 'Sur site',
                         color: teletravail ? kGreen : kYellow,
                       ),
                       if ((employer?['telephone'] ?? '').toString().isNotEmpty)
-                        _MiniPill(icon: Icons.phone, text: employer!['telephone'].toString()),
+                        _MiniPill(
+                            icon: Icons.phone,
+                            text: employer!['telephone'].toString()),
                       if ((employer?['email'] ?? '').toString().isNotEmpty)
-                        _MiniPill(icon: Icons.email_outlined, text: employer!['email'].toString()),
+                        _MiniPill(
+                            icon: Icons.email_outlined,
+                            text: employer!['email'].toString()),
                     ],
                   ),
                 ],
@@ -463,7 +514,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
             const SizedBox(height: 12),
 
-            // ── 🔲 Bloc unique "lisse" à la HelloWork
+            // Bloc description/profil/avantages
             if (description.isNotEmpty ||
                 exigences.isNotEmpty ||
                 avantages.isNotEmpty)
@@ -476,7 +527,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
                       const SizedBox(height: 6),
                       _ExpandableText(description),
                     ],
-                    if (description.isNotEmpty && (exigences.isNotEmpty || avantages.isNotEmpty))
+                    if (description.isNotEmpty &&
+                        (exigences.isNotEmpty || avantages.isNotEmpty))
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         child: Divider(height: 1),
@@ -502,7 +554,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
             const SizedBox(height: 12),
 
-            // ── Candidature rapide (compact)
+            // Candidature rapide
             const _SectionTitle('Envoyez votre candidature'),
             _Card(
               child: Column(
@@ -513,7 +565,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
                         child: TextField(
                           controller: _firstNameCtrl,
                           textCapitalization: TextCapitalization.words,
-                          decoration: _dec('Prénom', Icons.badge_outlined),
+                          decoration:
+                              _dec('Prénom', Icons.badge_outlined),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -528,13 +581,13 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   ),
                   const SizedBox(height: 10),
 
-                  // ✅ Téléphone : uniquement chiffres
+                  // Téléphone : uniquement chiffres
                   TextField(
                     controller: _phoneCtrl,
                     keyboardType: TextInputType.number,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
-                      // LengthLimitingTextInputFormatter(9), // décommente si tu veux 9 chiffres max
+                      // LengthLimitingTextInputFormatter(9), // active si tu veux 9 chiffres max
                     ],
                     decoration: _dec('Téléphone', Icons.phone),
                   ),
@@ -549,7 +602,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   TextField(
                     controller: _letterCtrl,
                     maxLines: 5,
-                    decoration: _dec('Message / Lettre (court)', Icons.edit_note_outlined),
+                    decoration:
+                        _dec('Message / Lettre (court)', Icons.edit_note_outlined),
                   ),
                   const SizedBox(height: 10),
 
@@ -558,7 +612,9 @@ class _JobDetailPageState extends State<JobDetailPage> {
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.attach_file),
-                          label: Text(_cvName == null ? 'Joindre mon CV (PDF/DOCX)' : 'Remplacer le CV'),
+                          label: Text(_cvName == null
+                              ? 'Joindre mon CV (PDF/DOCX)'
+                              : 'Remplacer le CV'),
                           onPressed: _pickCv,
                         ),
                       ),
@@ -567,7 +623,8 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   if (_cvPath != null) ...[
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         border: Border.all(color: Colors.black12),
@@ -575,17 +632,28 @@ class _JobDetailPageState extends State<JobDetailPage> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.attachment, color: _cvBucket == 'cvs_public' ? kGreen : Colors.black54),
+                          Icon(Icons.attachment,
+                              color: _cvBucket == 'cvs_public'
+                                  ? kGreen
+                                  : Colors.black54),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _cvName ?? 'cv',
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
-                          IconButton(tooltip: 'Voir le CV', icon: const Icon(Icons.open_in_new), onPressed: _viewCv),
-                          IconButton(tooltip: 'Supprimer le CV', icon: const Icon(Icons.close), onPressed: _removeCv),
+                          IconButton(
+                              tooltip: 'Voir le CV',
+                              icon: const Icon(Icons.open_in_new),
+                              onPressed: _viewCv),
+                          IconButton(
+                              tooltip: 'Supprimer le CV',
+                              icon: const Icon(Icons.close),
+                              onPressed: _removeCv),
                         ],
                       ),
                     ),
@@ -593,10 +661,14 @@ class _JobDetailPageState extends State<JobDetailPage> {
                   const SizedBox(height: 8),
                   CheckboxListTile(
                     value: _cvPublic,
-                    onChanged: (_cvPath == null) ? (v) => setState(() => _cvPublic = v ?? false) : null,
+                    onChanged: (_cvPath == null)
+                        ? (v) => setState(() => _cvPublic = v ?? false)
+                        : null,
                     controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text('Rendre mon CV public (visible par les recruteurs)'),
-                    subtitle: const Text('Si décoché : CV privé, accessible via lien signé'),
+                    title: const Text(
+                        'Rendre mon CV public (visible par les recruteurs)'),
+                    subtitle: const Text(
+                        'Si décoché : CV privé, accessible via lien signé'),
                   ),
                 ],
               ),
@@ -619,11 +691,12 @@ class _JobDetailPageState extends State<JobDetailPage> {
         enabledBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.black12),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       );
 }
 
-// ───────────────── Helpers UI ─────────────────
+// ---------------- Helpers UI ----------------
 
 class _Card extends StatelessWidget {
   const _Card({required this.child});
@@ -656,7 +729,10 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        style: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }

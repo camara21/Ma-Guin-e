@@ -15,6 +15,11 @@ class AnnoncesPage extends StatefulWidget {
 }
 
 class _AnnoncesPageState extends State<AnnoncesPage> {
+  // Palette Annonces
+  static const Color _annoncesPrimary = Color(0xFF1E3A8A);
+  static const Color _annoncesSecondary = Color(0xFF60A5FA);
+  static const Color _onPrimary = Color(0xFFFFFFFF);
+
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
@@ -23,26 +28,30 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   bool _loading = true;
   String? _error;
 
-  // favoris (cache local) – pour éviter FutureBuilder par carte
+  // favoris (cache local) — pour éviter FutureBuilder par carte
   final Set<String> _favIds = <String>{};
   bool _favLoaded = false;
 
   // catégories
-  final Map<String, dynamic> _catTous = {'label': 'Tous', 'icon': Icons.apps, 'id': null};
+  final Map<String, dynamic> _catTous = {
+    'label': 'Tous',
+    'icon': Icons.apps,
+    'id': null
+  };
   final List<Map<String, dynamic>> _cats = const [
-    {'label': 'Immobilier', 'icon': Icons.home_work_outlined, 'id': 1},
-    {'label': 'Véhicules', 'icon': Icons.directions_car, 'id': 2},
-    {'label': 'Vacances', 'icon': Icons.beach_access, 'id': 3},
-    {'label': 'Emploi', 'icon': Icons.work_outline, 'id': 4},
-    {'label': 'Services', 'icon': Icons.handshake, 'id': 5},
-    {'label': 'Famille', 'icon': Icons.family_restroom, 'id': 6},
-    {'label': 'Électronique', 'icon': Icons.devices_other, 'id': 7},
-    {'label': 'Mode', 'icon': Icons.checkroom, 'id': 8},
-    {'label': 'Loisirs', 'icon': Icons.sports_soccer, 'id': 9},
-    {'label': 'Animaux', 'icon': Icons.pets, 'id': 10},
-    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt, 'id': 11},
-    {'label': 'Matériel pro', 'icon': Icons.build, 'id': 12},
-    {'label': 'Autres', 'icon': Icons.category, 'id': 13},
+    {'label': 'Immobilier',        'icon': Icons.home_work_outlined, 'id': 1},
+    {'label': 'Véhicules',         'icon': Icons.directions_car,     'id': 2},
+    {'label': 'Vacances',          'icon': Icons.beach_access,       'id': 3},
+    {'label': 'Emploi',            'icon': Icons.work_outline,       'id': 4},
+    {'label': 'Services',          'icon': Icons.handshake,          'id': 5},
+    {'label': 'Famille',           'icon': Icons.family_restroom,    'id': 6},
+    {'label': 'Électronique',      'icon': Icons.devices_other,      'id': 7},
+    {'label': 'Mode',              'icon': Icons.checkroom,          'id': 8},
+    {'label': 'Loisirs',           'icon': Icons.sports_soccer,      'id': 9},
+    {'label': 'Animaux',           'icon': Icons.pets,               'id': 10},
+    {'label': 'Maison & Jardin',   'icon': Icons.chair_alt,          'id': 11},
+    {'label': 'Matériel pro',      'icon': Icons.build,              'id': 12},
+    {'label': 'Autres',            'icon': Icons.category,           'id': 13},
   ];
   late final List<Map<String, dynamic>> _allCats;
   int? _selectedCatId;
@@ -54,7 +63,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     _allCats = [_catTous, ..._cats];
     _loadAnnonces();
     _preloadFavoris();
-    _searchCtrl.addListener(() => setState(() {})); // filtre à la volée sans refetch
+    _searchCtrl.addListener(() => setState(() {})); // filtre à la volée
   }
 
   @override
@@ -178,10 +187,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         margin: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF113CFC) : Colors.white,
+          color: selected ? _annoncesPrimary : Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: selected ? const Color(0xFF113CFC) : Colors.grey.shade300,
+            color: selected ? _annoncesPrimary : Colors.grey.shade300,
             width: 1,
           ),
         ),
@@ -190,7 +199,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
           children: [
             Icon(cat['icon'],
                 size: 18,
-                color: selected ? Colors.white : const Color(0xFF113CFC)),
+                color: selected ? Colors.white : _annoncesPrimary),
             const SizedBox(width: 4),
             Text(
               cat['label'],
@@ -227,11 +236,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
 
   Widget _sellBanner() {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final primary = cs.primary;
-    final onPrimary = cs.onPrimary;
-    final bannerBg = primary.withOpacity(0.08);
-    final bannerBorder = primary.withOpacity(0.12);
+    final bannerBg = _annoncesSecondary.withOpacity(0.12);
+    final bannerBorder = _annoncesSecondary.withOpacity(0.25);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -250,14 +256,18 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                 children: [
                   Text(
                     "C’est le moment de vendre",
-                    style: theme.textTheme.titleMedium!
-                        .copyWith(fontWeight: FontWeight.w700, color: cs.onSurface),
+                    style: theme.textTheme.titleMedium!.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     "Touchez des milliers d’acheteurs près de chez vous.",
-                    style: theme.textTheme.bodySmall!
-                        .copyWith(color: cs.onSurface.withOpacity(0.6), height: 1.2),
+                    style: theme.textTheme.bodySmall!.copyWith(
+                      color: Colors.black54,
+                      height: 1.2,
+                    ),
                   ),
                 ],
               ),
@@ -266,10 +276,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
               icon: const Icon(Icons.add),
               label: const Text("Déposer une annonce"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                foregroundColor: onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: _annoncesPrimary,
+                foregroundColor: _onPrimary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w600),
                 elevation: 0,
               ),
@@ -293,9 +305,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     final devise = data['devise'] ?? 'GNF';
     final ville = data['ville'] ?? '';
     final catId = data['categorie_id'] as int?;
-    final catLabel = _cats
-            .firstWhere((c) => c['id'] == catId, orElse: () => {'label': ''})['label']
-        as String;
+    final catLabel = _cats.firstWhere((c) => c['id'] == catId,
+        orElse: () => {'label': ''})['label'] as String;
 
     final rawDate = data['date_creation'] as String? ?? '';
     DateTime date;
@@ -305,8 +316,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       date = DateTime.now();
     }
     final now = DateTime.now();
-    final dateText = (date.year == now.year && date.month == now.month && date.day == now.day)
-        ? "aujourd'hui ${DateFormat.Hm().format(date)}"
+    final dateText = (date.year == now.year &&
+            date.month == now.month &&
+            date.day == now.day)
+        ? "aujourd’hui ${DateFormat.Hm().format(date)}"
         : DateFormat('dd/MM/yyyy').format(date);
 
     final isFav = _favIds.contains(id);
@@ -319,7 +332,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => AnnonceDetailPage(annonce: AnnonceModel.fromJson(data)),
+            builder: (_) =>
+                AnnonceDetailPage(annonce: AnnonceModel.fromJson(data)),
           ),
         ),
         child: Stack(
@@ -337,13 +351,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     errorBuilder: (_, __, ___) => Container(
                       color: Colors.grey[200],
                       alignment: Alignment.center,
-                      child:
-                          const Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
+                      child: const Icon(Icons.image_not_supported,
+                          size: 40, color: Colors.grey),
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -351,13 +366,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         data['titre'] ?? '',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         "${_fmtGNF(prix)} $devise",
                         style: const TextStyle(
-                          color: Color(0xFF009460),
+                          color: _annoncesPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -365,9 +381,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                       const SizedBox(height: 4),
                       if (catLabel.isNotEmpty)
                         Text(catLabel,
-                            style: const TextStyle(color: Colors.black54, fontSize: 12)),
-                      Text(ville, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      Text(dateText, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            style: const TextStyle(
+                                color: Colors.black54, fontSize: 12)),
+                      Text(ville,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 12)),
+                      Text(dateText,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -385,7 +406,9 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 3)],
+                      boxShadow: [
+                        BoxShadow(color: Colors.black12, blurRadius: 3)
+                      ],
                     ),
                     child: Icon(
                       isFav ? Icons.favorite : Icons.favorite_border,
@@ -419,20 +442,23 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: _annoncesPrimary,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: _onPrimary),
         title: TextField(
           controller: _searchCtrl,
+          style: const TextStyle(color: _onPrimary),
           decoration: const InputDecoration(
             hintText: 'Rechercher une annonce...',
+            hintStyle: TextStyle(color: Color(0xFFE0E7FF)),
             border: InputBorder.none,
-            prefixIcon: Icon(Icons.search, color: Colors.grey),
+            prefixIcon: Icon(Icons.search, color: _onPrimary),
           ),
+          cursorColor: _onPrimary,
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.favorite_border, color: Color(0xFF113CFC)),
+            icon: const Icon(Icons.favorite_border, color: _onPrimary),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const FavorisPage()),
@@ -449,12 +475,13 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                   children: [
                     // Catégories (fixes sous l'AppBar)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
                       child: LayoutBuilder(
                         builder: (_, c) {
                           final isMobile = c.maxWidth < 600;
                           if (isMobile) {
-                            // 👉 Swipe gauche/droite pour voir tous les filtres
+                            // Swipe gauche/droite pour voir tous les filtres
                             return SizedBox(
                               height: 44,
                               child: SingleChildScrollView(
@@ -469,7 +496,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                               ),
                             );
                           }
-                          // Desktop/tablette: wrap comme avant
+                          // Desktop/tablette: wrap
                           return Wrap(
                             spacing: 6,
                             runSpacing: 8,
@@ -490,7 +517,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           SliverToBoxAdapter(child: _sellBanner()),
                           const SliverToBoxAdapter(
                             child: Padding(
-                              padding: EdgeInsets.only(left: 18, bottom: 4, top: 8),
+                              padding:
+                                  EdgeInsets.only(left: 18, bottom: 4, top: 8),
                               child: Text(
                                 'Annonces récentes',
                                 style: TextStyle(
@@ -504,21 +532,25 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           if (annonces.isEmpty)
                             const SliverFillRemaining(
                               hasScrollBody: false,
-                              child: Center(child: Text('Aucune annonce trouvée.')),
+                              child: Center(
+                                  child:
+                                      Text('Aucune annonce trouvée.')),
                             )
                           else
                             SliverPadding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                               sliver: SliverGrid(
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: crossAxis,
-                                  crossAxisSpacing: 10, // ← resserré
+                                  crossAxisSpacing: 10,
                                   mainAxisSpacing: 16,
                                   childAspectRatio: 0.72,
                                 ),
                                 delegate: SliverChildBuilderDelegate(
-                                  (context, index) => _annonceCard(annonces[index]),
+                                  (context, index) =>
+                                      _annonceCard(annonces[index]),
                                   childCount: annonces.length,
                                 ),
                               ),
@@ -528,6 +560,18 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   ],
                 ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _annoncesSecondary,
+        foregroundColor: Colors.black,
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateAnnoncePage()),
+          );
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Déposer une annonce'),
+      ),
     );
   }
 }

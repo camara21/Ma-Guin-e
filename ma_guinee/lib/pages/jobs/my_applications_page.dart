@@ -11,7 +11,7 @@ class MyApplicationsPage extends StatefulWidget {
 
 class _MyApplicationsPageState extends State<MyApplicationsPage> {
   static const kBlue = Color(0xFF1976D2);
-  static const kBg   = Color(0xFFF6F7F9);
+  static const kBg = Color(0xFFF6F7F9);
 
   late Future<List<Map<String, dynamic>>> _data;
 
@@ -29,10 +29,10 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
 
     // 1) candidatures de l'utilisateur
     final cands = await sb
-        .from('candidatures')
-        .select('id, emploi_id, statut, cree_le')
-        .eq('candidat_id', uid)
-        .order('cree_le', ascending: false) as List;
+            .from('candidatures')
+            .select('id, emploi_id, statut, cree_le')
+            .eq('candidat_id', uid)
+            .order('cree_le', ascending: false) as List;
 
     if (cands.isEmpty) return [];
 
@@ -84,9 +84,9 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
     final out = <Map<String, dynamic>>[];
     for (final c in cands) {
       final cand = Map<String, dynamic>.from(c as Map);
-      final job  = emploiById[(cand['emploi_id'] ?? '').toString()];
+      final job = emploiById[(cand['emploi_id'] ?? '').toString()];
       if (job == null) continue;
-      final emp  = empById[(job['employeur_id'] ?? '').toString()];
+      final emp = empById[(job['employeur_id'] ?? '').toString()];
 
       out.add({
         'candidature_id': cand['id'],
@@ -122,44 +122,80 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
       final d = DateTime.parse(raw.toString()).toLocal();
       final diff = DateTime.now().toLocal().difference(d);
       if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
-      if (diff.inHours   < 24) return 'il y a ${diff.inHours} h';
-      if (diff.inDays    < 7)  return 'il y a ${diff.inDays} j';
-      return '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}';
+      if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'il y a ${diff.inDays} j';
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
     } catch (_) {
       return '';
     }
   }
 
-  // normalisation simple (sans package supplémentaire) pour matcher les statuts FR
-  String _norm(String s) {
-    final lower = s.trim().toLowerCase();
-    return lower
-        .replaceAll(RegExp(r'[éèêë]'), 'e')
-        .replaceAll(RegExp(r'[àâä]'), 'a')
-        .replaceAll(RegExp(r'[îï]'), 'i')
-        .replaceAll(RegExp(r'[ôö]'), 'o')
-        .replaceAll(RegExp(r'[ûùü]'), 'u');
+  // suppression simple des accents pour comparer des statuts
+  String _stripDiacritics(String s) {
+    const map = {
+      'à': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'á': 'a',
+      'ã': 'a',
+      'ç': 'c',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ô': 'o',
+      'ö': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+    };
+    final buf = StringBuffer();
+    for (final ch in s.toLowerCase().characters) {
+      buf.write(map[ch] ?? ch);
+    }
+    return buf.toString();
   }
 
   // Renvoie (label, bg, fg) selon le statut
   ({String label, Color bg, Color fg}) _statusStyle(String? raw) {
-    final s = _norm(raw ?? '');
+    final s = _stripDiacritics(raw ?? '');
     // accepté
     if (s.contains('accep')) {
-      return (label: 'Acceptée', bg: const Color(0xFFE8F5E9), fg: const Color(0xFF2E7D32));
+      return (
+        label: 'Acceptée',
+        bg: const Color(0xFFE8F5E9),
+        fg: const Color(0xFF2E7D32)
+      );
     }
     // refusé
     if (s.contains('refus') || s.contains('rejet')) {
-      return (label: 'Refusée', bg: const Color(0xFFFFEBEE), fg: const Color(0xFFC62828));
+      return (
+        label: 'Refusée',
+        bg: const Color(0xFFFFEBEE),
+        fg: const Color(0xFFC62828)
+      );
     }
     // en cours / pending (par défaut)
     if (s.contains('cours') || s.contains('pend') || s.isEmpty) {
-      return (label: 'En cours', bg: const Color(0xFFFFF8E1), fg: const Color(0xFFF9A825));
+      return (
+        label: 'En cours',
+        bg: const Color(0xFFFFF8E1),
+        fg: const Color(0xFFF9A825)
+      );
     }
     // fallback neutre
-    return (label: raw?.isNotEmpty == true ? raw! : 'En cours',
-            bg: Colors.black.withOpacity(.05),
-            fg: Colors.black87);
+    return (
+      label: raw?.isNotEmpty == true ? raw! : 'En cours',
+      bg: Colors.black.withOpacity(.05),
+      fg: Colors.black87
+    );
   }
 
   Widget _statusChip(String? raw) {
@@ -170,7 +206,10 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
         color: st.bg,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(st.label, style: TextStyle(fontSize: 12, color: st.fg, fontWeight: FontWeight.w600)),
+      child: Text(
+        st.label,
+        style: TextStyle(fontSize: 12, color: st.fg, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
@@ -205,7 +244,8 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -234,10 +274,10 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (_, i) {
               final m = items[i];
-              final jobId   = (m['emploi_id'] ?? '').toString();
+              final jobId = (m['emploi_id'] ?? '').toString();
               final hasLogo = (m['logo_url'] ?? '').toString().trim().isNotEmpty;
               final subtitle = _subtitle(m);
-              final relDate  = _formatRelative(m['date_cand']);
+              final relDate = _formatRelative(m['date_cand']);
 
               return Material(
                 color: Colors.white,
@@ -247,14 +287,18 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
                       ? null
                       : () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId)),
+                            MaterialPageRoute(
+                                builder: (_) => JobDetailPage(jobId: jobId)),
                           ),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
                         if (hasLogo)
-                          CircleAvatar(radius: 20, backgroundImage: NetworkImage(m['logo_url']))
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundImage: NetworkImage(m['logo_url']),
+                          )
                         else
                           const CircleAvatar(
                             radius: 20,
@@ -269,20 +313,29 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
                               Text(m['titre'] ?? '',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w700)),
-                              if ((m['employeur_nom'] ?? '').toString().isNotEmpty) ...[
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              if ((m['employeur_nom'] ?? '')
+                                  .toString()
+                                  .isNotEmpty) ...[
                                 const SizedBox(height: 2),
-                                Text(m['employeur_nom'],
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.black54)),
+                                Text(
+                                  m['employeur_nom'],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      const TextStyle(color: Colors.black54),
+                                ),
                               ],
                               if (subtitle.isNotEmpty) ...[
                                 const SizedBox(height: 2),
-                                Text(subtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.black54)),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      const TextStyle(color: Colors.black54),
+                                ),
                               ],
                               const SizedBox(height: 4),
                               Row(
@@ -292,7 +345,8 @@ class _MyApplicationsPageState extends State<MyApplicationsPage> {
                                   if (relDate.isNotEmpty)
                                     Text(
                                       relDate,
-                                      style: const TextStyle(fontSize: 12, color: Colors.black45),
+                                      style: const TextStyle(
+                                          fontSize: 12, color: Colors.black45),
                                     ),
                                 ],
                               ),

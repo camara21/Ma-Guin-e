@@ -33,14 +33,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     super.dispose();
   }
 
-  // Charge uniquement les notifs ADMIN (exclut type='message')
+  // Charge uniquement les notifications SYSTÈME/ADMIN (exclut type = 'message')
   Future<void> _loadNotifications() async {
     if (_userId.isEmpty) return;
     final data = await _client
         .from('notifications')
         .select()
         .eq('utilisateur_id', _userId)
-        .neq('type', 'message') // ← admin only
+        .neq('type', 'message') // exclut les messages (admin only)
         .order('date_creation', ascending: false);
 
     if (!mounted) return;
@@ -52,12 +52,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   void _subscribeRealtime() {
     if (_userId.isEmpty) return;
-    // Filtre temps réel: user + pas "message"
+    // Filtre temps réel : utilisateur + type != "message"
     _realtimeSub = _client
         .from('notifications:utilisateur_id=eq.${_userId}&type=neq.message')
-        .stream(primaryKey: ['id'])
-        .listen((rows) {
-      // on garde le tri desc par date_creation
+        .stream(primaryKey: ['id']).listen((rows) {
+      // On conserve le tri descendant par date_creation
       rows.sort((a, b) {
         final da = DateTime.tryParse(a['date_creation']?.toString() ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0);
@@ -70,7 +69,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     });
   }
 
-  // MAJ optimiste + update BDD
+  // Mise à jour optimiste + update en base
   Future<void> _marquerCommeLue(String id, int index) async {
     if (index >= 0 && index < _notifications.length) {
       setState(() {
@@ -129,7 +128,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          "Notifications",
+          'Notifications',
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -139,7 +138,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _notifications.isEmpty
-              ? const Center(child: Text("Aucune notification."))
+              ? const Center(child: Text('Aucune notification.'))
               : ListView.separated(
                   padding: const EdgeInsets.all(18),
                   itemCount: _notifications.length,
@@ -150,12 +149,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
                     return ListTile(
                       onTap: () => _marquerCommeLue(n['id'].toString(), index),
-                      leading: _leadingWithDot(_iconForType(n['type']?.toString()), lu),
+                      leading: _leadingWithDot(
+                          _iconForType(n['type']?.toString()), lu),
                       title: Text(
                         (n['title'] ?? '').toString(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: lu ? FontWeight.normal : FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight:
+                              lu ? FontWeight.normal : FontWeight.bold,
+                        ),
                       ),
                       subtitle: Text(
                         (n['contenu'] ?? '').toString(),

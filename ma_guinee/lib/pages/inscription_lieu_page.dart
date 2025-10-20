@@ -10,6 +10,10 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+// ---- Couleurs globales ----
+const Color danger = Color(0xFFCE1126);          // rouge suppression
+const Color defaultPrimary = Color(0xFF1E3A8A);  // fallback (bleu annonces)
+
 class InscriptionLieuPage extends StatefulWidget {
   final Map<String, dynamic>? lieu;
 
@@ -40,7 +44,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   bool _isUploading = false;
 
-  // état localisation
+  // État localisation
   bool _detectingPosition = false;
   bool _modeManuel = false;
 
@@ -48,7 +52,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   final TextEditingController _latCtrl = TextEditingController();
   final TextEditingController _lngCtrl = TextEditingController();
 
-  // ⚠️ nom du bucket Supabase
+  // nom du bucket Supabase
   final String _bucket = 'lieux-photos';
 
   // Centre par défaut (Conakry)
@@ -61,7 +65,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       'Bar',
       'Salle de jeux',
       'Cinéma',
-      'Parc d’attraction',
+      'Parc d’attractions',
       'Club',
       'Plage privée'
     ],
@@ -76,6 +80,33 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       'Montagne'
     ],
   };
+
+  // ---------- Palette par type ----------
+  Color get _primaryColor {
+    switch (type) {
+      case 'divertissement':
+        return const Color(0xFFE53935);
+      case 'culte':
+        return const Color(0xFF43A047);
+      case 'tourisme':
+        return const Color(0xFF1E88E5);
+      default:
+        return defaultPrimary;
+    }
+  }
+
+  Color get _secondaryTint {
+    switch (type) {
+      case 'divertissement':
+        return const Color(0xFFFFCDD2);
+      case 'culte':
+        return const Color(0xFFC8E6C9);
+      case 'tourisme':
+        return const Color(0xFFBBDEFB);
+      default:
+        return const Color(0xFFEFF2F7);
+    }
+  }
 
   @override
   void initState() {
@@ -103,9 +134,6 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     super.dispose();
   }
 
-  Color get mainColor => const Color(0xFF1E3FCF);
-  Color get red => const Color(0xFFCE1126);
-
   void _syncLatLngCtrls() {
     _latCtrl.text = latitude != null ? latitude!.toStringAsFixed(6) : '';
     _lngCtrl.text = longitude != null ? longitude!.toStringAsFixed(6) : '';
@@ -125,10 +153,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           content: const Text(
               "Pour plus de précision, placez-vous à l’intérieur de l’établissement avant de détecter la position."),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
           ],
         ),
       );
@@ -167,7 +192,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       } on TimeoutException {
         position = await Geolocator.getLastKnownPosition();
         if (position == null) {
-          _showError("Délai dépassé pour obtenir la position. Veuillez réessayer près d’une fenêtre ou activer le GPS.");
+          _showError(
+              "Délai dépassé pour obtenir la position. Réessayez près d’une fenêtre ou activez le GPS.");
           return;
         }
       } catch (_) {
@@ -178,14 +204,11 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         }
       }
 
-      // 4) Reverse geocoding (facultatif)
+      // 4) Reverse geocoding
       String? adr;
       String? city;
       try {
-        final placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
+        final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
         if (placemarks.isNotEmpty) {
           final p = placemarks.first;
           adr = _formatAdresse(p);
@@ -222,7 +245,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         final p = placemarks.first;
         setState(() {
           adresse = _formatAdresse(p);
-          ville = _nonVide(p.locality) ?? _nonVide(p.subAdministrativeArea) ?? _nonVide(p.administrativeArea) ?? ville;
+          ville = _nonVide(p.locality) ??
+              _nonVide(p.subAdministrativeArea) ??
+              _nonVide(p.administrativeArea) ??
+              ville;
         });
         _showInfo("Adresse déduite à partir des coordonnées.");
       } else {
@@ -259,9 +285,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   void _showInfo(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---------- IMAGES ----------
@@ -272,7 +296,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     if (picked.isEmpty) return;
 
     for (final x in picked) {
-      final already = _localPreviews.any((e) => e.file.path == x.path) || _uploadedImages.contains(x.path);
+      final already = _localPreviews.any((e) => e.file.path == x.path) ||
+          _uploadedImages.contains(x.path);
       if (already) continue;
 
       final bytes = await x.readAsBytes();
@@ -301,17 +326,14 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/$ts.$ext';
 
-      await Supabase.instance.client.storage
-          .from(_bucket)
-          .uploadBinary(
+      await Supabase.instance.client.storage.from(_bucket).uploadBinary(
             objectPath,
             bytes,
             fileOptions: FileOptions(upsert: true, contentType: mime),
           );
 
-      final publicUrl = Supabase.instance.client.storage
-          .from(_bucket)
-          .getPublicUrl(objectPath);
+      final publicUrl =
+          Supabase.instance.client.storage.from(_bucket).getPublicUrl(objectPath);
 
       return publicUrl;
     } catch (e) {
@@ -395,11 +417,9 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         builder: (_) => AlertDialog(
           title: const Text("Succès"),
           content: Text(existingId != null
-              ? "Lieu mis à jour avec succès ✅"
-              : "Lieu enregistré avec succès ✅"),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
-          ],
+              ? "Lieu mis à jour avec succès."
+              : "Lieu enregistré avec succès."),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
         ),
       );
       Navigator.pop(context, true);
@@ -416,13 +436,12 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.lieu != null;
-
-    final showMap = _modeManuel || latitude != null && longitude != null;
+    final showMap = _modeManuel || (latitude != null && longitude != null);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(enEdition ? "Modifier le lieu" : "Inscription Lieu"),
-        backgroundColor: mainColor,
+        backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -438,11 +457,14 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     child: ElevatedButton.icon(
                       onPressed: _modeManuel ? null : (_detectingPosition ? null : _recupererPosition),
                       icon: _detectingPosition
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : const Icon(Icons.my_location),
                       label: Text(_detectingPosition ? "Détection en cours…" : "Détecter ma position"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: mainColor,
+                        backgroundColor: _primaryColor,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -455,50 +477,58 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                 onChanged: (v) => setState(() => _modeManuel = v),
                 title: const Text("Définir la position manuellement"),
                 subtitle: const Text("Touchez la carte pour placer le marqueur"),
-                activeColor: mainColor,
+                activeColor: _primaryColor,
               ),
 
               if (showMap) ...[
                 const SizedBox(height: 8),
-                SizedBox(
-                  height: 240,
-                  child: FlutterMap(
-                    options: MapOptions(
-                      center: LatLng(
-                        latitude ?? _defaultCenter.latitude,
-                        longitude ?? _defaultCenter.longitude,
-                      ),
-                      zoom: latitude != null ? 16 : 12,
-                      onTap: (tapPosition, point) {
-                        if (!_modeManuel) {
-                          _showInfo("Activez le mode manuel pour déplacer le marqueur.");
-                          return;
-                        }
-                        setState(() {
-                          latitude = point.latitude;
-                          longitude = point.longitude;
-                          _syncLatLngCtrls();
-                        });
-                        _showInfo("Position choisie : ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}");
-                      },
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        subdomains: const ['a', 'b', 'c'],
-                      ),
-                      if (latitude != null && longitude != null)
-                        MarkerLayer(
-                          markers: [
-                            Marker(
-                              width: 40,
-                              height: 40,
-                              point: LatLng(latitude!, longitude!),
-                              child: Icon(Icons.location_on, color: red, size: 40),
-                            ),
-                          ],
+                Container(
+                  decoration: BoxDecoration(
+                    color: _secondaryTint,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: SizedBox(
+                    height: 240,
+                    child: FlutterMap(
+                      options: MapOptions(
+                        center: LatLng(
+                          latitude ?? _defaultCenter.latitude,
+                          longitude ?? _defaultCenter.longitude,
                         ),
-                    ],
+                        zoom: latitude != null ? 16 : 12,
+                        onTap: (tapPosition, point) {
+                          if (!_modeManuel) {
+                            _showInfo("Activez le mode manuel pour déplacer le marqueur.");
+                            return;
+                          }
+                          setState(() {
+                            latitude = point.latitude;
+                            longitude = point.longitude;
+                            _syncLatLngCtrls();
+                          });
+                          _showInfo(
+                              "Position choisie : ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}");
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: const ['a', 'b', 'c'],
+                        ),
+                        if (latitude != null && longitude != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                width: 40,
+                                height: 40,
+                                point: LatLng(latitude!, longitude!),
+                                child: Icon(Icons.location_on, color: _primaryColor, size: 40),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -509,7 +539,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     Expanded(
                       child: TextField(
                         controller: _latCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(signed: true, decimal: true),
                         decoration: const InputDecoration(labelText: 'Latitude'),
                         onChanged: (v) {
                           final d = double.tryParse(v.replaceAll(',', '.'));
@@ -521,7 +552,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     Expanded(
                       child: TextField(
                         controller: _lngCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(signed: true, decimal: true),
                         decoration: const InputDecoration(labelText: 'Longitude'),
                         onChanged: (v) {
                           final d = double.tryParse(v.replaceAll(',', '.'));
@@ -578,9 +610,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
               DropdownButtonFormField<String>(
                 value: type,
                 decoration: const InputDecoration(labelText: "Type de lieu"),
-                items: _typesLieu
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                    .toList(),
+                items: _typesLieu.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                 onChanged: (v) => setState(() {
                   type = v;
                   sousCategorie = '';
@@ -627,7 +657,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                       icon: const Icon(Icons.save),
                       label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: mainColor,
+                        backgroundColor: _primaryColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
@@ -667,8 +697,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     if (tiles.isEmpty) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: Text("Aucune photo sélectionnée",
-            style: TextStyle(color: Colors.grey[700])),
+        child: Text("Aucune photo sélectionnée", style: TextStyle(color: Colors.grey[700])),
       );
     }
 
@@ -712,7 +741,7 @@ class _PhotoTile extends StatelessWidget {
           right: -8,
           child: IconButton(
             onPressed: onRemove,
-            icon: const Icon(Icons.close, size: 20, color: Colors.red),
+            icon: const Icon(Icons.close, size: 20, color: danger),
             splashRadius: 16,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),

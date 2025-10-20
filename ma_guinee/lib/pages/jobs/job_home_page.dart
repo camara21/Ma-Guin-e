@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'jobs_page.dart';
 import 'job_detail_page.dart';
 
-// ⚠️ alias pour éviter collisions
+// alias pour éviter les collisions
 import 'my_applications_page.dart' as apps;
 import 'my_favorite_jobs_page.dart' as favs;
 
@@ -23,10 +23,10 @@ class JobHomePage extends StatefulWidget {
 
 class _JobHomePageState extends State<JobHomePage> {
   // Palette
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
-  static const kGreen  = Color(0xFF009460);
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
+  static const kGreen = Color(0xFF009460);
 
   final _svc = JobsService();
   late Future<List<EmploiModel>> _recent;
@@ -91,7 +91,8 @@ class _JobHomePageState extends State<JobHomePage> {
     final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
     if (uid == null) return {};
-    final ids = items.map((e) => e.id).where((s) => s.isNotEmpty).toSet().toList();
+    final ids =
+        items.map((e) => e.id).where((s) => s.isNotEmpty).toSet().toList();
     if (ids.isEmpty) return {};
     final inList = '(${ids.map((e) => '"$e"').join(',')})';
     final rows = await sb
@@ -107,7 +108,7 @@ class _JobHomePageState extends State<JobHomePage> {
     return out;
   }
 
-  // toggle favori
+  // activer/désactiver favori
   Future<void> _toggleFavorite(String jobId) async {
     final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
@@ -142,13 +143,15 @@ class _JobHomePageState extends State<JobHomePage> {
   }
 
   Future<void> _openEmployeur() async {
-    final sb  = Supabase.instance.client;
+    final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
 
     if (uid == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez vous connecter pour accéder à l’espace employeur.')),
+        const SnackBar(
+          content: Text('Veuillez vous connecter pour accéder à l’espace employeur.'),
+        ),
       );
       return;
     }
@@ -187,10 +190,16 @@ class _JobHomePageState extends State<JobHomePage> {
       onSelected: (v) {
         switch (v) {
           case 1:
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()),
+            );
             break;
           case 2:
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()),
+            );
             break;
           case 3:
             _openEmployeur();
@@ -236,16 +245,19 @@ class _JobHomePageState extends State<JobHomePage> {
       final d = DateTime.parse(iso).toLocal();
       final diff = DateTime.now().toLocal().difference(d);
       if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
-      if (diff.inHours   < 24) return 'il y a ${diff.inHours} h';
-      if (diff.inDays    < 7)  return 'il y a ${diff.inDays} j';
+      if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'il y a ${diff.inDays} j';
       return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
   }
 
   String _relativeFromEmploi(EmploiModel e) {
     try {
       final dyn = e as dynamic;
-      final iso = (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)?.toString();
+      final iso =
+          (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)?.toString();
       return _formatRelative(iso);
     } catch (_) {
       return '';
@@ -274,29 +286,39 @@ class _JobHomePageState extends State<JobHomePage> {
             titleTop: 'La Guinée recrute',
             titleBottom: 'choisis ton avenir',
             onSearchTap: () => Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const JobsPage())),
+              context,
+              MaterialPageRoute(builder: (_) => const JobsPage()),
+            ),
             imageAsset: 'assets/jobs/hero.png',
           ),
           const SizedBox(height: 12),
 
           if (!isMobile)
             Wrap(
-              spacing: 8, runSpacing: 8,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _PillAction(
-                  icon: Icons.assignment_turned_in, label: 'Mes candidatures',
+                  icon: Icons.assignment_turned_in,
+                  label: 'Mes candidatures',
                   color: kGreen,
                   onTap: () => Navigator.push(
-                    context, MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage())),
+                    context,
+                    MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()),
+                  ),
                 ),
                 _PillAction(
-                  icon: Icons.favorite_border, label: 'Mes favoris',
+                  icon: Icons.favorite_border,
+                  label: 'Mes favoris',
                   color: kRed,
                   onTap: () => Navigator.push(
-                    context, MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage())),
+                    context,
+                    MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()),
+                  ),
                 ),
                 _PillAction(
-                  icon: Icons.business_center, label: 'Espace employeur',
+                  icon: Icons.business_center,
+                  label: 'Espace employeur',
                   color: kRed,
                   onTap: _openEmployeur,
                 ),
@@ -336,14 +358,22 @@ class _JobHomePageState extends State<JobHomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               onPressed: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => const CvMakerPage())),
+                context,
+                MaterialPageRoute(builder: (_) => const CvMakerPage()),
+              ),
               child: const Text('Créer mon CV'),
             ),
           ),
 
           const SizedBox(height: 18),
 
-          Text('Dernières offres', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            'Dernières offres',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
 
           // ====== LISTE VITRINE ======
@@ -370,7 +400,7 @@ class _JobHomePageState extends State<JobHomePage> {
                 builder: (context, metaSnap) {
                   final meta = metaSnap.data ?? {};
 
-                  // charge l'état favoris pour la liste
+                  // charge l’état favoris pour la liste
                   return FutureBuilder<Set<String>>(
                     future: _loadFavSetFor(items),
                     builder: (context, favSnap) {
@@ -387,10 +417,12 @@ class _JobHomePageState extends State<JobHomePage> {
                         itemBuilder: (_, i) {
                           final e = items[i];
                           String empId = '';
-                          try { empId = ((e as dynamic).employeurId ?? '').toString(); } catch (_) {}
+                          try {
+                            empId = ((e as dynamic).employeurId ?? '').toString();
+                          } catch (_) {}
                           final company = meta[empId]?['nom'] ?? '';
-                          final logo    = meta[empId]?['logo'] ?? '';
-                          final isFav   = useFav.contains(e.id);
+                          final logo = meta[empId]?['logo'] ?? '';
+                          final isFav = useFav.contains(e.id);
 
                           return _JobCardVitrine(
                             title: e.titre,
@@ -404,7 +436,9 @@ class _JobHomePageState extends State<JobHomePage> {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => JobDetailPage(jobId: e.id)),
+                                MaterialPageRoute(
+                                  builder: (_) => JobDetailPage(jobId: e.id),
+                                ),
                               );
                             },
                           );
@@ -445,8 +479,8 @@ class _HeroJobs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width *
-        MediaQuery.of(context).devicePixelRatio;
+    final w =
+        MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -465,7 +499,8 @@ class _HeroJobs extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: [
                     Colors.black.withOpacity(0.65),
                     Colors.black.withOpacity(0.15),
@@ -477,29 +512,40 @@ class _HeroJobs extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 16, right: 16, top: 16,
+            left: 16,
+            right: 16,
+            top: 16,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: RichText(
                 text: TextSpan(
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
-                    shadows: const [
-                      Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2)),
-                    ],
-                  ),
-                  children: const [
-                    TextSpan(text: 'La Guinée recrute\n'),
-                    TextSpan(text: 'choisis ton avenir', style: TextStyle(fontWeight: FontWeight.w900)),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black54,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                  children: [
+                    TextSpan(text: '$titleTop\n'),
+                    TextSpan(
+                      text: titleBottom,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
           Positioned(
-            left: 12, right: 12, bottom: 12,
+            left: 12,
+            right: 12,
+            bottom: 12,
             child: Material(
               color: Colors.white,
               elevation: 3,
@@ -515,11 +561,16 @@ class _HeroJobs extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Trouver mon job',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                            Text(
+                              'Trouver mon job',
+                              style:
+                                  TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                            ),
                             SizedBox(height: 4),
-                            Text('Métier, entreprise, compétence…',
-                                style: TextStyle(color: Colors.black45, fontSize: 14)),
+                            Text(
+                              'Métier, entreprise, compétence…',
+                              style: TextStyle(color: Colors.black45, fontSize: 14),
+                            ),
                           ],
                         ),
                       ),
@@ -595,8 +646,8 @@ class _JobCardVitrine extends StatelessWidget {
   final String title;
   final String company;
   final String subtitle;
-  final String meta;       // date relative
-  final String? logoUrl;   // utilisé en badge ou bannière fallback
+  final String meta; // date relative
+  final String? logoUrl; // utilisé en badge ou bannière (fallback)
   final String? bannerUrl; // bannière dédiée si dispo
   final bool favorite;
   final VoidCallback onFavoriteTap;
@@ -604,7 +655,7 @@ class _JobCardVitrine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasLogo   = (logoUrl ?? '').trim().isNotEmpty;
+    final hasLogo = (logoUrl ?? '').trim().isNotEmpty;
     final hasBanner = (bannerUrl ?? '').trim().isNotEmpty;
 
     // Si pas de bannière mais un logo → bannière = logo recadré en cover
@@ -612,7 +663,7 @@ class _JobCardVitrine extends StatelessWidget {
 
     final isMobile = MediaQuery.of(context).size.width < 600;
     final double bannerHeight = isMobile ? 110 : 140;
-    final double badgeSize    = isMobile ? 36  : 42;
+    final double badgeSize = isMobile ? 36 : 42;
 
     return Material(
       color: Colors.white,
@@ -644,8 +695,11 @@ class _JobCardVitrine extends StatelessWidget {
                         fit: BoxFit.cover, // remplit et recadre
                         alignment: Alignment.center,
                         filterQuality: FilterQuality.high,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.work_outline, size: 40, color: Colors.black45),
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.work_outline,
+                          size: 40,
+                          color: Colors.black45,
+                        ),
                       ),
                     )
                   else
@@ -659,10 +713,11 @@ class _JobCardVitrine extends StatelessWidget {
                       ),
                     ),
 
-                  // Badge logo uniquement si on n'utilise pas déjà le logo en bannière
+                  // Badge logo (si on n’utilise pas déjà le logo en bannière)
                   if (!useLogoAsBanner && hasLogo)
                     Positioned(
-                      top: 10, left: 10,
+                      top: 10,
+                      left: 10,
                       child: Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
@@ -671,7 +726,8 @@ class _JobCardVitrine extends StatelessWidget {
                           boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black12)],
                         ),
                         child: SizedBox(
-                          width: badgeSize, height: badgeSize,
+                          width: badgeSize,
+                          height: badgeSize,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(6),
                             child: Image.network(
@@ -687,10 +743,14 @@ class _JobCardVitrine extends StatelessWidget {
 
                   // Cœur favoris
                   Positioned(
-                    top: 6, right: 6,
+                    top: 6,
+                    right: 6,
                     child: IconButton(
                       onPressed: onFavoriteTap,
-                      icon: Icon(favorite ? Icons.favorite : Icons.favorite_border, size: 18),
+                      icon: Icon(
+                        favorite ? Icons.favorite : Icons.favorite_border,
+                        size: 18,
+                      ),
                       color: favorite ? Colors.red : Colors.black87,
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.white,
@@ -709,11 +769,14 @@ class _JobCardVitrine extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                   if (company.isNotEmpty) ...[
+                    const SizedBox(height: 2),
                     const SizedBox(height: 2),
                     Text(company, style: const TextStyle(color: Colors.black54)),
                   ],

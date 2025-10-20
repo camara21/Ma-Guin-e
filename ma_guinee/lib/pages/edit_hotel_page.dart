@@ -19,7 +19,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
   bool loading = true;
   bool saving = false;
 
-  // Champs hôtel
+  // Champs hÃ©Â©Ã†â€™Â´tel
   String nom = '';
   String adresse = '';
   String ville = '';
@@ -31,9 +31,10 @@ class _EditHotelPageState extends State<EditHotelPage> {
   double? longitude;
 
   // Images
-  List<File> files = []; // Nouvelles à uploader
-  List<String> imageUrls = []; // Déjà sur Supabase (ou uploadées)
-  Set<int> _imagesToRemove = {}; // Index des images à supprimer
+  List<File> files = []; // Nouvelles Ã©Â©Ã†â€™  uploader
+  List<String> imageUrls =
+      []; // DÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  sur Supabase (ou uploadÃ©Â©Ã†â€™Â©es)
+  Set<int> _imagesToRemove = {}; // Index des images Ã©Â©Ã†â€™  supprimer
 
   @override
   void initState() {
@@ -78,7 +79,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
     final storage = Supabase.instance.client.storage.from('hotel-photos');
     List<String> urls = [];
     for (var file in files) {
-      final filename = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+      final filename =
+          '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       await storage.upload(filename, file);
       final url = storage.getPublicUrl(filename);
       urls.add(url);
@@ -91,9 +93,10 @@ class _EditHotelPageState extends State<EditHotelPage> {
     setState(() => saving = true);
     _formKey.currentState!.save();
 
-    // On garde seulement les images non supprimées
+    // On garde seulement les images non supprimÃ©Â©Ã†â€™Â©es
     List<String> updatedImages = [
-      for (var i = 0; i < imageUrls.length; i++) if (!_imagesToRemove.contains(i)) imageUrls[i]
+      for (var i = 0; i < imageUrls.length; i++)
+        if (!_imagesToRemove.contains(i)) imageUrls[i]
     ];
 
     // Upload des nouvelles
@@ -116,11 +119,16 @@ class _EditHotelPageState extends State<EditHotelPage> {
     };
 
     try {
-      await Supabase.instance.client.from('hotels').update(data).eq('id', widget.hotelId);
+      await Supabase.instance.client
+          .from('hotels')
+          .update(data)
+          .eq('id', widget.hotelId);
       setState(() => saving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Hôtel modifié avec succès !")),
+          const SnackBar(
+              content: Text(
+                  "HÃ©Â©Ã†â€™Â´tel modifiÃ©Â©Ã†â€™Â© avec succÃ©Â©Ã†â€™Â¨sÃ©Â©Â¢â‚¬Å¡Â¬Â¯!")),
         );
         Navigator.pop(context, true);
       }
@@ -141,7 +149,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Modifier l'hôtel", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Modifier l'hÃ©Â©Ã†â€™Â´tel",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         iconTheme: IconThemeData(color: bleuMaGuinee),
         elevation: 1,
@@ -159,11 +168,13 @@ class _EditHotelPageState extends State<EditHotelPage> {
                         TextFormField(
                           initialValue: nom,
                           decoration: InputDecoration(
-                            labelText: "Nom de l'hôtel *",
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelText: "Nom de l'hÃ©Â©Ã†â€™Â´tel *",
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
                           ),
-                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
+                          validator: (v) =>
+                              v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => nom = v ?? "",
                         ),
                         const SizedBox(height: 14),
@@ -171,22 +182,26 @@ class _EditHotelPageState extends State<EditHotelPage> {
                           initialValue: ville,
                           decoration: InputDecoration(
                             labelText: "Ville *",
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
                           ),
-                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
+                          validator: (v) =>
+                              v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => ville = v ?? "",
                         ),
                         const SizedBox(height: 14),
                         TextFormField(
                           initialValue: telephone,
                           decoration: InputDecoration(
-                            labelText: "Téléphone *",
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            labelText: "TÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©phone *",
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
                           ),
                           keyboardType: TextInputType.phone,
-                          validator: (v) => v!.isEmpty ? "Ce champ est requis" : null,
+                          validator: (v) =>
+                              v!.isEmpty ? "Ce champ est requis" : null,
                           onSaved: (v) => telephone = v ?? "",
                         ),
                         const SizedBox(height: 14),
@@ -194,7 +209,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
                           initialValue: description,
                           decoration: InputDecoration(
                             labelText: "Description",
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
                           ),
                           maxLines: 3,
@@ -205,7 +221,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
                           initialValue: prix,
                           decoration: InputDecoration(
                             labelText: "Prix moyen (ex: 500 000 GNF)",
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
                           ),
                           onSaved: (v) => prix = v ?? "",
@@ -213,40 +230,52 @@ class _EditHotelPageState extends State<EditHotelPage> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Text("Nombre d'étoiles :", style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee)),
+                            Text("Nombre d'Ã©Â©Ã†â€™Â©toilesÃ©Â©Â¢â‚¬Å¡Â¬Â¯:",
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: bleuMaGuinee)),
                             const SizedBox(width: 10),
                             DropdownButton<int>(
                               value: etoiles,
-                              onChanged: (val) => setState(() => etoiles = val!),
+                              onChanged: (val) =>
+                                  setState(() => etoiles = val!),
                               items: [1, 2, 3, 4, 5]
                                   .map((e) => DropdownMenuItem(
                                         value: e,
-                                        child: Text("$e ⭐", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        child: Text("$e Ã©Â©Â¢Â­Â",
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold)),
                                       ))
                                   .toList(),
                             ),
                           ],
                         ),
                         const SizedBox(height: 18),
-                        const Text("Photos de l'hôtel :", style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Text("Photos de l'hÃ©Â©Ã†â€™Â´tel :",
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
                           children: [
                             ...List.generate(imageUrls.length, (i) {
-                              if (_imagesToRemove.contains(i)) return const SizedBox();
+                              if (_imagesToRemove.contains(i))
+                                return const SizedBox();
                               return Stack(
                                 children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(imageUrls[i], width: 70, height: 70, fit: BoxFit.cover),
+                                    child: Image.network(imageUrls[i],
+                                        width: 70,
+                                        height: 70,
+                                        fit: BoxFit.cover),
                                   ),
                                   Positioned(
                                     top: 0,
                                     right: 0,
                                     child: GestureDetector(
-                                      onTap: () => setState(() => _imagesToRemove.add(i)),
+                                      onTap: () => setState(
+                                          () => _imagesToRemove.add(i)),
                                       child: Container(
                                         decoration: BoxDecoration(
                                           color: Colors.red.withOpacity(0.8),
@@ -255,7 +284,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
                                             bottomLeft: Radius.circular(8),
                                           ),
                                         ),
-                                        child: const Icon(Icons.close, color: Colors.white, size: 18),
+                                        child: const Icon(Icons.close,
+                                            color: Colors.white, size: 18),
                                       ),
                                     ),
                                   ),
@@ -265,7 +295,10 @@ class _EditHotelPageState extends State<EditHotelPage> {
                             ...files
                                 .map((file) => ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(file, width: 70, height: 70, fit: BoxFit.cover),
+                                      child: Image.file(file,
+                                          width: 70,
+                                          height: 70,
+                                          fit: BoxFit.cover),
                                     ))
                                 .toList(),
                             InkWell(
@@ -276,9 +309,11 @@ class _EditHotelPageState extends State<EditHotelPage> {
                                 decoration: BoxDecoration(
                                   color: jauneMaGuinee,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey.shade300),
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
                                 ),
-                                child: Icon(Icons.add_a_photo, size: 30, color: bleuMaGuinee),
+                                child: Icon(Icons.add_a_photo,
+                                    size: 30, color: bleuMaGuinee),
                               ),
                             ),
                           ],
@@ -292,8 +327,10 @@ class _EditHotelPageState extends State<EditHotelPage> {
                             backgroundColor: vert,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            textStyle:
+                                const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],

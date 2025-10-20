@@ -27,8 +27,10 @@ class _LogementEditPageState extends State<LogementEditPage> {
   Color get _accent => const Color(0xFFE1005A);
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _fieldFill => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF6F7FB);
-  Color get _chipBg => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _fieldFill =>
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF6F7FB);
+  Color get _chipBg =>
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   // Champs
   late TextEditingController _titre;
@@ -57,7 +59,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
   bool _saving = false;
   bool _loadedFromRouteArg = false;
 
-  // ─────────────────────────── Cycle ───────────────────────────
+  // Cycle UI
   @override
   void initState() {
     super.initState();
@@ -76,7 +78,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
     }
   }
 
-  // Charge depuis arguments de route: id (String) ou modèle
+  // Charge depuis les arguments de route : id (String) ou modèle
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -88,18 +90,18 @@ class _LogementEditPageState extends State<LogementEditPage> {
     if (args is LogementModel) {
       _prefillFrom(args);
     } else if (args is String && args.trim().isNotEmpty) {
-      // Un ID → fetch DB
+      // Un ID → requête DB
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         try {
           final m = await _svc.getById(args);
           if (m != null && mounted) {
             _prefillFrom(m);
-            // lis aussi le téléphone dans la colonne dédiée si besoin
+            // Lit aussi le téléphone dans la colonne dédiée si besoin
             final tel = await _svc.getContactPhone(m.id);
             if (mounted && (tel ?? '').isNotEmpty) _phone.text = tel!;
           }
         } catch (e) {
-          if (mounted) _snack('Erreur chargement: $e');
+          if (mounted) _snack('Erreur chargement : $e');
         }
       });
     }
@@ -152,10 +154,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       );
 
-  // ─────────────────────────── UI ───────────────────────────
+  // UI
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null ||
@@ -191,19 +194,25 @@ class _LogementEditPageState extends State<LogementEditPage> {
                     decoration: _dec("Description"),
                   ),
                   const SizedBox(height: 10),
-
                   Row(
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<LogementMode>(
                           value: _mode,
                           items: const [
-                            DropdownMenuItem(value: LogementMode.location, child: Text("Location")),
-                            DropdownMenuItem(value: LogementMode.achat, child: Text("Achat")),
+                            DropdownMenuItem(
+                                value: LogementMode.location,
+                                child: Text("Location")),
+                            DropdownMenuItem(
+                                value: LogementMode.achat,
+                                child: Text("Achat")),
                           ],
                           onChanged: (v) => setState(() => _mode = v),
-                          decoration: _dec("Type d’opération *", hint: "Sélectionner…"),
-                          validator: (v) => v == null ? "Choisir le type" : null,
+                          decoration: _dec(
+                              "Type d’opération *",
+                              hint: "Sélectionner…"),
+                          validator: (v) =>
+                              v == null ? "Choisir le type" : null,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -211,27 +220,39 @@ class _LogementEditPageState extends State<LogementEditPage> {
                         child: DropdownButtonFormField<LogementCategorie>(
                           value: _cat,
                           items: const [
-                            DropdownMenuItem(value: LogementCategorie.maison, child: Text("Maison")),
-                            DropdownMenuItem(value: LogementCategorie.appartement, child: Text("Appartement")),
-                            DropdownMenuItem(value: LogementCategorie.studio, child: Text("Studio")),
-                            DropdownMenuItem(value: LogementCategorie.terrain, child: Text("Terrain")),
-                            DropdownMenuItem(value: LogementCategorie.autres, child: Text("Autres")),
+                            DropdownMenuItem(
+                                value: LogementCategorie.maison,
+                                child: Text("Maison")),
+                            DropdownMenuItem(
+                                value: LogementCategorie.appartement,
+                                child: Text("Appartement")),
+                            DropdownMenuItem(
+                                value: LogementCategorie.studio,
+                                child: Text("Studio")),
+                            DropdownMenuItem(
+                                value: LogementCategorie.terrain,
+                                child: Text("Terrain")),
+                            DropdownMenuItem(
+                                value: LogementCategorie.autres,
+                                child: Text("Autres")),
                           ],
                           onChanged: (v) => setState(() => _cat = v),
-                          decoration: _dec("Catégorie *", hint: "Sélectionner…"),
-                          validator: (v) => v == null ? "Choisir la catégorie" : null,
+                          decoration: _dec("Catégorie *",
+                              hint: "Sélectionner…"),
+                          validator: (v) =>
+                              v == null ? "Choisir la catégorie" : null,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-
                   Row(
                     children: [
                       Expanded(
                         child: TextFormField(
                           controller: _prix,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           decoration: _dec("Prix / Loyer (GNF)"),
                         ),
                       ),
@@ -239,14 +260,14 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       Expanded(
                         child: TextFormField(
                           controller: _surface,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           decoration: _dec("Superficie (m²)"),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-
                   DropdownButtonFormField<int>(
                     value: _chambres,
                     items: const [
@@ -257,10 +278,10 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       DropdownMenuItem(value: 5, child: Text("5+")),
                     ],
                     onChanged: (v) => setState(() => _chambres = v),
-                    decoration: _dec("Chambres (optionnel)", hint: "Laisser vide si peu importe"),
+                    decoration: _dec("Chambres (optionnel)",
+                        hint: "Laisser vide si peu importe"),
                   ),
                   const SizedBox(height: 10),
-
                   Row(
                     children: [
                       Expanded(
@@ -279,20 +300,18 @@ class _LogementEditPageState extends State<LogementEditPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
-
                   TextFormField(
                     controller: _adresse,
                     decoration: _dec("Adresse (optionnelle)"),
                   ),
                   const SizedBox(height: 12),
-
                   _localisationCard(),
                   const SizedBox(height: 12),
-
                   TextFormField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
-                    decoration: _dec("Téléphone de contact *", hint: "+224 6x xx xx xx"),
+                    decoration:
+                        _dec("Téléphone de contact *", hint: "+224 6x xx xx xx"),
                     validator: (v) {
                       final val = v?.trim() ?? '';
                       if (val.isEmpty) return "Numéro requis";
@@ -302,16 +321,15 @@ class _LogementEditPageState extends State<LogementEditPage> {
                     },
                   ),
                   const SizedBox(height: 16),
-
                   _photosSection(),
-
                   const SizedBox(height: 20),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _accent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined),
@@ -320,7 +338,6 @@ class _LogementEditPageState extends State<LogementEditPage> {
                 ],
               ),
             ),
-
             if (_saving) const PositionedFillLoading(),
           ],
         ),
@@ -328,7 +345,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
     );
   }
 
-  // ─────────────────────────── Localisation ───────────────────────────
+  // Localisation
   Widget _localisationCard() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -340,7 +357,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Localisation précise", style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text("Localisation précise",
+              style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
           const Text(
             "Pour une localisation exacte, placez-vous DANS le logement (ou à l’entrée) "
@@ -357,7 +375,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
               ),
               const SizedBox(width: 10),
               if (_lat != null && _lng != null)
-                Text('(${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)})',
+                Text(
+                    '(${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)})',
                     style: const TextStyle(color: Colors.black54)),
             ],
           ),
@@ -373,7 +392,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                     initialCenter: LatLng(_lat!, _lng!),
                     initialZoom: 16,
 
-                    // ➜ clic simple : déplacer le repère
+                    // Clic simple : déplacer le repère
                     onTap: (tapPos, latLng) {
                       setState(() {
                         _lat = latLng.latitude;
@@ -381,7 +400,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       });
                     },
 
-                    // ➜ long-clic : déplacer + recentrer/zoomer
+                    // Appui long : déplacer + recentrer/zoomer
                     onLongPress: (tapPos, latLng) {
                       setState(() {
                         _lat = latLng.latitude;
@@ -392,7 +411,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                       subdomains: const ['a', 'b', 'c'],
                       userAgentPackageName: 'com.example.app',
                     ),
@@ -402,7 +422,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
                           point: LatLng(_lat!, _lng!),
                           width: 40,
                           height: 40,
-                          child: const Icon(Icons.location_on, size: 36, color: Colors.red),
+                          child: const Icon(Icons.location_on,
+                              size: 36, color: Colors.red),
                         ),
                       ],
                     ),
@@ -434,12 +455,14 @@ class _LogementEditPageState extends State<LogementEditPage> {
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
       }
-      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-        _snack("Permission localisation refusée.");
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) {
+        _snack("Permission de localisation refusée.");
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best);
 
       setState(() {
         _lat = pos.latitude;
@@ -450,11 +473,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
         _mapCtrl.move(LatLng(_lat!, _lng!), 16);
       } catch (_) {}
     } catch (e) {
-      _snack('Localisation impossible: $e');
+      _snack('Localisation impossible : $e');
     }
   }
 
-  // ─────────────────────────── Photos ───────────────────────────
+  // Photos
   Widget _photosSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -467,7 +490,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: _accent),
                 foregroundColor: _accent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _pickFromGallery,
               icon: const Icon(Icons.add_a_photo_outlined),
@@ -476,7 +500,6 @@ class _LogementEditPageState extends State<LogementEditPage> {
           ],
         ),
         const SizedBox(height: 8),
-
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -487,7 +510,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
             crossAxisSpacing: 8,
             childAspectRatio: 1,
           ),
-          itemBuilder: (_, i) => (i < _photos.length) ? _photoTile(i) : _addTile(),
+          itemBuilder: (_, i) =>
+              (i < _photos.length) ? _photoTile(i) : _addTile(),
         ),
       ],
     );
@@ -559,14 +583,15 @@ class _LogementEditPageState extends State<LogementEditPage> {
     setState(() {});
   }
 
-  // ─────────────────────────── Save ───────────────────────────
+  // Save
   Future<void> _save() async {
     final form = _form.currentState;
     if (form == null) return;
     if (!form.validate()) return;
 
     if (_mode == null || _cat == null) {
-      _snack("Merci de choisir le type d’opération et la catégorie.");
+      _snack(
+          "Merci de choisir le type d’opération et la catégorie.");
       return;
     }
 
@@ -580,30 +605,34 @@ class _LogementEditPageState extends State<LogementEditPage> {
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         mode: _mode!,
         categorie: _cat!,
-        prixGnf: _prix.text.trim().isEmpty ? null : num.tryParse(_prix.text.trim()),
+        prixGnf:
+            _prix.text.trim().isEmpty ? null : num.tryParse(_prix.text.trim()),
         ville: _ville.text.trim().isEmpty ? null : _ville.text.trim(),
         commune: _commune.text.trim().isEmpty ? null : _commune.text.trim(),
         adresse: _adresse.text.trim().isEmpty ? null : _adresse.text.trim(),
-        superficieM2: _surface.text.trim().isEmpty ? null : num.tryParse(_surface.text.trim()),
+        superficieM2: _surface.text.trim().isEmpty
+            ? null
+            : num.tryParse(_surface.text.trim()),
         chambres: _chambres,
         lat: _lat ?? widget.existing?.lat,
         lng: _lng ?? widget.existing?.lng,
         photos: const [],
         creeLe: widget.existing?.creeLe ?? DateTime.now(),
-        contactTelephone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        contactTelephone:
+            _phone.text.trim().isEmpty ? null : _phone.text.trim(),
       );
 
       // Détecte édition vs création
       final routeArg = ModalRoute.of(context)?.settings.arguments;
-      final bool isEditing =
-          widget.existing != null || (routeArg is String && routeArg.trim().isNotEmpty);
+      final bool isEditing = widget.existing != null ||
+          (routeArg is String && routeArg.trim().isNotEmpty);
 
       String id;
       if (!isEditing) {
         // Création
         id = await _svc.create(model);
       } else {
-        // Edition
+        // Édition
         id = widget.existing?.id ?? (routeArg is String ? routeArg : 'new');
         if (id == 'new' || id.trim().isEmpty) {
           id = await _svc.create(model);
@@ -616,7 +645,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
       final tel = _phone.text.trim();
       if (tel.isNotEmpty) await _svc.update(id, {'contact_telephone': tel});
 
-      // Upload photos ➜ URLs
+      // Upload photos → URLs
       final urls = <String>[];
       for (var i = 0; i < _photos.length; i++) {
         final p = _photos[i];
@@ -633,15 +662,17 @@ class _LogementEditPageState extends State<LogementEditPage> {
         }
       }
 
-      // Sauve l’ordre
+      // Sauvegarde de l’ordre
       await _svc.setPhotos(id, urls);
 
       if (!mounted) return;
-      _snack(!isEditing ? "Annonce créée" : "Annonce mise à jour");
+      _snack(!isEditing
+          ? "Annonce créée"
+          : "Annonce mise à jour");
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _snack("Erreur: $e");
+      _snack("Erreur : $e");
     } finally {
       if (mounted) setState(() => _saving = false);
     }

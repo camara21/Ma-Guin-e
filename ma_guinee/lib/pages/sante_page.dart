@@ -21,7 +21,9 @@ class _SantePageState extends State<SantePage> {
   Position? _position;
   String? _villeGPS;
 
-  static const primaryColor = Color(0xFF009460);
+  // Palette Santé
+  static const Color primaryColor = Color(0xFF009460); // vert
+  static const Color secondaryColor = Color(0xFFFCD116); // jaune
 
   @override
   void initState() {
@@ -33,10 +35,16 @@ class _SantePageState extends State<SantePage> {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
       var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) return;
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+        return;
+      }
 
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
       _position = pos;
 
       final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
@@ -55,8 +63,12 @@ class _SantePageState extends State<SantePage> {
     const R = 6371000.0;
     final dLat = (lat2! - lat1!) * (pi / 180);
     final dLon = (lon2! - lon1!) * (pi / 180);
-    final a = sin(dLat/2)*sin(dLat/2) + cos(lat1*(pi/180))*cos(lat2*(pi/180))*sin(dLon/2)*sin(dLon/2);
-    return R * 2 * atan2(sqrt(a), sqrt(1-a));
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * (pi / 180)) *
+            cos(lat2 * (pi / 180)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
   Future<void> _loadCentres() async {
@@ -66,7 +78,8 @@ class _SantePageState extends State<SantePage> {
 
       final data = await Supabase.instance.client
           .from('cliniques')
-          .select('id, nom, ville, specialites, description, images, latitude, longitude')
+          .select(
+              'id, nom, ville, specialites, description, images, latitude, longitude')
           .order('nom');
 
       final list = List<Map<String, dynamic>>.from(data);
@@ -77,11 +90,13 @@ class _SantePageState extends State<SantePage> {
           final lon = (c['longitude'] as num?)?.toDouble();
           c['_distance'] = _dist(_position!.latitude, _position!.longitude, lat, lon);
         }
+
         if ((_villeGPS ?? '').isNotEmpty) {
           list.sort((a, b) {
             final aSame = (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
             final bSame = (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
             if (aSame != bSame) return aSame ? -1 : 1;
+
             final ad = (a['_distance'] as double?);
             final bd = (b['_distance'] as double?);
             if (ad != null && bd != null) return ad.compareTo(bd);
@@ -105,7 +120,9 @@ class _SantePageState extends State<SantePage> {
       _filterCentres(searchQuery);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur : $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur : $e")),
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -135,8 +152,10 @@ class _SantePageState extends State<SantePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Services de santé",
-            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Services de santé",
+          style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryColor),
         elevation: 1,
@@ -155,7 +174,7 @@ class _SantePageState extends State<SantePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
-                      // Bandeau
+                      // Bandeau (JAUNE -> VERT)
                       Container(
                         width: double.infinity,
                         height: 75,
@@ -163,7 +182,7 @@ class _SantePageState extends State<SantePage> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
                           gradient: const LinearGradient(
-                            colors: [primaryColor, Color(0xFF2EC4F1)],
+                            colors: [secondaryColor, primaryColor],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                           ),
@@ -184,13 +203,15 @@ class _SantePageState extends State<SantePage> {
                           ),
                         ),
                       ),
-                      // Recherche
+
+                      // Barre de recherche
                       TextField(
                         decoration: InputDecoration(
                           hintText: 'Rechercher un centre, une ville, une spécialité...',
                           prefixIcon: const Icon(Icons.search, color: primaryColor),
-                          border:
-                              OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           filled: true,
                           fillColor: const Color(0xFFF8F6F9),
                         ),
@@ -198,14 +219,14 @@ class _SantePageState extends State<SantePage> {
                       ),
                       const SizedBox(height: 12),
 
+                      // Grille
                       Expanded(
                         child: filteredCentres.isEmpty
                             ? const Center(child: Text("Aucun centre trouvé."))
                             : RefreshIndicator(
                                 onRefresh: _loadCentres,
                                 child: GridView.builder(
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: 2,
                                     mainAxisSpacing: 16,
                                     crossAxisSpacing: 16,
@@ -224,15 +245,15 @@ class _SantePageState extends State<SantePage> {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (_) =>
-                                                SanteDetailPage(cliniqueId: c['id']),
+                                            builder: (_) => SanteDetailPage(cliniqueId: c['id']),
                                           ),
                                         );
                                       },
                                       child: Card(
                                         elevation: 2,
                                         shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16)),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
                                         clipBehavior: Clip.hardEdge,
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,36 +277,27 @@ class _SantePageState extends State<SantePage> {
                                                       ),
                                                     ),
                                                   ),
-                                                  if ((c['ville'] ?? '')
-                                                      .toString()
-                                                      .isNotEmpty)
+                                                  if ((c['ville'] ?? '').toString().isNotEmpty)
                                                     Positioned(
                                                       left: 8,
                                                       top: 8,
                                                       child: Container(
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                                horizontal: 8,
-                                                                vertical: 4),
+                                                        padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8, vertical: 4),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.black
-                                                              .withOpacity(0.55),
-                                                          borderRadius:
-                                                              BorderRadius.circular(12),
+                                                          color: Colors.black.withOpacity(0.55),
+                                                          borderRadius: BorderRadius.circular(12),
                                                         ),
                                                         child: Row(
-                                                          mainAxisSize:
-                                                              MainAxisSize.min,
+                                                          mainAxisSize: MainAxisSize.min,
                                                           children: [
                                                             const Icon(Icons.location_on,
-                                                                size: 14,
-                                                                color: Colors.white),
+                                                                size: 14, color: Colors.white),
                                                             const SizedBox(width: 4),
                                                             Text(
                                                               c['ville'].toString(),
                                                               style: const TextStyle(
-                                                                  color: Colors.white,
-                                                                  fontSize: 12),
+                                                                  color: Colors.white, fontSize: 12),
                                                             ),
                                                           ],
                                                         ),
@@ -294,13 +306,13 @@ class _SantePageState extends State<SantePage> {
                                                 ],
                                               ),
                                             ),
+
                                             // Texte
                                             Padding(
                                               padding: const EdgeInsets.symmetric(
                                                   horizontal: 10, vertical: 8),
                                               child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
                                                     (c['nom'] ?? "Sans nom").toString(),
@@ -312,41 +324,46 @@ class _SantePageState extends State<SantePage> {
                                                     ),
                                                   ),
                                                   const SizedBox(height: 3),
+                                                  // Ville + distance
                                                   Row(
                                                     children: [
                                                       Flexible(
                                                         child: Text(
                                                           (c['ville'] ?? '').toString(),
                                                           maxLines: 1,
-                                                          overflow:
-                                                              TextOverflow.ellipsis,
+                                                          overflow: TextOverflow.ellipsis,
                                                           style: const TextStyle(
                                                             color: Colors.grey,
                                                             fontSize: 13,
                                                           ),
                                                         ),
                                                       ),
-                                                      if (c['_distance'] != null)
+                                                      if (c['_distance'] != null) ...[
+                                                        const Text(
+                                                          '  •  ',
+                                                          style: TextStyle(
+                                                            color: Colors.grey,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
                                                         Text(
-                                                          ' • ${(c['_distance'] / 1000).toStringAsFixed(1)} km',
+                                                          '${(c['_distance'] / 1000).toStringAsFixed(1)} km',
                                                           style: const TextStyle(
                                                             color: Colors.grey,
                                                             fontSize: 13,
                                                           ),
                                                         ),
+                                                      ],
                                                     ],
                                                   ),
-                                                  if ((c['specialites'] ?? '')
-                                                      .toString()
-                                                      .isNotEmpty)
+                                                  // Spécialités
+                                                  if ((c['specialites'] ?? '').toString().isNotEmpty)
                                                     Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(top: 2),
+                                                      padding: const EdgeInsets.only(top: 2),
                                                       child: Text(
                                                         c['specialites'].toString(),
                                                         maxLines: 1,
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
+                                                        overflow: TextOverflow.ellipsis,
                                                         style: const TextStyle(
                                                           color: primaryColor,
                                                           fontWeight: FontWeight.w600,

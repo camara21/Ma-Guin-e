@@ -29,8 +29,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
   final _sb = Supabase.instance.client;
 
   // Filtres
-  String _mode = 'location';   // location | achat
-  String _categorie = 'tous';  // tous | maison | appartement | studio | terrain
+  String _mode = 'location'; // location | achat
+  String _categorie = 'tous'; // tous | maison | appartement | studio | terrain
 
   // Flux paginé
   static const int _pageSize = 20;
@@ -49,7 +49,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
   final PageController _heroCtrl = PageController();
   int _heroIndex = 0;
   Timer? _heroTimer;
-  int? _pendingHeroIndex; // si on veut changer de page avant l’attache
+  int?
+      _pendingHeroIndex; // si on veut changer de page avant l’attache
 
   static const List<String> _heroImages = [
     'https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=1600&auto=format&fit=crop',
@@ -58,11 +59,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
   ];
 
   // Palette
-  static const _primary     = Color(0xFF0D3B66);
+  static const _primary = Color(0xFF0D3B66);
   static const _primaryDark = Color(0xFF0A2C4C);
-  static const _accent      = Color(0xFFE0006D);
-  static const _ctaGreen    = Color(0xFF0E9F6E);
-  static const _neutralBg   = Color(0xFFF5F7FB);
+  static const _accent = Color(0xFFE0006D);
+  static const _ctaGreen = Color(0xFF0E9F6E);
+  static const _neutralBg = Color(0xFFF5F7FB);
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
@@ -72,7 +73,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
     _attachInfiniteScroll();
     _reloadAll();
 
-    // ⛑️ Démarre le timer, mais anime seulement si le controller est attaché
+    // Démarre le timer, mais anime seulement si le controller est attaché
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final next = (_heroIndex + 1) % _heroImages.length;
@@ -80,7 +81,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
     });
   }
 
-  // applique une navigation sûre au carrousel
+  // Applique une navigation sûre au carrousel
   void _animateHeroTo(int index) {
     if (_heroCtrl.hasClients) {
       // si attaché : anime
@@ -95,7 +96,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (_pendingHeroIndex != null && _heroCtrl.hasClients) {
-          _heroCtrl.jumpToPage(_pendingHeroIndex!.clamp(0, _heroImages.length - 1));
+          _heroCtrl
+              .jumpToPage(_pendingHeroIndex!.clamp(0, _heroImages.length - 1));
           _pendingHeroIndex = null;
         }
       });
@@ -170,14 +172,24 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   LogementSearchParams _paramsForCurrentFilters({required int offset}) {
-    final mode = (_mode == 'achat') ? LogementMode.achat : LogementMode.location;
+    final mode =
+        (_mode == 'achat') ? LogementMode.achat : LogementMode.location;
     LogementCategorie? cat;
     switch (_categorie) {
-      case 'maison':      cat = LogementCategorie.maison; break;
-      case 'appartement': cat = LogementCategorie.appartement; break;
-      case 'studio':      cat = LogementCategorie.studio; break;
-      case 'terrain':     cat = LogementCategorie.terrain; break;
-      default:            cat = null; // 'tous'
+      case 'maison':
+        cat = LogementCategorie.maison;
+        break;
+      case 'appartement':
+        cat = LogementCategorie.appartement;
+        break;
+      case 'studio':
+        cat = LogementCategorie.studio;
+        break;
+      case 'terrain':
+        cat = LogementCategorie.terrain;
+        break;
+      default:
+        cat = null; // 'tous'
     }
     return LogementSearchParams(
       mode: mode,
@@ -221,7 +233,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
     final rows = await _sb
         .from('logements')
-        .select('id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
+        .select(
+            'id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
         .inFilter('id', ids)
         .order('cree_le', ascending: false);
 
@@ -233,7 +246,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
     if (uid == null) return [];
     final rows = await _sb
         .from('logements')
-        .select('id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
+        .select(
+            'id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
         .eq('user_id', uid)
         .order('cree_le', ascending: false);
     return (rows as List).cast<Map<String, dynamic>>();
@@ -247,11 +261,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
     return Scaffold(
       backgroundColor: _isDark ? const Color(0xFF0F172A) : _neutralBg,
-
       appBar: AppBar(
         backgroundColor: _primary,
         elevation: 0,
-        title: const Text("Logements en Guinée", style: TextStyle(color: Colors.white)),
+        title: const Text("Logements en Guinée",
+            style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Builder(
@@ -263,9 +277,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
           ),
         ],
       ),
-
       endDrawer: _buildEndDrawer(),
-
       body: RefreshIndicator(
         onRefresh: _reloadAll,
         child: ListView(
@@ -275,17 +287,15 @@ class _LogementHomePageState extends State<LogementHomePage> {
           children: [
             _heroBanner(),
             const SizedBox(height: 16),
-
             _modeSwitch(),
             const SizedBox(height: 10),
             _categoriesGrid(),
             const SizedBox(height: 16),
-
             _quickActions(),
             const SizedBox(height: 22),
-
             if (_loading)
-              const Center(child: Padding(
+              const Center(
+                  child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
                 child: CircularProgressIndicator(),
               ))
@@ -297,7 +307,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
               _gridFeed(_feed),
               const SizedBox(height: 12),
               _loadingMore
-                  ? const Center(child: Padding(
+                  ? const Center(
+                      child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: CircularProgressIndicator(),
                     ))
@@ -305,7 +316,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
                       ? const Center(
                           child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text("— Fin de la liste —",
+                            child: Text(
+                                "— Fin de la liste —",
                                 style: TextStyle(color: Colors.black45)),
                           ),
                         )
@@ -315,7 +327,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
           ],
         ),
       ),
-
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _ctaGreen,
         onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
@@ -329,11 +340,15 @@ class _LogementHomePageState extends State<LogementHomePage> {
   // ================== END DRAWER (menu) ==================
   Widget _buildEndDrawer() {
     UtilisateurModel? user;
-    try { user = context.read<UserProvider?>()?.utilisateur; } catch (_) { user = null; }
-    final nom    = (user?.nom ?? '').trim();
+    try {
+      user = context.read<UserProvider?>()?.utilisateur;
+    } catch (_) {
+      user = null;
+    }
+    final nom = (user?.nom ?? '').trim();
     final prenom = (user?.prenom ?? '').trim();
-    final full   = ([prenom, nom]..removeWhere((s) => s.isEmpty)).join(' ');
-    final photo  = user?.photoUrl;
+    final full = ([prenom, nom]..removeWhere((s) => s.isEmpty)).join(' ');
+    final photo = user?.photoUrl;
 
     return Drawer(
       child: SafeArea(
@@ -345,7 +360,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: _neutralBg,
-                  backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                  backgroundImage: (photo != null && photo.isNotEmpty)
+                      ? NetworkImage(photo)
+                      : null,
                   child: (photo == null || photo.isEmpty)
                       ? const Icon(Icons.person, size: 28, color: _primary)
                       : null,
@@ -354,7 +371,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
                 Expanded(
                   child: Text(
                     full.isEmpty ? 'Utilisateur' : full,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -362,7 +380,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
             ),
             const SizedBox(height: 16),
             const Divider(),
-
             const SizedBox(height: 8),
             _drawerActionButton(
               icon: Icons.favorite_border,
@@ -370,7 +387,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => const FavorisPage()))
+                    .push(
+                        MaterialPageRoute(builder: (_) => const FavorisPage()))
                     .then((_) => _reloadAll());
               },
             ),
@@ -381,7 +399,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))
+                    .push(MaterialPageRoute(
+                        builder: (_) => const MesAnnoncesPage()))
                     .then((_) => _reloadAll());
               },
             ),
@@ -424,13 +443,19 @@ class _LogementHomePageState extends State<LogementHomePage> {
       height: 200,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black26.withOpacity(0.10), blurRadius: 18, offset: Offset(0, 7))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black26.withOpacity(0.10),
+              blurRadius: 18,
+              offset: Offset(0, 7))
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
           PageView.builder(
-            controller: _heroCtrl, // ⬅️ même contrôleur
+            controller:
+                _heroCtrl, // même contrôleur
             itemCount: _heroImages.length,
             onPageChanged: (i) => setState(() => _heroIndex = i),
             itemBuilder: (_, i) => Stack(
@@ -450,14 +475,21 @@ class _LogementHomePageState extends State<LogementHomePage> {
             ),
           ),
           const Positioned(
-            left: 18, right: 18, top: 16,
+            left: 18,
+            right: 18,
+            top: 16,
             child: Text(
               "Trouvez votre logement idéal,\nsimplement.",
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700, height: 1.25),
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25),
             ),
           ),
           Positioned(
-            right: 12, top: 12,
+            right: 12,
+            top: 12,
             child: Row(
               children: List.generate(_heroImages.length, (i) {
                 final active = (i == _heroIndex);
@@ -474,7 +506,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
             ),
           ),
           Positioned(
-            left: 12, right: 12, bottom: 12,
+            left: 12,
+            right: 12,
+            bottom: 12,
             child: _searchField(),
           ),
         ],
@@ -495,11 +529,14 @@ class _LogementHomePageState extends State<LogementHomePage> {
           Navigator.pushNamed(context, AppRoutes.logementList, arguments: args);
         },
         decoration: InputDecoration(
-          hintText: "Rechercher : ville, quartier, mot-clé…",
+          hintText:
+              "Rechercher : ville, quartier, mot-clé…",
           prefixIcon: const Icon(Icons.search),
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
@@ -518,9 +555,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
             _reloadAll();
           },
           selectedColor: _accent,
-          labelStyle: TextStyle(color: _mode == "location" ? Colors.white : Colors.black87),
+          labelStyle: TextStyle(
+              color: _mode == "location" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
-          shape: StadiumBorder(side: BorderSide(color: _mode == "location" ? _accent : Colors.black12)),
+          shape: StadiumBorder(
+              side: BorderSide(
+                  color: _mode == "location" ? _accent : Colors.black12)),
         ),
         const SizedBox(width: 10),
         ChoiceChip(
@@ -531,9 +571,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
             _reloadAll();
           },
           selectedColor: _accent,
-          labelStyle: TextStyle(color: _mode == "achat" ? Colors.white : Colors.black87),
+          labelStyle: TextStyle(
+              color: _mode == "achat" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
-          shape: StadiumBorder(side: BorderSide(color: _mode == "achat" ? _accent : Colors.black12)),
+          shape: StadiumBorder(
+              side: BorderSide(
+                  color: _mode == "achat" ? _accent : Colors.black12)),
         ),
       ],
     );
@@ -541,11 +584,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   Widget _categoriesGrid() {
     final cats = [
-      {"icon": Icons.grid_view,    "label": "Tous",        "id": "tous"},
-      {"icon": Icons.home,         "label": "Maison",      "id": "maison"},
-      {"icon": Icons.apartment,    "label": "Appartement", "id": "appartement"},
-      {"icon": Icons.meeting_room, "label": "Studio",      "id": "studio"},
-      {"icon": Icons.park,         "label": "Terrain",     "id": "terrain"},
+      {"icon": Icons.grid_view, "label": "Tous", "id": "tous"},
+      {"icon": Icons.home, "label": "Maison", "id": "maison"},
+      {"icon": Icons.apartment, "label": "Appartement", "id": "appartement"},
+      {"icon": Icons.meeting_room, "label": "Studio", "id": "studio"},
+      {"icon": Icons.park, "label": "Terrain", "id": "terrain"},
     ];
     return GridView.count(
       crossAxisCount: 5,
@@ -563,7 +606,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
               CircleAvatar(
                 radius: 27,
                 backgroundColor: selected ? _accent : Colors.white,
-                child: Icon(c["icon"] as IconData, size: 26, color: selected ? Colors.white : _primary),
+                child: Icon(c["icon"] as IconData,
+                    size: 26, color: selected ? Colors.white : _primary),
               ),
               const SizedBox(height: 6),
               Text(c["label"] as String, style: const TextStyle(fontSize: 12)),
@@ -585,7 +629,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
             backgroundColor: _ctaGreen,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             elevation: 0,
           ),
           onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
@@ -598,7 +643,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
             foregroundColor: _primary,
             side: const BorderSide(color: _primary),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           onPressed: () => Navigator.pushNamed(context, AppRoutes.logementMap),
           icon: const Icon(Icons.map_outlined),
@@ -611,7 +657,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
   Widget _sectionTitle(String txt, {Widget? trailing}) {
     return Row(
       children: [
-        Text(txt, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primary)),
+        Text(txt,
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold, color: _primary)),
         const Spacer(),
         if (trailing != null) trailing,
       ],
@@ -639,9 +687,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   Widget _bienTile(LogementModel b) {
     final image = (b.photos.isNotEmpty) ? b.photos.first : null;
-    final mode  = b.mode == LogementMode.achat ? 'Achat' : 'Location';
-    final cat   = _labelCat(b.categorie);
-    final price = (b.prixGnf != null) ? _formatPrice(b.prixGnf!, b.mode) : 'Prix à discuter';
+    final mode = b.mode == LogementMode.achat ? 'Achat' : 'Location';
+    final cat = _labelCat(b.categorie);
+    final price = (b.prixGnf != null)
+        ? _formatPrice(b.prixGnf!, b.mode)
+        : 'Prix à discuter';
 
     return GestureDetector(
       onTap: () {
@@ -652,7 +702,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 6))
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -671,15 +726,26 @@ class _LogementHomePageState extends State<LogementHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(b.titre, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Text(b.titre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
-                  Row(children: [_chip(mode), const SizedBox(width: 6), _chip(cat)]),
+                  Row(children: [
+                    _chip(mode),
+                    const SizedBox(width: 6),
+                    _chip(cat)
+                  ]),
                   const SizedBox(height: 6),
-                  Text(price, style: const TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  Text(price,
+                      style: const TextStyle(
+                          color: _accent, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
                   Text(
-                    [if (b.ville != null) b.ville!, if (b.commune != null) b.commune!].join(' • '),
+                    [
+                      if (b.ville != null) b.ville!,
+                      if (b.commune != null) b.commune!
+                    ].join(' • '),
                     style: const TextStyle(color: Colors.black54, fontSize: 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -697,39 +763,52 @@ class _LogementHomePageState extends State<LogementHomePage> {
   Widget _emptyCard(String msg) => Container(
         height: 120,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(14)),
         child: Text(msg, style: const TextStyle(color: Colors.black54)),
       );
 
   String _labelCat(LogementCategorie c) {
     switch (c) {
-      case LogementCategorie.maison:      return 'Maison';
-      case LogementCategorie.appartement: return 'Appartement';
-      case LogementCategorie.studio:      return 'Studio';
-      case LogementCategorie.terrain:     return 'Terrain';
-      case LogementCategorie.autres:      return 'Autres';
+      case LogementCategorie.maison:
+        return 'Maison';
+      case LogementCategorie.appartement:
+        return 'Appartement';
+      case LogementCategorie.studio:
+        return 'Studio';
+      case LogementCategorie.terrain:
+        return 'Terrain';
+      case LogementCategorie.autres:
+        return 'Autres';
     }
   }
 
   LogementCategorie _catFromDb(String v) {
     switch (v) {
-      case 'maison': return LogementCategorie.maison;
-      case 'appartement': return LogementCategorie.appartement;
-      case 'studio': return LogementCategorie.studio;
-      case 'terrain': return LogementCategorie.terrain;
-      default: return LogementCategorie.autres;
+      case 'maison':
+        return LogementCategorie.maison;
+      case 'appartement':
+        return LogementCategorie.appartement;
+      case 'studio':
+        return LogementCategorie.studio;
+      case 'terrain':
+        return LogementCategorie.terrain;
+      default:
+        return LogementCategorie.autres;
     }
   }
 
   Widget _chip(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(color: _neutralBg, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+            color: _neutralBg, borderRadius: BorderRadius.circular(8)),
         child: Text(text, style: const TextStyle(fontSize: 12)),
       );
 
   Widget _chipSmall(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(color: _neutralBg, borderRadius: BorderRadius.circular(6)),
+        decoration: BoxDecoration(
+            color: _neutralBg, borderRadius: BorderRadius.circular(6)),
         child: Text(text, style: const TextStyle(fontSize: 11)),
       );
 
@@ -755,7 +834,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
             const Icon(Icons.error_outline, color: Colors.red),
             const SizedBox(width: 8),
             Expanded(child: Text(msg)),
-            TextButton(onPressed: _reloadAll, child: const Text('Réessayer')),
+            TextButton(
+                onPressed: _reloadAll,
+                child: const Text('Réessayer')),
           ],
         ),
       );

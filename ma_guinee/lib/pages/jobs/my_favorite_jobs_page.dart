@@ -12,7 +12,7 @@ class MyFavoriteJobsPage extends StatefulWidget {
 
 class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
   static const kBlue = Color(0xFF1976D2);
-  static const kBg   = Color(0xFFF6F7F9);
+  static const kBg = Color(0xFFF6F7F9);
 
   late Future<List<Map<String, dynamic>>> _data;
   final Set<String> _favSet = {}; // emploi_id favoris chargés
@@ -30,10 +30,12 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
       final d = DateTime.parse(iso).toLocal();
       final diff = DateTime.now().toLocal().difference(d);
       if (diff.inMinutes < 60) return 'ajouté il y a ${diff.inMinutes} min';
-      if (diff.inHours   < 24) return 'ajouté il y a ${diff.inHours} h';
-      if (diff.inDays    < 7)  return 'ajouté il y a ${diff.inDays} j';
+      if (diff.inHours < 24) return 'ajouté il y a ${diff.inHours} h';
+      if (diff.inDays < 7) return 'ajouté il y a ${diff.inDays} j';
       return 'ajouté le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
   }
 
   String _subtitle(Map<String, dynamic> m) {
@@ -47,7 +49,7 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
 
   // ---------- DATA ----------
   Future<List<Map<String, dynamic>>> _load() async {
-    final sb  = Supabase.instance.client;
+    final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
     if (uid == null) return [];
 
@@ -64,7 +66,7 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
 
     if (favs.isEmpty) return [];
 
-    // Mémoriser dans le set local (pour l’icône cœur).
+    // Mémoriser dans le set local (pour l'icône cœur).
     _favSet
       ..clear()
       ..addAll(favs.map((e) => (e['emploi_id'] ?? '').toString()));
@@ -111,9 +113,9 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
     for (final f in favs) {
       final jobId = (f['emploi_id'] ?? '').toString();
       final favAt = (f['date_ajout'] ?? '').toString();
-      final job   = emploiById[jobId];
+      final job = emploiById[jobId];
       if (job == null) continue;
-      final emp   = empById[(job['employeur_id'] ?? '').toString()];
+      final emp = empById[(job['employeur_id'] ?? '').toString()];
       out.add({
         'emploi_id': jobId,
         'titre': job['titre'] ?? '',
@@ -130,7 +132,7 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
   }
 
   Future<void> _removeFavorite(String jobId) async {
-    final sb  = Supabase.instance.client;
+    final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
     if (uid == null) return;
     try {
@@ -194,7 +196,8 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -232,8 +235,9 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (_, i) {
               final m = items[i];
-              final jobId    = (m['emploi_id'] ?? '').toString();
-              final hasLogo  = (m['logo_url'] ?? '').toString().trim().isNotEmpty;
+              final jobId = (m['emploi_id'] ?? '').toString();
+              final hasLogo =
+                  (m['logo_url'] ?? '').toString().trim().isNotEmpty;
               final subtitle = _subtitle(m);
               final addedAgo = _formatRelative((m['date_ajout'] ?? '').toString());
 
@@ -245,7 +249,8 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
                       ? null
                       : () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId)),
+                            MaterialPageRoute(
+                                builder: (_) => JobDetailPage(jobId: jobId)),
                           ),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -265,7 +270,8 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
                               ? Image.network(
                                   (m['logo_url'] ?? '').toString(),
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(Icons.work_outline),
+                                  errorBuilder: (_, __, ___) =>
+                                      const Icon(Icons.work_outline),
                                 )
                               : const Icon(Icons.work_outline),
                         ),
@@ -278,8 +284,11 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
                               Text((m['titre'] ?? '').toString(),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w700)),
-                              if ((m['employeur_nom'] ?? '').toString().isNotEmpty) ...[
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              if ((m['employeur_nom'] ?? '')
+                                  .toString()
+                                  .isNotEmpty) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   (m['employeur_nom'] ?? '').toString(),
@@ -298,7 +307,8 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
                                           subtitle,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(color: Colors.black54),
+                                          style: const TextStyle(
+                                              color: Colors.black54),
                                         ),
                                       ),
                                     if (subtitle.isNotEmpty && addedAgo.isNotEmpty)
@@ -322,7 +332,8 @@ class _MyFavoriteJobsPageState extends State<MyFavoriteJobsPage> {
                           tooltip: 'Retirer des favoris',
                           icon: const Icon(Icons.favorite),
                           color: Colors.red,
-                          onPressed: jobId.isEmpty ? null : () => _removeFavorite(jobId),
+                          onPressed:
+                              jobId.isEmpty ? null : () => _removeFavorite(jobId),
                         ),
                         const Icon(Icons.chevron_right),
                       ],

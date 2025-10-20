@@ -12,30 +12,36 @@ class MesRestaurantsPage extends StatefulWidget {
 }
 
 class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
+  // ==== Palette Restaurant (locale, pas de ServiceColors global) ====
+  static const Color restoPrimary   = Color(0xFFE76F51);
+  static const Color restoSecondary = Color(0xFFF4A261);
+  static const Color onPrimary      = Colors.white;
+
   late List<Map<String, dynamic>> mesRestaurants;
 
   @override
   void initState() {
     super.initState();
-    mesRestaurants = List.from(widget.restaurants);
+    mesRestaurants = List<Map<String, dynamic>>.from(widget.restaurants);
   }
 
   Future<void> supprimerRestaurant(Map<String, dynamic> resto) async {
     final supabase = Supabase.instance.client;
     final String id = resto['id'];
-    final images = List<String>.from(resto['images'] ?? []);
+    final List<String> images =
+        resto['images'] is List ? List<String>.from(resto['images']) : [];
 
     try {
-      // 🗑 Supprimer les images du Storage
+      // Supprimer les images du Storage
       for (var url in images) {
         final path = url.split('/object/public/').last;
         await supabase.storage.from('restaurant-photos').remove([path]);
       }
 
-      // ❌ Supprimer le restaurant
+      // Supprimer le restaurant
       await supabase.from('restaurants').delete().eq('id', id);
 
-      // 🔄 Mise à jour de la liste locale
+      // Mise à jour locale
       if (mounted) {
         setState(() {
           mesRestaurants.removeWhere((r) => r['id'] == id);
@@ -54,24 +60,40 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bleuMaGuinee = const Color(0xFF113CFC);
-    final jauneMaGuinee = const Color(0xFFFCD116);
-
     return Scaffold(
       backgroundColor: Colors.white,
+
       appBar: AppBar(
         title: const Text(
           'Mes Restaurants',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
-        foregroundColor: bleuMaGuinee,
+        foregroundColor: restoPrimary,
         elevation: 1,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: restoPrimary),
+
+        // Bouton "Mes réservations" (désactivé – fonctionnalité à venir)
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: OutlinedButton.icon(
+              onPressed: null, // désactivé
+              icon: const Icon(Icons.calendar_month),
+              label: const Text("Mes réservations"),
+              style: OutlinedButton.styleFrom(
+                disabledForegroundColor: restoPrimary.withOpacity(.60),
+                side: BorderSide(color: restoPrimary.withOpacity(.25)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
       ),
+
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: bleuMaGuinee,
-        foregroundColor: Colors.white,
+        backgroundColor: restoPrimary,
+        foregroundColor: onPrimary,
         icon: const Icon(Icons.add),
         label: const Text("Ajouter"),
         onPressed: () {
@@ -79,6 +101,7 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
               .then((_) => setState(() {}));
         },
       ),
+
       body: mesRestaurants.isEmpty
           ? Center(
               child: Text(
@@ -91,29 +114,30 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
               padding: const EdgeInsets.all(12),
               itemBuilder: (context, index) {
                 final resto = mesRestaurants[index];
-                final images = resto['images'] ?? [];
-                final image = images.isNotEmpty ? images.first : null;
+                final List<String> images =
+                    resto['images'] is List ? List<String>.from(resto['images']) : [];
+                final String? image = images.isNotEmpty ? images.first : null;
 
                 return Card(
-                  color: jauneMaGuinee.withOpacity(0.09),
+                  color: restoSecondary.withOpacity(0.10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   margin: const EdgeInsets.only(bottom: 14),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: bleuMaGuinee.withOpacity(0.16),
-                      backgroundImage:
-                          image != null ? NetworkImage(image) : null,
+                      radius: 26,
+                      backgroundColor: restoSecondary.withOpacity(0.25),
+                      backgroundImage: image != null ? NetworkImage(image) : null,
                       child: image == null
-                          ? Icon(Icons.restaurant, color: bleuMaGuinee)
+                          ? const Icon(Icons.restaurant, color: restoPrimary)
                           : null,
                     ),
                     title: Text(
                       resto['nom'] ?? 'Nom inconnu',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: bleuMaGuinee,
+                        color: restoPrimary,
                       ),
                     ),
                     subtitle: Text(
@@ -131,8 +155,7 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon:
-                              const Icon(Icons.edit, color: Color(0xFF009460)),
+                          icon: const Icon(Icons.edit, color: restoSecondary),
                           onPressed: () {
                             Navigator.pushNamed(
                               context,
@@ -149,7 +172,8 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
                                   builder: (ctx) => AlertDialog(
                                     title: const Text('Confirmer la suppression'),
                                     content: const Text(
-                                        'Voulez-vous vraiment supprimer ce restaurant ?'),
+                                      'Voulez-vous vraiment supprimer ce restaurant ?',
+                                    ),
                                     actions: [
                                       TextButton(
                                         onPressed: () =>

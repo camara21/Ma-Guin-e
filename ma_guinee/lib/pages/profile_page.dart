@@ -59,7 +59,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
     // Fallback
     final alt = Uri.parse('whatsapp://send?phone=$number');
-    if (!await canLaunchUrl(alt) || !await launchUrl(alt, mode: LaunchMode.externalApplication)) {
+    if (!await canLaunchUrl(alt) ||
+        !await launchUrl(alt, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Impossible d’ouvrir la conversation.")),
@@ -83,28 +84,35 @@ class _ProfilePageState extends State<ProfilePage> {
       final userId = context.read<UserProvider>().utilisateur!.id;
 
       final bytes = await picked.readAsBytes();
-      final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
+      final mime =
+          lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
 
       String ext = 'bin';
-      if (mime.contains('jpeg')) ext = 'jpg';
-      else if (mime.contains('png')) ext = 'png';
-      else if (mime.contains('webp')) ext = 'webp';
-      else if (mime.contains('gif')) ext = 'gif';
+      if (mime.contains('jpeg')) {
+        ext = 'jpg';
+      } else if (mime.contains('png')) {
+        ext = 'png';
+      } else if (mime.contains('webp')) {
+        ext = 'webp';
+      } else if (mime.contains('gif')) {
+        ext = 'gif';
+      }
 
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/profile_$ts.$ext';
 
-      await supabase.storage
-          .from('profile-photos')
-          .uploadBinary(
+      await supabase.storage.from('profile-photos').uploadBinary(
             objectPath,
             bytes,
             fileOptions: FileOptions(upsert: true, contentType: mime),
           );
 
-      final publicUrl = supabase.storage.from('profile-photos').getPublicUrl(objectPath);
+      final publicUrl =
+          supabase.storage.from('profile-photos').getPublicUrl(objectPath);
 
-      await supabase.from('utilisateurs').update({'photo_url': publicUrl}).eq('id', userId);
+      await supabase
+          .from('utilisateurs')
+          .update({'photo_url': publicUrl}).eq('id', userId);
 
       setState(() {
         _photoUrl = publicUrl;
@@ -121,7 +129,7 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       setState(() => _isUploading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur upload: $e')),
+        SnackBar(content: Text('Erreur upload : $e')),
       );
     }
   }
@@ -161,11 +169,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       CircleAvatar(
                         radius: 37,
                         backgroundColor: Colors.grey[200],
-                        backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
-                            ? NetworkImage(_photoUrl!)
-                            : const AssetImage('assets/default_avatar.png') as ImageProvider,
+                        backgroundImage:
+                            (_photoUrl != null && _photoUrl!.isNotEmpty)
+                                ? NetworkImage(_photoUrl!)
+                                : const AssetImage('assets/default_avatar.png')
+                                    as ImageProvider,
                         child: (_photoUrl == null || _photoUrl!.isEmpty)
-                            ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                            ? const Icon(Icons.person,
+                                size: 40, color: Colors.grey)
                             : null,
                       ),
                       if (_isUploading)
@@ -179,23 +190,26 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 const SizedBox(height: 10),
                 Text('${user.prenom} ${user.nom}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19)),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 19)),
                 if (user.telephone.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 5),
                     child: Text(user.telephone,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                        style:
+                            TextStyle(color: Colors.grey[700], fontSize: 14)),
                   ),
                 if (user.email.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
                     child: Text(user.email,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                        style:
+                            TextStyle(color: Colors.grey[700], fontSize: 13)),
                   ),
               ],
             ),
           ),
-          // 🔴 Annonces
+          // Annonces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: InkWell(
@@ -203,13 +217,16 @@ class _ProfilePageState extends State<ProfilePage> {
               borderRadius: BorderRadius.circular(14),
               child: Card(
                 elevation: 0.5,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
                 child: Stack(
                   children: [
                     const ListTile(
                       leading: Icon(Icons.campaign, color: Color(0xFFCE1126)),
-                      title: Text('Mes annonces', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text("Voir / modifier / supprimer mes annonces"),
+                      title: Text('Mes annonces',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle:
+                          Text('Voir / modifier / supprimer mes annonces'),
                     ),
                     Positioned(
                       right: 18,
@@ -219,7 +236,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.red,
                         child: Text(
                           annoncesCount.toString(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -228,7 +246,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-          // 🟦 Espaces
+          // Espaces
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Column(
@@ -242,15 +260,19 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? user.espacePrestataire!['metier'] ?? ''
                       : "Vous n'êtes pas encore inscrit comme prestataire.",
                   onTap: user.espacePrestataire != null
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesPrestations)
+                      ? () =>
+                          Navigator.pushNamed(context, AppRoutes.mesPrestations)
                       : null,
                   onButton: user.espacePrestataire == null
                       ? () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
-                        )
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const InscriptionPrestatairePage()),
+                          )
                       : null,
-                  buttonLabel: user.espacePrestataire == null ? "S'inscrire" : "Modifier",
+                  buttonLabel:
+                      user.espacePrestataire == null ? "S'inscrire" : "Modifier",
                 ),
                 _blocEspace(
                   color: Colors.orange.shade50,
@@ -259,15 +281,17 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: 'Mes Restaurants',
                   subtitle: user.restos.isNotEmpty
                       ? "${user.restos.first['nom']} - ${user.restos.first['ville']}"
-                      : "Aucun restaurant enregistré.",
+                      : 'Aucun restaurant enregistré.',
                   onTap: user.restos.isNotEmpty
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesRestaurants)
+                      ? () =>
+                          Navigator.pushNamed(context, AppRoutes.mesRestaurants)
                       : null,
                   onButton: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InscriptionRestoPage()),
-                      ),
-                  buttonLabel: "Ajouter",
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const InscriptionRestoPage()),
+                  ),
+                  buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
                   color: Colors.purple.shade50,
@@ -276,15 +300,16 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: 'Mes Hôtels',
                   subtitle: user.hotels.isNotEmpty
                       ? "${user.hotels.first['nom']} - ${user.hotels.first['ville']}"
-                      : "Aucun hôtel enregistré.",
+                      : 'Aucun hôtel enregistré.',
                   onTap: user.hotels.isNotEmpty
                       ? () => Navigator.pushNamed(context, AppRoutes.mesHotels)
                       : null,
                   onButton: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InscriptionHotelPage()),
-                      ),
-                  buttonLabel: "Ajouter",
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const InscriptionHotelPage()),
+                  ),
+                  buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
                   color: Colors.teal.shade50,
@@ -292,16 +317,20 @@ class _ProfilePageState extends State<ProfilePage> {
                   iconColor: Colors.teal,
                   title: 'Mes Cliniques',
                   subtitle: user.cliniques.isNotEmpty
-                      ? user.cliniques.map((c) => "${c['nom']} - ${c['ville']}").join(', ')
-                      : "Aucune clinique enregistrée.",
+                      ? user.cliniques
+                          .map((c) => "${c['nom']} - ${c['ville']}")
+                          .join(', ')
+                      : 'Aucune clinique enregistrée.',
                   onTap: user.cliniques.isNotEmpty
-                      ? () => Navigator.pushNamed(context, AppRoutes.mesCliniques)
+                      ? () =>
+                          Navigator.pushNamed(context, AppRoutes.mesCliniques)
                       : null,
                   onButton: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InscriptionCliniquePage()),
-                      ),
-                  buttonLabel: "Ajouter",
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const InscriptionCliniquePage()),
+                  ),
+                  buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
                   color: Colors.indigo.shade50,
@@ -310,28 +339,31 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: 'Mes Lieux',
                   subtitle: user.lieux != null && user.lieux.isNotEmpty
                       ? "${user.lieux.first['nom']} - ${user.lieux.first['ville']}"
-                      : "Aucun lieu enregistré.",
+                      : 'Aucun lieu enregistré.',
                   onTap: (user.lieux != null && user.lieux.isNotEmpty)
                       ? () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const MesLieuxPage()),
-                        )
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const MesLieuxPage()),
+                          )
                       : null,
                   onButton: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InscriptionLieuPage()),
-                      ),
-                  buttonLabel: "Ajouter",
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const InscriptionLieuPage()),
+                  ),
+                  buttonLabel: 'Ajouter',
                 ),
               ],
             ),
           ),
           const Divider(height: 30, thickness: 1),
 
-          // ⚙️ Paramètres
+          // Paramètres
           ListTile(
             leading: const Icon(Icons.settings, color: Colors.black),
-            title: const Text("Paramètres", style: TextStyle(fontWeight: FontWeight.w500)),
+            title: const Text('Paramètres',
+                style: TextStyle(fontWeight: FontWeight.w500)),
             onTap: () {
               Navigator.push(
                 context,
@@ -340,39 +372,45 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           ),
 
-          // 🆘 Support (aucune mention de WhatsApp/numéro)
+          // Support (aucune mention de WhatsApp/numéro)
           ListTile(
             leading: Container(
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: const Color(0xFFEFF9FF),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.headset_mic, color: Color(0xFF1E88E5)),
             ),
-            title: const Text("Support", style: TextStyle(fontWeight: FontWeight.w500)),
+            title: const Text('Support',
+                style: TextStyle(fontWeight: FontWeight.w500)),
             trailing: const Icon(Icons.chevron_right),
             onTap: _openWhatsApp,
           ),
 
-          // 🚪 Déconnexion
+          // Déconnexion
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text(
-              "Se déconnecter",
+              'Se déconnecter',
               style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red),
             ),
             onTap: () async {
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text("Confirmation"),
-                  content: const Text("Voulez-vous vraiment vous déconnecter ?"),
+                  title: const Text('Confirmation'),
+                  content: const Text(
+                      'Voulez-vous vraiment vous déconnecter ?'),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Annuler")),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Annuler')),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text("Se déconnecter", style: TextStyle(color: Colors.red)),
+                      child: const Text('Se déconnecter',
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
@@ -381,7 +419,8 @@ class _ProfilePageState extends State<ProfilePage> {
               if (confirm == true) {
                 await Supabase.instance.client.auth.signOut();
                 if (context.mounted) {
-                  Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+                  Navigator.pushNamedAndRemoveUntil(
+                      context, '/welcome', (route) => false);
                 }
               }
             },
@@ -406,7 +445,8 @@ class _ProfilePageState extends State<ProfilePage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       child: ListTile(
         leading: Icon(icon, color: iconColor, size: 20),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         subtitle: Text(subtitle),
         trailing: ElevatedButton(
           onPressed: onButton,
@@ -414,8 +454,10 @@ class _ProfilePageState extends State<ProfilePage> {
             backgroundColor: Colors.grey[onButton != null ? 600 : 300],
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 0,
           ),
           child: Text(buttonLabel),

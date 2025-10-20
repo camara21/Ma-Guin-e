@@ -1,9 +1,17 @@
+// lib/pages/tourisme_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'tourisme_detail_page.dart';
+
+/// === Palette Tourisme (donnée) ===
+const Color tourismePrimary = Color(0xFFDAA520);
+const Color tourismeSecondary = Color(0xFFFFD700);
+const Color tourismeOnPrimary = Color(0xFF000000);
+const Color tourismeOnSecondary = Color(0xFF000000);
 
 class TourismePage extends StatefulWidget {
   const TourismePage({super.key});
@@ -24,8 +32,6 @@ class _TourismePageState extends State<TourismePage> {
   // Localisation
   Position? _position;
   String? _villeGPS;
-
-  static const primaryColor = Color(0xFF113CFC);
 
   @override
   void initState() {
@@ -55,8 +61,7 @@ class _TourismePageState extends State<TourismePage> {
       );
       _position = pos;
 
-      final placemarks =
-          await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
         final city = (p.locality?.isNotEmpty == true)
@@ -74,7 +79,7 @@ class _TourismePageState extends State<TourismePage> {
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
     if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
-    const R = 6371000.0;
+    const R = 6371000.0; // m
     final dLat = (lat2! - lat1!) * (pi / 180);
     final dLon = (lon2! - lon1!) * (pi / 180);
     final a = sin(dLat / 2) * sin(dLat / 2) +
@@ -91,7 +96,7 @@ class _TourismePageState extends State<TourismePage> {
     try {
       await _getLocation();
 
-      // ✅ Only columns that exist in your "lieux" table
+      // Adapter les colonnes à ta table "lieux"
       final response = await Supabase.instance.client
           .from('lieux')
           .select('''
@@ -99,26 +104,27 @@ class _TourismePageState extends State<TourismePage> {
             images, latitude, longitude, created_at,
             contact, photo_url
           ''')
-          .eq('type', 'tourisme') // ou .eq('categorie','tourisme') selon ton schéma
+          .eq('type', 'tourisme') // ou .eq('categorie', 'tourisme') selon ton schéma
           .order('nom');
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // Calcule la distance + tri
+      // Ajoute la distance + tri intelligent (ville GPS prioritaire)
       if (_position != null) {
         for (final l in list) {
           final lat = (l['latitude'] as num?)?.toDouble();
           final lon = (l['longitude'] as num?)?.toDouble();
-          l['_distance'] =
-              _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+          l['_distance'] = _distanceMeters(
+              _position!.latitude, _position!.longitude, lat, lon);
         }
+
+        int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
+            (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
 
         if ((_villeGPS ?? '').isNotEmpty) {
           list.sort((a, b) {
-            final aSame =
-                (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-            final bSame =
-                (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            final aSame = (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            final bSame = (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
             if (aSame != bSame) return aSame ? -1 : 1;
 
             final ad = (a['_distance'] as double?);
@@ -127,7 +133,7 @@ class _TourismePageState extends State<TourismePage> {
             if (ad != null) return -1;
             if (bd != null) return 1;
 
-            return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+            return byName(a, b);
           });
         } else {
           list.sort((a, b) {
@@ -136,7 +142,7 @@ class _TourismePageState extends State<TourismePage> {
             if (ad != null && bd != null) return ad.compareTo(bd);
             if (ad != null) return -1;
             if (bd != null) return 1;
-            return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+            return byName(a, b);
           });
         }
       }
@@ -162,8 +168,12 @@ class _TourismePageState extends State<TourismePage> {
         final nom = (lieu['nom'] ?? '').toString().toLowerCase();
         final ville = (lieu['ville'] ?? '').toString().toLowerCase();
         final desc = (lieu['description'] ?? '').toString().toLowerCase();
-        final tag = (lieu['categorie'] ?? lieu['type'] ?? '').toString().toLowerCase();
-        return nom.contains(q) || ville.contains(q) || desc.contains(q) || tag.contains(q);
+        final tag =
+            (lieu['categorie'] ?? lieu['type'] ?? '').toString().toLowerCase();
+        return nom.contains(q) ||
+            ville.contains(q) ||
+            desc.contains(q) ||
+            tag.contains(q);
       }).toList();
     });
   }
@@ -175,20 +185,48 @@ class _TourismePageState extends State<TourismePage> {
     return const [];
   }
 
+  String _bestImage(Map<String, dynamic> lieu) {
+    final imgs = _imagesFrom(lieu['images']);
+    if (imgs.isNotEmpty) return imgs.first;
+    final photo = (lieu['photo_url'] ?? '').toString();
+    if (photo.isNotEmpty) return photo;
+    return 'https://via.placeholder.com/300x200.png?text=Tourisme';
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Dégradé Tourisme pour AppBar
+    const appBarGradient = LinearGradient(
+      colors: [tourismePrimary, tourismeSecondary],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+
+    // Responsive simple : 1 colonne sur petit écran
+    int crossAxisCount = 2;
+    final width = MediaQuery.of(context).size.width;
+    if (width < 380) crossAxisCount = 1;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle.light, // status bar claire
         title: const Text(
           "Sites touristiques",
+          style: TextStyle(color: tourismeOnPrimary, fontWeight: FontWeight.w700),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0.7,
-        foregroundColor: primaryColor,
+        elevation: 0.0,
+        foregroundColor: tourismeOnPrimary,
+        backgroundColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: appBarGradient),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: tourismeOnPrimary),
             tooltip: 'Rafraîchir',
             onPressed: _loadAll,
           ),
@@ -198,7 +236,7 @@ class _TourismePageState extends State<TourismePage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Bandeau
+                // Bandeau promo
                 Container(
                   width: double.infinity,
                   height: 75,
@@ -206,10 +244,17 @@ class _TourismePageState extends State<TourismePage> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     gradient: const LinearGradient(
-                      colors: [primaryColor, Color(0xFF2EC4F1)],
+                      colors: [tourismePrimary, tourismeSecondary],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: tourismePrimary.withOpacity(.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -218,7 +263,7 @@ class _TourismePageState extends State<TourismePage> {
                       child: Text(
                         "Découvrez les plus beaux sites touristiques de Guinée",
                         style: TextStyle(
-                          color: Colors.white,
+                          color: tourismeOnPrimary,
                           fontSize: 19,
                           fontWeight: FontWeight.bold,
                           height: 1.2,
@@ -233,13 +278,18 @@ class _TourismePageState extends State<TourismePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   child: TextField(
                     decoration: InputDecoration(
-                      hintText: 'Rechercher un site, une ville...',
-                      prefixIcon: const Icon(Icons.search, color: primaryColor),
+                      hintText: 'Rechercher un site, une ville…',
+                      prefixIcon: const Icon(Icons.search, color: tourismePrimary),
                       filled: true,
                       fillColor: Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: tourismeSecondary),
                       ),
                     ),
                     onChanged: _filterLieux,
@@ -254,20 +304,20 @@ class _TourismePageState extends State<TourismePage> {
                       : RefreshIndicator(
                           onRefresh: _loadAll,
                           child: GridView.builder(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
                               mainAxisSpacing: 16,
                               crossAxisSpacing: 16,
-                              childAspectRatio: 0.77,
+                              childAspectRatio: crossAxisCount == 1 ? 2.0 : 0.77,
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 14),
                             itemCount: _filteredLieux.length,
                             itemBuilder: (context, index) {
                               final lieu = _filteredLieux[index];
-                              final imgs = _imagesFrom(lieu['images']);
-                              final image = imgs.isNotEmpty
-                                  ? imgs.first
-                                  : 'https://via.placeholder.com/300x200.png?text=Tourisme';
+                              final image = _bestImage(lieu);
+                              final hasVille = (lieu['ville'] ?? '').toString().isNotEmpty;
+                              final hasDesc = (lieu['description'] ?? '').toString().isNotEmpty;
+                              final dist = (lieu['_distance'] as double?);
 
                               return GestureDetector(
                                 onTap: () {
@@ -302,7 +352,7 @@ class _TourismePageState extends State<TourismePage> {
                                                 ),
                                               ),
                                             ),
-                                            if ((lieu['ville'] ?? '').toString().isNotEmpty)
+                                            if (hasVille)
                                               Positioned(
                                                 left: 8,
                                                 top: 8,
@@ -334,8 +384,7 @@ class _TourismePageState extends State<TourismePage> {
 
                                       // Texte
                                       Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
@@ -363,12 +412,12 @@ class _TourismePageState extends State<TourismePage> {
                                                     ),
                                                   ),
                                                 ),
-                                                if (lieu['_distance'] != null) ...[
+                                                if (dist != null) ...[
                                                   const Text('  •  ',
                                                       style: TextStyle(
                                                           color: Colors.grey, fontSize: 13)),
                                                   Text(
-                                                    '${(lieu['_distance'] / 1000).toStringAsFixed(1)} km',
+                                                    '${(dist / 1000).toStringAsFixed(1)} km',
                                                     style: const TextStyle(
                                                       color: Colors.grey,
                                                       fontSize: 13,
@@ -377,9 +426,7 @@ class _TourismePageState extends State<TourismePage> {
                                                 ],
                                               ],
                                             ),
-                                            if ((lieu['description'] ?? '')
-                                                .toString()
-                                                .isNotEmpty)
+                                            if (hasDesc)
                                               Padding(
                                                 padding: const EdgeInsets.only(top: 2),
                                                 child: Text(
@@ -387,7 +434,7 @@ class _TourismePageState extends State<TourismePage> {
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: const TextStyle(
-                                                    color: primaryColor,
+                                                    color: tourismePrimary,
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 13,
                                                   ),

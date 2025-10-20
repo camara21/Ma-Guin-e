@@ -26,7 +26,7 @@ class _LogementListPageState extends State<LogementListPage> {
   final _qCtrl = TextEditingController();
   final _scroll = ScrollController();
 
-  // état/filtres
+  // État / filtres
   late LogementSearchParams _params;
   List<LogementModel> _items = [];
   bool _loading = false;
@@ -34,13 +34,15 @@ class _LogementListPageState extends State<LogementListPage> {
   bool _hasMore = true;
   String? _error;
 
-  // ---------- Thème "Action Logement" ----------
+  // Thème "Action Logement"
   Color get _primary => const Color(0xFF0B3A6A); // bleu profond (header)
-  Color get _accent  => const Color(0xFFE1005A); // fuchsia (actions/prix/FAB)
-  bool  get _isDark  => Theme.of(context).brightness == Brightness.dark;
-  Color get _bg      => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _fill    => _isDark ? const Color(0xFF1E293B) : const Color(0xFFF3F4F6);
-  Color get _chipBg  => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _accent => const Color(0xFFE1005A); // fuchsia (actions/prix/FAB)
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
+  Color get _fill =>
+      _isDark ? const Color(0xFF1E293B) : const Color(0xFFF3F4F6);
+  Color get _chipBg =>
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   @override
   void initState() {
@@ -131,16 +133,20 @@ class _LogementListPageState extends State<LogementListPage> {
             onSelected: (v) {
               switch (v) {
                 case 'recent':
-                  _params = _params.copyWith(orderBy: 'cree_le', ascending: false);
+                  _params =
+                      _params.copyWith(orderBy: 'cree_le', ascending: false);
                   break;
                 case 'prix_asc':
-                  _params = _params.copyWith(orderBy: 'prix_gnf', ascending: true);
+                  _params =
+                      _params.copyWith(orderBy: 'prix_gnf', ascending: true);
                   break;
                 case 'prix_desc':
-                  _params = _params.copyWith(orderBy: 'prix_gnf', ascending: false);
+                  _params =
+                      _params.copyWith(orderBy: 'prix_gnf', ascending: false);
                   break;
                 case 'surface_desc':
-                  _params = _params.copyWith(orderBy: 'superficie_m2', ascending: false);
+                  _params = _params.copyWith(
+                      orderBy: 'superficie_m2', ascending: false);
                   break;
               }
               _fetch(reset: true);
@@ -148,8 +154,10 @@ class _LogementListPageState extends State<LogementListPage> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'recent', child: Text('Plus récents')),
               PopupMenuItem(value: 'prix_asc', child: Text('Prix croissant')),
-              PopupMenuItem(value: 'prix_desc', child: Text('Prix décroissant')),
-              PopupMenuItem(value: 'surface_desc', child: Text('Grande superficie')),
+              PopupMenuItem(
+                  value: 'prix_desc', child: Text('Prix décroissant')),
+              PopupMenuItem(
+                  value: 'surface_desc', child: Text('Grande superficie')),
             ],
           ),
         ],
@@ -260,7 +268,7 @@ class _LogementListPageState extends State<LogementListPage> {
     if (_params.prixMin != null || _params.prixMax != null) {
       final min = _params.prixMin?.toStringAsFixed(0) ?? '0';
       final max = _params.prixMax?.toStringAsFixed(0) ?? '∞';
-      chips.add(_tag('Prix: $min–$max GNF', onClear: () {
+      chips.add(_tag('Prix : $min–$max GNF', onClear: () {
         _params = _params.copyWith(prixMin: null, prixMax: null, offset: 0);
         _fetch(reset: true);
       }));
@@ -268,8 +276,9 @@ class _LogementListPageState extends State<LogementListPage> {
     if (_params.surfaceMin != null || _params.surfaceMax != null) {
       final min = _params.surfaceMin?.toStringAsFixed(0) ?? '0';
       final max = _params.surfaceMax?.toStringAsFixed(0) ?? '∞';
-      chips.add(_tag('Surface: $min–$max m²', onClear: () {
-        _params = _params.copyWith(surfaceMin: null, surfaceMax: null, offset: 0);
+      chips.add(_tag('Surface : $min–$max m²', onClear: () {
+        _params =
+            _params.copyWith(surfaceMin: null, surfaceMax: null, offset: 0);
         _fetch(reset: true);
       }));
     }
@@ -310,7 +319,12 @@ class _LogementListPageState extends State<LogementListPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 6))
+          ],
         ),
         child: Row(
           children: [
@@ -319,20 +333,23 @@ class _LogementListPageState extends State<LogementListPage> {
               width: 110,
               height: 92,
               decoration: const BoxDecoration(
-                borderRadius: BorderRadius.horizontal(left: Radius.circular(14)),
+                borderRadius:
+                    BorderRadius.horizontal(left: Radius.circular(14)),
               ),
               clipBehavior: Clip.antiAlias,
               child: (b.photos.isEmpty)
                   ? Container(
                       color: _chipBg,
-                      child: const Icon(Icons.image, size: 36, color: Colors.black26),
+                      child: const Icon(Icons.image,
+                          size: 36, color: Colors.black26),
                     )
                   : Image.network(b.photos.first, fit: BoxFit.cover),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -347,18 +364,23 @@ class _LogementListPageState extends State<LogementListPage> {
                       spacing: 6,
                       runSpacing: -6,
                       children: [
-                        _miniChip(b.mode == LogementMode.achat ? 'Achat' : 'Location'),
+                        _miniChip(
+                            b.mode == LogementMode.achat ? 'Achat' : 'Location'),
                         _miniChip(_labelCat(b.categorie)),
                         if (b.chambres != null) _miniChip('${b.chambres} ch'),
-                        if (b.superficieM2 != null) _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                        if (b.superficieM2 != null)
+                          _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(price, style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                    Text(price,
+                        style: TextStyle(
+                            color: _accent, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 2),
                     Text(
                       [b.ville, b.commune].whereType<String>().join(' • '),
-                      style: const TextStyle(color: Colors.black54, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ],
                 ),
@@ -410,7 +432,10 @@ class _LogementListPageState extends State<LogementListPage> {
 
   // --------------- Helpers UI ---------------
 
-  Widget _softBtn({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _softBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -420,7 +445,11 @@ class _LogementListPageState extends State<LogementListPage> {
           color: _chipBg,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(children: [Icon(icon, size: 18, color: _primary), const SizedBox(width: 6), Text(label)]),
+        child: Row(children: [
+          Icon(icon, size: 18, color: _primary),
+          const SizedBox(width: 6),
+          Text(label)
+        ]),
       ),
     );
   }
@@ -470,7 +499,8 @@ class _LogementListPageState extends State<LogementListPage> {
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent, foregroundColor: Colors.white),
                 onPressed: () => _fetch(reset: true),
                 icon: const Icon(Icons.refresh),
                 label: const Text("Réessayer"),
@@ -488,7 +518,11 @@ class _LogementListPageState extends State<LogementListPage> {
 // ------------------- BottomSheet Filtres -------------------
 
 class _FiltersSheet extends StatefulWidget {
-  const _FiltersSheet({required this.initial, required this.primary, required this.accent, required this.chipBg});
+  const _FiltersSheet(
+      {required this.initial,
+      required this.primary,
+      required this.accent,
+      required this.chipBg});
   final LogementSearchParams initial;
   final Color primary;
   final Color accent;
@@ -540,10 +574,16 @@ class _FiltersSheetState extends State<_FiltersSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Center(
-              child: Container(width: 42, height: 5, decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3))),
+              child: Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(3))),
             ),
             const SizedBox(height: 12),
-            const Text("Filtres", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text("Filtres",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
 
             // Mode
@@ -554,21 +594,26 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 label: const Text('Location'),
                 selected: _mode == LogementMode.location,
                 selectedColor: widget.accent,
-                labelStyle: TextStyle(color: _mode == LogementMode.location ? Colors.white : null),
-                onSelected: (_) => setState(() => _mode = LogementMode.location),
+                labelStyle: TextStyle(
+                    color:
+                        _mode == LogementMode.location ? Colors.white : null),
+                onSelected: (_) =>
+                    setState(() => _mode = LogementMode.location),
               ),
               ChoiceChip(
                 label: const Text('Achat'),
                 selected: _mode == LogementMode.achat,
                 selectedColor: widget.accent,
-                labelStyle: TextStyle(color: _mode == LogementMode.achat ? Colors.white : null),
+                labelStyle: TextStyle(
+                    color: _mode == LogementMode.achat ? Colors.white : null),
                 onSelected: (_) => setState(() => _mode = LogementMode.achat),
               ),
               ChoiceChip(
                 label: const Text('Peu importe'),
                 selected: _mode == null,
                 selectedColor: widget.accent,
-                labelStyle: TextStyle(color: _mode == null ? Colors.white : null),
+                labelStyle:
+                    TextStyle(color: _mode == null ? Colors.white : null),
                 onSelected: (_) => setState(() => _mode = null),
               ),
             ]),
@@ -590,7 +635,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 label: const Text('Aucune'),
                 selected: _cat == null,
                 selectedColor: widget.accent,
-                labelStyle: TextStyle(color: _cat == null ? Colors.white : null),
+                labelStyle:
+                    TextStyle(color: _cat == null ? Colors.white : null),
                 onSelected: (_) => setState(() => _cat = null),
               ),
             ]),
@@ -602,14 +648,16 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 Expanded(
                   child: TextField(
                     controller: _ville,
-                    decoration: const InputDecoration(labelText: 'Ville', filled: true),
+                    decoration:
+                        const InputDecoration(labelText: 'Ville', filled: true),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
                     controller: _commune,
-                    decoration: const InputDecoration(labelText: 'Commune / Quartier', filled: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Commune / Quartier', filled: true),
                   ),
                 ),
               ],
@@ -624,7 +672,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 Expanded(
                   child: TextField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Min', filled: true),
+                    decoration:
+                        const InputDecoration(labelText: 'Min', filled: true),
                     onChanged: (v) => _prixMin = double.tryParse(v) ?? 0,
                   ),
                 ),
@@ -632,7 +681,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 Expanded(
                   child: TextField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Max', filled: true),
+                    decoration:
+                        const InputDecoration(labelText: 'Max', filled: true),
                     onChanged: (v) => _prixMax = double.tryParse(v) ?? 0,
                   ),
                 ),
@@ -648,7 +698,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 Expanded(
                   child: TextField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Min', filled: true),
+                    decoration:
+                        const InputDecoration(labelText: 'Min', filled: true),
                     onChanged: (v) => _surfMin = double.tryParse(v) ?? 0,
                   ),
                 ),
@@ -656,7 +707,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                 Expanded(
                   child: TextField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Max', filled: true),
+                    decoration:
+                        const InputDecoration(labelText: 'Max', filled: true),
                     onChanged: (v) => _surfMax = double.tryParse(v) ?? 0,
                   ),
                 ),
@@ -709,8 +761,12 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                         widget.initial.copyWith(
                           mode: _mode,
                           categorie: _cat,
-                          ville: _ville.text.trim().isEmpty ? null : _ville.text.trim(),
-                          commune: _commune.text.trim().isEmpty ? null : _commune.text.trim(),
+                          ville: _ville.text.trim().isEmpty
+                              ? null
+                              : _ville.text.trim(),
+                          commune: _commune.text.trim().isEmpty
+                              ? null
+                              : _commune.text.trim(),
                           prixMin: _prixMin > 0 ? _prixMin : null,
                           prixMax: _prixMax > 0 ? _prixMax : null,
                           surfaceMin: _surfMin > 0 ? _surfMin : null,

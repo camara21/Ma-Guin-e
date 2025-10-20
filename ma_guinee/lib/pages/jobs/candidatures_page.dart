@@ -20,11 +20,11 @@ class CandidaturesPage extends StatefulWidget {
 
 class _CandidaturesPageState extends State<CandidaturesPage> {
   // Thème app
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
   static const kYellow = Color(0xFFFCD116);
-  static const kGreen  = Color(0xFF009460);
+  static const kGreen = Color(0xFF009460);
 
   final _sb = Supabase.instance.client;
   bool _loading = true;
@@ -45,10 +45,14 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
       final rows = await _sb
           .from('candidatures')
           .select(
-              'id, prenom, nom, telephone, email, lettre, cv_url, cv_is_public, cree_le, statut')
+            'id, prenom, nom, telephone, email, lettre, cv_url, cv_is_public, cree_le, statut',
+          )
           .eq('emploi_id', widget.jobId)
           .order('cree_le', ascending: false);
-      _items = (rows as List).cast<Map<String, dynamic>>();
+
+      _items = (rows as List<dynamic>)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
     } catch (e) {
       _toast('Chargement impossible : $e');
     } finally {
@@ -56,15 +60,15 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
     }
   }
 
-  // Met à jour le statut SANS changer quoi que ce soit côté base
+  // Met à jour le statut
   Future<void> _changeStatus(String id, String newStatut) async {
     try {
       await _sb.from('candidatures').update({'statut': newStatut}).eq('id', id);
-      final i = _items.indexWhere((e) => e['id'] == id);
+      final i = _items.indexWhere((e) => (e['id']?.toString() ?? '') == id);
       if (i != -1) setState(() => _items[i]['statut'] = newStatut);
       _toast('Statut mis à jour : ${_label(newStatut)}');
     } catch (e) {
-      _toast('Maj du statut impossible : $e');
+      _toast('Mise à jour du statut impossible : $e');
     }
   }
 
@@ -78,7 +82,7 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
   }
 
   String _dateStr(String? iso) {
-    if (iso == null) return '';
+    if (iso == null || iso.isEmpty) return '';
     try {
       final d = DateTime.parse(iso).toLocal();
       return DateFormat('dd/MM/yyyy').format(d);
@@ -90,23 +94,31 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
   // Couleur & libellé pour la pastille de statut
   Color _color(String s) {
     switch (s.toLowerCase()) {
-      case 'refusee':   return kRed;
-      case 'acceptee':  return kGreen;
+      case 'refusee':
+        return kRed;
+      case 'acceptee':
+        return kGreen;
       case 'en_cours':
-      case 'en cours':  return kYellow;
+      case 'en cours':
+        return kYellow;
       case 'envoyee':
-      default:          return kBlue;
+      default:
+        return kBlue;
     }
   }
 
   String _label(String s) {
     switch (s.toLowerCase()) {
-      case 'refusee':   return 'Refusée';
-      case 'acceptee':  return 'Acceptée';
+      case 'refusee':
+        return 'Refusée';
+      case 'acceptee':
+        return 'Acceptée';
       case 'en_cours':
-      case 'en cours':  return 'En cours';
+      case 'en cours':
+        return 'En cours';
       case 'envoyee':
-      default:          return 'Envoyée';
+      default:
+        return 'Envoyée';
     }
   }
 
@@ -118,7 +130,10 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: .5,
-        title: Text('Candidatures — ${widget.jobTitle}', overflow: TextOverflow.ellipsis),
+        title: Text(
+          'Candidatures – ${widget.jobTitle}',
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -129,10 +144,11 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
                 itemCount: _items.length,
                 itemBuilder: (_, i) {
                   final c = _items[i];
-                  final name   = _displayName(c);
-                  final tel    = (c['telephone'] ?? '').toString();
-                  final email  = (c['email'] ?? '').toString();
-                  final date   = _dateStr(c['cree_le'] as String?);
+                  final id = (c['id'] ?? '').toString();
+                  final name = _displayName(c);
+                  final tel = (c['telephone'] ?? '').toString();
+                  final email = (c['email'] ?? '').toString();
+                  final date = _dateStr((c['cree_le'] ?? '').toString());
                   final statut = (c['statut'] ?? '').toString();
 
                   return Material(
@@ -176,7 +192,9 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
                                           name,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(fontWeight: FontWeight.w700),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                         ),
                                       ),
                                       _StatutPill(
@@ -187,36 +205,59 @@ class _CandidaturesPageState extends State<CandidaturesPage> {
                                   ),
                                   const SizedBox(height: 2),
                                   if (date.isNotEmpty)
-                                    Text(date, style: const TextStyle(color: Colors.black54)),
+                                    Text(
+                                      date,
+                                      style: const TextStyle(
+                                        color: Colors.black54,
+                                      ),
+                                    ),
                                   const SizedBox(height: 8),
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 6,
                                     children: [
-                                      if (tel.isNotEmpty) _MiniChip(icon: Icons.phone, text: tel),
-                                      if (email.isNotEmpty) _MiniChip(icon: Icons.email_outlined, text: email),
+                                      if (tel.isNotEmpty)
+                                        _MiniChip(icon: Icons.phone, text: tel),
+                                      if (email.isNotEmpty)
+                                        _MiniChip(
+                                          icon: Icons.email_outlined,
+                                          text: email,
+                                        ),
                                     ],
                                   ),
                                 ],
                               ),
                             ),
-                            // ⋮ actions
+                            // actions
                             PopupMenuButton<String>(
                               tooltip: 'Actions',
-                              icon: const Icon(Icons.more_vert, color: Colors.black45),
-                              onSelected: (v) => _changeStatus(c['id'] as String, v),
+                              icon: const Icon(Icons.more_vert,
+                                  color: Colors.black45),
+                              onSelected: (v) => _changeStatus(id, v),
                               itemBuilder: (context) => const [
                                 PopupMenuItem(
                                   value: 'acceptee',
-                                  child: _MenuRow(icon: Icons.check_circle_outline, color: kGreen, text: 'Marquer "Acceptée"'),
+                                  child: _MenuRow(
+                                    icon: Icons.check_circle_outline,
+                                    color: kGreen,
+                                    text: 'Marquer "Acceptée"',
+                                  ),
                                 ),
                                 PopupMenuItem(
                                   value: 'en_cours',
-                                  child: _MenuRow(icon: Icons.timelapse, color: kYellow, text: 'Marquer "En cours"'),
+                                  child: _MenuRow(
+                                    icon: Icons.timelapse,
+                                    color: kYellow,
+                                    text: 'Marquer "En cours"',
+                                  ),
                                 ),
                                 PopupMenuItem(
                                   value: 'refusee',
-                                  child: _MenuRow(icon: Icons.cancel_outlined, color: kRed, text: 'Marquer "Refusée"'),
+                                  child: _MenuRow(
+                                    icon: Icons.cancel_outlined,
+                                    color: kRed,
+                                    text: 'Marquer "Refusée"',
+                                  ),
                                 ),
                               ],
                             ),
@@ -292,7 +333,10 @@ class _StatutPill extends StatelessWidget {
         children: [
           Icon(Icons.circle, size: 8, color: color),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );

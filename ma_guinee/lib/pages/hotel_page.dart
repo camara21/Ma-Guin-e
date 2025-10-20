@@ -13,6 +13,16 @@ class HotelPage extends StatefulWidget {
 }
 
 class _HotelPageState extends State<HotelPage> {
+  // ===== Couleurs (Hôtels) — page spécifique =====
+  static const Color hotelsPrimary   = Color(0xFF264653);
+  static const Color hotelsSecondary = Color(0xFF2A9D8F);
+  static const Color onPrimary       = Color(0xFFFFFFFF);
+
+  // Neutres
+  static const Color neutralBg      = Color(0xFFF7F7F9);
+  static const Color neutralSurface = Color(0xFFFFFFFF);
+  static const Color neutralBorder  = Color(0xFFE5E7EB);
+
   // Données
   List<Map<String, dynamic>> hotels = [];
   List<Map<String, dynamic>> filteredHotels = [];
@@ -94,14 +104,10 @@ class _HotelPageState extends State<HotelPage> {
     try {
       await _getLocation();
 
-      // 🔧 Retirer "devise" du select
-      final data = await Supabase.instance.client
-          .from('hotels')
-          .select('''
+      final data = await Supabase.instance.client.from('hotels').select('''
             id, nom, ville, adresse, prix,
             latitude, longitude, images, description, created_at
-          ''')
-          .order('nom');
+          ''').order('nom');
 
       final list = List<Map<String, dynamic>>.from(data);
 
@@ -110,8 +116,8 @@ class _HotelPageState extends State<HotelPage> {
         for (final h in list) {
           final lat = (h['latitude'] as num?)?.toDouble();
           final lon = (h['longitude'] as num?)?.toDouble();
-          h['_distance'] =
-              _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+          h['_distance'] = _distanceMeters(
+              _position!.latitude, _position!.longitude, lat, lon);
         }
 
         if (_villeGPS != null && _villeGPS!.isNotEmpty) {
@@ -146,8 +152,9 @@ class _HotelPageState extends State<HotelPage> {
       _filterHotels(searchQuery);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur chargement hôtels : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur chargement hôtels : $e')),
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -177,31 +184,46 @@ class _HotelPageState extends State<HotelPage> {
 
   @override
   Widget build(BuildContext context) {
-    const bleu = Color(0xFF113CFC);
-
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: neutralBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: neutralSurface,
         elevation: 1,
-        foregroundColor: bleu,
+        foregroundColor: hotelsPrimary,
         title: const Text(
           'Hôtels',
           style: TextStyle(
-            color: Color(0xFF113CFC),
+            color: hotelsPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: hotelsPrimary),
             tooltip: 'Rafraîchir',
             onPressed: _loadAll,
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [hotelsPrimary, hotelsSecondary],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+        ),
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(hotelsPrimary),
+              ),
+            )
           : hotels.isEmpty
               ? const Center(child: Text("Aucun hôtel trouvé."))
               : Padding(
@@ -216,7 +238,7 @@ class _HotelPageState extends State<HotelPage> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF113CFC), Color(0xFF2EC4F1)],
+                            colors: [hotelsPrimary, hotelsSecondary],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                           ),
@@ -228,7 +250,7 @@ class _HotelPageState extends State<HotelPage> {
                             child: Text(
                               "Trouvez l'hôtel parfait partout en Guinée",
                               style: TextStyle(
-                                color: Colors.white,
+                                color: onPrimary,
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 height: 1.2,
@@ -241,15 +263,26 @@ class _HotelPageState extends State<HotelPage> {
                       TextField(
                         decoration: InputDecoration(
                           hintText: 'Rechercher un hôtel, une ville...',
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF113CFC)),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          prefixIcon: const Icon(Icons.search, color: hotelsPrimary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: neutralBorder),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: neutralBorder),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: hotelsSecondary, width: 1.5),
+                          ),
                           filled: true,
-                          fillColor: const Color(0xFFF8F6F9),
+                          fillColor: neutralSurface,
                         ),
                         onChanged: _filterHotels,
                       ),
                       const SizedBox(height: 12),
-                      // Grille d’hôtels
+                      // Grille d'hôtels
                       Expanded(
                         child: filteredHotels.isEmpty
                             ? const Center(child: Text("Aucun hôtel trouvé."))
@@ -273,16 +306,16 @@ class _HotelPageState extends State<HotelPage> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => HotelDetailPage(
-                                            hotelId: hotel['id'],
-                                          ),
+                                          builder: (_) => HotelDetailPage(hotelId: hotel['id']),
                                         ),
                                       );
                                     },
                                     child: Card(
                                       elevation: 2,
+                                      color: neutralSurface,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(16),
+                                        side: const BorderSide(color: neutralBorder),
                                       ),
                                       clipBehavior: Clip.hardEdge,
                                       child: Column(
@@ -299,44 +332,30 @@ class _HotelPageState extends State<HotelPage> {
                                                     fit: BoxFit.cover,
                                                     errorBuilder: (_, __, ___) => Container(
                                                       color: Colors.grey[200],
-                                                      child: const Icon(
+                                                      child: Icon(
                                                         Icons.hotel,
                                                         size: 40,
-                                                        color: Colors.grey,
+                                                        color: Colors.grey[500],
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                                if ((hotel['ville'] ?? '')
-                                                    .toString()
-                                                    .isNotEmpty)
+                                                if ((hotel['ville'] ?? '').toString().isNotEmpty)
                                                   Positioned(
                                                     left: 8,
                                                     top: 8,
                                                     child: Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                              horizontal: 8, vertical: 4),
+                                                      padding: const EdgeInsets.symmetric(
+                                                          horizontal: 8, vertical: 4),
                                                       decoration: BoxDecoration(
-                                                        color: Colors.black
-                                                            .withOpacity(0.55),
-                                                        borderRadius:
-                                                            BorderRadius.circular(12),
+                                                        color: hotelsPrimary.withOpacity(.85),
+                                                        borderRadius: BorderRadius.circular(12),
                                                       ),
                                                       child: Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(Icons.location_on,
-                                                              size: 14,
-                                                              color: Colors.white),
-                                                          const SizedBox(width: 4),
-                                                          Text(
-                                                            hotel['ville'].toString(),
-                                                            style: const TextStyle(
-                                                                color: Colors.white,
-                                                                fontSize: 12),
-                                                          ),
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: const [
+                                                          Icon(Icons.location_on, size: 14, color: onPrimary),
+                                                          SizedBox(width: 4),
                                                         ],
                                                       ),
                                                     ),
@@ -346,15 +365,12 @@ class _HotelPageState extends State<HotelPage> {
                                           ),
                                           // Texte
                                           Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 10, vertical: 8),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                             child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  (hotel['nom'] ?? "Sans nom")
-                                                      .toString(),
+                                                  (hotel['nom'] ?? "Sans nom").toString(),
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: const TextStyle(
@@ -370,8 +386,7 @@ class _HotelPageState extends State<HotelPage> {
                                                       child: Text(
                                                         (hotel['ville'] ?? '').toString(),
                                                         maxLines: 1,
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
+                                                        overflow: TextOverflow.ellipsis,
                                                         style: const TextStyle(
                                                           color: Colors.grey,
                                                           fontSize: 13,
@@ -380,34 +395,23 @@ class _HotelPageState extends State<HotelPage> {
                                                     ),
                                                     if (hotel.containsKey('_distance') &&
                                                         hotel['_distance'] != null) ...[
-                                                      const Text(
-                                                        '  •  ',
-                                                        style: TextStyle(
-                                                          color: Colors.grey,
-                                                          fontSize: 13,
-                                                        ),
-                                                      ),
+                                                      const Text('  •  ',
+                                                          style: TextStyle(color: Colors.grey, fontSize: 13)),
                                                       Text(
                                                         '${(hotel['_distance'] / 1000).toStringAsFixed(1)} km',
-                                                        style: const TextStyle(
-                                                          color: Colors.grey,
-                                                          fontSize: 13,
-                                                        ),
+                                                        style: const TextStyle(color: Colors.grey, fontSize: 13),
                                                       ),
                                                     ],
                                                   ],
                                                 ),
-                                                // Prix (sans devise puisque la colonne n’existe pas)
-                                                if ((hotel['prix'] ?? '')
-                                                    .toString()
-                                                    .isNotEmpty)
+                                                // Prix
+                                                if ((hotel['prix'] ?? '').toString().isNotEmpty)
                                                   Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(top: 2.5),
+                                                    padding: const EdgeInsets.only(top: 2.5),
                                                     child: Text(
                                                       'Prix : ${hotel['prix']}',
                                                       style: const TextStyle(
-                                                        color: Color(0xFF113CFC),
+                                                        color: hotelsPrimary,
                                                         fontWeight: FontWeight.w600,
                                                         fontSize: 14,
                                                       ),

@@ -5,10 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
 
 class MessagesPrestatairePage extends StatefulWidget {
-  final String prestataireId;   // id du prestataire (contexte)
-  final String prestataireNom;  // titre AppBar
-  final String receiverId;      // id de l’autre utilisateur (peut être vide/obsolète)
-  final String senderId;        // mon id
+  final String prestataireId; // id du prestataire (contexte)
+  final String prestataireNom; // titre AppBar
+  final String receiverId; // id de l'autre utilisateur (peut être vide/obsolète)
+  final String senderId; // mon id
 
   const MessagesPrestatairePage({
     super.key,
@@ -19,7 +19,8 @@ class MessagesPrestatairePage extends StatefulWidget {
   });
 
   @override
-  State<MessagesPrestatairePage> createState() => _MessagesPrestatairePageState();
+  State<MessagesPrestatairePage> createState() =>
+      _MessagesPrestatairePageState();
 }
 
 class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
@@ -36,14 +37,15 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
   // Résolution du destinataire (source de vérité = prestataires.utilisateur_id)
   String? _resolvedReceiverId;
-  bool _peerMissing = false; // pas de compte lié => envoi désactivé
+  bool _peerMissing =
+      false; // pas de compte lié => envoi désactivé
   bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    _bootstrap();        // résout receiver + charge messages
-    _listenRealtime();   // abonnement realtime
+    _bootstrap(); // résout receiver + charge messages
+    _listenRealtime(); // abonnement realtime
   }
 
   @override
@@ -54,8 +56,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     super.dispose();
   }
 
-  /// Lit toujours `prestataires.utilisateur_id` (certain trigger l’exige),
-  /// puis charge l’historique et marque *lu*.
+  /// Lit toujours `prestataires.utilisateur_id` (certain trigger l'exige),
+  /// puis charge l'historique et marque *lu*.
   Future<void> _bootstrap() async {
     try {
       final row = await _sb
@@ -67,10 +69,10 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       final dbUid = (row?['utilisateur_id'] as String?)?.trim();
 
       if (dbUid == null || dbUid.isEmpty) {
-        _peerMissing = true;          // pas de compte lié -> interdire l’envoi
+        _peerMissing = true; // pas de compte lié -> interdire l’envoi
         _resolvedReceiverId = null;
       } else {
-        _resolvedReceiverId = dbUid;  // on s’aligne sur la base
+        _resolvedReceiverId = dbUid; // on s’aligne sur la base
       }
 
       await _loadAndMarkRead();
@@ -79,7 +81,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Realtime: insert + update filtrés sur ce prestataire
   void _listenRealtime() {
     _channel?.unsubscribe();
@@ -102,7 +103,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            final r = (payload.newRecord ?? payload.oldRecord) ?? const <String, dynamic>{};
+            final r = (payload.newRecord ?? payload.oldRecord) ??
+                const <String, dynamic>{};
             if ((r['contexte'] == 'prestataire') &&
                 (r['prestataire_id']?.toString() == widget.prestataireId)) {
               _loadAndMarkRead();
@@ -112,7 +114,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         .subscribe();
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Charger l'historique VISIBLE POUR MOI + marquer *lu*
   Future<void> _loadAndMarkRead() async {
     if (!mounted) return;
@@ -133,7 +134,9 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
       if (idsAValider.isNotEmpty) {
         // supabase_flutter v2 => inFilter()
-        await _sb.from('messages').update({'lu': true}).inFilter('id', idsAValider);
+        await _sb
+            .from('messages')
+            .update({'lu': true}).inFilter('id', idsAValider);
         _svc.unreadChanged.add(null);
       }
 
@@ -160,16 +163,18 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     });
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Envoi message
   Future<void> _envoyer() async {
     final texte = _ctrl.text.trim();
     if (texte.isEmpty) return;
 
-    // 🔒 Ne jamais tenter l'insert si pas de compte relié (évite P0001)
-    if (_peerMissing || _resolvedReceiverId == null || _resolvedReceiverId!.isEmpty) {
+    // Ne jamais tenter l'insert si pas de compte relié (évite P0001)
+    if (_peerMissing ||
+        _resolvedReceiverId == null ||
+        _resolvedReceiverId!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Ce prestataire n'a pas encore de compte relié.")),
+        const SnackBar(
+            content: Text("Ce prestataire n'a pas encore de compte relié.")),
       );
       return;
     }
@@ -205,7 +210,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Soft delete du fil pour MOI (masquer la conversation)
   Future<void> _masquerConversationPourMoi() async {
     try {
@@ -227,18 +231,24 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
   // Bulle
   Widget _bulleMessage(Map<String, dynamic> m) {
+    const bleu = Color(0xFF113CFC);
+    const prestataireColor = Color(0xFF10B981); // *** Couleur prestataire ***
+
     final moi = m['sender_id']?.toString() == widget.senderId;
+    final bg = moi ? bleu : prestataireColor;
+    final fg = Colors.white;
+
     return Align(
       alignment: moi ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: moi ? const Color(0xFF113CFC) : const Color(0xFFF3F5FA),
+          color: bg,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
@@ -246,18 +256,21 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
             bottomRight: Radius.circular(moi ? 6 : 16),
           ),
           boxShadow: [
-            if (moi) BoxShadow(color: Colors.blue.shade100, blurRadius: 2, offset: const Offset(0, 1)),
+            if (moi)
+              BoxShadow(
+                  color: Colors.blue.shade100,
+                  blurRadius: 2,
+                  offset: const Offset(0, 1)),
           ],
         ),
         child: Text(
           (m['contenu'] ?? '').toString(),
-          style: TextStyle(color: moi ? Colors.white : Colors.black87, fontSize: 15),
+          style: TextStyle(color: fg, fontSize: 15),
         ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     const bleu = Color(0xFF113CFC);
@@ -266,7 +279,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final inputEnabled = !_peerMissing && (_resolvedReceiverId != null && _resolvedReceiverId!.isNotEmpty);
+    final inputEnabled = !_peerMissing &&
+        (_resolvedReceiverId != null && _resolvedReceiverId!.isNotEmpty);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
@@ -287,7 +301,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
               if (v == 'hide') _masquerConversationPourMoi();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'hide', child: Text('Masquer cette conversation')),
+              PopupMenuItem(
+                  value: 'hide', child: Text('Masquer cette conversation')),
             ],
           ),
         ],
@@ -318,7 +333,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                           child: Text(
                             "Aucune discussion.\nÉcrivez un message pour commencer.",
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                            style: TextStyle(
+                                color: Colors.grey[600], fontSize: 16),
                           ),
                         )
                       : ListView.builder(
@@ -333,7 +349,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container(
+                    child: Container
+                      (
                       decoration: BoxDecoration(
                         color: const Color(0xFFF3F5FA),
                         borderRadius: BorderRadius.circular(24),
@@ -364,7 +381,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                       shape: const CircleBorder(),
                       padding: const EdgeInsets.all(14),
                     ),
-                    child: const Icon(Icons.send, color: Colors.white, size: 20),
+                    child:
+                        const Icon(Icons.send, color: Colors.white, size: 20),
                   ),
                 ],
               ),
@@ -376,15 +394,14 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Widget: aperçu du prestataire (photo + infos)
-// ─────────────────────────────────────────────────────────────
 class _PrestatairePreviewHeader extends StatefulWidget {
   const _PrestatairePreviewHeader({required this.prestataireId});
   final String prestataireId;
 
   @override
-  State<_PrestatairePreviewHeader> createState() => _PrestatairePreviewHeaderState();
+  State<_PrestatairePreviewHeader> createState() =>
+      _PrestatairePreviewHeaderState();
 }
 
 class _PrestatairePreviewHeaderState extends State<_PrestatairePreviewHeader> {
@@ -395,9 +412,8 @@ class _PrestatairePreviewHeaderState extends State<_PrestatairePreviewHeader> {
   String? _publicUrl(String bucket, String? path) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    final objectPath = path.startsWith('$bucket/')
-        ? path.substring(bucket.length + 1)
-        : path;
+    final objectPath =
+        path.startsWith('$bucket/') ? path.substring(bucket.length + 1) : path;
     return _sb.storage.from(bucket).getPublicUrl(objectPath);
   }
 
@@ -438,7 +454,8 @@ class _PrestatairePreviewHeaderState extends State<_PrestatairePreviewHeader> {
     }
     if (_row == null) return const SizedBox.shrink();
 
-    final avatarUrl = _publicUrl(_avatarBucket, _row!['avatar_path'] as String?);
+    final avatarUrl =
+        _publicUrl(_avatarBucket, _row!['avatar_path'] as String?);
     final title = (_row!['nom'] ?? 'Prestataire').toString();
     final subtitleParts = <String>[
       if ((_row!['metier'] ?? '').toString().trim().isNotEmpty) _row!['metier'],

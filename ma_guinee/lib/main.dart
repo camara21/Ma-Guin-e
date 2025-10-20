@@ -1,4 +1,4 @@
-// main.dart — PROD (Realtime + Heartbeat + FCM) — démarrage via Splash SANS flash
+// main.dart — PROD (Realtime + Heartbeat + FCM)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -11,10 +11,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// ✅ Localizations & Intl (fr_FR)
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:intl/date_symbol_data_local.dart';
-
 import 'firebase_options.dart';
 import 'routes.dart';
 
@@ -23,35 +19,16 @@ import 'providers/favoris_provider.dart';
 import 'providers/prestataires_provider.dart';
 import 'theme/app_theme.dart';
 
-// ───────────── Navigation globale ─────────────
+// ——— Navigation globale ———
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 String? _lastRoutePushed;
-bool _authListenerArmed = false; // on n'agit pas sur l'event initial
-DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0); // fenêtre anti-signedOut
-
-String? _currentRouteName() {
-  final ctx = navKey.currentContext;
-  if (ctx == null) return null;
-  final route = ModalRoute.of(ctx);
-  return route?.settings.name;
-}
-
-bool _sameAsCurrentOrLast(String routeName) {
-  final current = _currentRouteName();
-  if (current == routeName) return true;
-  if (_lastRoutePushed == routeName) return true;
-  return false;
-}
-
 void _pushUnique(String routeName) {
-  if (_sameAsCurrentOrLast(routeName)) return;
+  if (_lastRoutePushed == routeName) return;
   _lastRoutePushed = routeName;
-  final nav = navKey.currentState;
-  if (nav == null) return; // nav pas prêt → évite flicker
-  nav.pushNamedAndRemoveUntil(routeName, (_) => false);
+  navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
-// ───────────── Notifications locales ─────────────
+// ——— Notifications locales ———
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
@@ -95,33 +72,29 @@ void _showNotification(String? title, String? body) {
   );
 }
 
-// ───────────── FCM background ─────────────
+// ——— FCM background ———
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   _showNotification(message.notification?.title, message.notification?.body);
 }
 
-// ───────────── Realtime globals ─────────────
+// ——— Realtime globals ———
 RealtimeChannel? _kicksChan; // admin_kicks
 RealtimeChannel? _notifChan; // notifications
 Timer? _heartbeatTimer;
 
-// ───────────── Heartbeat ─────────────
+// ——— Heartbeat ———
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
   try {
-    await Supabase.instance.client.rpc(
-      'update_heartbeat',
-      params: {'_device': kIsWeb ? 'web' : 'flutter'},
-    );
+    await Supabase.instance.client.rpc('update_heartbeat',
+        params: {'_device': kIsWeb ? 'web' : 'flutter'});
   } catch (_) {}
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
-      await Supabase.instance.client.rpc(
-        'update_heartbeat',
-        params: {'_device': kIsWeb ? 'web' : 'flutter'},
-      );
+      await Supabase.instance.client.rpc('update_heartbeat',
+          params: {'_device': kIsWeb ? 'web' : 'flutter'});
     } catch (_) {}
   });
 }
@@ -131,7 +104,7 @@ Future<void> _stopHeartbeat() async {
   _heartbeatTimer = null;
 }
 
-// ───────────── Realtime: notifications user ─────────────
+// ——— Realtime : notifications utilisateur ———
 void _subscribeUserNotifications(String userId) {
   _notifChan?.unsubscribe();
   _notifChan = Supabase.instance.client
@@ -163,7 +136,7 @@ void _unsubscribeUserNotifications() {
   _notifChan = null;
 }
 
-// ───────────── Realtime: kick admin ─────────────
+// ——— Realtime : kick admin ———
 void _subscribeAdminKick(String userId) {
   _kicksChan?.unsubscribe();
   _kicksChan = Supabase.instance.client
@@ -194,7 +167,7 @@ void _unsubscribeAdminKick() {
   _kicksChan = null;
 }
 
-// ───────────── Helpers ─────────────
+// ——— Helpers ———
 Future<void> enablePushNotifications() async {
   try {
     final messaging = FirebaseMessaging.instance;
@@ -220,9 +193,7 @@ Future<void> enablePushNotifications() async {
     }
     if (!kReleaseMode) debugPrint('FCM token: $token');
   } catch (e, st) {
-    if (!kReleaseMode) {
-      debugPrint('Erreur enablePushNotifications: $e\n$st');
-    }
+    if (!kReleaseMode) debugPrint('Erreur enablePushNotifications: $e\n$st');
   }
 }
 
@@ -242,22 +213,18 @@ Future<bool> isCurrentUserAdmin() async {
   }
 }
 
-// ───────────── Redirection centralisée selon le rôle ─────────────
+// ——— Redirection centralisée selon le rôle ———
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
   final dest = (role == 'admin' || role == 'owner')
-      ? AppRoutes.adminCenter
-      : AppRoutes.mainNav;
-  if (_sameAsCurrentOrLast(dest)) return;
+      ? AppRoutes.adminCenter // espace admin (/admin)
+      : AppRoutes.mainNav; // navigation standard
   _pushUnique(dest);
 }
 
-// ───────────── main ─────────────
+// ——— main ———
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // ✅ Intl (fr_FR) – évite LocaleDataException
-  await initializeDateFormatting('fr_FR');
 
   // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -283,14 +250,14 @@ Future<void> main() async {
     ),
   );
 
-  // FCM foreground
+  // FCM (foreground)
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     _showNotification(message.notification?.title, message.notification?.body);
   });
 
   // Providers
   final userProvider = UserProvider();
-  await userProvider.chargerUtilisateurConnecte(); // hydrate le profil
+  await userProvider.chargerUtilisateurConnecte();
 
   // Démarrage : si déjà connecté → souscriptions + heartbeat
   final user = Supabase.instance.client.auth.currentUser;
@@ -300,46 +267,24 @@ Future<void> main() async {
     unawaited(_startHeartbeat());
   }
 
-  // ✅ On démarre toujours sur le Splash (route "/")
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<UserProvider>.value(value: userProvider),
         ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
         ChangeNotifierProvider(
-          create: (_) => PrestatairesProvider()..loadPrestataires(),
-        ),
+            create: (_) => PrestatairesProvider()..loadPrestataires()),
       ],
       child: const MyApp(),
     ),
   );
 
-  // bloque tout repush identique au boot + fenêtre de silence
-  _lastRoutePushed = AppRoutes.splash;
-  _quietUntil = DateTime.now().add(const Duration(milliseconds: 700));
+  // Redirection initiale selon le rôle (après montage de l'app)
+  scheduleMicrotask(() => _goHomeBasedOnRole(userProvider));
 
-  // Armer le listener APRÈS la 1re frame → évite la nav due à initialSession
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _authListenerArmed = true;
-  });
-
-  // Auth state: rebrancher realtime + recharger profil + rediriger
-  Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-    final event = data.event;     // AuthChangeEvent
-    final session = data.session; // Session?
-
-    // Ignorer l'événement initial du boot ou si pas encore armé
-    if (event == AuthChangeEvent.initialSession || !_authListenerArmed) {
-      return;
-    }
-
-    // Pendant ~700ms après boot, ignorer les déconnexions transitoires
-    final now = DateTime.now();
-    final inQuietWindow = now.isBefore(_quietUntil);
-    final isTransientSignOut =
-        (event == AuthChangeEvent.signedOut || event == AuthChangeEvent.userDeleted);
-    if (inQuietWindow && isTransientSignOut) return;
-
+  // Auth state : rebrancher realtime + recharger profil + rediriger
+  Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
+    final session = event.session;
     if (session?.user != null) {
       final uid = session!.user.id;
       _subscribeUserNotifications(uid);
@@ -347,56 +292,29 @@ Future<void> main() async {
       await _startHeartbeat();
 
       await userProvider.chargerUtilisateurConnecte();
-
-      // Ne rien pousser si on est sur le splash : c’est le Splash qui redirige
-      final r = _currentRouteName();
-      if (r == AppRoutes.splash) return;
-
       await _goHomeBasedOnRole(userProvider);
     } else {
       _unsubscribeUserNotifications();
       _unsubscribeAdminKick();
       await _stopHeartbeat();
-
-      // Ne renvoyer /welcome que si on n'est pas déjà sur une page d'auth ni sur le splash
-      final r = _currentRouteName();
-      if (r != AppRoutes.welcome &&
-          r != AppRoutes.login &&
-          r != AppRoutes.register &&
-          r != AppRoutes.splash) {
-        _pushUnique(AppRoutes.welcome);
-      }
+      _pushUnique(AppRoutes.welcome);
     }
   });
 }
 
-// ───────────── App ─────────────
+// ——— App ———
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navKey,
+      navigatorKey: navKey, // ← important pour les redirections
       debugShowCheckedModeBanner: false,
-      initialRoute: AppRoutes.splash, // route initiale = Splash
+      initialRoute: AppRoutes.splash,
       onGenerateRoute: AppRoutes.generateRoute,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
-
-      // ✅ Localisation FR pour Material/Cupertino + formats de dates
-      locale: const Locale('fr', 'FR'),
-      supportedLocales: const [
-        Locale('fr', 'FR'),
-        Locale('en', 'US'),
-      ],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-
       builder: (context, child) {
         final style = AppTheme.light.textTheme.bodyMedium!;
         return DefaultTextStyle.merge(

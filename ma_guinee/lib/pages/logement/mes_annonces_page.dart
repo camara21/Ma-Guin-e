@@ -25,7 +25,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
 
   // palette
   static const _primary = Color(0xFF0D3B66);
-  static const _accent  = Color(0xFFE0006D);
+  static const _accent = Color(0xFFE0006D);
   static const _neutral = Color(0xFFF3F4F6);
 
   String? get _uid => _sb.auth.currentUser?.id;
@@ -43,7 +43,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     super.dispose();
   }
 
-  // ----- Lecture via le service (1 seule requête logements + photos) -----
+  // ----- Lecture via le service (une seule requête logements + photos) -----
   Future<void> _load() async {
     final uid = _uid;
     if (uid == null) {
@@ -55,7 +55,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
       return;
     }
 
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final items = await _svc.myListings(uid);
@@ -64,7 +67,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
         _loading = false;
       });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -72,7 +78,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     final uid = _uid;
     if (uid == null) return;
 
-    // stream en temps réel sur MES logements → recharge la liste
+    // stream en temps réel sur MES logements — recharge la liste
     _stream = _sb
         .from('logements')
         .stream(primaryKey: ['id'])
@@ -108,17 +114,17 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
   }
 
   Widget _tile(LogementModel b) {
-    final id     = b.id;
-    final titre  = b.titre;
-    final mode   = b.mode == LogementMode.achat ? 'Achat' : 'Location';
-    final cat    = _labelCat(b.categorie);
-    final prix   = b.prixGnf != null
+    final id = b.id;
+    final titre = b.titre;
+    final mode = b.mode == LogementMode.achat ? 'Achat' : 'Location';
+    final cat = _labelCat(b.categorie);
+    final prix = b.prixGnf != null
         ? (b.mode == LogementMode.achat
             ? '${b.prixGnf!.toStringAsFixed(0)} GNF'
             : '${b.prixGnf!.toStringAsFixed(0)} GNF / mois')
         : 'Prix à discuter';
-    final photo  = b.photos.isEmpty ? '' : b.photos.first;
-    final place  = [b.ville, b.commune]
+    final photo = b.photos.isEmpty ? '' : b.photos.first;
+    final place = [b.ville, b.commune]
         .whereType<String>()
         .where((s) => s.isNotEmpty)
         .join(' • ');
@@ -135,24 +141,35 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 6))
+          ],
         ),
         child: Row(
           children: [
             Container(
-              width: 110, height: 92,
+              width: 110,
+              height: 92,
               clipBehavior: Clip.antiAlias,
               decoration: const BoxDecoration(
-                borderRadius: BorderRadius.horizontal(left: Radius.circular(14)),
+                borderRadius:
+                    BorderRadius.horizontal(left: Radius.circular(14)),
               ),
               child: photo.isEmpty
-                  ? Container(color: _neutral, child: const Icon(Icons.image, size: 36, color: Colors.black26))
+                  ? Container(
+                      color: _neutral,
+                      child: const Icon(Icons.image,
+                          size: 36, color: Colors.black26))
                   : Image.network(photo, fit: BoxFit.cover),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -174,14 +191,16 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                     const SizedBox(height: 6),
                     Text(
                       prix,
-                      // ⚠️ pas de `const` ici car on utilise une couleur définie dans la classe
-                      style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
+                      // pas de `const` ici car on utilise une couleur définie dans la classe
+                      style: TextStyle(
+                          color: _accent, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 2),
                     const SizedBox(height: 2),
                     Text(
                       place,
-                      style: const TextStyle(color: Colors.black54, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ],
                 ),
@@ -212,7 +231,8 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: _accent, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent, foregroundColor: Colors.white),
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
                 label: const Text("Réessayer"),
@@ -224,17 +244,23 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
 
   Widget _miniChip(String t) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: _neutral, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+            color: _neutral, borderRadius: BorderRadius.circular(8)),
         child: Text(t, style: const TextStyle(fontSize: 12)),
       );
 
   String _labelCat(LogementCategorie c) {
     switch (c) {
-      case LogementCategorie.maison: return 'Maison';
-      case LogementCategorie.appartement: return 'Appartement';
-      case LogementCategorie.studio: return 'Studio';
-      case LogementCategorie.terrain: return 'Terrain';
-      case LogementCategorie.autres: return 'Autres';
+      case LogementCategorie.maison:
+        return 'Maison';
+      case LogementCategorie.appartement:
+        return 'Appartement';
+      case LogementCategorie.studio:
+        return 'Studio';
+      case LogementCategorie.terrain:
+        return 'Terrain';
+      case LogementCategorie.autres:
+        return 'Autres';
     }
   }
 }

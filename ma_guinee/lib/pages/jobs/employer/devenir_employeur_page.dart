@@ -12,12 +12,12 @@ class DevenirEmployeurPage extends StatefulWidget {
 }
 
 class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
-  // 🎨 Palette Home Jobs
-  static const kBlue   = Color(0xFF1976D2);
-  static const kBg     = Color(0xFFF6F7F9);
-  static const kRed    = Color(0xFFCE1126);
+  // Palette Home Jobs
+  static const kBlue = Color(0xFF1976D2);
+  static const kBg = Color(0xFFF6F7F9);
+  static const kRed = Color(0xFFCE1126);
   static const kYellow = Color(0xFFFCD116);
-  static const kGreen  = Color(0xFF009460);
+  static const kGreen = Color(0xFF009460);
 
   final _formKey = GlobalKey<FormState>();
   final _nomCtrl = TextEditingController();
@@ -47,8 +47,8 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
       focusedBorder: const OutlineInputBorder(
         borderSide: BorderSide(color: kBlue, width: 2),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.black12).copyWith(width: 1),
+      enabledBorder: const OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.black12, width: 1),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
@@ -68,7 +68,7 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
 
     setState(() => _loading = true);
     try {
-      // ✅ crée ou récupère l’employeur et retourne son ID
+      // Crée ou récupère l’employeur et retourne son ID
       final id = await _svc.ensureEmployeurId(
         nom: _nomCtrl.text.trim(),
         telephone: _telCtrl.text.trim(),
@@ -82,7 +82,7 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
         const SnackBar(content: Text('Espace employeur prêt !')),
       );
 
-      // ✅ redirection en fournissant l’employeurId
+      // Redirection en fournissant l’employeurId
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => MesOffresPage(employeurId: id)),
@@ -113,7 +113,7 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // petite carte intro
+            // Petite carte intro
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
@@ -137,14 +137,15 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
             ),
             const SizedBox(height: 12),
 
-            // formulaire
+            // Formulaire
             Form(
               key: _formKey,
               child: Column(
                 children: [
                   TextFormField(
                     controller: _nomCtrl,
-                    decoration: _dec('Nom de l’entreprise', Icons.apartment),
+                    decoration:
+                        _dec('Nom de l’entreprise', Icons.apartment),
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Obligatoire' : null,
                   ),
@@ -184,7 +185,8 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
                           ? const SizedBox(
                               height: 18,
                               width: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
                             )
                           : const Text('Créer mon espace'),
                     ),
@@ -202,9 +204,18 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
               spacing: 8,
               runSpacing: 8,
               children: const [
-                _HelpChip(icon: Icons.verified,  text: 'Publication rapide', color: kGreen),
-                _HelpChip(icon: Icons.visibility, text: 'Visibilité locale', color: kYellow),
-                _HelpChip(icon: Icons.security,  text: 'Accès sécurisé',    color: kRed),
+                _HelpChip(
+                    icon: Icons.verified,
+                    text: 'Publication rapide',
+                    color: kGreen),
+                _HelpChip(
+                    icon: Icons.visibility,
+                    text: 'Visibilité locale',
+                    color: kYellow),
+                _HelpChip(
+                    icon: Icons.security,
+                    text: 'Accès sécurisé',
+                    color: kRed),
               ],
             ),
           ],
@@ -215,7 +226,8 @@ class _DevenirEmployeurPageState extends State<DevenirEmployeurPage> {
 }
 
 class _HelpChip extends StatelessWidget {
-  const _HelpChip({required this.icon, required this.text, required this.color});
+  const _HelpChip(
+      {required this.icon, required this.text, required this.color});
   final IconData icon;
   final String text;
   final Color color;

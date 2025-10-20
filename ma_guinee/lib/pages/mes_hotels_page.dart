@@ -13,6 +13,11 @@ class MesHotelsPage extends StatefulWidget {
 }
 
 class _MesHotelsPageState extends State<MesHotelsPage> {
+  // ==== Palette Hôtels (page locale, pas de ServiceColors global) ====
+  static const Color hotelsPrimary   = Color(0xFF264653);
+  static const Color hotelsSecondary = Color(0xFF2A9D8F);
+  static const Color onPrimary       = Color(0xFFFFFFFF);
+
   late List<Map<String, dynamic>> _hotels;
 
   @override
@@ -24,25 +29,26 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
   Future<void> _supprimerHotel(Map<String, dynamic> hotel) async {
     final supabase = Supabase.instance.client;
     final id = hotel['id'];
-    final List<String> images = hotel['images'] is List ? List<String>.from(hotel['images']) : [];
+    final List<String> images =
+        hotel['images'] is List ? List<String>.from(hotel['images']) : [];
 
     try {
-      // 🔥 Supprimer les images dans le bucket Supabase
+      // Supprimer les images dans le bucket
       for (var url in images) {
         final path = url.split('/object/public/').last;
         await supabase.storage.from('hotel-photos').remove([path]);
       }
 
-      // ❌ Supprimer l'hôtel de la base Supabase
+      // Supprimer l'hôtel en base
       await supabase.from('hotels').delete().eq('id', id);
 
-      // 🔁 Supprimer localement dans l'app
+      // Supprimer localement
       setState(() {
         _hotels.removeWhere((h) => h['id'] == id);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Hôtel supprimé avec succès !")),
+        const SnackBar(content: Text("Hôtel supprimé avec succès !")),
       );
     } catch (e) {
       debugPrint("Erreur suppression hôtel: $e");
@@ -54,22 +60,39 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bleuMaGuinee = const Color(0xFF113CFC);
-    final jauneMaGuinee = const Color(0xFFFCD116);
-    final vertMaGuinee = const Color(0xFF009460);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Mes hôtels", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Mes hôtels",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
-        foregroundColor: bleuMaGuinee,
+        foregroundColor: hotelsPrimary,
         elevation: 1,
-        iconTheme: IconThemeData(color: bleuMaGuinee),
+        iconTheme: const IconThemeData(color: hotelsPrimary),
+
+        // Bouton "Mes réservations" (désactivé – feature à venir)
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: OutlinedButton.icon(
+              onPressed: null, // désactivé
+              icon: const Icon(Icons.calendar_month),
+              label: const Text("Mes réservations"),
+              style: OutlinedButton.styleFrom(
+                disabledForegroundColor: hotelsPrimary.withOpacity(.55),
+                side: BorderSide(color: hotelsPrimary.withOpacity(.25)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
       ),
+
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: bleuMaGuinee,
-        foregroundColor: Colors.white,
+        backgroundColor: hotelsPrimary,
+        foregroundColor: onPrimary,
         onPressed: () {
           Navigator.pushNamed(context, AppRoutes.inscriptionHotel)
               .then((_) => setState(() {}));
@@ -77,6 +100,7 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
         icon: const Icon(Icons.add),
         label: const Text("Ajouter"),
       ),
+
       body: _hotels.isEmpty
           ? Center(
               child: Text(
@@ -89,24 +113,31 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
               itemCount: _hotels.length,
               itemBuilder: (context, index) {
                 final hotel = _hotels[index];
-                final List<String> images = hotel['images'] is List ? List<String>.from(hotel['images']) : [];
+                final List<String> images = hotel['images'] is List
+                    ? List<String>.from(hotel['images'])
+                    : [];
                 final image = images.isNotEmpty
                     ? images.first
                     : 'https://via.placeholder.com/150';
 
                 return Card(
-                  color: jauneMaGuinee.withOpacity(0.07),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  color: hotelsSecondary.withOpacity(0.08),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   margin: const EdgeInsets.only(bottom: 16),
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundImage: NetworkImage(image),
                       radius: 27,
-                      backgroundColor: jauneMaGuinee,
+                      backgroundColor: hotelsSecondary,
                     ),
                     title: Text(
                       hotel['nom'] ?? "Sans nom",
-                      style: TextStyle(fontWeight: FontWeight.bold, color: bleuMaGuinee),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: hotelsPrimary,
+                      ),
                     ),
                     subtitle: Text(
                       '${hotel['adresse'] ?? "Adresse"} • ${hotel['ville'] ?? "Ville"}',
@@ -127,15 +158,20 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                                 builder: (ctx) => AlertDialog(
                                   title: const Text("Confirmation"),
                                   content: const Text(
-                                      "Voulez-vous vraiment supprimer cet hôtel ?\nCette action est irréversible."),
+                                    "Voulez-vous vraiment supprimer cet hôtel ?\nCette action est irréversible.",
+                                  ),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.pop(ctx, false),
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
                                       child: const Text("Annuler"),
                                     ),
                                     TextButton(
                                       onPressed: () => Navigator.pop(ctx, true),
-                                      child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
+                                      child: const Text(
+                                        "Supprimer",
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -151,20 +187,20 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                         PopupMenuItem(
                           value: 'modifier',
                           child: Row(
-                            children: [
-                              Icon(Icons.edit, color: bleuMaGuinee),
-                              const SizedBox(width: 8),
-                              const Text("Modifier"),
+                            children: const [
+                              Icon(Icons.edit, color: hotelsPrimary),
+                              SizedBox(width: 8),
+                              Text("Modifier"),
                             ],
                           ),
                         ),
                         PopupMenuItem(
                           value: 'supprimer',
                           child: Row(
-                            children: [
-                              const Icon(Icons.delete, color: Colors.red),
-                              const SizedBox(width: 8),
-                              const Text("Supprimer"),
+                            children: const [
+                              Icon(Icons.delete, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text("Supprimer"),
                             ],
                           ),
                         ),

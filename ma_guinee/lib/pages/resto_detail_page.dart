@@ -8,7 +8,7 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-// ✅ Page de réservation (appel uniquement)
+// Page de réservation (appel uniquement)
 import 'restaurant_reservation_page.dart';
 
 class RestoDetailPage extends StatefulWidget {
@@ -21,6 +21,12 @@ class RestoDetailPage extends StatefulWidget {
 
 class _RestoDetailPageState extends State<RestoDetailPage> {
   final _sb = Supabase.instance.client;
+
+  // Palette Restaurants
+  static const Color _restoPrimary = Color(0xFFE76F51);
+  static const Color _restoSecondary = Color(0xFFF4A261);
+  static const Color _restoOnPrimary = Color(0xFFFFFFFF);
+  static const Color _restoOnSecondary = Color(0xFF000000);
 
   Map<String, dynamic>? resto;
   bool loading = true;
@@ -42,11 +48,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
-  final primaryColor = const Color(0xFF113CFC);
   String get _id => widget.restoId;
 
   bool _isUuid(String id) {
-    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    final r = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     return r.hasMatch(id);
   }
 
@@ -74,7 +80,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   String _thumbUrl(String url) => url;
   String _fullUrl(String url) => url;
 
-  // ───────────────────────── RESTO
+  // RESTO
   Future<void> _loadResto() async {
     setState(() {
       loading = true;
@@ -83,7 +89,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     try {
       final data = await _sb
           .from('restaurants')
-          .select('id, nom, ville, description, specialites, horaires, images, latitude, longitude, tel')
+          .select(
+              'id, nom, ville, description, specialites, horaires, images, latitude, longitude, tel')
           .eq('id', _id)
           .maybeSingle();
 
@@ -97,11 +104,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         loading = false;
         _error = 'Erreur de chargement: $e';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_error!)));
     }
   }
 
-  // ───────────────────────── AVIS
+  // AVIS
   Future<void> _loadAvisBloc() async {
     try {
       final res = await _sb
@@ -114,7 +122,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
       double moyenne = 0.0;
       if (list.isNotEmpty) {
-        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final notes =
+            list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
         final sum = notes.fold<double>(0.0, (a, b) => a + b);
         moyenne = sum / notes.length;
       }
@@ -152,7 +161,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         _avis = list;
         _noteMoyenne = moyenne;
         _dejaNote = deja;
-        _userCache..clear()..addAll(fetched);
+        _userCache
+          ..clear()
+          ..addAll(fetched);
       });
     } catch (e) {
       if (!mounted) return;
@@ -205,7 +216,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Avis enregistré ✅")),
+        const SnackBar(content: Text("Avis enregistré 👍")),
       );
     } catch (e) {
       if (!mounted) return;
@@ -215,10 +226,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
-  // ✅ Ouvre la page de réservation (aucun fallback de numéro)
+  // Ouvre la page de réservation (aucun fallback de numéro)
   void _reserver() {
     final nom = (resto?['nom'] ?? '').toString();
-    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim(); // reste vide si absent
+    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '')
+        .toString()
+        .trim(); // reste vide si absent
     final images = _imagesFrom(resto?['images']);
     final address = (resto?['ville'] ?? '').toString();
 
@@ -227,7 +240,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       MaterialPageRoute(
         builder: (_) => RestaurantReservationPage(
           restoName: nom.isEmpty ? 'Restaurant' : nom,
-          phone: telRaw.isEmpty ? null : telRaw,   // null si pas de numéro
+          phone: telRaw.isEmpty ? null : telRaw, // null si pas de numéro
           address: address.isEmpty ? null : address,
           coverImage: images.isNotEmpty ? _fullUrl(images.first) : null,
         ),
@@ -236,7 +249,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   }
 
   void _appeler() async {
-    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
+    final telRaw =
+        (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
     final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (tel.isEmpty) {
       if (!mounted) return;
@@ -262,7 +276,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           iconSize: 22,
-          icon: Icon(i < rating ? Icons.star : Icons.star_border, color: Colors.amber),
+          icon: Icon(i < rating ? Icons.star : Icons.star_border,
+              color: _restoSecondary),
           onPressed: onTap == null ? null : () => onTap(i + 1),
         );
       }),
@@ -285,20 +300,25 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 pageController: controller,
                 builder: (context, index) {
                   return PhotoViewGalleryPageOptions(
-                    imageProvider: CachedNetworkImageProvider(_fullUrl(images[index])),
+                    imageProvider:
+                        CachedNetworkImageProvider(_fullUrl(images[index])),
                     minScale: PhotoViewComputedScale.contained,
                     maxScale: PhotoViewComputedScale.covered * 3,
-                    heroAttributes: PhotoViewHeroAttributes(tag: 'resto_$index'),
+                    heroAttributes:
+                        PhotoViewHeroAttributes(tag: 'resto_$index'),
                   );
                 },
                 onPageChanged: (i) => setS(() => current = i),
                 backgroundDecoration: const BoxDecoration(color: Colors.black),
               ),
               Positioned(
-                bottom: 24, left: 0, right: 0,
+                bottom: 24,
+                left: 0,
+                right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(20),
@@ -311,7 +331,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 ),
               ),
               Positioned(
-                top: 24, right: 8,
+                top: 24,
+                right: 8,
                 child: IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, color: Colors.white),
@@ -344,11 +365,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(nom, style: TextStyle(color: primaryColor)),
-        backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: primaryColor),
+        title: Text(nom, style: const TextStyle(color: _restoOnPrimary)),
+        backgroundColor: _restoPrimary,
+        iconTheme: const IconThemeData(color: _restoOnPrimary),
       ),
       body: RefreshIndicator(
+        color: _restoPrimary,
         onRefresh: () async {
           await _loadResto();
           await _loadAvisBloc();
@@ -356,7 +378,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // ---------- Galerie
             if (images.isNotEmpty) ...[
               ClipRRect(
@@ -364,7 +387,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 child: Stack(
                   children: [
                     SizedBox(
-                      height: 230, width: double.infinity,
+                      height: 230,
+                      width: double.infinity,
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: images.length,
@@ -377,25 +401,29 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                               imageUrl: _fullUrl(images[index]),
                               fit: BoxFit.cover,
                               width: double.infinity,
-                              placeholder: (_, __) => Container(color: Colors.grey[200]),
-                              errorWidget: (_, __, ___) =>
-                                  const Center(child: Icon(Icons.image_not_supported)),
+                              placeholder: (_, __) =>
+                                  Container(color: Colors.grey[200]),
+                              errorWidget: (_, __, ___) => const Center(
+                                  child: Icon(Icons.image_not_supported)),
                             ),
                           ),
                         ),
                       ),
                     ),
                     Positioned(
-                      right: 8, top: 8,
+                      right: 8,
+                      top: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.45),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Text(
                           '${_currentIndex + 1}/${images.length}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12),
                         ),
                       ),
                     ),
@@ -426,7 +454,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isActive ? primaryColor : Colors.transparent,
+                            color: isActive ? _restoPrimary : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -434,7 +462,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                         child: CachedNetworkImage(
                           imageUrl: _thumbUrl(images[index]),
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: Colors.grey[200]),
+                          placeholder: (_, __) =>
+                              Container(color: Colors.grey[200]),
                           errorWidget: (_, __, ___) =>
                               const Center(child: Icon(Icons.broken_image)),
                         ),
@@ -446,9 +475,19 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             ],
 
             const SizedBox(height: 12),
-            Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(nom,
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             if (spec.isNotEmpty) const SizedBox(height: 2),
-            if (spec.isNotEmpty) Text(spec, style: const TextStyle(color: Colors.green)),
+            if (spec.isNotEmpty)
+              const Text(
+                // spécialités en accent color
+                // (on garde le texte d'origine dans 'spec')
+                '',
+                style: TextStyle(color: _restoPrimary),
+              ),
+            if (spec.isNotEmpty)
+              Text(spec, style: const TextStyle(color: _restoPrimary)),
             Row(children: [
               const Icon(Icons.location_on, color: Colors.red),
               const SizedBox(width: 4),
@@ -468,13 +507,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             ],
             if (_noteMoyenne > 0) ...[
               const SizedBox(height: 8),
-              Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ⭐️"),
+              Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ★"),
             ],
 
             const Divider(height: 30),
 
             // ---------- Avis (saisie)
-            const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text("Votre avis",
+                style: TextStyle(fontWeight: FontWeight.bold)),
             if (_dejaNote)
               const Padding(
                 padding: EdgeInsets.only(bottom: 6),
@@ -483,7 +523,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
-            _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
+            _buildStars(_noteUtilisateur,
+                onTap: (n) => setState(() => _noteUtilisateur = n)),
             TextField(
               controller: _avisController,
               maxLines: 3,
@@ -517,8 +558,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   backgroundColor: const Color(0xFFFDE68A),
                   foregroundColor: Colors.black87,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ),
@@ -527,7 +570,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             // ---------- Carte
             if (lat != null && lng != null) ...[
-              const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Localisation",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               SizedBox(
                 height: 200,
@@ -538,7 +582,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                       subdomains: const ['a', 'b', 'c'],
                     ),
                     MarkerLayer(
@@ -547,7 +592,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                           point: LatLng(lat, lng),
                           width: 40,
                           height: 40,
-                          child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                          child: const Icon(Icons.location_on,
+                              color: Colors.red, size: 40),
                         ),
                       ],
                     ),
@@ -557,7 +603,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 onPressed: () async {
-                  final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+                  final uri = Uri.parse(
+                      "https://www.google.com/maps/search/?api=1&query=$lat,$lng");
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   }
@@ -565,8 +612,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 icon: const Icon(Icons.map),
                 label: const Text("Ouvrir dans Google Maps"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
+                  backgroundColor: _restoPrimary,
+                  foregroundColor: _restoOnPrimary,
                 ),
               ),
             ],
@@ -574,7 +621,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             const SizedBox(height: 30),
 
             // ---------- Liste des avis
-            const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text("Avis des utilisateurs",
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             if (_avis.isEmpty)
               const Text("Aucun avis pour le moment.")
@@ -601,7 +649,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("${a['etoiles']} ⭐️"),
+                        Text("${a['etoiles']} ★"),
                         if (a['commentaire'] != null &&
                             a['commentaire'].toString().trim().isNotEmpty)
                           Text(a['commentaire'].toString()),
@@ -609,8 +657,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                         Text(
                           DateTime.tryParse(a['created_at']?.toString() ?? '')
                                   ?.toLocal()
-                                  .toString() ?? '',
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                  .toString() ??
+                              '',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.black54),
                         ),
                       ],
                     ),
@@ -623,7 +673,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         ),
       ),
 
-      // ✅ Barre collée en bas (toujours visible)
+      // Barre collée en bas (toujours visible)
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -646,10 +696,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   icon: const Icon(Icons.phone),
                   label: const Text("Appeler"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+                    backgroundColor: _restoSecondary,
+                    foregroundColor: _restoOnSecondary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -660,10 +711,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   icon: const Icon(Icons.calendar_month),
                   label: const Text("Réserver"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
+                    backgroundColor: _restoPrimary,
+                    foregroundColor: _restoOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),

@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// ⬇️ Ajuste le chemin si AppRoutes est ailleurs
+// Ajuste le chemin si AppRoutes est ailleurs
 import '../routes.dart' show AppRoutes;
 
 class AidePage extends StatefulWidget {
@@ -12,26 +12,28 @@ class AidePage extends StatefulWidget {
 }
 
 class _AidePageState extends State<AidePage> {
-  // —————————————————— Config (MAJ demandées) ——————————————————
-  static const String kSupportEmail   = 'soneya.signaler@gmail.com';
-  static const String kAdminEmail     = 'soneya.signaler@gmail.com';
+  // ===== Config contact =====
+  static const String kSupportEmail = 'soneya.signaler@gmail.com';
+  static const String kAdminEmail = 'soneya.signaler@gmail.com';
 
-  // Affichage tel (exactement comme demandé) & formats normalisés
-  static const String kDisplayPhone   = '00224620452964';
-  static const String _waNumber       = '224620452964';   // pour wa.me (sans + ni 00)
-  static const String _telE164        = '+224620452964';  // pour tel:
+  // Affichage tel (comme demandé) & formats normalisés
+  static const String kDisplayPhone = '00224620452964';
+  static const String _waNumber = '224620452964'; // pour wa.me (sans + ni 00)
+  static const String _telE164 = '+224620452964'; // pour tel:
 
-  static const String kCguUrl         = 'https://example.com/cgu';
+  // ⚠️ Remplace par ton vrai lien
+  static const String kCguUrl = 'https://example.com/cgu';
 
-  final Color cPrimary = const Color(0xFF1663F9);
-  final Color cAccent  = const Color(0xFF00B67A);
-  final Color cSoftBg  = const Color(0xFFF6F7FB);
+  // ===== Thème local =====
+  // ★ Utilise ta palette Aide: primary = 0xFF475569, secondary = 0xFF94A3B8
+  final Color cPrimary = const Color(0xFF475569);                     // ★
+  final Color cSoftBg = const Color(0xFF94A3B8).withOpacity(0.08);    // ★ fond doux dérivé
 
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   String _selectedCategory = 'Tous';
 
-  // ✅ Routes réellement présentes (issues de ton AppRoutes)
+  // Routes réellement présentes (issues de ton AppRoutes)
   late final Set<String> _availableRoutes = {
     // Core
     AppRoutes.splash, AppRoutes.welcome, AppRoutes.mainNav, AppRoutes.home,
@@ -47,7 +49,8 @@ class _AidePageState extends State<AidePage> {
     AppRoutes.parametre, AppRoutes.aide, AppRoutes.messages,
     AppRoutes.mesAnnonces, AppRoutes.mesPrestations, AppRoutes.mesRestaurants,
     AppRoutes.mesHotels, AppRoutes.mesCliniques,
-    AppRoutes.inscriptionResto, AppRoutes.inscriptionHotel, AppRoutes.inscriptionClinique,
+    AppRoutes.inscriptionResto, AppRoutes.inscriptionHotel,
+    AppRoutes.inscriptionClinique,
     AppRoutes.annonceDetail, AppRoutes.restoDetail, AppRoutes.hotelDetail,
     AppRoutes.editPrestataire, AppRoutes.editHotel, AppRoutes.editResto,
     AppRoutes.editAnnonce, AppRoutes.editClinique,
@@ -56,20 +59,21 @@ class _AidePageState extends State<AidePage> {
     // Jobs
     AppRoutes.jobHome, AppRoutes.jobList, AppRoutes.jobDetail,
     AppRoutes.myApplications, AppRoutes.cvMaker,
-    AppRoutes.employerOffers, AppRoutes.employerOfferEdit, AppRoutes.employerOfferCandidatures,
+    AppRoutes.employerOffers, AppRoutes.employerOfferEdit,
+    AppRoutes.employerOfferCandidatures,
     // Nouvel admin
     AppRoutes.adminCenter, AppRoutes.adminManage,
   };
 
   bool _hasRoute(String? name) => name != null && _availableRoutes.contains(name);
 
-  // —————————————————— FAQ alignée aux routes ——————————————————
+  // ===== FAQ alignée aux routes =====
   late final List<FAQItem> _allFaqs = [
-    // ====== Rubriques de ta capture ======
+    // ====== Ta capture / rubriques ======
     FAQItem.cat(
       'Annonces',
       'Publier une annonce',
-      'Onglet Annonces → « Publier » (photos, prix GNF, ville, etc.).',
+      'Onglet Annonces → Publier (photos, prix en GNF, ville, etc.).',
       routeName: AppRoutes.editAnnonce,
       cta: 'Publier',
     ),
@@ -83,7 +87,7 @@ class _AidePageState extends State<AidePage> {
     FAQItem.cat(
       'Prestataires',
       'Trouver / devenir prestataire',
-      'Parcourez les pros par ville/métier. Pour créer votre fiche : « Devenir prestataire ».',
+      'Parcourez les pros par ville/métier. Pour créer votre fiche : “Devenir prestataire”.',
       routeName: AppRoutes.pro,
       secondaryRouteName: AppRoutes.editPrestataire,
       secondaryCta: 'Créer ma fiche',
@@ -98,7 +102,7 @@ class _AidePageState extends State<AidePage> {
     FAQItem.cat(
       'Restaurants',
       'Trouver et réserver',
-      'Liste ou carte, ouvrez la fiche (menu, avis), contactez le restaurant.',
+      'Liste ou carte, ouvrez la fiche (menu, avis) et contactez le restaurant.',
       routeName: AppRoutes.resto,
       secondaryRouteName: AppRoutes.inscriptionResto,
       secondaryCta: 'Inscrire un resto',
@@ -106,7 +110,7 @@ class _AidePageState extends State<AidePage> {
     FAQItem.cat(
       'Lieux de culte',
       'Localiser un lieu de culte',
-      'Sur la carte, filtre « Lieux de culte », touchez un marqueur pour les détails.',
+      'Sur la carte, filtre “Lieux de culte”, touchez un marqueur pour les détails.',
       routeName: AppRoutes.culte,
       secondaryRouteName: AppRoutes.carte,
       secondaryCta: 'Voir la carte',
@@ -154,14 +158,14 @@ class _AidePageState extends State<AidePage> {
     FAQItem.cat(
       'Logement',
       'Publier un logement',
-      'Ajoutez photos, prix GNF, localisation précise et contact vérifié.',
+      'Ajoutez photos, prix en GNF, localisation précise et contact vérifié.',
       routeName: AppRoutes.logementEdit,
       cta: 'Publier un logement',
     ),
     FAQItem.cat(
       'Emplois',
       'Créer mon CV & postuler',
-      'Jobs → Mon CV (créer/importer) → ouvrir une offre → « Postuler ». Suivi dans « Mes candidatures ».',
+      'Jobs → Mon CV (créer/importer) → ouvrir une offre → “Postuler”. Suivi dans “Mes candidatures”.',
       routeName: AppRoutes.jobHome,
       secondaryRouteName: AppRoutes.myApplications,
       secondaryCta: 'Mes candidatures',
@@ -170,13 +174,13 @@ class _AidePageState extends State<AidePage> {
       'Emplois',
       'Publier une offre (employeur)',
       'Créez votre espace employeur et gérez vos offres/candidatures.',
-      routeName: AppRoutes.employerOffers, // Gate → DevenirEmployeur si besoin
+      routeName: AppRoutes.employerOffers,
       cta: 'Espace employeur',
     ),
     FAQItem.cat(
       'Billetterie',
       'Acheter des billets',
-      'Choisissez un événement, payez, puis retrouvez le QR code dans « Mes billets ».',
+      'Choisissez un événement, payez, puis retrouvez le QR code dans “Mes billets”.',
       routeName: AppRoutes.billetterie,
       secondaryRouteName: AppRoutes.myTickets,
       secondaryCta: 'Mes billets',
@@ -205,25 +209,41 @@ class _AidePageState extends State<AidePage> {
       cta: 'Ouvrir Profil',
     ),
 
-    // 👉 Pas de routes dédiées → boutons gris
+    // ====== Placeholders (gris si route absente) ======
     FAQItem.cat('Entreprises', 'Annuaire des entreprises',
-        'Recherche par nom/secteur/ville.', routeName: '__missing/entreprises', cta: 'Indisponible'),
+        'Recherche par nom/secteur/ville.',
+        routeName: '__missing/entreprises', cta: 'Indisponible'),
     FAQItem.cat('Paiements', 'Problème de paiement',
         'Vérifiez la connexion/solde. Si débit sans billet, écrivez à $kSupportEmail avec le reçu.',
         routeName: '__missing/paiements', cta: 'Indisponible'),
     FAQItem.cat('Sécurité', 'Signaler un contenu abusif',
-        'Depuis la fiche → « Signaler ». Vous pouvez aussi envoyer captures et lien à $kAdminEmail.',
+        'Depuis la fiche → “Signaler”. Vous pouvez aussi envoyer captures et lien à $kAdminEmail.',
         routeName: '__missing/securite', cta: 'Indisponible'),
     FAQItem.cat('Support', 'Contacter le support',
-        'Appuyez sur “Contacter” ci-dessus pour Appel / WhatsApp / E-mail.'),
+        'Appuyez sur “Contact” ci-dessous pour Appel / WhatsApp / E-mail.'),
   ];
 
   final List<String> _categories = const [
     'Tous',
-    'Annonces', 'Prestataires', 'Services Admin', 'Restaurants', 'Lieux de culte',
-    'Divertissement', 'Tourisme', 'Santé', 'Hôtels', 'Entreprises',
-    'Logement', 'Emplois', 'Billetterie',
-    'Carte', 'Messages', 'Profil', 'Paiements', 'Sécurité', 'Support',
+    'Annonces',
+    'Prestataires',
+    'Services Admin',
+    'Restaurants',
+    'Lieux de culte',
+    'Divertissement',
+    'Tourisme',
+    'Santé',
+    'Hôtels',
+    'Entreprises',
+    'Logement',
+    'Emplois',
+    'Billetterie',
+    'Carte',
+    'Messages',
+    'Profil',
+    'Paiements',
+    'Sécurité',
+    'Support',
   ];
 
   List<FAQItem> get _filtered {
@@ -241,7 +261,7 @@ class _AidePageState extends State<AidePage> {
     super.dispose();
   }
 
-  // —————————————————— UI ——————————————————
+  // ===== UI =====
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -267,9 +287,6 @@ class _AidePageState extends State<AidePage> {
                   _buildSearch(),
                   const SizedBox(height: 12),
                   _buildCategoryChips(),
-                  const SizedBox(height: 12),
-                  _buildQuickActions(), // Contacter / Email / CGU
-                  const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -298,7 +315,7 @@ class _AidePageState extends State<AidePage> {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [cPrimary, const Color(0xFF2A87F9)],
+          colors: [cPrimary, const Color(0xFF94A3B8)], // ★ dégradé primary -> secondary
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -310,7 +327,11 @@ class _AidePageState extends State<AidePage> {
             child: Text(
               'Besoin d’aide ?\nToutes les rubriques, alignées sur l’app.',
               style: const TextStyle(
-                color: Colors.white, fontSize: 20, height: 1.3, fontWeight: FontWeight.w700),
+                color: Colors.white,
+                fontSize: 20,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -320,7 +341,7 @@ class _AidePageState extends State<AidePage> {
               color: Colors.white.withOpacity(.15),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Text('💬', style: TextStyle(fontSize: 42)),
+            child: const Text('❓', style: TextStyle(fontSize: 42)),
           ),
         ],
       ),
@@ -335,14 +356,18 @@ class _AidePageState extends State<AidePage> {
       child: TextField(
         controller: _searchCtrl,
         onChanged: (v) => setState(() => _query = v),
+        textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: 'Rechercher dans la FAQ…',
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: Icon(Icons.search, color: cPrimary),
           suffixIcon: _query.isEmpty
               ? null
               : IconButton(
                   icon: const Icon(Icons.close),
-                  onPressed: () { _searchCtrl.clear(); setState(() => _query = ''); },
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    setState(() => _query = '');
+                  },
                 ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -378,44 +403,7 @@ class _AidePageState extends State<AidePage> {
     );
   }
 
-  // ✅ Sous-titre sans parenthèses (image fournie)
-  Widget _buildQuickActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _ActionCard(
-            title: 'Contacter',
-            subtitle: 'Support', // ⬅️ plus de texte entre parenthèses
-            icon: Icons.support_agent,
-            color: cAccent,
-            onTap: _showContactSheet,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _ActionCard(
-            title: 'E-mail',
-            subtitle: 'Support',
-            icon: Icons.email_outlined,
-            color: cPrimary,
-            onTap: _openSupportEmail,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _ActionCard(
-            title: 'CGU',
-            subtitle: 'Consulter',
-            icon: Icons.description_outlined,
-            color: const Color(0xFF4B5563),
-            onTap: _openCgu,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Section contact (titre “Contact” qui ouvre la feuille)
+  // Section Contact (CGU ici)
   Widget _buildContactSection() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -431,11 +419,14 @@ class _AidePageState extends State<AidePage> {
                 children: [
                   Icon(Icons.support_agent, color: cPrimary),
                   const SizedBox(width: 8),
-                  const Text('Support & Administration',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Support, Administration & CGU',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
+              // Ouvre la feuille contact (Appel / WhatsApp / E-mail)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.contact_phone),
@@ -444,12 +435,24 @@ class _AidePageState extends State<AidePage> {
                 trailing: const Icon(Icons.expand_more),
                 onTap: _showContactSheet,
               ),
-              const SizedBox(height: 6),
+              const Divider(height: 16),
+              // Email administration (lien direct)
               _ContactRow(
                 icon: Icons.admin_panel_settings_outlined,
                 label: 'Administration',
                 value: kAdminEmail,
                 onTap: _openAdminEmail,
+              ),
+              const SizedBox(height: 6),
+              // CGU (ouvre lien externe)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.description_outlined),
+                title: const Text('CGU'),
+                subtitle: const Text('Consulter'),
+                trailing: const Icon(Icons.open_in_new),
+                onTap: _openCgu,
               ),
             ],
           ),
@@ -458,7 +461,7 @@ class _AidePageState extends State<AidePage> {
     );
   }
 
-  // —————————————————— Actions & Nav ——————————————————
+  // ===== Actions & Navigation =====
   void _pushIfAvailable(String? routeName) {
     if (!_hasRoute(routeName)) return;
     Navigator.of(context).pushNamed(routeName!);
@@ -478,9 +481,11 @@ class _AidePageState extends State<AidePage> {
             children: [
               const SizedBox(height: 8),
               Container(
-                width: 48, height: 4,
+                width: 48,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300, borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
               const SizedBox(height: 8),
@@ -492,19 +497,28 @@ class _AidePageState extends State<AidePage> {
                 leading: const Icon(Icons.phone),
                 title: const Text('Appeler'),
                 subtitle: const Text(kDisplayPhone),
-                onTap: () { Navigator.pop(context); _launchTel(_telE164); },
+                onTap: () {
+                  Navigator.pop(context);
+                  _launchTel(_telE164);
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.chat_bubble_outline),
                 title: const Text('WhatsApp'),
                 subtitle: const Text(kDisplayPhone),
-                onTap: () { Navigator.pop(context); _openWhatsApp(); },
+                onTap: () {
+                  Navigator.pop(context);
+                  _openWhatsApp();
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.email_outlined),
                 title: const Text('Envoyer un e-mail'),
                 subtitle: const Text(kSupportEmail),
-                onTap: () { Navigator.pop(context); _openSupportEmail(); },
+                onTap: () {
+                  Navigator.pop(context);
+                  _openSupportEmail();
+                },
               ),
               const SizedBox(height: 8),
             ],
@@ -521,25 +535,34 @@ class _AidePageState extends State<AidePage> {
 
   Future<void> _openWhatsApp() async {
     final uri = Uri.parse('https://wa.me/$_waNumber');
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) {
       await _openSupportEmail();
     }
   }
 
   Future<void> _openSupportEmail() async {
+    final params = {
+      'subject': 'Support - Ma Guinée',
+      'body': 'Bonjour,%0D%0A%0D%0A',
+    };
     final uri = Uri(
       scheme: 'mailto',
       path: kSupportEmail,
-      query: Uri.encodeFull('subject=Support - Ma Guinée&body=Bonjour,%0D%0A%0D%0A'),
+      query: params.entries.map((e) => '${e.key}=${e.value}').join('&'),
     );
     await launchUrl(uri);
   }
 
   Future<void> _openAdminEmail() async {
+    final params = {
+      'subject': 'Administration - Ma Guinée',
+      'body': 'Bonjour,%0D%0A%0D%0A',
+    };
     final uri = Uri(
       scheme: 'mailto',
       path: kAdminEmail,
-      query: Uri.encodeFull('subject=Administration - Ma Guinée&body=Bonjour,%0D%0A%0D%0A'),
+      query: params.entries.map((e) => '${e.key}=${e.value}').join('&'),
     );
     await launchUrl(uri);
   }
@@ -549,68 +572,22 @@ class _AidePageState extends State<AidePage> {
   }
 }
 
-// —————————————————— Widgets ——————————————————
-class _ActionCard extends StatelessWidget {
-  final String title, subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _ActionCard({
-    required this.title, required this.subtitle, required this.icon,
-    required this.color, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 42, height: 42,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+// ===== Widgets =====
 class _ContactRow extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final VoidCallback onTap;
-  const _ContactRow({required this.icon, required this.label, required this.value, required this.onTap});
+  const _ContactRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      dense: true, contentPadding: EdgeInsets.zero,
+      dense: true,
+      contentPadding: EdgeInsets.zero,
       leading: Icon(icon),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(value),
@@ -638,12 +615,14 @@ class _FAQTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasPrimary = item.routeName != null && item.routeName!.isNotEmpty;
-    final hasSecondary = item.secondaryRouteName != null && item.secondaryRouteName!.isNotEmpty;
+    final hasSecondary =
+        item.secondaryRouteName != null && item.secondaryRouteName!.isNotEmpty;
 
     ButtonStyle _btnStyle(bool enabled) => OutlinedButton.styleFrom(
-      foregroundColor: enabled ? null : Colors.grey,
-      side: BorderSide(color: enabled ? Theme.of(context).colorScheme.primary : Colors.grey.shade300),
-    );
+          foregroundColor: enabled ? null : Colors.grey,
+          side: BorderSide(
+            color: enabled ? accent : Colors.grey.shade300), // ★ boutons sur la même couleur
+        );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -657,17 +636,25 @@ class _FAQTile extends StatelessWidget {
             tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
             leading: Container(
-              width: 8, height: 32,
-              decoration: BoxDecoration(color: accent.withOpacity(.9), borderRadius: BorderRadius.circular(6)),
+              width: 8,
+              height: 32,
+              decoration: BoxDecoration(
+                color: accent.withOpacity(.9),
+                borderRadius: BorderRadius.circular(6),
+              ),
             ),
             title: Text(item.question, style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(item.category, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
             children: [
-              Align(alignment: Alignment.centerLeft, child: Text(item.answer, style: const TextStyle(height: 1.35))),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(item.answer, style: const TextStyle(height: 1.35)),
+              ),
               if (hasPrimary || hasSecondary) const SizedBox(height: 10),
               if (hasPrimary || hasSecondary)
                 Wrap(
-                  spacing: 8, runSpacing: 8,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     if (hasPrimary)
                       OutlinedButton.icon(
@@ -697,7 +684,7 @@ class FAQItem {
   final String? routeName, cta, secondaryRouteName, secondaryCta;
 
   String get questionL => question.toLowerCase();
-  String get answerL   => answer.toLowerCase();
+  String get answerL => answer.toLowerCase();
 
   FAQItem({
     required this.category,
@@ -710,11 +697,21 @@ class FAQItem {
   });
 
   factory FAQItem.cat(
-    String c, String q, String a, {
-    String? routeName, String? cta, String? secondaryRouteName, String? secondaryCta,
-  }) => FAQItem(
-        category: c, question: q, answer: a,
-        routeName: routeName, cta: cta,
-        secondaryRouteName: secondaryRouteName, secondaryCta: secondaryCta,
+    String c,
+    String q,
+    String a, {
+    String? routeName,
+    String? cta,
+    String? secondaryRouteName,
+    String? secondaryCta,
+  }) =>
+      FAQItem(
+        category: c,
+        question: q,
+        answer: a,
+        routeName: routeName,
+        cta: cta,
+        secondaryRouteName: secondaryRouteName,
+        secondaryCta: secondaryCta,
       );
 }

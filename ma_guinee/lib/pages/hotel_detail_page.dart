@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 
-// ⬇️ importe la page de réservation (ajuste le chemin si besoin)
 import 'hotel_reservation_page.dart';
 
 class HotelDetailPage extends StatefulWidget {
@@ -19,7 +18,11 @@ class HotelDetailPage extends StatefulWidget {
 class _HotelDetailPageState extends State<HotelDetailPage> {
   final _sb = Supabase.instance.client;
 
-  static const Color primaryColor = Color(0xFF113CFC);
+  // ===== Palette Hôtels (spécifique à cette page) =====
+  static const Color hotelsPrimary   = Color(0xFF264653);
+  static const Color hotelsSecondary = Color(0xFF2A9D8F);
+  static const Color onPrimary       = Color(0xFFFFFFFF);
+  static const Color neutralBorder   = Color(0xFFE5E7EB);
 
   Map<String, dynamic>? hotel;
   bool loading = true;
@@ -39,7 +42,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   String get _id => widget.hotelId.toString();
 
   bool _isUuid(String id) {
-    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    final r = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     return r.hasMatch(id);
   }
 
@@ -57,14 +61,15 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     super.dispose();
   }
 
-  // ─────────── Hôtel
+  // ---------------- Hôtel ----------------
   Future<void> _loadHotel() async {
     setState(() {
       loading = true;
       _error = null;
     });
     try {
-      final data = await _sb.from('hotels').select().eq('id', _id).maybeSingle();
+      final data =
+          await _sb.from('hotels').select().eq('id', _id).maybeSingle();
       if (!mounted) return;
       setState(() {
         hotel = data == null ? null : Map<String, dynamic>.from(data);
@@ -79,7 +84,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  // ─────────── Avis
+  // ---------------- Avis ----------------
   Future<void> _loadAvisBloc() async {
     try {
       final rows = await _sb
@@ -92,7 +97,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
       double moyenne = 0.0;
       if (list.isNotEmpty) {
-        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        final notes =
+            list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
         final s = notes.fold<double>(0.0, (a, b) => a + b);
         moyenne = s / notes.length;
       }
@@ -188,7 +194,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     }
   }
 
-  // ─────────── Contact / localisation
+  // ---------------- Contact / localisation ----------------
   void _contacter() async {
     final tel = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim();
     if (tel.isEmpty) {
@@ -213,39 +219,20 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       );
       return;
     }
-    final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
+    final uri =
+        Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  // ─────────── Réserver
-  void _ouvrirReservation() {
-    final nom = (hotel?['nom'] ?? 'Hôtel').toString();
-    final telRaw = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim(); // ❌ pas de valeur par défaut
-    final address = (hotel?['adresse'] ?? hotel?['ville'] ?? '').toString();
-    final images = _imagesFromHotel();
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HotelReservationPage(
-          hotelName: nom.isEmpty ? 'Hôtel' : nom,
-          phone: telRaw.isEmpty ? null : telRaw,
-          address: address.isEmpty ? null : address,
-          coverImage: images.isNotEmpty ? images.first : null,
-          primaryColor: primaryColor,
-        ),
-      ),
-    );
-  }
-
-  // ─────────── UI helpers
+  // ---------------- UI helpers ----------------
   Widget _buildStars(int rating, {void Function(int)? onTap}) {
     return Row(
       children: List.generate(5, (index) {
         return IconButton(
-          icon: Icon(index < rating ? Icons.star : Icons.star_border, color: Colors.amber),
+          icon: Icon(index < rating ? Icons.star : Icons.star_border,
+              color: Colors.amber),
           onPressed: onTap != null ? () => onTap(index + 1) : null,
           iconSize: 28,
           splashRadius: 20,
@@ -260,8 +247,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return Column(
       children: _avis.map((avis) {
         final uid = (avis['auteur_id'] ?? '').toString();
-        final u = _userCache[uid] ?? const {};
-        final nom = "${(u['prenom'] ?? '').toString()} ${(u['nom'] ?? '').toString()}".trim();
+        // >>> correction de typage ici
+        final Map<String, dynamic> u =
+            _userCache[uid] ?? const <String, dynamic>{};
+        final nom =
+            "${(u['prenom'] ?? '').toString()} ${(u['nom'] ?? '').toString()}".trim();
         final note = (avis['etoiles'] as num?)?.toInt() ?? 0;
         final commentaire = (avis['commentaire'] ?? '').toString();
         final photo = (u['photo_url'] ?? '').toString();
@@ -270,7 +260,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           margin: const EdgeInsets.symmetric(vertical: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(color: neutralBorder),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -283,17 +273,21 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(nom.isEmpty ? 'Utilisateur' : nom, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Row(
-                    children: List.generate(
-                      5,
-                      (i) => Icon(i < note ? Icons.star : Icons.star_border, size: 16, color: Colors.amber),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  if (commentaire.isNotEmpty) Text(commentaire),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(nom.isEmpty ? 'Utilisateur' : nom,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Row(
+                        children: List.generate(
+                          5,
+                          (i) => Icon(i < note ? Icons.star : Icons.star_border,
+                              size: 16, color: Colors.amber),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      if (commentaire.isNotEmpty) Text(commentaire),
+                    ]),
               ),
             ],
           ),
@@ -340,14 +334,18 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '${current + 1}/${images.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 11, decoration: TextDecoration.none),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          decoration: TextDecoration.none),
                     ),
                   ),
                 ),
@@ -385,15 +383,30 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         title: Text((hotel!['nom'] ?? '').toString()),
         backgroundColor: Colors.white,
         titleTextStyle: const TextStyle(
-          color: primaryColor,
+          color: hotelsPrimary,
           fontWeight: FontWeight.bold,
           fontSize: 20,
         ),
-        iconTheme: const IconThemeData(color: primaryColor),
+        iconTheme: const IconThemeData(color: hotelsPrimary),
         elevation: 1,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [hotelsPrimary, hotelsSecondary],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110), // espace pour la barre du bas
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // -------- carrousel + miniatures + compteur --------
           if (images.isNotEmpty) ...[
@@ -429,14 +442,18 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     right: 8,
                     top: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.45),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Text(
                         '${_currentIndex + 1}/${images.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, decoration: TextDecoration.none),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            decoration: TextDecoration.none),
                       ),
                     ),
                   ),
@@ -468,7 +485,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isActive ? primaryColor : Colors.transparent,
+                            color: isActive ? hotelsPrimary : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -492,7 +509,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               child: Container(
                 height: 230,
                 color: Colors.grey.shade300,
-                child: const Center(child: Icon(Icons.image_not_supported, size: 60)),
+                child:
+                    const Center(child: Icon(Icons.image_not_supported, size: 60)),
               ),
             ),
           // -----------------------------------------------------
@@ -510,7 +528,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           Text("Description :\n${(hotel!['description'] ?? 'Aucune description').toString()}"),
           const SizedBox(height: 12),
 
-          // bouton Localiser (on garde dans le corps)
+          // bouton Localiser
           Align(
             alignment: Alignment.centerLeft,
             child: ElevatedButton.icon(
@@ -518,9 +536,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               icon: const Icon(Icons.map),
               label: const Text("Localiser"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF009460),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                backgroundColor: hotelsSecondary,
+                foregroundColor: onPrimary,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ),
@@ -532,7 +551,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
           const SizedBox(height: 10),
           const Text("Notez cet hôtel :", style: TextStyle(fontWeight: FontWeight.bold)),
-          _buildStars(_noteUtilisateur, onTap: (val) => setState(() => _noteUtilisateur = val)),
+          _buildStars(_noteUtilisateur,
+              onTap: (val) => setState(() => _noteUtilisateur = val)),
           TextField(
             controller: _avisController,
             maxLines: 3,
@@ -547,8 +567,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             icon: const Icon(Icons.send),
             label: const Text("Envoyer mon avis"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFCD116),
-              foregroundColor: Colors.black,
+              backgroundColor: hotelsSecondary,
+              foregroundColor: onPrimary,
             ),
           ),
 
@@ -558,7 +578,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         ]),
       ),
 
-      // ✅ Barre collée en bas (même style que la page resto)
+      // ------ Barre collée en bas ------
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -581,8 +601,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   icon: const Icon(Icons.chat_bubble_outline_rounded),
                   label: const Text("Contacter"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00A86B), // vert
-                    foregroundColor: Colors.white,
+                    backgroundColor: hotelsSecondary,
+                    foregroundColor: onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -597,8 +617,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   icon: const Icon(Icons.calendar_month),
                   label: const Text("Réserver"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
+                    backgroundColor: hotelsPrimary,
+                    foregroundColor: onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -608,6 +628,27 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // -------- Navigation Vers Réservation --------
+  void _ouvrirReservation() {
+    final nom = (hotel?['nom'] ?? 'Hôtel').toString();
+    final telRaw = (hotel?['telephone'] ?? hotel?['tel'] ?? '').toString().trim();
+    final address = (hotel?['adresse'] ?? hotel?['ville'] ?? '').toString();
+    final images = _imagesFromHotel();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HotelReservationPage(
+          hotelName: nom.isEmpty ? 'Hôtel' : nom,
+          phone: telRaw.isEmpty ? null : telRaw,
+          address: address.isEmpty ? null : address,
+          coverImage: images.isNotEmpty ? images.first : null,
+          primaryColor: hotelsPrimary, // <-- palette Hôtels
         ),
       ),
     );

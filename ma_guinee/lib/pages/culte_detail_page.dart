@@ -8,31 +8,43 @@ class CulteDetailPage extends StatelessWidget {
   const CulteDetailPage({super.key, required this.lieu});
 
   // ---------- Helpers ----------
+  /// Normalisation simple FR (sans accents) + lowercase
   String _norm(dynamic v) {
     final s = (v ?? '').toString().toLowerCase().trim();
     if (s.isEmpty) return '';
-    return s
-        .replaceAll(RegExp(r'[àáâãäå]'), 'a')
-        .replaceAll(RegExp(r'[èéêë]'), 'e')
-        .replaceAll(RegExp(r'[ìíîï]'), 'i')
-        .replaceAll(RegExp(r'[òóôõö]'), 'o')
-        .replaceAll(RegExp(r'[ùúûü]'), 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll('œ', 'oe');
+    const map = {
+      'à': 'a', 'á': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+      'ç': 'c',
+      'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
+      'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+      'ñ': 'n',
+      'ò': 'o', 'ó': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+      'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
+      'ý': 'y', 'ÿ': 'y',
+      'œ': 'oe',
+    };
+    final buf = StringBuffer();
+    for (final ch in s.split('')) {
+      buf.write(map[ch] ?? ch);
+    }
+    return buf.toString();
   }
 
   bool _isMosquee() {
-    final s = _norm('${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
+    final s = _norm(
+        '${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
     return s.contains('mosquee');
   }
 
   bool _isEglise() {
-    final s = _norm('${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
+    final s = _norm(
+        '${lieu['type']} ${lieu['sous_categorie']} ${lieu['categorie']} ${lieu['description']} ${lieu['nom']}');
     return s.contains('eglise') || s.contains('cathedrale');
   }
 
-  void _ouvrirDansGoogleMaps(double lat, double lng) async {
-    final Uri uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+  Future<void> _ouvrirDansGoogleMaps(double lat, double lng) async {
+    final Uri uri =
+        Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -61,29 +73,37 @@ class CulteDetailPage extends StatelessWidget {
   // ---------- Widget CTA Don ----------
   Widget _donationSection(BuildContext context) {
     final isMosquee = _isMosquee();
-    final isEglise  = _isEglise();
+    final isEglise = _isEglise();
 
-    final Color accent   = isMosquee ? const Color(0xFF009460)
-                         : isEglise  ? const Color(0xFFCE1126)
-                                     : const Color(0xFF113CFC);
-
-    final IconData icon  = isMosquee ? Icons.mosque
-                         : isEglise  ? Icons.church
-                                     : Icons.handshake;
-
-    final String titre   = isMosquee ? 'Soutenez votre mosquée'
-                         : isEglise  ? 'Soutenez votre église'
-                                     : 'Soutenir ce lieu';
-
-    final String texte   = isMosquee
-        ? "« Fi sabilillah » – pour la cause d’Allah. Même un petit geste peut aider à payer l’eau, l’électricité et l’entretien afin que la mosquée reste ouverte et accueillante."
+    final Color accent = isMosquee
+        ? const Color(0xFF009460)
         : isEglise
-            ? "Un geste d’amour pour l’Église : aidez aux charges, à l’accueil des fidèles et aux actions solidaires. Chaque don compte pour faire vivre la communauté."
+            ? const Color(0xFFCE1126)
+            : const Color(0xFF113CFC);
+
+    final IconData icon = isMosquee
+        ? Icons.mosque
+        : isEglise
+            ? Icons.church
+            : Icons.handshake;
+
+    final String titre = isMosquee
+        ? 'Soutenez votre mosquée'
+        : isEglise
+            ? 'Soutenez votre église'
+            : 'Soutenir ce lieu';
+
+    final String texte = isMosquee
+        ? "« Fi sabilillah » — pour la cause d’Allah. Même un petit geste aide à payer l’eau, l’électricité et l’entretien afin que la mosquée reste ouverte et accueillante."
+        : isEglise
+            ? "Un geste d’amour pour l’église : aidez aux charges, à l’accueil des fidèles et aux actions solidaires. Chaque don compte."
             : "Aidez ce lieu à continuer de servir la communauté : entretien, charges, accueil… Même une petite contribution a un grand impact.";
 
-    final String btn     = isMosquee ? 'Contribuer (fi sabilillah)'
-                         : isEglise  ? 'Faire un don'
-                                     : 'Soutenir';
+    final String btn = isMosquee
+        ? 'Contribuer (fi sabilillah)'
+        : isEglise
+            ? 'Faire un don'
+            : 'Soutenir';
 
     return Container(
       margin: const EdgeInsets.only(top: 20),
@@ -119,10 +139,7 @@ class CulteDetailPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            texte,
-            style: const TextStyle(height: 1.35, fontSize: 14.5),
-          ),
+          Text(texte, style: const TextStyle(height: 1.35, fontSize: 14.5)),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -134,7 +151,8 @@ class CulteDetailPage extends StatelessWidget {
                 backgroundColor: accent,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 elevation: 0,
               ),
@@ -147,11 +165,14 @@ class CulteDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const primaryColor = Color(0xFF113CFC);
+
     final String nom = (lieu['nom'] ?? 'Lieu de culte').toString();
     final String ville = (lieu['ville'] ?? 'Ville inconnue').toString();
 
     // images: supporte `images: []` OU `photo_url: "..."`.
-    final List<String> images = (lieu['images'] is List && (lieu['images'] as List).isNotEmpty)
+    final List<String> images = (lieu['images'] is List &&
+            (lieu['images'] as List).isNotEmpty)
         ? List<String>.from(lieu['images'])
         : (lieu['photo_url'] != null && lieu['photo_url'].toString().isNotEmpty)
             ? [lieu['photo_url'].toString()]
@@ -169,14 +190,14 @@ class CulteDetailPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: primaryColor),
         title: Text(
           nom,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 20,
-            color: Color(0xFF113CFC),
+            color: primaryColor,
           ),
         ),
       ),
@@ -218,31 +239,22 @@ class CulteDetailPage extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // Ville
-                Text(
-                  ville,
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
-                ),
+                Text(ville, style: const TextStyle(fontSize: 16, color: Colors.black87)),
 
                 // Description
                 if (description != null && description.trim().isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const Text(
-                    "Description :",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  const Text("Description :",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-                  Text(
-                    description,
-                    textAlign: TextAlign.start,
-                    style: const TextStyle(fontSize: 15, height: 1.45),
-                  ),
+                  Text(description,
+                      textAlign: TextAlign.start,
+                      style: const TextStyle(fontSize: 15, height: 1.45)),
                 ],
 
                 const SizedBox(height: 20),
-                const Text(
-                  "Localisation :",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                const Text("Localisation :",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
 
                 Container(
@@ -250,15 +262,21 @@ class CulteDetailPage extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(13),
                     boxShadow: const [
-                      BoxShadow(color: Colors.black12, blurRadius: 7, offset: Offset(0, 2)),
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 7,
+                        offset: Offset(0, 2),
+                      ),
                     ],
                   ),
                   height: 200,
                   child: FlutterMap(
                     options: MapOptions(
-                      center: LatLng(latitude, longitude),
-                      zoom: 15,
-                      interactiveFlags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                      initialCenter: LatLng(latitude, longitude), // ✅ v6
+                      initialZoom: 15,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                      ),
                     ),
                     children: [
                       TileLayer(
@@ -290,12 +308,14 @@ class CulteDetailPage extends StatelessWidget {
                     icon: const Icon(Icons.map),
                     label: const Text("Ouvrir dans Google Maps"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF113CFC),
+                      backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       elevation: 2,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
                 ),
@@ -320,7 +340,8 @@ class _ImagesCarouselWithThumbs extends StatefulWidget {
   });
 
   @override
-  State<_ImagesCarouselWithThumbs> createState() => _ImagesCarouselWithThumbsState();
+  State<_ImagesCarouselWithThumbs> createState() =>
+      _ImagesCarouselWithThumbsState();
 }
 
 class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
@@ -381,7 +402,8 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                   ),
                   child: Text(
                     '${_current + 1}/$total',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -489,10 +511,8 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
-        title: Text(
-          '${_index + 1}/$total',
-          style: const TextStyle(color: Colors.white),
-        ),
+        title: Text('${_index + 1}/$total',
+            style: const TextStyle(color: Colors.white)),
       ),
       body: PageView.builder(
         controller: _ctrl,

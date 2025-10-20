@@ -22,7 +22,8 @@ class _FavorisPageState extends State<FavorisPage> {
   }
 
   // SQL 'IN' propre pour Supabase
-  Future<List<Map<String, dynamic>>> fetchFavorisAnnonces(List<String> favorisIds) async {
+  Future<List<Map<String, dynamic>>> fetchFavorisAnnonces(
+      List<String> favorisIds) async {
     if (favorisIds.isEmpty) return [];
     final inValues = favorisIds.join(',');
     final data = await Supabase.instance.client
@@ -46,7 +47,10 @@ class _FavorisPageState extends State<FavorisPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes Favoris', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Mes Favoris',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: bleu,
         foregroundColor: Colors.white,
         leading: IconButton(
@@ -55,8 +59,13 @@ class _FavorisPageState extends State<FavorisPage> {
         ),
         actions: [
           IconButton(
-            icon: Icon(affichageGrille ? Icons.view_list_rounded : Icons.grid_view_rounded),
-            tooltip: affichageGrille ? "Afficher en liste" : "Afficher en grille",
+            icon: Icon(
+              affichageGrille
+                  ? Icons.view_list_rounded
+                  : Icons.grid_view_rounded,
+            ),
+            tooltip:
+                affichageGrille ? 'Afficher en liste' : 'Afficher en grille',
             color: Colors.white,
             onPressed: () {
               setState(() => affichageGrille = !affichageGrille);
@@ -78,11 +87,15 @@ class _FavorisPageState extends State<FavorisPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.favorite_border, size: 60, color: Colors.grey),
+                        const Icon(Icons.favorite_border,
+                            size: 60, color: Colors.grey),
                         const SizedBox(height: 10),
                         Text(
                           "Aucun favori pour l’instant.",
-                          style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                       ],
                     ),
@@ -111,8 +124,10 @@ class _FavorisPageState extends State<FavorisPage> {
                             child: Image.network(
                               images.isNotEmpty
                                   ? images.first
-                                  : "https://via.placeholder.com/80x80?text=Photo",
-                              width: 54, height: 54, fit: BoxFit.cover,
+                                  : 'https://via.placeholder.com/80x80?text=Photo',
+                              width: 54,
+                              height: 54,
+                              fit: BoxFit.cover,
                             ),
                           ),
                           title: Text(
@@ -122,7 +137,7 @@ class _FavorisPageState extends State<FavorisPage> {
                           subtitle: Text(annonce['ville'] ?? ''),
                           trailing: IconButton(
                             icon: Icon(Icons.favorite, color: rouge),
-                            tooltip: "Retirer des favoris",
+                            tooltip: 'Retirer des favoris',
                             onPressed: () async {
                               await favorisProvider.toggleFavori(annonceId);
                               setState(() {});
@@ -152,7 +167,8 @@ class _FavorisPageState extends State<FavorisPage> {
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
                   itemCount: annonces.length,
                   itemBuilder: (_, idx) {
                     final annonce = annonces[idx];
@@ -186,7 +202,7 @@ class _FavorisPageState extends State<FavorisPage> {
                                   child: Image.network(
                                     images.isNotEmpty
                                         ? images.first
-                                        : "https://via.placeholder.com/600x400?text=Photo",
+                                        : 'https://via.placeholder.com/600x400?text=Photo',
                                     height: 115,
                                     width: double.infinity,
                                     fit: BoxFit.cover,
@@ -194,20 +210,27 @@ class _FavorisPageState extends State<FavorisPage> {
                                       height: 115,
                                       color: Colors.grey[200],
                                       alignment: Alignment.center,
-                                      child: const Icon(Icons.image_not_supported,
-                                          size: 40, color: Colors.grey),
+                                      child: const Icon(
+                                        Icons.image_not_supported,
+                                        size: 40,
+                                        color: Colors.grey,
+                                      ),
                                     ),
                                   ),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 6),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         annonce['titre'] ?? '',
                                         style: const TextStyle(
-                                            fontWeight: FontWeight.bold, fontSize: 14),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -224,7 +247,9 @@ class _FavorisPageState extends State<FavorisPage> {
                                       Text(
                                         annonce['ville'] ?? '',
                                         style: const TextStyle(
-                                            color: Colors.grey, fontSize: 12),
+                                          color: Colors.grey,
+                                          fontSize: 12,
+                                        ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),

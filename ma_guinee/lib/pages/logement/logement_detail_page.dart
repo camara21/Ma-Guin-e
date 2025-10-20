@@ -9,7 +9,7 @@ import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
 import '../../routes.dart';
 
-// user
+// utilisateur
 import '../../providers/user_provider.dart';
 import '../../models/utilisateur_model.dart';
 
@@ -41,7 +41,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   final _msgCtrl = TextEditingController();
   bool _sending = false;
 
-  // signalement
+  // Signalement
   bool _sendingReport = false;
 
   // Palette
@@ -49,7 +49,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   Color get _accent => const Color(0xFFE1005A);
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
-  Color get _chipBg => _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
+  Color get _chipBg =>
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
   String? _currentUserId() {
     try {
@@ -115,7 +116,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   // -------- actions --------
-  /// Ouvre la carte en centrant et en ouvrant directement l’aperçu du logement
+  /// Ouvre la carte en centrant et en affichant directement l’aperçu du logement
   void _openMap() {
     final b = _bien;
     if (b == null) return;
@@ -156,8 +157,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         title: const Text('Supprimer'),
         content: const Text('Voulez-vous vraiment supprimer cette annonce ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer')),
         ],
       ),
     );
@@ -168,11 +173,11 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       _snack('Annonce supprimée');
       Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) _snack('Erreur suppression: $e');
+      if (mounted) _snack('Erreur suppression : $e');
     }
   }
 
-  // --------- compose + chat ----------
+  // --------- composer + chat ----------
   void _openMessages() {
     final b = _bien;
     if (b == null) return;
@@ -205,9 +210,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text('Message • ${b.titre}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text('Message à ${b.titre}',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
-                    IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+                    IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close)),
                   ],
                 ),
               ),
@@ -235,12 +243,15 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: _sending ? null : () => _sendMessage(closeAfter: true),
+                        onPressed: _sending
+                            ? null
+                            : () => _sendMessage(closeAfter: true),
                         icon: _sending
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
                               )
                             : const Icon(Icons.send),
                         label: Text(_sending ? 'Envoi…' : 'Envoyer'),
@@ -248,7 +259,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                           backgroundColor: _accent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                     ),
@@ -309,7 +321,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      _snack("Erreur envoi: $e");
+      _snack("Erreur envoi : $e");
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -339,11 +351,17 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     final id = widget.logementId;
     try {
       if (_fav) {
-        await _sb.from('logement_favoris').delete().eq('user_id', me).eq('logement_id', id);
+        await _sb
+            .from('logement_favoris')
+            .delete()
+            .eq('user_id', me)
+            .eq('logement_id', id);
         setState(() => _fav = false);
         _snack("Retiré des favoris");
       } else {
-        await _sb.from('logement_favoris').insert({'user_id': me, 'logement_id': id});
+        await _sb
+            .from('logement_favoris')
+            .insert({'user_id': me, 'logement_id': id});
         setState(() => _fav = true);
         _snack("Ajouté aux favoris");
       }
@@ -418,7 +436,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Signaler ce logement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const Text('Signaler ce logement',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -510,10 +529,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       if (e.code == '23505') {
         _snack('Déjà signalé.');
       } else {
-        _snack('Erreur: ${e.message}');
+        _snack('Erreur : ${e.message}');
       }
     } catch (e) {
-      _snack('Erreur: $e');
+      _snack('Erreur : $e');
     } finally {
       if (mounted) setState(() => _sendingReport = false);
     }
@@ -534,9 +553,13 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
           IconButton(
             tooltip: _fav ? "Retirer des favoris" : "Ajouter aux favoris",
             onPressed: _toggleFav,
-            icon: Icon(_fav ? Icons.favorite : Icons.favorite_border, color: _fav ? Colors.red : Colors.white),
+            icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
+                color: _fav ? Colors.red : Colors.white),
           ),
-          IconButton(tooltip: "Rafraîchir", onPressed: _load, icon: const Icon(Icons.refresh, color: Colors.white)),
+          IconButton(
+              tooltip: "Rafraîchir",
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, color: Colors.white)),
           PopupMenuButton<String>(
             iconColor: Colors.white,
             onSelected: (v) {
@@ -584,40 +607,61 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                               children: [
                                 _imagesHeader(b),
                                 Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 14, 16, 10),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(b.titre, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                                      Text(b.titre,
+                                          style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w700)),
                                       const SizedBox(height: 8),
                                       Text(
                                         _formatPrice(b.prixGnf, b.mode),
-                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accent),
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: _accent),
                                       ),
                                       const SizedBox(height: 12),
                                       Wrap(
                                         spacing: 8,
                                         runSpacing: -6,
                                         children: [
-                                          _chip(b.mode == LogementMode.achat ? 'Achat' : 'Location'),
-                                          _chip(logementCategorieToString(b.categorie)),
-                                          if (b.chambres != null) _chip('${b.chambres} ch'),
-                                          if (b.superficieM2 != null) _chip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                                          _chip(b.mode == LogementMode.achat
+                                              ? 'Achat'
+                                              : 'Location'),
+                                          _chip(logementCategorieToString(
+                                              b.categorie)),
+                                          if (b.chambres != null)
+                                            _chip('${b.chambres} ch'),
+                                          if (b.superficieM2 != null)
+                                            _chip(
+                                                '${b.superficieM2!.toStringAsFixed(0)} m²'),
                                         ],
                                       ),
                                       const SizedBox(height: 12),
                                       Row(
                                         children: [
-                                          const Icon(Icons.place, size: 18, color: Colors.black54),
+                                          const Icon(Icons.place,
+                                              size: 18, color: Colors.black54),
                                           const SizedBox(width: 6),
                                           Expanded(
                                             child: Text(
                                               [
-                                                if (b.adresse?.isNotEmpty == true) b.adresse!,
-                                                if (b.commune?.isNotEmpty == true) b.commune!,
-                                                if (b.ville?.isNotEmpty == true) b.ville!,
+                                                if (b.adresse?.isNotEmpty ==
+                                                    true)
+                                                  b.adresse!,
+                                                if (b.commune?.isNotEmpty ==
+                                                    true)
+                                                  b.commune!,
+                                                if (b.ville?.isNotEmpty == true)
+                                                  b.ville!,
                                               ].join(' • '),
-                                              style: const TextStyle(color: Colors.black54),
+                                              style: const TextStyle(
+                                                  color: Colors.black54),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
@@ -625,10 +669,14 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                                             style: OutlinedButton.styleFrom(
                                               foregroundColor: _accent,
                                               side: BorderSide(color: _accent),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          12)),
                                             ),
                                             onPressed: _openMap,
-                                            icon: const Icon(Icons.map_outlined),
+                                            icon:
+                                                const Icon(Icons.map_outlined),
                                             label: const Text("Carte"),
                                           ),
                                         ],
@@ -637,11 +685,16 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                                       const Divider(height: 1),
                                       const SizedBox(height: 18),
                                       const Text("Description",
-                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600)),
                                       const SizedBox(height: 8),
                                       Text(
-                                        (b.description ?? '—').trim().isEmpty ? '—' : b.description!.trim(),
-                                        style: const TextStyle(fontSize: 14, height: 1.4),
+                                        (b.description ?? '—').trim().isEmpty
+                                            ? '—'
+                                            : b.description!.trim(),
+                                        style: const TextStyle(
+                                            fontSize: 14, height: 1.4),
                                       ),
                                     ],
                                   ),
@@ -672,11 +725,13 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                                   Expanded(
                                     child: OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14),
                                         side: BorderSide(color: _accent),
                                         foregroundColor: _accent,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                         ),
                                       ),
                                       onPressed: _openMessages,
@@ -690,9 +745,11 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: _accent,
                                         foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                         ),
                                       ),
                                       onPressed: _callOwner,
@@ -707,7 +764,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                         ),
                       ],
                     ),
-
       floatingActionButton: (_loading || _error != null || !_isOwner)
           ? null
           : FloatingActionButton.extended(
@@ -742,14 +798,17 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     errorBuilder: (_, __, ___) => Container(
                       color: Colors.grey.shade200,
                       child: const Center(
-                        child: Icon(Icons.broken_image_outlined, size: 48, color: Colors.black26),
+                        child: Icon(Icons.broken_image_outlined,
+                            size: 48, color: Colors.black26),
                       ),
                     ),
                   ),
                 )
               : Container(
                   color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.image, size: 64, color: Colors.black26)),
+                  child: const Center(
+                      child:
+                          Icon(Icons.image, size: 64, color: Colors.black26)),
                 ),
         ),
         if (hasPhotos) _pagerDots(photos.length),
@@ -774,7 +833,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
             left: 8,
             child: _glass(
               child: IconButton(
-                icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+                icon: const Icon(Icons.chevron_left,
+                    color: Colors.white, size: 28),
                 onPressed: () => _page.previousPage(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeOut,
@@ -786,7 +846,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
             right: 8,
             child: _glass(
               child: IconButton(
-                icon: const Icon(Icons.chevron_right, color: Colors.white, size: 28),
+                icon: const Icon(Icons.chevron_right,
+                    color: Colors.white, size: 28),
                 onPressed: () => _page.nextPage(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeOut,
@@ -822,8 +883,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     child: Image.network(
                       photos[i],
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.broken_image_outlined, size: 80, color: Colors.white54),
+                      errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          size: 80,
+                          color: Colors.white54),
                     ),
                   ),
                 ),
@@ -834,7 +897,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                   top: 0,
                   bottom: 0,
                   child: IconButton(
-                    icon: const Icon(Icons.chevron_left, size: 36, color: Colors.white),
+                    icon: const Icon(Icons.chevron_left,
+                        size: 36, color: Colors.white),
                     onPressed: () => ctrl.previousPage(
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeOut,
@@ -846,7 +910,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                   top: 0,
                   bottom: 0,
                   child: IconButton(
-                    icon: const Icon(Icons.chevron_right, size: 36, color: Colors.white),
+                    icon: const Icon(Icons.chevron_right,
+                        size: 36, color: Colors.white),
                     onPressed: () => ctrl.nextPage(
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeOut,
@@ -921,11 +986,15 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
               const SizedBox(height: 10),
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
-              ElevatedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text("Réessayer")),
+              ElevatedButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text("Réessayer")),
             ],
           ),
         ),
       );
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 }

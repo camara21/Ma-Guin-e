@@ -43,7 +43,12 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
 
   static const String _bucket = 'restaurant-photos';
 
-  Color get mainColor => const Color(0xFFFF9800); // orange
+  // Palette Restaurants
+  static const Color kRestoPrimary = Color(0xFFE76F51);
+  static const Color kRestoSecondary = Color(0xFFF4A261);
+  static const Color kOnPrimary = Color(0xFFFFFFFF);
+
+  Color get mainColor => kRestoPrimary;
   Color get danger => const Color(0xFFE53935);
   Color get dark => const Color(0xFF263238);
 
@@ -166,14 +171,16 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(snap.data!, width: 70, height: 70, fit: BoxFit.cover),
+            child: Image.memory(snap.data!,
+                width: 70, height: 70, fit: BoxFit.cover),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.file(File(file.path), width: 70, height: 70, fit: BoxFit.cover),
+        child: Image.file(File(file.path),
+            width: 70, height: 70, fit: BoxFit.cover),
       );
     }
   }
@@ -259,7 +266,10 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
       };
 
       if (widget.restaurant != null) {
-        await supa.from('restaurants').update(data).eq('id', widget.restaurant!['id']);
+        await supa
+            .from('restaurants')
+            .update(data)
+            .eq('id', widget.restaurant!['id']);
 
         // Dialog succès
         if (mounted) {
@@ -267,7 +277,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
             context: context,
             builder: (_) => AlertDialog(
               title: const Text("Succès"),
-              content: const Text("Restaurant mis à jour avec succès ✅"),
+              content:
+                  const Text("Restaurant mis à jour avec succès."),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -287,7 +298,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
             context: context,
             builder: (_) => AlertDialog(
               title: const Text("Succès"),
-              content: const Text("Restaurant enregistré avec succès ✅"),
+              content:
+                  const Text("Restaurant enregistré avec succès."),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -316,8 +328,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(
         title: const Text('Inscription Restaurant'),
-        backgroundColor: Colors.white,
-        foregroundColor: mainColor,
+        backgroundColor: kRestoPrimary,
+        foregroundColor: kOnPrimary,
         elevation: 1,
       ),
       body: _loading
@@ -344,16 +356,18 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                             : 'Détecter ma position',
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: mainColor,
-                        foregroundColor: Colors.white,
+                        backgroundColor: kRestoPrimary,
+                        foregroundColor: kOnPrimary,
                       ),
                     ),
 
                     // Affichage coords + carte interactive
                     if (latitude != null && longitude != null) ...[
                       const SizedBox(height: 8),
-                      Text("Latitude : $latitude", style: TextStyle(color: dark)),
-                      Text("Longitude : $longitude", style: TextStyle(color: dark)),
+                      Text("Latitude : $latitude",
+                          style: TextStyle(color: dark)),
+                      Text("Longitude : $longitude",
+                          style: TextStyle(color: dark)),
                       if (adresse.isNotEmpty)
                         Text("Adresse : $adresse",
                             style: TextStyle(color: dark)),
@@ -422,8 +436,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                     ),
                     TextFormField(
                       initialValue: telephone,
-                      decoration:
-                          const InputDecoration(labelText: 'Téléphone'),
+                      decoration: const InputDecoration(
+                          labelText: 'Téléphone'),
                       keyboardType: TextInputType.phone,
                       validator: (v) =>
                           (v == null || v.isEmpty) ? 'Champ requis' : null,
@@ -438,8 +452,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                     ),
                     TextFormField(
                       initialValue: specialites,
-                      decoration:
-                          const InputDecoration(labelText: 'Spécialités'),
+                      decoration: const InputDecoration(
+                          labelText: 'Spécialités'),
                       onSaved: (v) => specialites = v ?? '',
                     ),
                     TextFormField(
@@ -464,9 +478,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(_existingImageUrls[i],
-                                    width: 70,
-                                    height: 70,
-                                    fit: BoxFit.cover),
+                                    width: 70, height: 70, fit: BoxFit.cover),
                               ),
                               Positioned(
                                 top: 2,
@@ -512,8 +524,8 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: Icon(Icons.add_a_photo,
-                                size: 30, color: mainColor),
+                            child: const Icon(Icons.add_a_photo,
+                                size: 30, color: kRestoPrimary),
                           ),
                         ),
                       ],
@@ -526,10 +538,9 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                       icon: const Icon(Icons.save),
                       label: const Text('Enregistrer'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: mainColor,
-                        foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: kRestoPrimary,
+                        foregroundColor: kOnPrimary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
