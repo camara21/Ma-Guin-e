@@ -201,7 +201,7 @@ class _TopGlassHeaderState extends State<_TopGlassHeader>
                   ),
                   const SizedBox(width: 10),
                   const Text(
-                    'Ma Guinée',
+                    'Soneya',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,

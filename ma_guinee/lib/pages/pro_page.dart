@@ -1,6 +1,6 @@
-// lib/pages/pro_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/prestataire_model.dart';
 import '../providers/prestataires_provider.dart';
@@ -21,122 +21,59 @@ class ProPage extends StatefulWidget {
 }
 
 class _ProPageState extends State<ProPage> {
-  /// Catégories & métiers (accents corrigés + ajouts pour la Guinée)
+  final _client = Supabase.instance.client;
+
+  /// Catégories & métiers
   static const Map<String, List<String>> categories = {
     'Artisans & BTP': [
-      'Maçon',
-      'Plombier',
-      'Électricien',
-      'Soudeur',
-      'Charpentier',
-      'Couvreur',
-      'Peintre en bâtiment',
-      'Mécanicien',
-      'Menuisier',
-      'Vitrier',
-      'Tôlier / Carrossier',
-      'Carreleur',
-      'Poseur de fenêtres/portes',
-      'Ferrailleur',
-      'Frigoriste / Technicien froid & clim', // ajouté
-      'Topographe / Géomètre',
+      'Maçon','Plombier','Électricien','Soudeur','Charpentier','Couvreur',
+      'Peintre en bâtiment','Mécanicien','Menuisier','Vitrier','Tôlier / Carrossier',
+      'Carreleur','Poseur de fenêtres/portes','Ferrailleur',
+      'Frigoriste / Technicien froid & clim','Topographe / Géomètre',
       'Technicien solaire / Photovoltaïque',
     ],
     'Beauté & Bien-être': [
-      'Coiffeur / Coiffeuse',
-      'Esthéticienne',
-      'Maquilleuse',
-      'Barbier',
-      'Masseuse',
-      'Spa thérapeute',
-      'Onglerie / Prothésiste ongulaire',
+      'Coiffeur / Coiffeuse','Esthéticienne','Maquilleuse','Barbier','Masseuse',
+      'Spa thérapeute','Onglerie / Prothésiste ongulaire',
     ],
     'Couture & Mode': [
-      'Couturier / Couturière',
-      'Styliste / Modéliste',
-      'Brodeur / Brodeuse',
-      'Teinturier',
-      'Designer textile',
-      'Cordonnier',
-      'Tisserand',
+      'Couturier / Couturière','Styliste / Modéliste','Brodeur / Brodeuse',
+      'Teinturier','Designer textile','Cordonnier','Tisserand',
     ],
     'Alimentation': [
-      'Cuisinier',
-      'Traiteur',
-      'Boulanger',
-      'Pâtissier',
-      'Vendeur de fruits/légumes',
-      'Marchand de poisson',
-      'Restaurateur',
-      'Boucher / Charcutier',
+      'Cuisinier','Traiteur','Boulanger','Pâtissier','Vendeur de fruits/légumes',
+      'Marchand de poisson','Restaurateur','Boucher / Charcutier',
     ],
     'Transport & Livraison': [
-      'Chauffeur particulier',
-      'Taxi-moto',
-      'Taxi-brousse',
-      'Livreur',
-      'Transporteur',
-      'Déménageur',
-      'Conducteur engins BTP',
+      'Chauffeur particulier','Taxi-moto','Taxi-brousse','Livreur',
+      'Transporteur','Déménageur','Conducteur engins BTP',
     ],
     'Services domestiques': [
-      'Femme de ménage',
-      'Nounou',
-      'Agent d’entretien',
-      'Gardiennage',
-      'Blanchisserie',
-      'Cuisinière à domicile',
+      'Femme de ménage','Nounou','Agent d’entretien','Gardiennage',
+      'Blanchisserie','Cuisinière à domicile',
     ],
     'Services professionnels': [
-      'Secrétaire',
-      'Traducteur',
-      'Comptable',
-      'Consultant',
-      'Notaire',
-      'Photographe / Vidéaste',
-      'Imprimeur',
-      'Agent immobilier',
+      'Secrétaire','Traducteur','Comptable','Consultant','Notaire',
+      'Photographe / Vidéaste','Imprimeur','Agent immobilier',
     ],
     'Éducation & Formation': [
-      'Enseignant',
-      'Tuteur',
-      'Formateur',
-      'Professeur particulier',
-      'Coach scolaire',
-      'Moniteur auto-école',
+      'Enseignant','Tuteur','Formateur','Professeur particulier',
+      'Coach scolaire','Moniteur auto-école',
     ],
     'Santé & Bien-être': [
-      'Infirmier',
-      'Docteur',
-      'Kinésithérapeute',
-      'Psychologue',
-      'Pharmacien',
-      'Médecine traditionnelle',
-      'Sage-femme',
+      'Infirmier','Docteur','Kinésithérapeute','Psychologue','Pharmacien',
+      'Médecine traditionnelle','Sage-femme',
     ],
     'Technologies & Digital': [
-      'Développeur / Développeuse',
-      'Ingénieur logiciel',
-      'Data Scientist',
-      'Développeur mobile',
-      'Designer UI/UX',
-      'Administrateur systèmes',
-      'Chef de projet IT',
-      'Technicien réseau',
-      'Analyste sécurité',
-      'Community Manager',
-      'Growth Hacker',
-      'Webmaster',
-      'DevOps Engineer',
+      'Développeur / Développeuse','Ingénieur logiciel','Data Scientist',
+      'Développeur mobile','Designer UI/UX','Administrateur systèmes',
+      'Chef de projet IT','Technicien réseau','Analyste sécurité',
+      'Community Manager','Growth Hacker','Webmaster','DevOps Engineer',
       'Technicien audiovisuel',
     ],
     'Événementiel & Culture': [
-      'DJ / Animateur',
-      'Maître de cérémonie',
-      'Décorateur événementiel',
-      'Traiteur événementiel',
-      'Sonorisateur / Éclairagiste',
-      'Guide touristique',
+      'DJ / Animateur','Maître de cérémonie','Décorateur événementiel',
+      'Traiteur événementiel','Sonorisateur / Éclairagiste','Guide touristique',
     ],
   };
 
@@ -145,7 +82,12 @@ class _ProPageState extends State<ProPage> {
   String selectedJob = 'Tous';
   String searchQuery = '';
 
-  // --- Listes pré-calculées (corrige l’erreur const + perf) ---
+  // --- Notes moyennes (calculées côté app à partir de avis_prestataires) ---
+  final Map<String, double> _avgByPrestataireId = {}; // id -> moyenne
+  final Map<String, int> _countByPrestataireId = {};  // id -> nb avis
+  String? _lastQueryKey;
+
+  // --- Listes pré-calculées ---
   late final List<String> _allCategories = ['Tous', ...categories.keys];
 
   List<String> _jobsForCategory(String category) {
@@ -168,6 +110,58 @@ class _ProPageState extends State<ProPage> {
     Future.microtask(
       () => context.read<PrestatairesProvider>().loadPrestataires(),
     );
+  }
+
+  /// Charge toutes les notes pour une liste d'IDs (même logique que page détail).
+  /// Utilise `.or(...)` pour rester compatible avec toutes versions du SDK.
+  Future<void> _loadNotesMoyennesFor(List<String> prestataireIds) async {
+    if (prestataireIds.isEmpty) return;
+
+    try {
+      // Découpage pour éviter des URL trop longues
+      const int batchSize = 20;
+      final Map<String, int> sum = {};
+      final Map<String, int> cnt = {};
+
+      for (var i = 0; i < prestataireIds.length; i += batchSize) {
+        final batch = prestataireIds.sublist(
+          i,
+          (i + batchSize > prestataireIds.length)
+              ? prestataireIds.length
+              : i + batchSize,
+        );
+
+        final orFilter = batch.map((id) => 'prestataire_id.eq.$id').join(',');
+
+        final rows = await _client
+            .from('avis_prestataires')
+            .select('prestataire_id, etoiles')
+            .or(orFilter); // ✅ au lieu de .in_()
+
+        final list = List<Map<String, dynamic>>.from(rows);
+        for (final r in list) {
+          final id = r['prestataire_id']?.toString();
+          final n = (r['etoiles'] as num?)?.toInt() ?? 0;
+          if (id == null || id.isEmpty || n <= 0) continue;
+          sum[id] = (sum[id] ?? 0) + n;
+          cnt[id] = (cnt[id] ?? 0) + 1;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avgByPrestataireId.clear();
+        _countByPrestataireId.clear();
+        for (final id in prestataireIds) {
+          final c = cnt[id] ?? 0;
+          final s = sum[id] ?? 0;
+          _avgByPrestataireId[id] = c > 0 ? s / c : 0.0;
+          _countByPrestataireId[id] = c;
+        }
+      });
+    } catch (_) {
+      // silencieux: si RLS bloque certains avis, on ignore.
+    }
   }
 
   @override
@@ -196,7 +190,15 @@ class _ProPageState extends State<ProPage> {
       }).toList();
     }
 
-    // --- Responsive: 1 colonne si largeur < 380, sinon 2 ---
+    // Déclenche le chargement des moyennes pour la liste visible (une seule requête)
+    final visibleIds = list.map((p) => p.id.toString()).toList();
+    final key = visibleIds.join(',');
+    if (key != _lastQueryKey && !prov.loading) {
+      _lastQueryKey = key;
+      _loadNotesMoyennesFor(visibleIds);
+    }
+
+    // --- Responsive ---
     int crossAxisCount = 2;
     final width = MediaQuery.of(context).size.width;
     if (width < 380) crossAxisCount = 1;
@@ -253,19 +255,12 @@ class _ProPageState extends State<ProPage> {
                   padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
                   child: Column(
                     children: [
-                      // --- Bannière ---
                       const _HeroBanner(),
-
-                      // --- Recherche ---
                       const SizedBox(height: 8),
-                      _SearchField(
-                        onChanged: (v) => setState(() => searchQuery = v),
-                      ),
-
-                      // --- Filtres Chips ---
+                      _SearchField(onChanged: (v) => setState(() => searchQuery = v)),
                       const SizedBox(height: 10),
                       _CategoryChips(
-                        categories: _allCategories, // ✅ plus de const spread
+                        categories: _allCategories,
                         selected: selectedCategory,
                         onSelected: (v) {
                           setState(() {
@@ -274,7 +269,6 @@ class _ProPageState extends State<ProPage> {
                           });
                         },
                       ),
-
                       if (selectedCategory != 'Tous') ...[
                         const SizedBox(height: 8),
                         _JobChips(
@@ -283,10 +277,7 @@ class _ProPageState extends State<ProPage> {
                           onSelected: (v) => setState(() => selectedJob = v),
                         ),
                       ],
-
                       const SizedBox(height: 10),
-
-                      // --- Grille des prestataires ---
                       Expanded(
                         child: list.isEmpty
                             ? const _EmptyState()
@@ -300,17 +291,26 @@ class _ProPageState extends State<ProPage> {
                                 itemCount: list.length,
                                 itemBuilder: (_, i) {
                                   final p = list[i];
-                                  final cat = p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
+                                  final cat = p.category.isNotEmpty
+                                      ? p.category
+                                      : _categoryForJob(p.metier);
+                                  final id = p.id.toString();
+                                  final rating = _avgByPrestataireId[id] ?? 0.0;
+                                  final count = _countByPrestataireId[id] ?? 0;
+
                                   return _ProCard(
                                     name: p.metier,
                                     category: cat,
                                     city: p.ville,
                                     photoUrl: p.photoUrl,
+                                    rating: rating,
+                                    ratingCount: count,
                                     onTap: () {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => PrestataireDetailPage(data: p.toJson()),
+                                          builder: (_) =>
+                                              PrestataireDetailPage(data: p.toJson()),
                                         ),
                                       );
                                     },
@@ -506,6 +506,8 @@ class _ProCard extends StatelessWidget {
   final String category;
   final String city;
   final String photoUrl;
+  final double rating;     // ⭐ moyenne
+  final int ratingCount;   // nb avis
   final VoidCallback onTap;
 
   const _ProCard({
@@ -513,8 +515,27 @@ class _ProCard extends StatelessWidget {
     required this.category,
     required this.city,
     required this.photoUrl,
+    required this.rating,
+    required this.ratingCount,
     required this.onTap,
   });
+
+  Widget _stars(double value) {
+    final full = value.floor();
+    final half = (value - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return const Icon(Icons.star, size: 14, color: Colors.amber);
+        } else if (i == full && half) {
+          return const Icon(Icons.star_half, size: 14, color: Colors.amber);
+        } else {
+          return const Icon(Icons.star_border, size: 14, color: Colors.amber);
+        }
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -555,7 +576,6 @@ class _ProCard extends StatelessWidget {
                             child: Icon(Icons.person, size: 44, color: prestatairesPrimary.withOpacity(.35)),
                           ),
                   ),
-                  // gradient bas pour lisibilité
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -567,7 +587,6 @@ class _ProCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // badge ville
                   Positioned(
                     left: 8,
                     bottom: 8,
@@ -602,7 +621,6 @@ class _ProCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // métier
                   Text(
                     name,
                     maxLines: 2,
@@ -615,7 +633,32 @@ class _ProCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  // catégorie
+                  // ⭐ note moyenne + nb avis
+                  Row(
+                    children: [
+                      _stars(rating),
+                      const SizedBox(width: 6),
+                      Text(
+                        ratingCount > 0 ? rating.toStringAsFixed(1) : '—',
+                        style: TextStyle(
+                          color: prestatairesPrimary.withOpacity(.85),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      if (ratingCount > 0) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '($ratingCount)',
+                          style: TextStyle(
+                            color: prestatairesPrimary.withOpacity(.65),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(Icons.work_outline, size: 14, color: prestatairesPrimary.withOpacity(.7)),

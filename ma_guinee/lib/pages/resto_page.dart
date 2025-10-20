@@ -1,3 +1,4 @@
+// lib/pages/resto_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,11 +14,10 @@ class RestoPage extends StatefulWidget {
 }
 
 class _RestoPageState extends State<RestoPage> {
-  // Couleurs — Restaurants (palette service)
+  // Couleurs — Restaurants
   static const Color _restoPrimary = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
-  static const Color _restoOnSecondary = Color(0xFF000000);
 
   final _searchCtrl = TextEditingController();
 
@@ -39,6 +39,18 @@ class _RestoPageState extends State<RestoPage> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  // -------------------- utils --------------------
+  String _formatGNF(int value) {
+    final s = value.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final remaining = s.length - i - 1;
+      buf.write(s[i]);
+      if (remaining > 0 && remaining % 3 == 0) buf.write('\u202F'); // espace fine
+    }
+    return '$buf GNF';
   }
 
   Future<void> _getLocation() async {
@@ -68,11 +80,11 @@ class _RestoPageState extends State<RestoPage> {
       final placemarks =
           await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final city = (p.locality?.isNotEmpty == true)
-            ? p.locality
-            : (p.subAdministrativeArea?.isNotEmpty == true
-                ? p.subAdministrativeArea
+        final pm = placemarks.first;
+        final city = (pm.locality?.isNotEmpty == true)
+            ? pm.locality
+            : (pm.subAdministrativeArea?.isNotEmpty == true
+                ? pm.subAdministrativeArea
                 : null);
         _villeGPS = city?.toLowerCase().trim();
       }
@@ -100,44 +112,46 @@ class _RestoPageState extends State<RestoPage> {
 
   double _deg2rad(double deg) => deg * (pi / 180.0);
 
+  // -------------------- chargement --------------------
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     try {
       await _getLocation();
 
-      final data = await Supabase.instance.client.from('restaurants').select('''
-            id, nom, ville, adresse, tel, whatsapp,
-            prix, etoiles, description,
-            latitude, longitude,
-            images, specialites, horaires,
-            created_at, updated_at, user_id
-          ''').order('nom');
+      // On lit la VUE avec note_moyenne, nb_avis
+      final data = await Supabase.instance.client
+          .from('v_restaurants_ratings')
+          .select()
+          .order('nom');
 
       final restos = List<Map<String, dynamic>>.from(data);
 
-      if (_position != null) {
-        for (final r in restos) {
+      // Distances + tri
+      for (final r in restos) {
+        if (_position != null) {
           final lat = (r['latitude'] as num?)?.toDouble();
           final lon = (r['longitude'] as num?)?.toDouble();
           r['_distance'] = _distanceMeters(
               _position!.latitude, _position!.longitude, lat, lon);
         }
+        // étoile entière à afficher (arrondi)
+        final avg = (r['note_moyenne'] as num?)?.toDouble();
+        if (avg != null) r['_avg_int'] = avg.round();
+      }
 
+      if (_position != null) {
         if (_villeGPS != null && _villeGPS!.isNotEmpty) {
           restos.sort((a, b) {
             final aSame =
                 (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
             final bSame =
                 (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-
             if (aSame != bSame) return aSame ? -1 : 1;
-
             final ad = (a['_distance'] as double?);
             final bd = (b['_distance'] as double?);
             if (ad != null && bd != null) return ad.compareTo(bd);
             if (ad != null) return -1;
             if (bd != null) return 1;
-
             return (a['nom'] ?? '').toString().compareTo(
                   (b['nom'] ?? '').toString(),
                 );
@@ -189,20 +203,21 @@ class _RestoPageState extends State<RestoPage> {
     return const [];
   }
 
-  Widget _buildStars(dynamic raw) {
-    final n = (raw is int) ? raw : int.tryParse(raw?.toString() ?? '') ?? 0;
+  Widget _buildStarsInt(int n) {
+    final c = n.clamp(0, 5);
     return Row(
       children: List.generate(
         5,
         (i) => Icon(
-          i < n ? Icons.star : Icons.star_border,
+          i < c ? Icons.star : Icons.star_border,
           size: 14,
-          color: _restoSecondary, // couleur service
+          color: _restoSecondary,
         ),
       ),
     );
   }
 
+  // -------------------- UI --------------------
   @override
   Widget build(BuildContext context) {
     final subtitleInfo = (_position != null && _villeGPS != null)
@@ -233,7 +248,7 @@ class _RestoPageState extends State<RestoPage> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
-                      // Bandeau service (gradient Restaurants)
+                      // Bandeau
                       Container(
                         width: double.infinity,
                         height: 76,
@@ -269,16 +284,14 @@ class _RestoPageState extends State<RestoPage> {
                                   Text(
                                     subtitleInfo,
                                     style: const TextStyle(
-                                      color: _restoOnPrimary,
-                                      fontSize: 12,
-                                    ),
+                                        color: _restoOnPrimary, fontSize: 12),
                                   ),
                               ],
                             ),
                           ),
                         ),
                       ),
-                      // Barre de recherche
+                      // Recherche
                       TextField(
                         controller: _searchCtrl,
                         decoration: InputDecoration(
@@ -297,10 +310,10 @@ class _RestoPageState extends State<RestoPage> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: _restoPrimary),
+                            borderSide:
+                                const BorderSide(color: _restoPrimary),
                           ),
                           filled: true,
-                          // léger fond inspiré de la secondaire
                           fillColor: const Color(0xFFFFF3E5),
                         ),
                         onChanged: _applyFilter,
@@ -330,10 +343,36 @@ class _RestoPageState extends State<RestoPage> {
                                   itemCount: _filtered.length,
                                   itemBuilder: (context, i) {
                                     final resto = _filtered[i];
-                                    final images = _imagesFrom(resto['images']);
+
+                                    final images =
+                                        _imagesFrom(resto['images']);
                                     final image = images.isNotEmpty
                                         ? images.first
                                         : 'https://via.placeholder.com/300x200.png?text=Restaurant';
+
+                                    final hasPrix = (resto['prix'] is num) ||
+                                        (resto['prix'] is String &&
+                                            (resto['prix'] as String)
+                                                .trim()
+                                                .isNotEmpty);
+                                    final prixVal = (resto['prix'] is num)
+                                        ? (resto['prix'] as num).toInt()
+                                        : int.tryParse(
+                                            (resto['prix'] ?? '')
+                                                .toString(),
+                                          );
+
+                                    final avgInt =
+                                        (resto['_avg_int'] as int?) ??
+                                            ((resto['note_moyenne']
+                                                        is num)
+                                                    ? (resto['note_moyenne']
+                                                            as num)
+                                                        .round()
+                                                    : null) ??
+                                            ((resto['etoiles'] is int)
+                                                ? resto['etoiles'] as int
+                                                : null);
 
                                     return GestureDetector(
                                       onTap: () {
@@ -348,9 +387,8 @@ class _RestoPageState extends State<RestoPage> {
                                       child: Card(
                                         elevation: 2,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                        ),
+                                            borderRadius:
+                                                BorderRadius.circular(16)),
                                         clipBehavior: Clip.hardEdge,
                                         child: Column(
                                           crossAxisAlignment:
@@ -364,14 +402,16 @@ class _RestoPageState extends State<RestoPage> {
                                                     child: Image.network(
                                                       image,
                                                       fit: BoxFit.cover,
-                                                      errorBuilder:
-                                                          (_, __, ___) =>
-                                                              Container(
-                                                        color: Colors.grey[200],
+                                                      errorBuilder: (_, __,
+                                                              ___) =>
+                                                          Container(
+                                                        color:
+                                                            Colors.grey[200],
                                                         child: const Icon(
                                                             Icons.restaurant,
                                                             size: 40,
-                                                            color: Colors.grey),
+                                                            color:
+                                                                Colors.grey),
                                                       ),
                                                     ),
                                                   ),
@@ -384,7 +424,7 @@ class _RestoPageState extends State<RestoPage> {
                                                       child: Container(
                                                         padding:
                                                             const EdgeInsets
-                                                                .symmetric(
+                                                                    .symmetric(
                                                                 horizontal: 8,
                                                                 vertical: 4),
                                                         decoration:
@@ -394,7 +434,8 @@ class _RestoPageState extends State<RestoPage> {
                                                                   0.55),
                                                           borderRadius:
                                                               BorderRadius
-                                                                  .circular(12),
+                                                                  .circular(
+                                                                      12),
                                                         ),
                                                         child: Row(
                                                           mainAxisSize:
@@ -414,7 +455,8 @@ class _RestoPageState extends State<RestoPage> {
                                                               style: const TextStyle(
                                                                   color: Colors
                                                                       .white,
-                                                                  fontSize: 12),
+                                                                  fontSize:
+                                                                      12),
                                                             ),
                                                           ],
                                                         ),
@@ -433,79 +475,75 @@ class _RestoPageState extends State<RestoPage> {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    (resto['nom'] ?? 'Sans nom')
+                                                    (resto['nom'] ??
+                                                            'Sans nom')
                                                         .toString(),
                                                     maxLines: 2,
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 15,
-                                                    ),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 15),
                                                   ),
                                                   const SizedBox(height: 3),
                                                   Row(
                                                     children: [
                                                       Flexible(
                                                         child: Text(
-                                                          (resto['ville'] ?? '')
+                                                          (resto['ville'] ??
+                                                                  '')
                                                               .toString(),
                                                           maxLines: 1,
                                                           overflow: TextOverflow
                                                               .ellipsis,
-                                                          style:
-                                                              const TextStyle(
-                                                            color: Colors.grey,
-                                                            fontSize: 13,
-                                                          ),
+                                                          style: const TextStyle(
+                                                              color:
+                                                                  Colors.grey,
+                                                              fontSize: 13),
                                                         ),
                                                       ),
                                                       if (resto.containsKey(
                                                               '_distance') &&
                                                           resto['_distance'] !=
                                                               null) ...[
-                                                        const Text(
-                                                          '  •  ',
-                                                          style: TextStyle(
+                                                        const Text('  •  ',
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .grey,
+                                                                fontSize: 13)),
+                                                        Text(
+                                                          '${(resto['_distance'] / 1000).toStringAsFixed(1)} km',
+                                                          style: const TextStyle(
                                                               color:
                                                                   Colors.grey,
                                                               fontSize: 13),
                                                         ),
-                                                        Text(
-                                                          '${(resto['_distance'] / 1000).toStringAsFixed(1)} km',
-                                                          style:
-                                                              const TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                  fontSize: 13),
-                                                        ),
                                                       ],
                                                     ],
                                                   ),
-                                                  if ((resto['prix'] ?? '')
-                                                      .toString()
-                                                      .isNotEmpty)
+                                                  if (hasPrix &&
+                                                      prixVal != null)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets.only(
-                                                              top: 2),
+                                                          const EdgeInsets
+                                                              .only(top: 2),
                                                       child: Text(
-                                                        'Prix : ${resto['prix']}',
+                                                        'Prix : ${_formatGNF(prixVal)} (plat)',
                                                         style: const TextStyle(
                                                           color:
-                                                              _restoPrimary, // highlight service
+                                                              _restoPrimary,
                                                           fontSize: 12,
                                                         ),
                                                       ),
                                                     ),
-                                                  if (resto['etoiles'] != null)
+                                                  if (avgInt != null)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets.only(
-                                                              top: 2),
-                                                      child: _buildStars(
-                                                          resto['etoiles']),
+                                                          const EdgeInsets
+                                                              .only(top: 2),
+                                                      child:
+                                                          _buildStarsInt(avgInt),
                                                     ),
                                                 ],
                                               ),

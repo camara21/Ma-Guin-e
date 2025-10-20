@@ -21,6 +21,8 @@ class TourismePage extends StatefulWidget {
 }
 
 class _TourismePageState extends State<TourismePage> {
+  final _sb = Supabase.instance.client;
+
   // Données
   List<Map<String, dynamic>> _allLieux = [];
   List<Map<String, dynamic>> _filteredLieux = [];
@@ -32,6 +34,11 @@ class _TourismePageState extends State<TourismePage> {
   // Localisation
   Position? _position;
   String? _villeGPS;
+
+  // ⭐ Notes (moyenne + nombre d’avis) par lieu_id
+  final Map<String, double> _avgByLieuId = {};
+  final Map<String, int> _countByLieuId = {};
+  String? _lastRatingsKey; // évite recharges inutiles
 
   @override
   void initState() {
@@ -96,15 +103,14 @@ class _TourismePageState extends State<TourismePage> {
     try {
       await _getLocation();
 
-      // Adapter les colonnes à ta table "lieux"
-      final response = await Supabase.instance.client
+      final response = await _sb
           .from('lieux')
           .select('''
             id, nom, ville, description, type, categorie,
             images, latitude, longitude, created_at,
             contact, photo_url
           ''')
-          .eq('type', 'tourisme') // ou .eq('categorie', 'tourisme') selon ton schéma
+          .eq('type', 'tourisme')
           .order('nom');
 
       final list = List<Map<String, dynamic>>.from(response);
@@ -170,10 +176,7 @@ class _TourismePageState extends State<TourismePage> {
         final desc = (lieu['description'] ?? '').toString().toLowerCase();
         final tag =
             (lieu['categorie'] ?? lieu['type'] ?? '').toString().toLowerCase();
-        return nom.contains(q) ||
-            ville.contains(q) ||
-            desc.contains(q) ||
-            tag.contains(q);
+        return nom.contains(q) || ville.contains(q) || desc.contains(q) || tag.contains(q);
       }).toList();
     });
   }
@@ -193,6 +196,68 @@ class _TourismePageState extends State<TourismePage> {
     return 'https://via.placeholder.com/300x200.png?text=Tourisme';
   }
 
+  /// ------- Chargement des moyennes pour la liste visible (aucune modif DB) -------
+  Future<void> _loadRatingsFor(List<String> lieuIds) async {
+    if (lieuIds.isEmpty) return;
+
+    try {
+      const int batchSize = 20;
+      final Map<String, int> sum = {};
+      final Map<String, int> cnt = {};
+
+      for (var i = 0; i < lieuIds.length; i += batchSize) {
+        final batch = lieuIds.sublist(i, (i + batchSize > lieuIds.length) ? lieuIds.length : i + batchSize);
+        final orFilter = batch.map((id) => 'lieu_id.eq.$id').join(',');
+
+        final rows = await _sb
+            .from('avis_lieux')
+            .select('lieu_id, etoiles')
+            .or(orFilter); // ✅ compatible SDK (au lieu de .in_)
+
+        final list = List<Map<String, dynamic>>.from(rows);
+        for (final r in list) {
+          final id = r['lieu_id']?.toString();
+          final n = (r['etoiles'] as num?)?.toInt() ?? 0;
+          if (id == null || id.isEmpty || n <= 0) continue;
+          sum[id] = (sum[id] ?? 0) + n;
+          cnt[id] = (cnt[id] ?? 0) + 1;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avgByLieuId.clear();
+        _countByLieuId.clear();
+        for (final id in lieuIds) {
+          final c = cnt[id] ?? 0;
+          final s = sum[id] ?? 0;
+          _avgByLieuId[id] = c > 0 ? s / c : 0.0;
+          _countByLieuId[id] = c;
+        }
+      });
+    } catch (_) {
+      // silencieux : si RLS bloque certains avis, on ignore
+    }
+  }
+
+  // Affichage étoiles (comme Prestataires)
+  Widget _stars(double value, {double size = 14}) {
+    final full = value.floor();
+    final half = (value - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, size: size, color: Colors.amber);
+        } else if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: Colors.amber);
+        } else {
+          return Icon(Icons.star_border, size: size, color: Colors.amber);
+        }
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Dégradé Tourisme pour AppBar
@@ -207,10 +272,18 @@ class _TourismePageState extends State<TourismePage> {
     final width = MediaQuery.of(context).size.width;
     if (width < 380) crossAxisCount = 1;
 
+    // Déclencher chargement des notes pour la liste filtrée visible
+    final visibleIds = _filteredLieux.map((l) => (l['id'] ?? '').toString()).where((s) => s.isNotEmpty).toList();
+    final key = visibleIds.join(',');
+    if (key != _lastRatingsKey && !_loading) {
+      _lastRatingsKey = key;
+      _loadRatingsFor(visibleIds);
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        systemOverlayStyle: SystemUiOverlayStyle.light, // status bar claire
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         title: const Text(
           "Sites touristiques",
           style: TextStyle(color: tourismeOnPrimary, fontWeight: FontWeight.w700),
@@ -314,10 +387,14 @@ class _TourismePageState extends State<TourismePage> {
                             itemCount: _filteredLieux.length,
                             itemBuilder: (context, index) {
                               final lieu = _filteredLieux[index];
+                              final id = (lieu['id'] ?? '').toString();
                               final image = _bestImage(lieu);
                               final hasVille = (lieu['ville'] ?? '').toString().isNotEmpty;
                               final hasDesc = (lieu['description'] ?? '').toString().isNotEmpty;
                               final dist = (lieu['_distance'] as double?);
+
+                              final rating = _avgByLieuId[id] ?? 0.0;
+                              final count = _countByLieuId[id] ?? 0;
 
                               return GestureDetector(
                                 onTap: () {
@@ -397,8 +474,36 @@ class _TourismePageState extends State<TourismePage> {
                                                 fontSize: 15,
                                               ),
                                             ),
-                                            const SizedBox(height: 3),
-                                            // Ville + distance
+                                            const SizedBox(height: 4),
+
+                                            // ⭐ Note moyenne + nb avis
+                                            Row(
+                                              children: [
+                                                _stars(rating),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  count > 0 ? rating.toStringAsFixed(1) : '—',
+                                                  style: TextStyle(
+                                                    color: Colors.black.withOpacity(.85),
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                                if (count > 0) ...[
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '($count)',
+                                                    style: TextStyle(
+                                                      color: Colors.black.withOpacity(.6),
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+
+                                            // Ville + distance (noir 54%)
                                             Row(
                                               children: [
                                                 Flexible(
@@ -406,37 +511,40 @@ class _TourismePageState extends State<TourismePage> {
                                                     (lieu['ville'] ?? '').toString(),
                                                     maxLines: 1,
                                                     overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      color: Colors.grey,
+                                                    style: TextStyle(
+                                                      color: Colors.black.withOpacity(.54),
                                                       fontSize: 13,
                                                     ),
                                                   ),
                                                 ),
                                                 if (dist != null) ...[
-                                                  const Text('  •  ',
+                                                  Text('  •  ',
                                                       style: TextStyle(
-                                                          color: Colors.grey, fontSize: 13)),
+                                                          color: Colors.black.withOpacity(.54),
+                                                          fontSize: 13)),
                                                   Text(
                                                     '${(dist / 1000).toStringAsFixed(1)} km',
-                                                    style: const TextStyle(
-                                                      color: Colors.grey,
+                                                    style: TextStyle(
+                                                      color: Colors.black.withOpacity(.54),
                                                       fontSize: 13,
                                                     ),
                                                   ),
                                                 ],
                                               ],
                                             ),
+
+                                            // Description (noir)
                                             if (hasDesc)
                                               Padding(
-                                                padding: const EdgeInsets.only(top: 2),
+                                                padding: const EdgeInsets.only(top: 3),
                                                 child: Text(
                                                   lieu['description'].toString(),
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: const TextStyle(
-                                                    color: tourismePrimary,
-                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black, // ✅ noir
                                                     fontSize: 13,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
                                               ),

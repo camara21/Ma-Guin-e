@@ -1,3 +1,4 @@
+// lib/pages/divertissement_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,7 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'divertissement_detail_page.dart';
 
 class DivertissementPage extends StatefulWidget {
-  const DivertissementPage({super.key}); // <- constructeur const
+  const DivertissementPage({super.key});
 
   @override
   State<DivertissementPage> createState() => _DivertissementPageState();
@@ -25,7 +26,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
   Position? _position;
   String? _villeGPS;
 
-  // Couleur unifiée (même teinte que le détail)
+  // Couleur (même teinte que le détail)
   static const primaryColor = Colors.deepPurple;
 
   @override
@@ -97,16 +98,30 @@ class _DivertissementPageState extends State<DivertissementPage> {
     try {
       await _getLocation();
 
+      // ⬇️ Récupère les lieux + la liste des avis (étoiles) imbriquée
       final response = await Supabase.instance.client
           .from('lieux')
           .select('''
             id, nom, ville, type, categorie, description,
-            images, latitude, longitude, adresse, created_at
-          ''')
-          .eq('type', 'divertissement') // ou .eq('categorie','divertissement')
+            images, latitude, longitude, adresse, created_at,
+            avis_lieux(etoiles)
+          ''') // <-- pas besoin de .in_(), on embarque les avis
+          .eq('type', 'divertissement')
           .order('nom', ascending: true);
 
       final list = List<Map<String, dynamic>>.from(response);
+
+      // Calcule moyenne & nb_avis à partir de avis_lieux
+      for (final l in list) {
+        final List avis = (l['avis_lieux'] as List?) ?? const [];
+        int sum = 0;
+        for (final a in avis) {
+          sum += (a['etoiles'] as num?)?.toInt() ?? 0;
+        }
+        final count = avis.length;
+        l['_avg'] = count == 0 ? null : (sum / count);
+        l['_count'] = count;
+      }
 
       // Ajout des distances si la position est dispo
       if (_position != null) {
@@ -184,14 +199,26 @@ class _DivertissementPageState extends State<DivertissementPage> {
     return const [];
   }
 
+  Widget _stars(double? avg) {
+    final n = ((avg ?? 0).round()).clamp(0, 5);
+    return Row(
+      children: List.generate(
+        5,
+        (i) => Icon(
+          i < n ? Icons.star : Icons.star_border,
+          size: 14,
+          color: primaryColor,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Divertissement',
-        ),
+        title: const Text('Divertissement'),
         centerTitle: true,
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
@@ -288,6 +315,10 @@ class _DivertissementPageState extends State<DivertissementPage> {
                                   (lieu['type'] ?? lieu['categorie'] ?? '')
                                       .toString();
 
+                              final double? avg =
+                                  (lieu['_avg'] as num?)?.toDouble();
+                              final int nb = (lieu['_count'] as int?) ?? 0;
+
                               return GestureDetector(
                                 onTap: () {
                                   Navigator.push(
@@ -371,7 +402,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
                                         ),
                                       ),
 
-                                      // Texte
+                                      // Texte + note
                                       Padding(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 10, vertical: 8),
@@ -439,6 +470,35 @@ class _DivertissementPageState extends State<DivertissementPage> {
                                                   ),
                                                 ),
                                               ),
+                                            // Note moyenne + nb avis
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 4),
+                                              child: Row(
+                                                children: [
+                                                  _stars(avg),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    avg == null
+                                                        ? 'Aucune note'
+                                                        : '${avg.toStringAsFixed(2)} / 5',
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '($nb avis)',
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),

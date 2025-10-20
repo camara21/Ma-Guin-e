@@ -9,9 +9,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/annonce_model.dart';
 
+// ====== Palette Annonces (tes valeurs exactes) ======
+const kAnnoncePrimary     = Color(0xFF1E3A8A);
+const kAnnonceSecondary   = Color(0xFF60A5FA);
+const kAnnonceOnPrimary   = Color(0xFFFFFFFF);
+const kAnnonceOnSecondary = Color(0xFF000000);
+
+// Neutres (tu peux ajuster si besoin)
+const kAnnonceBg   = Color(0xFFF8F8FB);
+const kAnnonceCard = Colors.white;
+// ====================================================
+
 class EditAnnoncePage extends StatefulWidget {
-  final Map<String, dynamic>
-      annonce; // tu passes dÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  un Map dans routes
+  final Map<String, dynamic> annonce; // tu passes déjà un Map dans routes
   const EditAnnoncePage({super.key, required this.annonce});
 
   @override
@@ -28,8 +38,8 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
   late TextEditingController _villeController;
 
   final ImagePicker _picker = ImagePicker();
-  final List<XFile> _newImages = []; // nouvelles images non uploadÃ©Â©Ã†â€™Â©es
-  List<String> _oldUrls = []; // images dÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  en ligne
+  final List<XFile> _newImages = []; // nouvelles images non uploadées
+  List<String> _oldUrls = []; // images déjà en ligne
 
   bool _loading = false;
   int? _selectedCategoryId;
@@ -57,7 +67,6 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
           await Supabase.instance.client.from('categories').select();
       setState(() {
         _categories = List<Map<String, dynamic>>.from(response);
-        // si pas dÃ©Â©Ã†â€™Â©fini, on prend la premiÃ©Â©Ã†â€™Â¨re
         _selectedCategoryId ??=
             _categories.isNotEmpty ? _categories.first['id'] : null;
       });
@@ -94,16 +103,14 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(13),
-            child: Image.memory(snap.data!,
-                width: 90, height: 90, fit: BoxFit.cover),
+            child: Image.memory(snap.data!, width: 90, height: 90, fit: BoxFit.cover),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(13),
-        child: Image.file(File(file.path),
-            width: 90, height: 90, fit: BoxFit.cover),
+        child: Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover),
       );
     }
   }
@@ -147,7 +154,7 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Choisissez une catÃ©Â©Ã†â€™Â©gorie")),
+        const SnackBar(content: Text("Choisissez une catégorie")),
       );
       return;
     }
@@ -165,7 +172,6 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
         'ville': _villeController.text.trim(),
         'categorie_id': _selectedCategoryId,
         'images': allUrls,
-        // pas besoin de changer user_id/date_creation ici
       };
 
       await Supabase.instance.client
@@ -175,9 +181,9 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Annonce mise Ã©Â©Ã†â€™  jour.")),
+          const SnackBar(content: Text("Annonce mise à jour.")),
         );
-        Navigator.pop(context, data); // renvoyer data si tu veux refresh
+        Navigator.pop(context, data);
       }
     } catch (e) {
       if (mounted) {
@@ -189,24 +195,42 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
     }
   }
 
+  InputDecoration _input(String label, {IconData? icon, Color? iconColor}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: icon == null ? null : Icon(icon, color: iconColor ?? kAnnoncePrimary),
+      filled: true,
+      fillColor: kAnnonceCard,
+      border: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: kAnnoncePrimary, width: 1.6),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FB),
+      backgroundColor: kAnnonceBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: kAnnoncePrimary,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Color(0xFF113CFC)),
+        iconTheme: const IconThemeData(color: kAnnonceOnPrimary),
         title: const Text(
-          'Modifier lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢annonce',
+          'Modifier l’annonce',
           style: TextStyle(
-              color: Color(0xFF113CFC),
-              fontWeight: FontWeight.bold,
-              fontSize: 20),
+            color: kAnnonceOnPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
+            color: kAnnonceOnPrimary,
             onPressed: _loading ? null : _save,
             tooltip: "Enregistrer",
           )
@@ -223,16 +247,7 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                     // TITRE
                     TextFormField(
                       controller: _titreController,
-                      decoration: const InputDecoration(
-                        labelText: 'Titre',
-                        prefixIcon:
-                            Icon(Icons.edit_outlined, color: Color(0xFF113CFC)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
-                      ),
+                      decoration: _input('Titre', icon: Icons.edit_outlined),
                       validator: (v) => v!.isEmpty ? 'Entrez un titre' : null,
                     ),
                     const SizedBox(height: 16),
@@ -241,18 +256,8 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                     TextFormField(
                       controller: _descriptionController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        prefixIcon:
-                            Icon(Icons.description, color: Color(0xFF113CFC)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
-                      ),
-                      validator: (v) =>
-                          v!.isEmpty ? 'Entrez une description' : null,
+                      decoration: _input('Description', icon: Icons.description),
+                      validator: (v) => v!.isEmpty ? 'Entrez une description' : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -260,72 +265,46 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                     TextFormField(
                       controller: _prixController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Prix (GNF)',
-                        prefixIcon:
-                            Icon(Icons.price_change, color: Color(0xFF009460)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
+                      decoration: _input(
+                        'Prix (GNF)',
+                        icon: Icons.price_change,
+                        iconColor: kAnnonceSecondary, // accent conforme
                       ),
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Indiquez un prix'
-                          : null,
+                      validator: (v) =>
+                          v == null || v.trim().isEmpty ? 'Indiquez un prix' : null,
                     ),
                     const SizedBox(height: 16),
 
                     // VILLE
                     TextFormField(
                       controller: _villeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Ville',
-                        prefixIcon:
-                            Icon(Icons.location_on, color: Color(0xFF113CFC)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
-                      ),
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Entrez une ville'
-                          : null,
+                      decoration: _input('Ville', icon: Icons.location_on),
+                      validator: (v) =>
+                          v == null || v.trim().isEmpty ? 'Entrez une ville' : null,
                     ),
                     const SizedBox(height: 16),
 
-                    // TÃ©Â©Ã†â€™â€šÂ¬Â°LÃ©Â©Ã†â€™â€šÂ¬Â°PHONE
+                    // TÉLÉPHONE
                     TextFormField(
                       controller: _telephoneController,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'TÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©phone',
-                        prefixIcon: Icon(Icons.phone, color: Color(0xFFFCD116)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
+                      decoration: _input(
+                        'Téléphone',
+                        icon: Icons.phone,
+                        iconColor: kAnnonceSecondary,
                       ),
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Entrez un numÃ©Â©Ã†â€™Â©ro'
-                          : null,
+                      validator: (v) =>
+                          v == null || v.trim().isEmpty ? 'Entrez un numéro' : null,
                     ),
                     const SizedBox(height: 16),
 
-                    // CATÃ©Â©Ã†â€™â€šÂ¬Â°GORIE
+                    // CATÉGORIE
                     DropdownButtonFormField<int>(
                       value: _selectedCategoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'CatÃ©Â©Ã†â€™Â©gorie',
-                        prefixIcon: Icon(Icons.category_outlined,
-                            color: Color(0xFFCE1126)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(14))),
+                      decoration: _input(
+                        'Catégorie',
+                        icon: Icons.category_outlined,
+                        iconColor: kAnnonceSecondary,
                       ),
                       items: _categories
                           .map((cat) => DropdownMenuItem<int>(
@@ -333,18 +312,20 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                 child: Text(cat['nom'] ?? 'Inconnue'),
                               ))
                           .toList(),
-                      onChanged: (val) =>
-                          setState(() => _selectedCategoryId = val),
+                      onChanged: (val) => setState(() => _selectedCategoryId = val),
                     ),
                     const SizedBox(height: 24),
 
-                    // PHOTOS
+                    // PHOTOS EXISTANTES
                     const Align(
                       alignment: Alignment.centerLeft,
-                      child: Text("Photos existantes",
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF113CFC))),
+                      child: Text(
+                        "Photos existantes",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: kAnnoncePrimary,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -362,9 +343,8 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                   onTap: () => _removeOldImage(i),
                                   child: const CircleAvatar(
                                     radius: 13,
-                                    backgroundColor: Colors.red,
-                                    child: Icon(Icons.close,
-                                        size: 16, color: Colors.white),
+                                    backgroundColor: kAnnonceSecondary,
+                                    child: Icon(Icons.close, size: 16, color: kAnnonceOnSecondary),
                                   ),
                                 ),
                               ),
@@ -373,12 +353,17 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                       ],
                     ),
                     const SizedBox(height: 22),
+
+                    // AJOUTER DE NOUVELLES PHOTOS
                     const Align(
                       alignment: Alignment.centerLeft,
-                      child: Text("Ajouter de nouvelles photos",
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF113CFC))),
+                      child: Text(
+                        "Ajouter de nouvelles photos",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: kAnnoncePrimary,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -396,9 +381,8 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                   onTap: () => _removeNewImage(i),
                                   child: const CircleAvatar(
                                     radius: 13,
-                                    backgroundColor: Colors.red,
-                                    child: Icon(Icons.close,
-                                        size: 16, color: Colors.white),
+                                    backgroundColor: kAnnonceSecondary,
+                                    child: Icon(Icons.close, size: 16, color: kAnnonceOnSecondary),
                                   ),
                                 ),
                               ),
@@ -410,13 +394,11 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                             width: 90,
                             height: 90,
                             decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: const Color(0xFF113CFC)),
+                              border: Border.all(color: kAnnoncePrimary),
                               borderRadius: BorderRadius.circular(13),
-                              color: const Color(0xFFF8F6F9),
+                              color: kAnnonceCard,
                             ),
-                            child: const Icon(Icons.add_a_photo,
-                                size: 28, color: Color(0xFF113CFC)),
+                            child: const Icon(Icons.add_a_photo, size: 28, color: kAnnoncePrimary),
                           ),
                         ),
                       ],
@@ -426,15 +408,15 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                     // BOUTON ENREGISTRER
                     ElevatedButton.icon(
                       onPressed: _save,
-                      icon: const Icon(Icons.save),
-                      label: const Text("Enregistrer"),
+                      icon: const Icon(Icons.save, color: kAnnonceOnPrimary),
+                      label: const Text("Enregistrer", style: TextStyle(color: kAnnonceOnPrimary)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF113CFC),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 38, vertical: 16),
+                        backgroundColor: kAnnoncePrimary,
+                        foregroundColor: kAnnonceOnPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 16),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(17)),
+                          borderRadius: BorderRadius.circular(17),
+                        ),
                       ),
                     ),
                   ],

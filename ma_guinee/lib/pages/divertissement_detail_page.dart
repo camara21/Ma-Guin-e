@@ -1,26 +1,40 @@
+// lib/pages/divertissement_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DivertissementDetailPage extends StatefulWidget {
   final Map<String, dynamic> lieu;
   const DivertissementDetailPage({super.key, required this.lieu});
 
   @override
-  State<DivertissementDetailPage> createState() => _DivertissementDetailPageState();
+  State<DivertissementDetailPage> createState() =>
+      _DivertissementDetailPageState();
 }
 
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   static const Color kPrimary = Colors.deepPurple;
 
-  // Avis (facultatif ici – structure prête si tu veux brancher Supabase plus tard)
+  // Avis (édition)
   int _note = 0;
   final TextEditingController _avisController = TextEditingController();
+
+  // Stats avis (affichage)
+  double? _noteMoyenne;
+  int _nbAvis = 0;
+  bool _loadingAvis = true;
 
   // Galerie
   final PageController _pageController = PageController();
   int _currentImage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvisStats();
+  }
 
   @override
   void dispose() {
@@ -29,9 +43,106 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     super.dispose();
   }
 
-  // ---------- Téléphone + Maps ----------
+  // ----------------- SUPABASE: Avis -----------------
+  Future<void> _loadAvisStats() async {
+    setState(() => _loadingAvis = true);
+    try {
+      final supa = Supabase.instance.client;
+      final lieuId = widget.lieu['id']?.toString();
+
+      if (lieuId == null || lieuId.isEmpty) {
+        _noteMoyenne = null;
+        _nbAvis = 0;
+      } else {
+        // ✅ Lire les notes et faire l’agrégation localement (robuste, pas d’avg() côté PostgREST)
+        final rows = await supa
+            .from('avis_lieux')
+            .select('etoiles')
+            .eq('lieu_id', lieuId);
+
+        final notes = List<Map<String, dynamic>>.from(rows)
+            .map((r) => (r['etoiles'] as num?)?.toDouble())
+            .whereType<double>()
+            .toList();
+
+        _nbAvis = notes.length;
+        _noteMoyenne =
+            _nbAvis == 0 ? null : notes.reduce((a, b) => a + b) / _nbAvis;
+      }
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur avis: ${e.message}')),
+      );
+      _noteMoyenne = null;
+      _nbAvis = 0;
+    } finally {
+      if (mounted) setState(() => _loadingAvis = false);
+    }
+  }
+
+  Future<void> _submitAvis() async {
+    final supa = Supabase.instance.client;
+    final userId = supa.auth.currentUser?.id;
+    final lieuId = widget.lieu['id']?.toString();
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("Veuillez vous connecter pour laisser un avis.")),
+      );
+      return;
+    }
+    if (lieuId == null || lieuId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Lieu invalide.")),
+      );
+      return;
+    }
+    if (_note <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("Choisissez une note (au moins 1 étoile).")),
+      );
+      return;
+    }
+
+    try {
+      final payload = {
+        'lieu_id': lieuId,
+        'auteur_id': userId,
+        'etoiles': _note,
+        'commentaire':
+            _avisController.text.trim().isEmpty ? null : _avisController.text.trim(),
+      };
+
+      // upsert pour (lieu_id, auteur_id) si contrainte unique présente
+      await supa.from('avis_lieux').upsert(
+            payload,
+            onConflict: 'lieu_id,auteur_id',
+          );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Merci pour votre avis !')),
+      );
+      setState(() {
+        _note = 0;
+        _avisController.clear();
+      });
+      await _loadAvisStats();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur avis: ${e.message}')),
+      );
+    }
+  }
+
+  // ----------------- Téléphone + Maps -----------------
   void _callPhone() async {
-    final raw = (widget.lieu['contact'] ?? widget.lieu['telephone'] ?? '').toString();
+    final raw =
+        (widget.lieu['contact'] ?? widget.lieu['telephone'] ?? '').toString();
     final phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (phone.isNotEmpty) {
       final uri = Uri.parse('tel:$phone');
@@ -50,8 +161,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final lat = (widget.lieu['latitude'] as num?)?.toDouble();
     final lon = (widget.lieu['longitude'] as num?)?.toDouble();
     if (lat != null && lon != null) {
-      final uri =
-          Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
+      final uri = Uri.parse(
+          "https://www.google.com/maps/search/?api=1&query=$lat,$lon");
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
         return;
@@ -63,7 +174,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     );
   }
 
-  // ---------- Images ----------
+  // ----------------- Images -----------------
   List<String> _images(Map<String, dynamic> lieu) {
     if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
       return (lieu['images'] as List).map((e) => e.toString()).toList();
@@ -72,7 +183,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
-  // ---------- Plein écran ----------
+  // ----------------- Plein écran -----------------
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     showDialog(
       context: context,
@@ -92,11 +203,13 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     imageProvider: NetworkImage(images[index]),
                     minScale: PhotoViewComputedScale.contained,
                     maxScale: PhotoViewComputedScale.covered * 3,
-                    heroAttributes: PhotoViewHeroAttributes(tag: 'divert_$index'),
+                    heroAttributes:
+                        PhotoViewHeroAttributes(tag: 'divert_$index'),
                   );
                 },
                 onPageChanged: (i) => setS(() => current = i),
-                backgroundDecoration: const BoxDecoration(color: Colors.black),
+                backgroundDecoration:
+                    const BoxDecoration(color: Colors.black),
               ),
               Positioned(
                 bottom: 24,
@@ -104,14 +217,16 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '${current + 1}/${images.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                   ),
                 ),
@@ -131,6 +246,22 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     );
   }
 
+  // ----------------- UI helpers -----------------
+  Widget _starsFromAverage(double avg, {double size = 18}) {
+    final n = avg.round().clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        5,
+        (i) => Icon(
+          i < n ? Icons.star : Icons.star_border,
+          color: Colors.amber,
+          size: size,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lieu = widget.lieu;
@@ -145,17 +276,14 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          nom,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(nom, overflow: TextOverflow.ellipsis),
         backgroundColor: kPrimary,
         foregroundColor: Colors.white,
         elevation: 0.8,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
 
-      // === Barre d’actions FIXE en bas (Contacter / Itinéraire) ===
+      // Barre d’actions
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -179,10 +307,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   icon: const Icon(Icons.phone, size: 18, color: kPrimary),
                   label: const Text(
                     "Contacter",
-                    style: TextStyle(
-                      color: kPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style:
+                        TextStyle(color: kPrimary, fontWeight: FontWeight.w700),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: kPrimary, width: 1.5),
@@ -201,9 +327,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   label: const Text(
                     "Itinéraire",
                     style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                        color: Colors.white, fontWeight: FontWeight.w700),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kPrimary,
@@ -220,8 +344,9 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         ),
       ),
 
+      // Contenu
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(22, 18, 22, 110), // place pour la barre fixe
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 110),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -237,9 +362,11 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: images.length,
-                        onPageChanged: (i) => setState(() => _currentImage = i),
+                        onPageChanged: (i) =>
+                            setState(() => _currentImage = i),
                         itemBuilder: (context, index) => GestureDetector(
-                          onTap: () => _openFullScreenGallery(images, index),
+                          onTap: () =>
+                              _openFullScreenGallery(images, index),
                           child: Hero(
                             tag: 'divert_$index',
                             child: Image.network(
@@ -262,9 +389,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                         top: 8,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.45),
                             borderRadius: BorderRadius.circular(14),
@@ -272,9 +397,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                           child: Text(
                             '${_currentImage + 1}/${images.length}',
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
+                                color: Colors.white, fontSize: 12),
                           ),
                         ),
                       ),
@@ -306,7 +429,9 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isActive ? kPrimary : Colors.transparent,
+                              color: isActive
+                                  ? kPrimary
+                                  : Colors.transparent,
                               width: 2,
                             ),
                           ),
@@ -339,26 +464,23 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             const SizedBox(height: 20),
 
             // ---------- Infos ----------
-            Text(
-              nom,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
+            Text(nom,
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             if (ambiance.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                ambiance,
-                style: const TextStyle(fontSize: 15, color: Colors.grey),
-              ),
+              Text(ambiance,
+                  style:
+                      const TextStyle(fontSize: 15, color: Colors.grey)),
             ],
             const SizedBox(height: 14),
             Row(
               children: [
                 const Icon(Icons.location_on, color: kPrimary, size: 21),
                 const SizedBox(width: 7),
-                Text(
-                  ville,
-                  style: const TextStyle(fontSize: 15, color: Colors.black87),
-                ),
+                Text(ville,
+                    style: const TextStyle(
+                        fontSize: 15, color: Colors.black87)),
               ],
             ),
             const SizedBox(height: 14),
@@ -376,21 +498,47 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               ],
             ),
 
+            const SizedBox(height: 12),
+
+            // ---------- Bloc note moyenne ----------
+            if (_loadingAvis)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  if (_noteMoyenne != null)
+                    _starsFromAverage(_noteMoyenne!, size: 18),
+                  if (_noteMoyenne != null) const SizedBox(width: 8),
+                  Text(
+                    _noteMoyenne != null
+                        ? '${_noteMoyenne!.toStringAsFixed(2)} / 5'
+                        : 'Aucune note',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 6),
+                  Text('($_nbAvis avis)',
+                      style: const TextStyle(color: Colors.grey)),
+                ],
+              ),
+
             const Divider(height: 30),
 
-            // ---------- Saisie avis (UI locale) ----------
-            const Text(
-              "Notez ce lieu :",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+            // ---------- Saisie avis ----------
+            const Text("Notez ce lieu :",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Row(
               children: List.generate(5, (index) {
                 return IconButton(
-                  icon: Icon(
-                    index < _note ? Icons.star : Icons.star_border,
-                    color: Colors.amber,
-                  ),
+                  icon: Icon(index < _note ? Icons.star : Icons.star_border,
+                      color: Colors.amber),
                   onPressed: () => setState(() => _note = index + 1),
                   splashRadius: 21,
                 );
@@ -402,27 +550,15 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: "Écrivez votre avis ici...",
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 fillColor: Colors.grey[100],
                 filled: true,
               ),
             ),
             const SizedBox(height: 10),
             ElevatedButton.icon(
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Avis enregistré localement (démo)."),
-                  ),
-                );
-                setState(() {
-                  _note = 0;
-                  _avisController.clear();
-                });
-              },
+              onPressed: _submitAvis,
               icon: const Icon(Icons.send),
               label: const Text("Envoyer l'avis"),
               style: ElevatedButton.styleFrom(
@@ -431,8 +567,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 padding:
                     const EdgeInsets.symmetric(vertical: 11, horizontal: 18),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                    borderRadius: BorderRadius.circular(8)),
                 elevation: 1.5,
               ),
             ),

@@ -42,8 +42,10 @@ class _LoginPageState extends State<LoginPage> {
         throw const AuthException('Email ou mot de passe incorrect.');
       }
 
+      // Charge ton modèle utilisateur (Provider)
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
+      // Redirection selon le rôle
       String dest = AppRoutes.mainNav;
       try {
         final row = await supabase
@@ -187,14 +189,22 @@ class _LoginPageState extends State<LoginPage> {
                   validator: (val) => val == null || val.trim().length < 6
                       ? "Mot de passe trop court"
                       : null,
+                  onFieldSubmitted: (_) => _seConnecter(),
                 ),
                 const SizedBox(height: 6),
 
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/reset_password'),
+                    // ✅ CORRECTION: ouvrir la page "Mot de passe oublié"
+                    onPressed: () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.forgotPassword,
+                      arguments: {
+                        // pré-remplir l'e-mail si déjà saisi (optionnel)
+                        'prefillEmail': _emailController.text.trim(),
+                      },
+                    ),
                     child: const Text(
                       "Mot de passe oublié ?",
                       style: TextStyle(
@@ -207,7 +217,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Bouton Connexion (tap simple)
+                // Bouton Connexion
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : SizedBox(

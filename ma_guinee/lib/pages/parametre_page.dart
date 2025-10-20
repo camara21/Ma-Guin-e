@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/utilisateur_model.dart';
 import '../providers/user_provider.dart';
+import '../routes.dart'; // ✅ pour AppRoutes
 import 'modifier_profil_page.dart';
 
 class ParametrePage extends StatefulWidget {
@@ -55,8 +56,7 @@ class _ParametrePageState extends State<ParametrePage> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content:
-                    Text("Permission refusée ou échec d'activation."),
+                content: Text("Permission refusée ou échec d'activation."),
               ),
             );
           }
@@ -221,19 +221,18 @@ class _ParametrePageState extends State<ParametrePage> {
                 ),
                 const Divider(height: 0),
 
+                // ✅ Ouvre la page dédiée "Mot de passe oublié ?"
                 ListTile(
                   leading: const Icon(Icons.lock_reset, color: Colors.orange),
                   title: const Text('Mot de passe oublié ?'),
-                  onTap: () async {
-                    await Supabase.instance.client.auth
-                        .resetPasswordForEmail(widget.user.email);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Un lien de réinitialisation a été envoyé par e-mail.',
-                        ),
-                      ),
+                  onTap: () {
+                    Navigator.pushNamed(
+                      context,
+                      AppRoutes.forgotPassword,
+                      arguments: {
+                        // Pré-remplir l’e-mail sur la page (optionnel)
+                        'prefillEmail': widget.user.email,
+                      },
                     );
                   },
                 ),
@@ -242,8 +241,10 @@ class _ParametrePageState extends State<ParametrePage> {
                 ListTile(
                   leading: const Icon(Icons.delete_forever,
                       color: Colors.red, size: 28),
-                  title: const Text('Supprimer mon compte',
-                      style: TextStyle(color: Colors.red)),
+                  title: const Text(
+                    'Supprimer mon compte',
+                    style: TextStyle(color: Colors.red),
+                  ),
                   onTap: () async {
                     final confirm = await showDialog<bool>(
                       context: context,
@@ -271,25 +272,26 @@ class _ParametrePageState extends State<ParametrePage> {
                             .from('utilisateurs')
                             .delete()
                             .eq('id', widget.user.id);
+
+                        // ⚠️ nécessite Service Role côté serveur.
                         await Supabase.instance.client.auth.admin
                             .deleteUser(widget.user.id);
+
                         await Supabase.instance.client.auth.signOut();
                         if (!mounted) return;
                         Navigator.of(context)
                             .popUntil((route) => route.isFirst);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content:
-                                Text('Compte supprimé avec succès.'),
+                            content: Text('Compte supprimé avec succès.'),
                           ),
                         );
                       } catch (e) {
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(
-                              'Erreur lors de la suppression : $e',
-                            ),
+                            content:
+                                Text('Erreur lors de la suppression : $e'),
                           ),
                         );
                       }

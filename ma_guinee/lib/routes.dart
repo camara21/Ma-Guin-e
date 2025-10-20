@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
 import 'models/job_models.dart'; // EmploiModel
-import 'models/logement_models.dart'; // âœ… enums & model Logement
+import 'models/logement_models.dart'; // ✅ enums & model Logement
 
 // Pages principales
 import 'pages/splash_screen.dart';
@@ -40,7 +40,7 @@ import 'pages/annonce_detail_page.dart';
 import 'pages/resto_detail_page.dart';
 import 'pages/hotel_detail_page.dart';
 
-// Edition & Inscription
+// Édition & Inscription
 import 'pages/edit_prestataire_page.dart';
 import 'pages/edit_hotel_page.dart';
 import 'pages/edit_resto_page.dart';
@@ -57,19 +57,19 @@ import 'pages/events_list_page.dart';
 import 'pages/my_tickets_page.dart';
 import 'pages/scanner_page.dart';
 
-// JOB â€“ pages existantes
+// JOB – pages existantes
 import 'pages/jobs/job_home_page.dart';
 import 'pages/jobs/jobs_page.dart';
 import 'pages/jobs/job_detail_page.dart';
 
-// âš ï¸ IMPORTANT: alias pour Ã©viter tout conflit
+// ⚠️ IMPORTANT: alias pour éviter tout conflit
 import 'pages/jobs/my_applications_page.dart' as apps;
 
 import 'pages/cv/cv_maker_page.dart';
 import 'pages/jobs/employer/mes_offres_page.dart';
 import 'pages/jobs/employer/offre_edit_page.dart';
 
-// JOB â€“ nouvelles pages Candidatures
+// JOB – nouvelles pages Candidatures
 import 'pages/jobs/candidatures_page.dart';
 import 'pages/jobs/candidature_detail_page.dart';
 
@@ -77,17 +77,20 @@ import 'pages/jobs/candidature_detail_page.dart';
 import 'pages/jobs/employer/devenir_employeur_page.dart';
 import 'services/employeur_service.dart';
 
-// âœ… Module Logement (toutes les pages)
+// ✅ Module Logement (toutes les pages)
 import 'pages/logement/logement_home_page.dart';
 import 'pages/logement/logement_list_page.dart';
 import 'pages/logement/logement_detail_page.dart';
 import 'pages/logement/logement_edit_page.dart';
 import 'pages/logement/logement_map_page.dart';
 
-// âœ… AJOUTS ADMIN (nouveaux fichiers)
+// ✅ AJOUTS ADMIN (nouveaux fichiers)
 import 'admin/admin_dashboard.dart';
 import 'admin/admin_gate.dart';
 import 'admin/content_advanced_page.dart';
+
+// ✅ Auth – Reset password flow (ForgotPasswordPage & ResetPasswordPage)
+import 'pages/auth/reset_password_flow.dart';
 
 class AppRoutes {
   // Core
@@ -101,17 +104,16 @@ class AppRoutes {
   static const String pro = '/prestataires';
   static const String carte = '/carte';
   static const String divertissement = '/divertissement';
-  static const String admin =
-      '/administratif'; // âš ï¸ on ne touche pas Ã  celle-ci
+  static const String admin = '/administratif'; // ⚠️ inchangé
 
   static const String resto = '/restos';
   static const String culte = '/culte';
 
-  // âœ… LOGEMENT
+  // ✅ LOGEMENT
   static const String logement = '/logement'; // Home
   static const String logementList = '/logement/list'; // Liste
-  static const String logementDetail = '/logement/detail'; // DÃ©tail
-  static const String logementEdit = '/logement/edit'; // CrÃ©er/Ã©diter
+  static const String logementDetail = '/logement/detail'; // Détail
+  static const String logementEdit = '/logement/edit'; // Créer/éditer
   static const String logementMap = '/logement/map'; // Carte
 
   static const String login = '/login';
@@ -122,7 +124,7 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String profil = '/profil';
 
-  // ParamÃ¨tres
+  // Paramètres
   static const String parametre = '/parametre';
 
   static const String aide = '/aide';
@@ -163,13 +165,17 @@ class AppRoutes {
   static const String employerOfferEdit = '/jobs/employer/offre_edit';
   static const String employerOfferCandidatures = '/jobs/employer/candidatures';
 
-  // âœ… NOUVEL ESPACE ADMIN (en plus, sÃ©parÃ© de /administratif)
+  // ✅ NOUVEL ESPACE ADMIN (en plus, séparé de /administratif)
   static const String adminCenter = '/admin';
   static const String adminManage = '/admin/manage';
 
+  // ✅ Auth – reset password
+  static const String forgotPassword = '/forgot_password';
+  static const String resetPassword = '/reset_password';
+
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
-      // âœ… Nouvelles routes admin (indÃ©pendantes de /administratif)
+      // ✅ Nouvelles routes admin (indépendantes de /administratif)
       case adminCenter:
         return MaterialPageRoute(
           builder: (_) => const AdminGate(child: AdminDashboard()),
@@ -177,7 +183,6 @@ class AppRoutes {
 
       case adminManage:
         {
-          // args attendus: { table: 'logements', title?: 'Logements' }
           final a = _argsMap(settings);
           final table =
               (a['table']?.toString().trim().toLowerCase() ?? 'logements');
@@ -192,277 +197,221 @@ class AppRoutes {
         }
 
       // Core
-      case splash:
-        return _page(const SplashScreen());
-      case welcome:
-        return _page(const WelcomePage());
-      case mainNav:
-        return _page(const MainNavigationPage());
-      case home:
-        return _page(const HomePage());
+      case splash:       return _page(const SplashScreen());
+      case welcome:      return _page(const WelcomePage());
+      case mainNav:      return _page(const MainNavigationPage());
+      case home:         return _page(const HomePage());
 
       // Existants
-      case annonces:
-        return _page(const AnnoncesPage());
-      case pro:
-        return _page(const ProPage());
-      case carte:
-        return _page(const CartePage());
-      case divertissement:
-        return _page(const DivertissementPage());
-      case admin:
-        return _page(const AdminPage()); // âš ï¸ inchangÃ©
-      case resto:
-        return _page(const resto_pg.RestoPage());
-      case culte:
-        return _page(const CultePage());
+      case annonces:         return _page(const AnnoncesPage());
+      case pro:              return _page(const ProPage());
+      case carte:            return _page(const CartePage());
+      case divertissement:   return _page(const DivertissementPage());
+      case admin:            return _page(const AdminPage()); // ⚠️ inchangé
+      case resto:            return _page(const resto_pg.RestoPage());
+      case culte:            return _page(const CultePage());
 
       // ===================== LOGEMENT =====================
-      case logement:
-        return _page(const LogementHomePage());
-
-      case logementList:
-        {
-          final a = _argsMap(settings);
-          final String? q = a['q'] as String?;
-          final LogementMode mode = _parseMode(a['mode']);
-          final LogementCategorie? cat =
-              _parseCategorieOrNull(a['categorie']); // null = pas de filtre
-          return _page(LogementListPage(
-            initialQuery: q,
-            initialMode: mode,
-            initialCategorie: cat ?? LogementCategorie.autres,
-          ));
+      case logement:         return _page(const LogementHomePage());
+      case logementList: {
+        final a = _argsMap(settings);
+        final String? q = a['q'] as String?;
+        final LogementMode mode = _parseMode(a['mode']);
+        final LogementCategorie? cat = _parseCategorieOrNull(a['categorie']);
+        return _page(LogementListPage(
+          initialQuery: q,
+          initialMode: mode,
+          initialCategorie: cat ?? LogementCategorie.autres,
+        ));
+      }
+      case logementDetail: {
+        final a = settings.arguments;
+        final id = (a is String) ? a : (a is Map ? (a['id']?.toString()) : null);
+        if (id == null || id.isEmpty) return _error('ID requis pour $logementDetail');
+        return _page(LogementDetailPage(logementId: id));
+      }
+      case logementEdit: {
+        final a = _argsMap(settings);
+        final existing = a['existing'];
+        if (existing != null && existing is! LogementModel) {
+          return _error('Argument "existing" invalide pour $logementEdit');
         }
-
-      case logementDetail:
-        {
-          final a = settings.arguments;
-          final id =
-              (a is String) ? a : (a is Map ? (a['id']?.toString()) : null);
-          if (id == null || id.isEmpty)
-            return _error('ID requis pour $logementDetail');
-          return _page(LogementDetailPage(logementId: id));
+        return _userProtected((_) => LogementEditPage(existing: existing as LogementModel?));
+      }
+      case logementMap: {
+        final a = _argsMap(settings);
+        double? _d(dynamic v) {
+          if (v == null) return null;
+          if (v is num) return v.toDouble();
+          return double.tryParse(v.toString());
         }
-
-      case logementEdit:
-        {
-          final a = _argsMap(settings);
-          final existing = a['existing'];
-          if (existing != null && existing is! LogementModel) {
-            return _error('Argument "existing" invalide pour $logementEdit');
-          }
-          return _userProtected(
-              (_) => LogementEditPage(existing: existing as LogementModel?));
-        }
-
-      case logementMap:
-        {
-          final a = _argsMap(settings);
-          double? _d(dynamic v) {
-            if (v == null) return null;
-            if (v is num) return v.toDouble();
-            return double.tryParse(v.toString());
-          }
-
-          return MaterialPageRoute(
-            builder: (_) => LogementMapPage(
-              ville: a['ville'] as String?,
-              commune: a['commune'] as String?,
-              focusId: a['id']?.toString(),
-              focusLat: _d(a['lat']),
-              focusLng: _d(a['lng']),
-              focusTitre: a['titre']?.toString(),
-              focusVille: a['ville']?.toString(),
-              focusCommune: a['commune']?.toString(),
-            ),
-          );
-        }
+        return MaterialPageRoute(
+          builder: (_) => LogementMapPage(
+            ville: a['ville'] as String?,
+            commune: a['commune'] as String?,
+            focusId: a['id']?.toString(),
+            focusLat: _d(a['lat']),
+            focusLng: _d(a['lng']),
+            focusTitre: a['titre']?.toString(),
+            focusVille: a['ville']?.toString(),
+            focusCommune: a['commune']?.toString(),
+          ),
+        );
+      }
       // ===================== /LOGEMENT =====================
 
       // Auth / profil / divers
-      case login:
-        return _page(const LoginPage());
-      case register:
-        return _page(const register_pg.RegisterPage());
-      case tourisme:
-        return _page(const TourismePage());
-      case sante:
-        return _page(const SantePage());
-      case hotel:
-        return _page(const HotelPage());
-      case notifications:
-        return _page(const NotificationsPage());
-      case profil:
-        return _userProtected((u) => ProfilePage(user: u));
+      case login:           return _page(const LoginPage());
+      case register:        return _page(const register_pg.RegisterPage());
+      case tourisme:        return _page(const TourismePage());
+      case sante:           return _page(const SantePage());
+      case hotel:           return _page(const HotelPage());
+      case notifications:   return _page(const NotificationsPage());
+      case profil:          return _userProtected((u) => ProfilePage(user: u));
 
-      // ParamÃ¨tres
-      case parametre:
-        return _userProtected((u) => ParametrePage(user: u));
+      // Paramètres
+      case parametre:       return _userProtected((u) => ParametrePage(user: u));
 
-      case aide:
-        return _page(const AidePage());
-      case messages:
-        return _page(const MessagesPage());
+      case aide:            return _page(const AidePage());
+      case messages:        return _page(const MessagesPage());
 
-      case mesAnnonces:
-        return _userProtected((_) => const MesAnnoncesPage());
-      case mesPrestations:
-        return _userProtected((u) {
-          final prestations = u.espacePrestataire != null
-              ? [u.espacePrestataire!]
-              : <Map<String, dynamic>>[];
-          return MesPrestationsPage(prestations: prestations);
-        });
-      case mesRestaurants:
-        return _userProtected(
-            (u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []));
-      case mesHotels:
-        return _userProtected(
-            (u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []));
-      case mesCliniques:
-        return _userProtected(
-            (u) => MesCliniquesPage(cliniques: u.cliniques ?? []));
+      case mesAnnonces:     return _userProtected((_) => const MesAnnoncesPage());
+      case mesPrestations:  return _userProtected((u) {
+        final prestations = u.espacePrestataire != null
+            ? [u.espacePrestataire!]
+            : <Map<String, dynamic>>[];
+        return MesPrestationsPage(prestations: prestations);
+      });
+      case mesRestaurants:  return _userProtected(
+        (u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []),
+      );
+      case mesHotels:       return _userProtected(
+        (u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []),
+      );
+      case mesCliniques:    return _userProtected(
+        (u) => MesCliniquesPage(cliniques: u.cliniques ?? []),
+      );
 
-      case inscriptionResto:
-        {
-          final arg = settings.arguments;
-          if (arg == null || arg is Map<String, dynamic>) {
-            return _page(
-                InscriptionRestoPage(restaurant: arg as Map<String, dynamic>?));
-          }
-          return _error("Argument invalide pour $inscriptionResto");
+      case inscriptionResto: {
+        final arg = settings.arguments;
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(InscriptionRestoPage(restaurant: arg as Map<String, dynamic>?));
         }
-      case inscriptionHotel:
-        {
-          final arg = settings.arguments;
-          if (arg == null || arg is Map<String, dynamic>) {
-            return _page(
-                InscriptionHotelPage(hotel: arg as Map<String, dynamic>?));
-          }
-          return _error("Argument invalide pour $inscriptionHotel");
+        return _error('Argument invalide pour $inscriptionResto');
+      }
+      case inscriptionHotel: {
+        final arg = settings.arguments;
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(InscriptionHotelPage(hotel: arg as Map<String, dynamic>?));
         }
-      case inscriptionClinique:
-        {
-          final arg = settings.arguments;
-          if (arg == null || arg is Map<String, dynamic>) {
-            return _page(
-                EditCliniquePage(clinique: arg as Map<String, dynamic>?));
-          }
-          return _error("Argument invalide pour $inscriptionClinique");
+        return _error('Argument invalide pour $inscriptionHotel');
+      }
+      case inscriptionClinique: {
+        final arg = settings.arguments;
+        if (arg == null || arg is Map<String, dynamic>) {
+          return _page(EditCliniquePage(clinique: arg as Map<String, dynamic>?));
         }
+        return _error('Argument invalide pour $inscriptionClinique');
+      }
 
-      case annonceDetail:
-        {
-          final arg = settings.arguments;
-          if (arg is AnnonceModel)
-            return _page(AnnonceDetailPage(annonce: arg));
-          return _error("Argument invalide pour $annonceDetail");
-        }
-      case restoDetail:
-        {
-          final arg = settings.arguments;
-          final String? restoId = (arg is String) ? arg : arg?.toString();
-          if (restoId == null || restoId.isEmpty)
-            return _error("ID invalide pour $restoDetail");
-          return _page(RestoDetailPage(restoId: restoId));
-        }
-      case hotelDetail:
-        {
-          final id = settings.arguments;
-          if (id is int) return _page(HotelDetailPage(hotelId: id));
-          return _error("ID invalide pour $hotelDetail");
-        }
+      case annonceDetail: {
+        final arg = settings.arguments;
+        if (arg is AnnonceModel) return _page(AnnonceDetailPage(annonce: arg));
+        return _error('Argument invalide pour $annonceDetail');
+      }
+      case restoDetail: {
+        final arg = settings.arguments;
+        final String? restoId = (arg is String) ? arg : arg?.toString();
+        if (restoId == null || restoId.isEmpty) return _error('ID invalide pour $restoDetail');
+        return _page(RestoDetailPage(restoId: restoId));
+      }
+      case hotelDetail: {
+        final id = settings.arguments;
+        if (id is int) return _page(HotelDetailPage(hotelId: id));
+        return _error('ID invalide pour $hotelDetail');
+      }
 
-      case editPrestataire:
-        return _page(EditPrestatairePage(prestataire: _argsMap(settings)));
-      case editHotel:
-        return _page(EditHotelPage(hotelId: _argsMap(settings)['id']));
-      case editResto:
-        return _page(EditRestoPage(resto: _argsMap(settings)));
-      case editAnnonce:
-        return _page(EditAnnoncePage(annonce: _argsMap(settings)));
-      case editClinique:
-        return _page(EditCliniquePage(clinique: _argsMap(settings)));
+      case editPrestataire: return _page(EditPrestatairePage(prestataire: _argsMap(settings)));
+      case editHotel:       return _page(EditHotelPage(hotelId: _argsMap(settings)['id']));
+      case editResto:       return _page(EditRestoPage(resto: _argsMap(settings)));
+      case editAnnonce:     return _page(EditAnnoncePage(annonce: _argsMap(settings)));
+      case editClinique:    return _page(EditCliniquePage(clinique: _argsMap(settings)));
 
       // Billetterie
-      case billetterie:
-        return _page(const EventsListPage());
-      case myTickets:
-        return _userProtected((_) => const MyTicketsPage());
-      case scanner:
-        return _userProtected((_) => const ScannerPage());
+      case billetterie:     return _page(const EventsListPage());
+      case myTickets:       return _userProtected((_) => const MyTicketsPage());
+      case scanner:         return _userProtected((_) => const ScannerPage());
 
       // JOB
-      case jobHome:
-        return _page(const JobHomePage());
-      case jobList:
-        return _page(const JobsPage());
-
-      case jobDetail:
-        {
-          final a = settings.arguments;
-          String? jobId;
-          if (a is String && a.isNotEmpty) {
-            jobId = a;
-          } else if (a is Map) {
-            final m = Map<String, dynamic>.from(a as Map);
-            jobId = (m['jobId'] as String?) ?? (m['id'] as String?);
-          }
-          if (jobId == null || jobId.isEmpty) {
-            return _error("jobId requis pour $jobDetail");
-          }
-          return MaterialPageRoute(
-              builder: (_) => JobDetailPage(jobId: jobId!));
+      case jobHome:         return _page(const JobHomePage());
+      case jobList:         return _page(const JobsPage());
+      case jobDetail: {
+        final a = settings.arguments;
+        String? jobId;
+        if (a is String && a.isNotEmpty) {
+          jobId = a;
+        } else if (a is Map) {
+          final m = Map<String, dynamic>.from(a as Map);
+          jobId = (m['jobId'] as String?) ?? (m['id'] as String?);
         }
+        if (jobId == null || jobId.isEmpty) {
+          return _error('jobId requis pour $jobDetail');
+        }
+        return MaterialPageRoute(builder: (_) => JobDetailPage(jobId: jobId!));
+      }
 
-      case myApplications:
-        return _userProtected((_) => const apps.MyApplicationsPage());
-      case cvMaker:
-        return _userProtected((_) => const CvMakerPage());
+      case myApplications:  return _userProtected((_) => const apps.MyApplicationsPage());
+      case cvMaker:         return _userProtected((_) => const CvMakerPage());
 
       // ---------- ESPACE EMPLOYEUR ----------
-      case employerOffers:
-        return _userProtected((_) => _EmployeurGate(
-              builder: (empId) => MesOffresPage(employeurId: empId),
-              onMissing: const DevenirEmployeurPage(),
-            ));
+      case employerOffers:  return _userProtected(
+        (_) => _EmployeurGate(
+          builder: (empId) => MesOffresPage(employeurId: empId),
+          onMissing: const DevenirEmployeurPage(),
+        ),
+      );
 
-      case employerOfferEdit:
-        {
-          final arg = settings.arguments;
-          return _userProtected((_) => _EmployeurGate(
-                builder: (empId) {
-                  if (arg == null) {
-                    return OffreEditPage(employeurId: empId);
-                  }
-                  if (arg is EmploiModel) {
-                    return OffreEditPage(existing: arg, employeurId: empId);
-                  }
-                  return const _RouteErrorPage(
-                    "Argument invalide pour /jobs/employer/offre_edit (attendu EmploiModel ou null)",
-                  );
-                },
-                onMissing: const DevenirEmployeurPage(),
-              ));
-        }
+      case employerOfferEdit: {
+        final arg = settings.arguments;
+        return _userProtected(
+          (_) => _EmployeurGate(
+            builder: (empId) {
+              if (arg == null) {
+                return OffreEditPage(employeurId: empId);
+              }
+              if (arg is EmploiModel) {
+                return OffreEditPage(existing: arg, employeurId: empId);
+              }
+              return const _RouteErrorPage(
+                'Argument invalide pour /jobs/employer/offre_edit (attendu EmploiModel ou null)',
+              );
+            },
+            onMissing: const DevenirEmployeurPage(),
+          ),
+        );
+      }
 
-      case employerOfferCandidatures:
-        {
-          final m = _argsMap(settings);
-          final id = (m['emploiId'] as String?) ?? (m['id'] as String?);
-          final titre = (m['titre'] as String?) ?? 'Candidatures';
-          if (id == null || id.isEmpty) {
-            return _error('emploiId requis pour $employerOfferCandidatures');
-          }
-          return _userProtected((_) => _EmployeurGate(
-                builder: (_) => CandidaturesPage(jobId: id, jobTitle: titre),
-                onMissing: const DevenirEmployeurPage(),
-              ));
+      case employerOfferCandidatures: {
+        final m = _argsMap(settings);
+        final id = (m['emploiId'] as String?) ?? (m['id'] as String?);
+        final titre = (m['titre'] as String?) ?? 'Candidatures';
+        if (id == null || id.isEmpty) {
+          return _error('emploiId requis pour $employerOfferCandidatures');
         }
+        return _userProtected(
+          (_) => _EmployeurGate(
+            builder: (_) => CandidaturesPage(jobId: id, jobTitle: titre),
+            onMissing: const DevenirEmployeurPage(),
+          ),
+        );
+      }
+
+      // ----- Auth: reset password -----
+      case forgotPassword:  return _page(const ForgotPasswordPage());
+      case resetPassword:   return _page(const ResetPasswordPage());
 
       default:
-        return _error('Page non trouvÃ©e : ${settings.name}');
+        return _error('Page non trouvée : ${settings.name}');
     }
   }
 
@@ -498,7 +447,8 @@ class AppRoutes {
             }
           });
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
         return builder(user);
       },
@@ -506,7 +456,7 @@ class AppRoutes {
   }
 }
 
-// ------------------ Helpers ajoutÃ©s pour JOB ------------------
+// ------------------ Helpers ajoutés pour JOB ------------------
 
 class _EmployeurGate extends StatelessWidget {
   const _EmployeurGate({
@@ -590,7 +540,7 @@ LogementCategorie? _parseCategorieOrNull(dynamic v) {
   return LogementCategorie.autres;
 }
 
-// âœ… Helper lisible pour les titres de /admin/manage quand "title" nâ€™est pas fourni
+// ✅ Helper lisible pour les titres de /admin/manage quand "title" n’est pas fourni
 String _prettyServiceName(String table) {
   switch (table) {
     case 'annonces':
@@ -604,7 +554,7 @@ String _prettyServiceName(String table) {
     case 'cliniques':
       return 'Cliniques';
     case 'hotels':
-      return 'HÃ´tels';
+      return 'Hôtels';
     case 'logements':
       return 'Logements';
     case 'emplois':
