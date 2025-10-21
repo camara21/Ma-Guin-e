@@ -1,4 +1,3 @@
-// lib/pages/hotel_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -60,6 +59,23 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     _pageController.dispose();
     super.dispose();
   }
+
+  // ------- format prix (espaces) -------
+  String _formatGNF(dynamic value) {
+    if (value == null) return '—';
+    final n = (value is num)
+        ? value.toInt()
+        : int.tryParse(value.toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      buf.write(s[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buf.write(' ');
+    }
+    return buf.toString();
+  }
+  // -------------------------------------
 
   // ---------------- Hôtel ----------------
   Future<void> _loadHotel() async {
@@ -247,7 +263,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return Column(
       children: _avis.map((avis) {
         final uid = (avis['auteur_id'] ?? '').toString();
-        // >>> correction de typage ici
         final Map<String, dynamic> u =
             _userCache[uid] ?? const <String, dynamic>{};
         final nom =
@@ -408,7 +423,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // -------- carrousel + miniatures + compteur --------
+          // -------- carrousel etc. --------
           if (images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -520,10 +535,17 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           Text("Ville : ${(hotel!['ville'] ?? 'Non précisé').toString()}",
               style: const TextStyle(fontSize: 16)),
           const SizedBox(height: 8),
-          Text(
-            "Prix moyen : ${(hotel!['prix'] ?? 'Non précisé').toString()} ${(hotel!['devise'] ?? '').toString()}",
-            style: const TextStyle(fontSize: 16),
-          ),
+
+          // >> Prix avec GNF / nuit
+          Builder(builder: (_) {
+            final prix = hotel!['prix'];
+            final p = _formatGNF(prix);
+            return Text(
+              "Prix moyen : $p GNF / nuit",
+              style: const TextStyle(fontSize: 16),
+            );
+          }),
+
           const SizedBox(height: 8),
           Text("Description :\n${(hotel!['description'] ?? 'Aucune description').toString()}"),
           const SizedBox(height: 12),

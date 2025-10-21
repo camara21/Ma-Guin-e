@@ -8,12 +8,12 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'sante_rdv_page.dart';
 
 /// Palette Santé
-const kHealthYellow = Color(0xFFFCD116);
-const kHealthGreen  = Color(0xFF009460);
+const kHealthYellow  = Color(0xFFFCD116);
+const kHealthGreen   = Color(0xFF009460);
 const kNeutralBorder = Color(0xFFE5E7EB);
 
 class SanteDetailPage extends StatefulWidget {
-  final dynamic cliniqueId; // accepte int OU String (UUID)
+  final dynamic cliniqueId; // int ou String (UUID)
   const SanteDetailPage({super.key, required this.cliniqueId});
 
   @override
@@ -36,13 +36,13 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
 
   Future<void> _loadClinique() async {
     setState(() => loading = true);
-
     final data = await Supabase.instance.client
         .from('cliniques')
         .select()
         .eq('id', widget.cliniqueId)
         .maybeSingle();
 
+    if (!mounted) return;
     setState(() {
       clinique = (data == null) ? null : Map<String, dynamic>.from(data);
       loading = false;
@@ -82,9 +82,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
                 onPageChanged: (i) => setS(() => current = i),
               ),
               Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
+                bottom: 24, left: 0, right: 0,
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -100,8 +98,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
                 ),
               ),
               Positioned(
-                top: 24,
-                right: 8,
+                top: 24, right: 8,
                 child: IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, color: Colors.white),
@@ -119,9 +116,9 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   Future<void> _contacterCentre(String numero) async {
     final cleaned = numero.replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleaned.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro indisponible.")),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Numéro indisponible.")));
       return;
     }
     final uri = Uri(scheme: 'tel', path: cleaned);
@@ -134,9 +131,9 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     final lat = (clinique?['latitude'] as num?)?.toDouble();
     final lng = (clinique?['longitude'] as num?)?.toDouble();
     if (lat == null || lng == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Coordonnées non disponibles.")),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Coordonnées non disponibles.")));
       return;
     }
     final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
@@ -146,10 +143,10 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   }
 
   void _ouvrirRdv() {
-    final nom = (clinique?['nom'] ?? 'Centre médical').toString();
-    final tel = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
+    final nom     = (clinique?['nom'] ?? 'Centre médical').toString();
+    final tel     = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
     final address = (clinique?['adresse'] ?? clinique?['ville'] ?? '').toString();
-    final images = _imagesFromClinique();
+    final images  = _imagesFromClinique();
 
     Navigator.push(
       context,
@@ -175,9 +172,8 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
       return const Scaffold(body: Center(child: Text("Centre de santé introuvable.")));
     }
 
-    // Casts sûrs
-    final String nom =
-        (clinique?['nom'] ?? 'Centre médical').toString();
+    // Données
+    final String nom = (clinique?['nom'] ?? 'Centre médical').toString();
     final String ville = (clinique?['ville'] ?? 'Ville inconnue').toString();
     final String specialites = (clinique?['specialites'] ??
             clinique?['description'] ??
@@ -191,174 +187,194 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
 
     final isWide = MediaQuery.of(context).size.width > 600;
 
+    const bottomGradient = LinearGradient(
+      colors: [kHealthGreen, kHealthYellow],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(nom, style: const TextStyle(fontWeight: FontWeight.bold)),
-        elevation: 0,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [kHealthYellow, kHealthGreen], // JAUNE → VERT
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
+        backgroundColor: Colors.white,                 // ✅ sobre
+        elevation: 1,
+        iconTheme: const IconThemeData(color: kHealthGreen),
+        title: Text(
+          nom,
+          style: const TextStyle(color: kHealthGreen, fontWeight: FontWeight.w700),
+        ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: bottomGradient),
             ),
           ),
         ),
-        centerTitle: true,
       ),
       body: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 700),
+          constraints: const BoxConstraints(maxWidth: 820),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16,16,16,120), // espace bas pour la barre d’actions
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // -------- Carrousel + miniatures + compteur --------
-              if (images.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Stack(
-                    children: [
-                      SizedBox(
-                        height: isWide ? 290 : 220,
-                        width: double.infinity,
-                        child: PageView.builder(
-                          controller: _pageController,
-                          itemCount: images.length,
-                          onPageChanged: (i) => setState(() => _currentIndex = i),
-                          itemBuilder: (context, index) => GestureDetector(
-                            onTap: () => _openFullScreenGallery(images, index),
-                            child: Hero(
-                              tag: 'clinique_$index',
-                              child: Image.network(
-                                images[index],
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                errorBuilder: (_, __, ___) => Container(
-                                  color: Colors.grey[200],
-                                  child: const Icon(Icons.image_not_supported),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // -------- Carrousel + miniatures + compteur --------
+                if (images.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      children: [
+                        SizedBox(
+                          height: isWide ? 300 : 230,
+                          width: double.infinity,
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: images.length,
+                            onPageChanged: (i) => setState(() => _currentIndex = i),
+                            itemBuilder: (context, index) => GestureDetector(
+                              onTap: () => _openFullScreenGallery(images, index),
+                              child: Hero(
+                                tag: 'clinique_$index',
+                                child: Image.network(
+                                  images[index],
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Colors.grey[200],
+                                    child: const Icon(Icons.image_not_supported),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.45),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Text(
-                            '${_currentIndex + 1}/${images.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.45),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              '${_currentIndex + 1}/${images.length}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (images.length > 1)
+                    SizedBox(
+                      height: 68,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: images.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final isActive = index == _currentIndex;
+                          return GestureDetector(
+                            onTap: () {
+                              _pageController.animateToPage(
+                                index,
+                                duration: const Duration(milliseconds: 280),
+                                curve: Curves.easeOut,
+                              );
+                              setState(() => _currentIndex = index);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 90,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isActive ? kHealthGreen : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                              clipBehavior: Clip.hardEdge,
+                              child: Image.network(
+                                images[index],
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.broken_image),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (images.length > 1)
-                  SizedBox(
-                    height: 68,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: images.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final isActive = index == _currentIndex;
-                        return GestureDetector(
-                          onTap: () {
-                            _pageController.animateToPage(
-                              index,
-                              duration: const Duration(milliseconds: 280),
-                              curve: Curves.easeOut,
-                            );
-                            setState(() => _currentIndex = index);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 90,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isActive ? kHealthGreen : Colors.transparent,
-                                width: 2,
-                              ),
-                            ),
-                            clipBehavior: Clip.hardEdge,
-                            child: Image.network(
-                              images[index],
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey[200],
-                                child: const Icon(Icons.broken_image),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                    ),
+                ] else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      height: 230,
+                      color: Colors.grey.shade300,
+                      child: const Center(
+                        child: Icon(Icons.local_hospital, size: 70, color: Colors.grey),
+                      ),
                     ),
                   ),
-              ] else
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    height: 220,
-                    color: Colors.grey.shade300,
-                    child: const Center(
-                      child: Icon(Icons.local_hospital, size: 70, color: Colors.grey),
-                    ),
-                  ),
-                ),
-              // ---------------------------------------------------
+                // ---------------------------------------------------
 
-              const SizedBox(height: 20),
-              Text(
-                nom,
-                style: TextStyle(
-                  fontSize: isWide ? 28 : 24,
-                  fontWeight: FontWeight.bold,
-                  color: kHealthGreen,
+                const SizedBox(height: 16),
+                Text(
+                  nom,
+                  style: TextStyle(
+                    fontSize: isWide ? 28 : 24,
+                    fontWeight: FontWeight.bold,
+                    color: kHealthGreen,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Row(children: [
-                const Icon(Icons.location_city, color: kHealthYellow),
-                const SizedBox(width: 8),
+                const SizedBox(height: 6),
+                Row(
+                  children: const [
+                    Icon(Icons.location_on, color: kHealthYellow, size: 18),
+                    SizedBox(width: 6),
+                  ],
+                ),
                 Text(ville),
-              ]),
 
-              const SizedBox(height: 18),
-              const Text("Spécialités :", style: TextStyle(fontWeight: FontWeight.w600)),
-              Text(specialites),
+                const SizedBox(height: 16),
+                const Divider(),
 
-              const SizedBox(height: 16),
-              const Text("Horaires :", style: TextStyle(fontWeight: FontWeight.w600)),
-              Text(horaires),
+                // Spécialités
+                const SizedBox(height: 6),
+                const Text("Spécialités", style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(specialites),
 
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _ouvrirCarte,
-                icon: const Icon(Icons.map),
-                label: const Text("Localiser sur la carte"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kHealthYellow,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                const SizedBox(height: 16),
+                const Text("Horaires", style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(horaires),
+
+                const SizedBox(height: 14),
+                ElevatedButton.icon(
+                  onPressed: _ouvrirCarte,
+                  icon: const Icon(Icons.map),
+                  label: const Text("Localiser sur la carte"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kHealthYellow,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
         ),
       ),
 
-      // -------- Barre d’actions collée en bas (Appeler / Rendez-vous) --------
+      // -------- Barre d’actions collée en bas --------
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(

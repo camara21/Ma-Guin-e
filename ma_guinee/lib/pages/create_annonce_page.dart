@@ -6,11 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Palette Annonces
-const Color annoncesPrimary = Color(0xFF1E3A8A);
-const Color annoncesSecondary = Color(0xFF60A5FA);
-const Color annoncesOnPrimary = Color(0xFFFFFFFF);
-const Color annoncesOnSecondary = Color(0xFF000000);
+// ===== PALETTE FIXE (rouge doux, cohérente avec les autres pages) =====
+const Color annoncesPrimary     = Color(0xFFD92D20); // rouge doux (actions)
+const Color annoncesSecondary   = Color(0xFFFFF1F1); // fond très léger
+const Color annoncesOnPrimary   = Color(0xFFFFFFFF);
+const Color annoncesOnSecondary = Color(0xFF1F2937);
+
+// Neutres
+const Color _pageBg   = Color(0xFFF5F7FA);
+const Color _cardBg   = Color(0xFFFFFFFF);
+const Color _stroke   = Color(0xFFE5E7EB);
+const Color _text     = Color(0xFF1F2937);
+const Color _text2    = Color(0xFF6B7280);
 
 class CreateAnnoncePage extends StatefulWidget {
   const CreateAnnoncePage({super.key});
@@ -32,7 +39,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final ImagePicker _picker = ImagePicker();
 
   bool _loading = false;
-  int? _selectedCategoryId;
+  int? _selectedCategoryId; // <- reste NULL tant que l'utilisateur n'a pas choisi
   List<Map<String, dynamic>> _categories = [];
 
   @override
@@ -45,10 +52,27 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final response = await Supabase.instance.client.from('categories').select();
     setState(() {
       _categories = List<Map<String, dynamic>>.from(response);
-      if (_categories.isNotEmpty) {
-        _selectedCategoryId = _categories.first['id'];
-      }
+      // NE PAS pré-remplir : on laisse _selectedCategoryId == null
     });
+  }
+
+  // — Icônes de catégories (mêmes pictos que la page principale)
+  IconData _iconForCategory(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('immobilier')) return Icons.home_work_outlined;
+    if (n.contains('véhicule') || n.contains('vehicule') || n.contains('auto')) return Icons.directions_car;
+    if (n.contains('vacance') || n.contains('voyage')) return Icons.beach_access;
+    if (n.contains('emploi') || n.contains('job') || n.contains('travail')) return Icons.work_outline;
+    if (n.contains('service')) return Icons.handshake;
+    if (n.contains('famille')) return Icons.family_restroom;
+    if (n.contains('électronique') || n.contains('electronique') || n.contains('tech')) return Icons.devices_other;
+    if (n.contains('mode')) return Icons.checkroom;
+    if (n.contains('loisir') || n.contains('sport')) return Icons.sports_soccer;
+    if (n.contains('animal')) return Icons.pets;
+    if (n.contains('maison') || n.contains('jardin')) return Icons.chair_alt;
+    if (n.contains('matériel') || n.contains('materiel') || n.contains('pro')) return Icons.build;
+    if (n.contains('autre')) return Icons.category;
+    return Icons.category_outlined;
   }
 
   Future<void> _pickImages() async {
@@ -70,31 +94,20 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         builder: (_, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const SizedBox(
-              width: 90,
-              height: 90,
+              width: 90, height: 90,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             );
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(13),
-            child: Image.memory(
-              snap.data!,
-              width: 90,
-              height: 90,
-              fit: BoxFit.cover,
-            ),
+            child: Image.memory(snap.data!, width: 90, height: 90, fit: BoxFit.cover),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(13),
-        child: Image.file(
-          File(file.path),
-          width: 90,
-          height: 90,
-          fit: BoxFit.cover,
-        ),
+        child: Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover),
       );
     }
   }
@@ -102,7 +115,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<List<String>> _uploadImages() async {
     final storage = Supabase.instance.client.storage.from('annonce-photos');
     final List<String> urls = [];
-
     for (final file in _images) {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
       if (kIsWeb) {
@@ -126,7 +138,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
     if (_selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Catégorie introuvable")),
+        const SnackBar(content: Text("Choisissez une catégorie")),
       );
       return;
     }
@@ -163,18 +175,41 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
   }
 
+  InputDecoration _input(String label, {IconData? icon}) {
+    // Icône grise; seul l’état "focus" utilise la bordure rouge
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: icon != null ? Icon(icon, color: _text2) : null,
+      filled: true,
+      fillColor: _cardBg,
+      labelStyle: const TextStyle(color: _text2),
+      border: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: _stroke),
+      ),
+      enabledBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: _stroke),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+        borderSide: BorderSide(color: annoncesPrimary, width: 1.6),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FB),
+      backgroundColor: _pageBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
+        backgroundColor: _cardBg,
+        elevation: 0.5,
         iconTheme: const IconThemeData(color: annoncesPrimary),
         title: const Text(
           'Déposer une annonce',
           style: TextStyle(
-            color: annoncesPrimary,
+            color: _text, // titre neutre (pas rouge)
             fontWeight: FontWeight.bold,
             fontSize: 21,
           ),
@@ -191,16 +226,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     // TITRE
                     TextFormField(
                       controller: _titreController,
-                      decoration: const InputDecoration(
-                        labelText: 'Titre',
-                        prefixIcon:
-                            Icon(Icons.edit_outlined, color: annoncesPrimary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      decoration: _input('Titre', icon: Icons.edit_outlined),
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Entrez un titre' : null,
                     ),
@@ -210,16 +236,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     TextFormField(
                       controller: _descriptionController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        prefixIcon:
-                            Icon(Icons.description, color: annoncesPrimary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      decoration: _input('Description', icon: Icons.description),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Entrez une description'
                           : null,
@@ -230,16 +247,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     TextFormField(
                       controller: _prixController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Prix (GNF)',
-                        prefixIcon:
-                            Icon(Icons.price_change, color: annoncesPrimary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      decoration: _input('Prix (GNF)', icon: Icons.price_change),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Indiquez un prix'
                           : null,
@@ -249,16 +257,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     // VILLE
                     TextFormField(
                       controller: _villeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Ville',
-                        prefixIcon:
-                            Icon(Icons.location_on, color: annoncesPrimary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      decoration: _input('Ville', icon: Icons.location_on),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Entrez une ville'
                           : null,
@@ -269,53 +268,44 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     TextFormField(
                       controller: _telephoneController,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Téléphone',
-                        prefixIcon:
-                            Icon(Icons.phone, color: annoncesSecondary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      decoration: _input('Téléphone', icon: Icons.phone),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Entrez un numéro'
                           : null,
                     ),
                     const SizedBox(height: 16),
 
-                    // CATÉGORIE
+                    // CATÉGORIE (PAS PRÉ-REMPLIE + icône dans les options)
                     DropdownButtonFormField<int>(
-                      value: _selectedCategoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'Catégorie',
-                        prefixIcon: Icon(Icons.category_outlined,
-                            color: annoncesSecondary),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(14)),
-                        ),
-                      ),
+                      value: _selectedCategoryId, // reste null par défaut
+                      decoration: _input('Catégorie', icon: Icons.category_outlined),
+                      hint: const Text('Choisissez une catégorie', style: TextStyle(color: _text2)),
+                      validator: (v) =>
+                          (v == null) ? 'Choisissez une catégorie' : null,
                       items: _categories
-                          .map((cat) => DropdownMenuItem<int>(
-                                value: cat['id'],
-                                child: Text(cat['nom'] ?? 'Inconnu'),
-                              ))
+                          .map((cat) {
+                            final nom = (cat['nom'] ?? 'Inconnu').toString();
+                            return DropdownMenuItem<int>(
+                              value: cat['id'] as int,
+                              child: Row(
+                                children: [
+                                  Icon(_iconForCategory(nom), size: 18, color: _text2),
+                                  const SizedBox(width: 8),
+                                  Text(nom, style: const TextStyle(color: _text)),
+                                ],
+                              ),
+                            );
+                          })
                           .toList(),
-                      onChanged: (val) =>
-                          setState(() => _selectedCategoryId = val),
+                      onChanged: (val) => setState(() => _selectedCategoryId = val),
                     ),
                     const SizedBox(height: 24),
 
                     // PHOTOS
-                    const Text(
-                      "Photos",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: annoncesPrimary,
-                      ),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("Photos",
+                          style: TextStyle(fontWeight: FontWeight.bold, color: _text)),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -333,7 +323,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                                   onTap: () => _removeImage(i),
                                   child: const CircleAvatar(
                                     radius: 13,
-                                    backgroundColor: Colors.red,
+                                    backgroundColor: annoncesPrimary,
                                     child: Icon(Icons.close,
                                         size: 16, color: Colors.white),
                                   ),
@@ -341,7 +331,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                               ),
                             ],
                           ),
-                        // Bouton d'ajout (⚠️ pas de "InkWell," orphelin)
+                        // Ajout photo
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
@@ -350,13 +340,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                             decoration: BoxDecoration(
                               border: Border.all(color: annoncesPrimary),
                               borderRadius: BorderRadius.circular(13),
-                              color: const Color(0xFFF8F6F9),
+                              color: annoncesSecondary,
                             ),
-                            child: const Icon(
-                              Icons.add_a_photo,
-                              size: 28,
-                              color: annoncesPrimary,
-                            ),
+                            child: const Icon(Icons.add_a_photo,
+                                size: 28, color: annoncesPrimary),
                           ),
                         ),
                       ],

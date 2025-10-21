@@ -28,6 +28,10 @@ class _HotelPageState extends State<HotelPage> {
   List<Map<String, dynamic>> filteredHotels = [];
   bool loading = true;
 
+  // ⭐️ notes moyennes calculées en batch
+  final Map<String, double> _avgByHotelId = {};
+  final Map<String, int> _countByHotelId = {};
+
   // Recherche
   String searchQuery = '';
 
@@ -41,6 +45,23 @@ class _HotelPageState extends State<HotelPage> {
     super.initState();
     _loadAll();
   }
+
+  // ------- format prix (espaces) -------
+  String _formatGNF(dynamic value) {
+    if (value == null) return '—';
+    final n = (value is num)
+        ? value.toInt()
+        : int.tryParse(value.toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      buf.write(s[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buf.write(' ');
+    }
+    return buf.toString();
+  }
+  // -------------------------------------
 
   // ---------------- Localisation ----------------
   Future<void> _getLocation() async {
@@ -88,7 +109,8 @@ class _HotelPageState extends State<HotelPage> {
     if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
     const R = 6371000.0;
     double dLat = (lat2 - lat1) * (pi / 180);
-    double dLon = (lon2 - lon1) * (pi / 180);
+    double dLon = (lon1 - lon2) * (pi / 180); // (small fix) keep symmetry
+    dLon = -dLon; // same as (lat2,lon2) - (lat1,lon1)
     double a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * (pi / 180)) *
             cos(lat2 * (pi / 180)) *
@@ -149,6 +171,7 @@ class _HotelPageState extends State<HotelPage> {
       }
 
       hotels = list;
+      await _preloadAverages(list.map((e) => e['id'].toString()).toList());
       _filterHotels(searchQuery);
     } catch (e) {
       if (!mounted) return;
@@ -159,6 +182,35 @@ class _HotelPageState extends State<HotelPage> {
       if (mounted) setState(() => loading = false);
     }
   }
+
+  // --------- récupère moyennes ⭐️ en une requête ----------
+  Future<void> _preloadAverages(List<String> ids) async {
+    _avgByHotelId.clear();
+    _countByHotelId.clear();
+    if (ids.isEmpty) return;
+
+    final orFilter = ids.map((id) => 'hotel_id.eq.$id').join(',');
+    final rows = await Supabase.instance.client
+        .from('avis_hotels')
+        .select('hotel_id, etoiles')
+        .or(orFilter);
+
+    // calcule moyenne locale (même logique que sur la page détail)
+    final list = List<Map<String, dynamic>>.from(rows);
+    final Map<String, double> sums = {};
+    final Map<String, int> counts = {};
+    for (final r in list) {
+      final id = (r['hotel_id'] ?? '').toString();
+      final n  = (r['etoiles'] as num?)?.toDouble() ?? 0.0;
+      sums[id]   = (sums[id] ?? 0.0) + n;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    for (final id in counts.keys) {
+      _avgByHotelId[id] = (sums[id]! / counts[id]!.clamp(1, 1 << 30));
+      _countByHotelId[id] = counts[id]!;
+    }
+  }
+  // --------------------------------------------------------
 
   void _filterHotels(String value) {
     final q = value.toLowerCase().trim();
@@ -180,6 +232,24 @@ class _HotelPageState extends State<HotelPage> {
     if (raw is List) return raw.map((e) => e.toString()).toList();
     if (raw is String && raw.trim().isNotEmpty) return [raw];
     return const [];
+  }
+
+  Widget _starsFor(double? avg) {
+    final val = (avg ?? 0);
+    final filled = val.floor();
+    return Row(
+      children: List.generate(5, (i) {
+        final icon = i < filled ? Icons.star : Icons.star_border;
+        return Icon(icon, size: 14, color: Colors.amber);
+      })
+        ..add(
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(val == 0 ? '—' : val.toStringAsFixed(1),
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+        ),
+    );
   }
 
   @override
@@ -204,15 +274,17 @@ class _HotelPageState extends State<HotelPage> {
             onPressed: _loadAll,
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
             height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [hotelsPrimary, hotelsSecondary],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [hotelsPrimary, hotelsSecondary],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
               ),
             ),
           ),
@@ -291,11 +363,15 @@ class _HotelPageState extends State<HotelPage> {
                                   crossAxisCount: 2,
                                   mainAxisSpacing: 16,
                                   crossAxisSpacing: 16,
-                                  childAspectRatio: 0.77,
+                                  childAspectRatio: 0.80,
                                 ),
                                 itemCount: filteredHotels.length,
                                 itemBuilder: (context, index) {
                                   final hotel = filteredHotels[index];
+                                  final id = hotel['id'].toString();
+                                  final avg = _avgByHotelId[id];
+                                  final count = _countByHotelId[id] ?? 0;
+
                                   final images = _imagesFrom(hotel['images']);
                                   final image = images.isNotEmpty
                                       ? images.first
@@ -353,9 +429,13 @@ class _HotelPageState extends State<HotelPage> {
                                                       ),
                                                       child: Row(
                                                         mainAxisSize: MainAxisSize.min,
-                                                        children: const [
-                                                          Icon(Icons.location_on, size: 14, color: onPrimary),
-                                                          SizedBox(width: 4),
+                                                        children: [
+                                                          const Icon(Icons.location_on, size: 14, color: onPrimary),
+                                                          const SizedBox(width: 4),
+                                                          Text(
+                                                            (hotel['ville'] ?? '').toString(),
+                                                            style: const TextStyle(color: onPrimary, fontSize: 12),
+                                                          ),
                                                         ],
                                                       ),
                                                     ),
@@ -378,7 +458,17 @@ class _HotelPageState extends State<HotelPage> {
                                                     fontSize: 15,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 3),
+                                                const SizedBox(height: 4),
+                                                // ⭐️ Note moyenne (même logique que détail)
+                                                Row(
+                                                  children: [
+                                                    _starsFor(avg),
+                                                    if (count > 0)
+                                                      Text('  ($count)',
+                                                          style: const TextStyle(fontSize: 11, color: Colors.black45)),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
                                                 // Ville + distance
                                                 Row(
                                                   children: [
@@ -404,12 +494,12 @@ class _HotelPageState extends State<HotelPage> {
                                                     ],
                                                   ],
                                                 ),
-                                                // Prix
+                                                // Prix — toujours "GNF / nuit"
                                                 if ((hotel['prix'] ?? '').toString().isNotEmpty)
                                                   Padding(
-                                                    padding: const EdgeInsets.only(top: 2.5),
+                                                    padding: const EdgeInsets.only(top: 3),
                                                     child: Text(
-                                                      'Prix : ${hotel['prix']}',
+                                                      'Prix : ${_formatGNF(hotel['prix'])} GNF / nuit',
                                                       style: const TextStyle(
                                                         color: hotelsPrimary,
                                                         fontWeight: FontWeight.w600,

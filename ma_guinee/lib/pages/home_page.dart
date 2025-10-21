@@ -30,15 +30,11 @@ const _kEventSecondary      = Color(0xFFB5179E);
 // Prestataires
 const _kPrestatairesPrimary = Color(0xFF0F766E);
 // Annonces
-const _kAnnoncesPrimary     = Color(0xFF1E3A8A);
-// Messages (si besoin ailleurs)
-// const _kMessagesPrimary  = Color(0xFF2563EB);
+const _kAnnoncesPrimary     = Color(0xFFDC2626); // rouge
 // Notifications
 const _kNotifPrimary        = Color(0xFFB91C1C);
 // Carte / Lieux / Logement
 const _kMapPrimary          = Color(0xFF2B6CB0);
-// Transport (non utilisé ici)
-// const _kTransportPrimary = Color(0xFF0E7490);
 // Aide
 const _kAidePrimary         = Color(0xFF475569);
 // Commerce (Jobs / Wali fen)
@@ -216,6 +212,29 @@ class _HomePageState extends State<HomePage> {
         children: [
           Icon(Icons.apartment_rounded, color: primary, size: size),
           Positioned(right: 6, bottom: 6, child: _smallBadge(primary, Icons.location_on_rounded)),
+        ],
+      ),
+    );
+  }
+
+  // ===== ADMIN : Institution avec pied en dégradé R→J→V =====
+  Widget _adminInstitutionIcon(BuildContext context) {
+    final size = _adaptiveIconSize(context);
+    return _iconCard(
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: _InstitutionGradientBaseIcon(
+              size: size,
+              structure: _kAidePrimary,          // toit + entablement + piliers
+              // dégradé du pied
+              gradientLeft: Color(0xFFDC2626),   // rouge
+              gradientMid:  Color(0xFFDAA520),   // jaune/doré
+              gradientRight: Color(0xFF009460),  // vert
+            ),
+          ),
+          Positioned(right: 6, bottom: 6, child: _smallBadge(_kAidePrimary, Icons.description_rounded)),
         ],
       ),
     );
@@ -427,12 +446,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
                 ),
                 _ServiceTile(
-                  icon: _iconWithBadge(
-                    main: Icons.account_balance,
-                    color: _kAidePrimary, // admin visuel sobre (gris bleuté)
-                    badge: Icons.description_rounded,
-                    context: context,
-                  ),
+                  icon: _adminInstitutionIcon(context), // << icône admin avec pied dégradé
                   label: "Services Admin",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
                 ),
@@ -498,12 +512,12 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => Navigator.pushNamed(context, AppRoutes.hotel),
                 ),
                 _ServiceTile(
-                  icon: _logementIcon(context), // _kMapPrimary
+                  icon: _logementIcon(context),
                   label: "Logement",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.logement),
                 ),
                 _ServiceTile(
-                  icon: _soneyaIcon(context), // _kCommercePrimary
+                  icon: _soneyaIcon(context),
                   label: "Wali fen",
                   onTap: () => Navigator.push(
                     context,
@@ -513,7 +527,7 @@ class _HomePageState extends State<HomePage> {
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.confirmation_num,
-                    color: _kEventSecondary, // billetterie
+                    color: _kEventSecondary,
                     badge: Icons.lock_clock,
                     context: context,
                   ),
@@ -580,4 +594,99 @@ class _ServiceTile extends StatelessWidget {
 class MediaBox {
   static MediaQueryData of(BuildContext context) =>
       MediaQuery.maybeOf(context) ?? const MediaQueryData();
+}
+
+/// =======================
+///   DESSIN PERSONNALISÉ
+/// =======================
+
+class _InstitutionGradientBaseIcon extends StatelessWidget {
+  final double size;
+  final Color structure;
+  final Color gradientLeft, gradientMid, gradientRight;
+
+  const _InstitutionGradientBaseIcon({
+    super.key,
+    required this.size,
+    required this.structure,
+    required this.gradientLeft,
+    required this.gradientMid,
+    required this.gradientRight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _InstitutionGradientBasePainter(
+        structure: structure,
+        gradientLeft: gradientLeft,
+        gradientMid: gradientMid,
+        gradientRight: gradientRight,
+      ),
+    );
+  }
+}
+
+class _InstitutionGradientBasePainter extends CustomPainter {
+  final Color structure;
+  final Color gradientLeft, gradientMid, gradientRight;
+
+  _InstitutionGradientBasePainter({
+    required this.structure,
+    required this.gradientLeft,
+    required this.gradientMid,
+    required this.gradientRight,
+  });
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final w = s.width, h = s.height;
+    final p = Paint()..style = PaintingStyle.fill;
+
+    // Toit (pédiment)
+    p.color = structure;
+    final pediment = Path()
+      ..moveTo(w*0.12, h*0.28)
+      ..lineTo(w*0.50, h*0.09)
+      ..lineTo(w*0.88, h*0.28)
+      ..close();
+    canvas.drawPath(pediment, p);
+
+    // Entablement
+    final entabl = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w*0.16, h*0.30, w*0.68, h*0.05), const Radius.circular(1.3));
+    canvas.drawRRect(entabl, p);
+
+    // 3 Piliers sobres
+    final top = h*0.36, bottom = h*0.72, colW = w*0.12, gap = w*0.08;
+    final x1 = w*0.22, x2 = x1 + colW + gap, x3 = x2 + colW + gap;
+    void col(double x) =>
+        canvas.drawRect(Rect.fromLTWH(x, top, colW, bottom - top), Paint()..color = structure);
+    col(x1); col(x2); col(x3);
+
+    // Pied (base) avec dégradé horizontal R→J→V et bords très arrondis (effet "pill")
+    final baseRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w*0.14, h*0.76, w*0.72, h*0.12),
+      Radius.circular(h*0.06),
+    );
+
+    final shader = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [gradientLeft, gradientMid, gradientRight],
+      stops: const [0.0, 0.5, 1.0],
+    ).createShader(baseRect.outerRect);
+
+    final basePaint = Paint()..shader = shader;
+    canvas.drawRRect(baseRect, basePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InstitutionGradientBasePainter old) {
+    return structure != old.structure ||
+        gradientLeft != old.gradientLeft ||
+        gradientMid != old.gradientMid ||
+        gradientRight != old.gradientRight;
+  }
 }

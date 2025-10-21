@@ -11,11 +11,18 @@ class MesAnnoncesPage extends StatefulWidget {
 }
 
 class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
-  // Palette Annonces
-  static const Color annoncesPrimary = Color(0xFF1E3A8A);
-  static const Color annoncesSecondary = Color(0xFF60A5FA);
-  static const Color annoncesOnPrimary = Color(0xFFFFFFFF);
-  static const Color annoncesOnSecondary = Color(0xFF000000);
+  // ===== PALETTE FIXE (inspirée SFR) =====
+  static const Color annoncesPrimary     = Color(0xFFE60000); // rouge actions (pressed)
+  static const Color annoncesSecondary   = Color(0xFFFFE5E5); // fond doux
+  static const Color annoncesOnPrimary   = Color(0xFFFFFFFF);
+  static const Color annoncesOnSecondary = Color(0xFF1F2937);
+
+  // Neutres
+  static const Color _pageBg   = Color(0xFFF5F7FA);
+  static const Color _cardBg   = Color(0xFFFFFFFF);
+  static const Color _stroke   = Color(0xFFE5E7EB);
+  static const Color _text     = Color(0xFF1F2937);
+  static const Color _text2    = Color(0xFF6B7280);
 
   @override
   void initState() {
@@ -34,17 +41,34 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     final p = context.watch<UserProvider>();
     final annonces = p.annoncesUtilisateur;
 
+    // Style pour icônes qui deviennent rouges uniquement lorsqu'elles sont pressées
+    Color _iconColor(Set<MaterialState> s) =>
+        s.contains(MaterialState.pressed) ? annoncesPrimary : _text2;
+
+    final iconBtnStyle = ButtonStyle(
+      foregroundColor:
+          MaterialStateProperty.resolveWith<Color>(_iconColor),
+      overlayColor: MaterialStateProperty.all(
+        annoncesSecondary.withOpacity(0.35),
+      ),
+      splashFactory: InkSplash.splashFactory,
+    );
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _pageBg,
       appBar: AppBar(
+        backgroundColor: _cardBg,
+        elevation: 0.5,
+        // Icônes de l'AppBar en neutre (pas rouge permanent)
+        iconTheme: const IconThemeData(color: _text),
         title: const Text(
           'Mes annonces',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: _text,
+          ),
         ),
-        backgroundColor: annoncesPrimary,
-        foregroundColor: annoncesOnPrimary,
-        elevation: 0.8,
-        iconTheme: const IconThemeData(color: annoncesOnPrimary),
+        foregroundColor: _text,
       ),
       body: p.isLoadingUser || p.isLoadingAnnonces
           ? const Center(child: CircularProgressIndicator())
@@ -52,7 +76,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
               ? Center(
                   child: Text(
                     "Vous n'avez publié aucune annonce.",
-                    style: TextStyle(color: Colors.grey[700], fontSize: 17),
+                    style: TextStyle(color: _text2, fontSize: 17),
                   ),
                 )
               : ListView.separated(
@@ -64,7 +88,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                     final thumb = (a.images.isNotEmpty) ? a.images.first : null;
 
                     return Material(
-                      color: annoncesSecondary.withOpacity(0.08),
+                      color: annoncesSecondary.withOpacity(0.18), // léger voile
                       borderRadius: BorderRadius.circular(13),
                       child: InkWell(
                         onTap: () {
@@ -80,9 +104,8 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                               horizontal: 13, vertical: 10),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(13),
-                            border: Border.all(
-                              color: annoncesPrimary.withOpacity(0.10),
-                            ),
+                            color: _cardBg,
+                            border: Border.all(color: _stroke),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,7 +144,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
-                                        color: annoncesPrimary,
+                                        color: _text,
                                       ),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
@@ -131,7 +154,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                                       a.categorie,
                                       style: const TextStyle(
                                         fontSize: 13.5,
-                                        color: Colors.black54,
+                                        color: _text2,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -144,11 +167,8 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                                 children: [
                                   IconButton(
                                     tooltip: 'Modifier',
-                                    icon: const Icon(
-                                      Icons.edit,
-                                      color: annoncesPrimary,
-                                      size: 22,
-                                    ),
+                                    icon: const Icon(Icons.edit, size: 22),
+                                    style: iconBtnStyle,
                                     onPressed: () async {
                                       final updated =
                                           await Navigator.pushNamed(
@@ -172,11 +192,8 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                                   ),
                                   IconButton(
                                     tooltip: 'Supprimer',
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      color: Colors.red,
-                                      size: 22,
-                                    ),
+                                    icon: const Icon(Icons.delete, size: 22),
+                                    style: iconBtnStyle,
                                     onPressed: () async {
                                       final ok = await showDialog<bool>(
                                             context: context,
@@ -200,7 +217,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
                                                   child: const Text(
                                                     "Supprimer",
                                                     style: TextStyle(
-                                                        color: Colors.red),
+                                                        color: annoncesPrimary),
                                                   ),
                                                 ),
                                               ],

@@ -15,13 +15,21 @@ class FavorisPage extends StatefulWidget {
 class _FavorisPageState extends State<FavorisPage> {
   bool affichageGrille = true;
 
+  // ===== PALETTE (couleurs seulement, logique inchangée) =====
+  static const Color annoncesPrimary = Color(0xFFE60000); // rouge marque
+  static const Color _pageBg         = Color(0xFFF5F7FA); // fond global doux
+  static const Color _cardBg         = Color(0xFFFFFFFF); // cartes / appbar claire
+  static const Color _text           = Color(0xFF1F2937); // texte principal
+  static const Color _text2          = Color(0xFF6B7280); // texte secondaire
+  // ===========================================================
+
   @override
   void initState() {
     super.initState();
     Provider.of<FavorisProvider>(context, listen: false).loadFavoris();
   }
 
-  // SQL 'IN' propre pour Supabase
+  // SQL 'IN' (logique conservée)
   Future<List<Map<String, dynamic>>> fetchFavorisAnnonces(
       List<String> favorisIds) async {
     if (favorisIds.isEmpty) return [];
@@ -41,35 +49,28 @@ class _FavorisPageState extends State<FavorisPage> {
     final width = MediaQuery.of(context).size.width;
     final isMobile = width < 600;
 
-    final bleu = const Color(0xFF113CFC);
-    final rouge = const Color(0xFFCE1126);
-    final vert = const Color(0xFF009460);
-
     return Scaffold(
+      backgroundColor: _pageBg,
       appBar: AppBar(
+        backgroundColor: _cardBg,
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: annoncesPrimary),
         title: const Text(
           'Mes Favoris',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, color: annoncesPrimary),
         ),
-        backgroundColor: bleu,
-        foregroundColor: Colors.white,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: annoncesPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
             icon: Icon(
-              affichageGrille
-                  ? Icons.view_list_rounded
-                  : Icons.grid_view_rounded,
+              affichageGrille ? Icons.view_list_rounded : Icons.grid_view_rounded,
+              color: annoncesPrimary,
             ),
-            tooltip:
-                affichageGrille ? 'Afficher en liste' : 'Afficher en grille',
-            color: Colors.white,
-            onPressed: () {
-              setState(() => affichageGrille = !affichageGrille);
-            },
+            tooltip: affichageGrille ? 'Afficher en liste' : 'Afficher en grille',
+            onPressed: () => setState(() => affichageGrille = !affichageGrille),
           )
         ],
       ),
@@ -87,15 +88,11 @@ class _FavorisPageState extends State<FavorisPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.favorite_border,
-                            size: 60, color: Colors.grey),
+                        const Icon(Icons.favorite_border, size: 60, color: Colors.grey),
                         const SizedBox(height: 10),
                         Text(
                           "Aucun favori pour l’instant.",
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade700,
-                          ),
+                          style: TextStyle(fontSize: 16, color: _text2),
                         ),
                       ],
                     ),
@@ -113,6 +110,7 @@ class _FavorisPageState extends State<FavorisPage> {
                       final String annonceId = annonce['id'].toString();
 
                       return Card(
+                        color: _cardBg,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -132,11 +130,17 @@ class _FavorisPageState extends State<FavorisPage> {
                           ),
                           title: Text(
                             annonce['titre'] ?? 'Sans titre',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: _text,
+                            ),
                           ),
-                          subtitle: Text(annonce['ville'] ?? ''),
+                          subtitle: Text(
+                            annonce['ville'] ?? '',
+                            style: const TextStyle(color: _text2),
+                          ),
                           trailing: IconButton(
-                            icon: Icon(Icons.favorite, color: rouge),
+                            icon: const Icon(Icons.favorite, color: annoncesPrimary),
                             tooltip: 'Retirer des favoris',
                             onPressed: () async {
                               await favorisProvider.toggleFavori(annonceId);
@@ -147,9 +151,8 @@ class _FavorisPageState extends State<FavorisPage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => AnnonceDetailPage(
-                                  annonce: AnnonceModel.fromJson(annonce),
-                                ),
+                                builder: (_) =>
+                                    AnnonceDetailPage(annonce: AnnonceModel.fromJson(annonce)),
                               ),
                             );
                           },
@@ -167,8 +170,7 @@ class _FavorisPageState extends State<FavorisPage> {
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
                   itemCount: annonces.length,
                   itemBuilder: (_, idx) {
                     final annonce = annonces[idx];
@@ -185,6 +187,7 @@ class _FavorisPageState extends State<FavorisPage> {
                         ),
                       ),
                       child: Card(
+                        color: _cardBg,
                         elevation: 2,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
@@ -219,17 +222,16 @@ class _FavorisPageState extends State<FavorisPage> {
                                   ),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         annonce['titre'] ?? '',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 14,
+                                          color: _text,
                                         ),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
@@ -237,8 +239,8 @@ class _FavorisPageState extends State<FavorisPage> {
                                       const SizedBox(height: 4),
                                       Text(
                                         "${annonce['prix'] ?? ''} ${annonce['devise'] ?? 'GNF'}",
-                                        style: TextStyle(
-                                          color: vert,
+                                        style: const TextStyle(
+                                          color: annoncesPrimary, // prix en rouge marque
                                           fontWeight: FontWeight.w600,
                                           fontSize: 14,
                                         ),
@@ -247,7 +249,7 @@ class _FavorisPageState extends State<FavorisPage> {
                                       Text(
                                         annonce['ville'] ?? '',
                                         style: const TextStyle(
-                                          color: Colors.grey,
+                                          color: _text2,
                                           fontSize: 12,
                                         ),
                                         maxLines: 1,
@@ -269,19 +271,16 @@ class _FavorisPageState extends State<FavorisPage> {
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
+                                  decoration: const BoxDecoration(
                                     color: Colors.white,
                                     shape: BoxShape.circle,
                                     boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 3,
-                                      ),
+                                      BoxShadow(color: Colors.black12, blurRadius: 3),
                                     ],
                                   ),
-                                  child: Icon(
+                                  child: const Icon(
                                     Icons.favorite,
-                                    color: rouge,
+                                    color: annoncesPrimary,
                                     size: 24,
                                   ),
                                 ),

@@ -22,11 +22,16 @@ class RestoDetailPage extends StatefulWidget {
 class _RestoDetailPageState extends State<RestoDetailPage> {
   final _sb = Supabase.instance.client;
 
-  // Palette Restaurants
-  static const Color _restoPrimary = Color(0xFFE76F51);
+  // Palette Restaurants (identique)
+  static const Color _restoPrimary   = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
   static const Color _restoOnSecondary = Color(0xFF000000);
+
+  // Neutres pour un rendu "moins flashy"
+  static const Color _neutralBg      = Color(0xFFF7F7F9);
+  static const Color _neutralSurface = Color(0xFFFFFFFF);
+  static const Color _neutralBorder  = Color(0xFFE5E7EB);
 
   Map<String, dynamic>? resto;
   bool loading = true;
@@ -284,6 +289,23 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     );
   }
 
+  // Affichage non interactif pour la moyenne
+  Widget _starsStatic(double avg, {double size = 16}) {
+    final full = avg.floor();
+    final half = (avg - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, size: size, color: _restoSecondary);
+        } else if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: _restoSecondary);
+        }
+        return Icon(Icons.star_border, size: size, color: _restoSecondary);
+      }),
+    );
+  }
+
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     showDialog(
       context: context,
@@ -363,11 +385,31 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     final lat = (resto!['latitude'] as num?)?.toDouble();
     final lng = (resto!['longitude'] as num?)?.toDouble();
 
+    const bottomGradient = LinearGradient(
+      colors: [_restoPrimary, _restoSecondary],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
     return Scaffold(
+      backgroundColor: _neutralBg,
       appBar: AppBar(
-        title: Text(nom, style: const TextStyle(color: _restoOnPrimary)),
-        backgroundColor: _restoPrimary,
-        iconTheme: const IconThemeData(color: _restoOnPrimary),
+        title: Text(
+          nom,
+          style: const TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: _neutralSurface,     // ✅ AppBar blanche
+        foregroundColor: _restoPrimary,
+        elevation: 1,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: bottomGradient),
+            ),
+          ),
+        ),
       ),
       body: RefreshIndicator(
         color: _restoPrimary,
@@ -378,8 +420,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // ---------- Galerie
             if (images.isNotEmpty) ...[
               ClipRRect(
@@ -414,117 +455,119 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                       right: 8,
                       top: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.45),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Text(
                           '${_currentIndex + 1}/${images.length}',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 12),
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 68,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final isActive = index == _currentIndex;
-                    return GestureDetector(
-                      onTap: () {
-                        _pageController.animateToPage(
-                          index,
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeOut,
-                        );
-                        setState(() => _currentIndex = index);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 90,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isActive ? _restoPrimary : Colors.transparent,
-                            width: 2,
+              const SizedBox(height: 10),
+              if (images.length > 1)
+                SizedBox(
+                  height: 68,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final isActive = index == _currentIndex;
+                      return GestureDetector(
+                        onTap: () {
+                          _pageController.animateToPage(
+                            index,
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOut,
+                          );
+                          setState(() => _currentIndex = index);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 90,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isActive ? _restoPrimary : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          clipBehavior: Clip.hardEdge,
+                          child: CachedNetworkImage(
+                            imageUrl: _thumbUrl(images[index]),
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(color: Colors.grey[200]),
+                            errorWidget: (_, __, ___) =>
+                                const Center(child: Icon(Icons.broken_image)),
                           ),
                         ),
-                        clipBehavior: Clip.hardEdge,
-                        child: CachedNetworkImage(
-                          imageUrl: _thumbUrl(images[index]),
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.grey[200]),
-                          errorWidget: (_, __, ___) =>
-                              const Center(child: Icon(Icons.broken_image)),
-                        ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
 
-            const SizedBox(height: 12),
-            Text(nom,
-                style:
-                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            if (spec.isNotEmpty) const SizedBox(height: 2),
-            if (spec.isNotEmpty)
-              const Text(
-                // spécialités en accent color
-                // (on garde le texte d'origine dans 'spec')
-                '',
-                style: TextStyle(color: _restoPrimary),
-              ),
-            if (spec.isNotEmpty)
-              Text(spec, style: const TextStyle(color: _restoPrimary)),
-            Row(children: [
-              const Icon(Icons.location_on, color: Colors.red),
-              const SizedBox(width: 4),
-              Text(ville),
-            ]),
-            if (desc.isNotEmpty) ...[
+            const SizedBox(height: 14),
+
+            // ---------- En-tête texte
+            Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.location_on, color: Colors.red, size: 18),
+                const SizedBox(width: 4),
+                Text(ville, style: const TextStyle(fontSize: 14)),
+              ],
+            ),
+            if (spec.isNotEmpty) ...[
               const SizedBox(height: 8),
+              Text(spec, style: const TextStyle(color: _restoPrimary, fontWeight: FontWeight.w600)),
+            ],
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 10),
               Text(desc),
             ],
             if (horaire.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Row(children: [
                 const Icon(Icons.schedule, size: 20),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 Text(horaire),
               ]),
             ],
+
             if (_noteMoyenne > 0) ...[
-              const SizedBox(height: 8),
-              Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ★"),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _starsStatic(_noteMoyenne),
+                  const SizedBox(width: 8),
+                  Text('${_noteMoyenne.toStringAsFixed(1)} / 5',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ],
+              ),
             ],
 
+            const SizedBox(height: 18),
             const Divider(height: 30),
 
             // ---------- Avis (saisie)
-            const Text("Votre avis",
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
             if (_dejaNote)
               const Padding(
-                padding: EdgeInsets.only(bottom: 6),
+                padding: EdgeInsets.only(bottom: 6, top: 2),
                 child: Text(
                   "Vous avez déjà laissé un avis. Vous pouvez le mettre à jour.",
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
-            _buildStars(_noteUtilisateur,
-                onTap: (n) => setState(() => _noteUtilisateur = n)),
+            _buildStars(_noteUtilisateur, onTap: (n) => setState(() => _noteUtilisateur = n)),
             TextField(
               controller: _avisController,
               maxLines: 3,
@@ -535,11 +578,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 contentPadding: const EdgeInsets.all(12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: const BorderSide(color: _neutralBorder),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: const BorderSide(color: _neutralBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -558,20 +601,17 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   backgroundColor: const Color(0xFFFDE68A),
                   foregroundColor: Colors.black87,
                   elevation: 0,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 28),
 
             // ---------- Carte
             if (lat != null && lng != null) ...[
-              const Text("Localisation",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               SizedBox(
                 height: 200,
@@ -582,8 +622,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                       subdomains: const ['a', 'b', 'c'],
                     ),
                     MarkerLayer(
@@ -592,8 +631,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                           point: LatLng(lat, lng),
                           width: 40,
                           height: 40,
-                          child: const Icon(Icons.location_on,
-                              color: Colors.red, size: 40),
+                          child: const Icon(Icons.location_on, color: Colors.red, size: 40),
                         ),
                       ],
                     ),
@@ -603,8 +641,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 onPressed: () async {
-                  final uri = Uri.parse(
-                      "https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+                  final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   }
@@ -618,11 +655,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               ),
             ],
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 28),
 
             // ---------- Liste des avis
-            const Text("Avis des utilisateurs",
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             if (_avis.isEmpty)
               const Text("Aucun avis pour le moment.")
@@ -655,12 +691,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                           Text(a['commentaire'].toString()),
                         const SizedBox(height: 4),
                         Text(
-                          DateTime.tryParse(a['created_at']?.toString() ?? '')
-                                  ?.toLocal()
-                                  .toString() ??
-                              '',
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.black54),
+                          DateTime.tryParse(a['created_at']?.toString() ?? '')?.toLocal().toString() ?? '',
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
                         ),
                       ],
                     ),
@@ -679,7 +711,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _neutralSurface,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.06),

@@ -300,33 +300,33 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // ======= Compteurs empilés (Adultes / Enfants) =======
                     _Section(
                       title: "Combien de personnes ?",
                       primaryColor: widget.primaryColor,
-                      child: Row(
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: _CounterCard(
-                              title: "Adultes",
-                              value: _adults,
-                              onChanged: (v) =>
-                                  setState(() => _adults = v.clamp(1, 20)),
-                              primaryColor: widget.primaryColor,
-                            ),
+                          _CounterCard(
+                            title: "Adultes",
+                            value: _adults,
+                            onChanged: (v) =>
+                                setState(() => _adults = v.clamp(1, 20)),
+                            primaryColor: widget.primaryColor,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _CounterCard(
-                              title: "Enfants",
-                              value: _children,
-                              onChanged: (v) =>
-                                  setState(() => _children = v.clamp(0, 20)),
-                              primaryColor: widget.primaryColor,
-                            ),
+                          const SizedBox(height: 10),
+                          _CounterCard(
+                            title: "Enfants",
+                            value: _children,
+                            onChanged: (v) =>
+                                setState(() => _children = v.clamp(0, 20)),
+                            primaryColor: widget.primaryColor,
                           ),
                         ],
                       ),
                     ),
+                    // ======================================================
+
                     const SizedBox(height: 12),
                     _Section(
                       title: "Vos informations",
@@ -627,37 +627,84 @@ class _TileButton extends StatelessWidget {
   }
 }
 
+// ===== CounterCard version responsive (aucune couleur changée) =====
 class _CounterCard extends StatelessWidget {
   final String title;
   final int value;
   final ValueChanged<int> onChanged;
   final Color primaryColor;
-  const _CounterCard(
-      {required this.title,
-      required this.value,
-      required this.onChanged,
-      required this.primaryColor});
+  const _CounterCard({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    required this.primaryColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    // bornes : Adultes mini 1 / Enfants mini 0
+    final int minVal = title.toLowerCase().contains('adulte') ? 1 : 0;
+    final int maxVal = 20;
+
+    final bool canMinus = value > minVal;
+    final bool canPlus  = value < maxVal;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surface.withOpacity(.35),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(title)),
-          IconButton(
-            onPressed: () => onChanged(value - 1),
-            icon: Icon(Icons.remove_circle_outline, color: primaryColor),
-          ),
-          Text('$value', style: Theme.of(context).textTheme.titleMedium),
-          IconButton(
-            onPressed: () => onChanged(value + 1),
-            icon: Icon(Icons.add_circle_outline, color: primaryColor),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: scheme.surface,
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: canMinus ? () => onChanged(value - 1) : null,
+                  icon: Icon(
+                    Icons.remove_circle_outline,
+                    color: canMinus
+                        ? primaryColor
+                        : scheme.outline.withOpacity(.6),
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      '$value',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: canPlus ? () => onChanged(value + 1) : null,
+                  icon: Icon(
+                    Icons.add_circle_outline,
+                    color: canPlus
+                        ? primaryColor
+                        : scheme.outline.withOpacity(.6),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

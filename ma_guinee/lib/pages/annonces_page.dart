@@ -15,10 +15,16 @@ class AnnoncesPage extends StatefulWidget {
 }
 
 class _AnnoncesPageState extends State<AnnoncesPage> {
-  // Palette Annonces
-  static const Color _annoncesPrimary = Color(0xFF1E3A8A);
-  static const Color _annoncesSecondary = Color(0xFF60A5FA);
-  static const Color _onPrimary = Color(0xFFFFFFFF);
+  // ===== PALETTE DOUCE : rouge seulement quand actif =====
+  // (tu peux ajuster la teinte du rouge si besoin)
+  static const Color _brandRed       = Color(0xFFD92D20); // rouge doux (actif)
+  static const Color _softRedBg      = Color(0xFFFFF1F1); // fond très léger
+  static const Color _pageBg         = Color(0xFFF5F7FA);
+  static const Color _cardBg         = Color(0xFFFFFFFF);
+  static const Color _stroke         = Color(0xFFE5E7EB);
+  static const Color _textPrimary    = Color(0xFF1F2937);
+  static const Color _textSecondary  = Color(0xFF6B7280);
+  static const Color _onPrimary      = Color(0xFFFFFFFF);
 
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -28,7 +34,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   bool _loading = true;
   String? _error;
 
-  // favoris (cache local) — pour éviter FutureBuilder par carte
+  // favoris (cache local)
   final Set<String> _favIds = <String>{};
   bool _favLoaded = false;
 
@@ -63,7 +69,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     _allCats = [_catTous, ..._cats];
     _loadAnnonces();
     _preloadFavoris();
-    _searchCtrl.addListener(() => setState(() {})); // filtre à la volée
+    _searchCtrl.addListener(() => setState(() {}));
   }
 
   @override
@@ -74,10 +80,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   }
 
   Future<void> _loadAnnonces() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
       final raw = await Supabase.instance.client
           .from('annonces')
@@ -94,10 +97,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   Future<void> _preloadFavoris() async {
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) {
-        setState(() => _favLoaded = true);
-        return;
-      }
+      if (user == null) { setState(() => _favLoaded = true); return; }
       final data = await Supabase.instance.client
           .from('favoris')
           .select('annonce_id')
@@ -106,9 +106,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
           .map((e) => (e['annonce_id'] ?? '').toString())
           .where((id) => id.isNotEmpty);
       setState(() {
-        _favIds
-          ..clear()
-          ..addAll(ids);
+        _favIds..clear()..addAll(ids);
         _favLoaded = true;
       });
     } catch (_) {
@@ -116,21 +114,16 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     }
   }
 
-  // toggle optimiste -> pas de rechargement / pas de saut en haut
   Future<void> _toggleFavori(String annonceId) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-
     final wasFav = _favIds.contains(annonceId);
-    setState(() {
-      wasFav ? _favIds.remove(annonceId) : _favIds.add(annonceId);
-    });
+    setState(() { wasFav ? _favIds.remove(annonceId) : _favIds.add(annonceId); });
 
     try {
       if (wasFav) {
         await Supabase.instance.client
-            .from('favoris')
-            .delete()
+            .from('favoris').delete()
             .eq('utilisateur_id', user.id)
             .eq('annonce_id', annonceId);
       } else {
@@ -142,21 +135,15 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       }
     } catch (_) {
       if (!mounted) return;
-      // rollback en cas d'erreur
-      setState(() {
-        wasFav ? _favIds.add(annonceId) : _favIds.remove(annonceId);
-      });
+      setState(() { wasFav ? _favIds.add(annonceId) : _favIds.remove(annonceId); });
     }
   }
 
   List<Map<String, dynamic>> _filtered() {
     final cat = _selectedCatId;
     final f = _searchCtrl.text.trim().toLowerCase();
-
     Iterable<Map<String, dynamic>> it = _allAnnonces;
-    if (cat != null) {
-      it = it.where((a) => a['categorie_id'] == cat);
-    }
+    if (cat != null) it = it.where((a) => a['categorie_id'] == cat);
     if (f.isNotEmpty) {
       it = it.where((a) {
         final t = (a['titre'] ?? '').toString().toLowerCase();
@@ -167,7 +154,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     return it.toList();
   }
 
-  // ---------- UI helpers ----------
   String _fmtGNF(dynamic value) {
     if (value == null) return '0';
     final num n = (value is num) ? value : num.tryParse(value.toString()) ?? 0;
@@ -176,6 +162,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     return s.replaceAll(',', '.');
   }
 
+  // --- Chips : fond clair, texte + icône gris; quand sélectionné -> bord + texte/icône rouges (pas d'inversion) ---
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
       onTap: () => setState(() {
@@ -183,29 +170,26 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         _selectedLabel = cat['label'];
       }),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 130),
+        duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         margin: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: selected ? _annoncesPrimary : Colors.white,
+          color: selected ? _softRedBg : _cardBg,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? _annoncesPrimary : Colors.grey.shade300,
-            width: 1,
-          ),
+          border: Border.all(color: selected ? _brandRed : _stroke, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(cat['icon'],
                 size: 18,
-                color: selected ? Colors.white : _annoncesPrimary),
+                color: selected ? _brandRed : _textSecondary),
             const SizedBox(width: 4),
             Text(
               cat['label'],
               style: TextStyle(
-                color: selected ? Colors.white : Colors.black87,
-                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                color: selected ? _brandRed : _textSecondary,
+                fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
             ),
@@ -218,7 +202,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   void _showCategoriesSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: _cardBg,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (_) => Padding(
@@ -234,19 +218,17 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
+  // --- Bannière : CTA en outline rouge (pas de gros aplat) ---
   Widget _sellBanner() {
     final theme = Theme.of(context);
-    final bannerBg = _annoncesSecondary.withOpacity(0.12);
-    final bannerBorder = _annoncesSecondary.withOpacity(0.25);
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: bannerBg,
+          color: _cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: bannerBorder),
+          border: Border.all(color: _stroke),
         ),
         child: Row(
           children: [
@@ -254,36 +236,32 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "C’est le moment de vendre",
-                    style: theme.textTheme.titleMedium!.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  Text("C’est le moment de vendre",
+                      style: theme.textTheme.titleMedium!.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: _textPrimary,
+                      )),
                   const SizedBox(height: 6),
                   Text(
                     "Touchez des milliers d’acheteurs près de chez vous.",
                     style: theme.textTheme.bodySmall!.copyWith(
-                      color: Colors.black54,
+                      color: _textSecondary,
                       height: 1.2,
                     ),
                   ),
                 ],
               ),
             ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add, size: 20),
               label: const Text("Déposer une annonce"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _annoncesPrimary,
-                foregroundColor: _onPrimary,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _brandRed,
+                side: const BorderSide(color: _brandRed),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w600),
-                elevation: 0,
               ),
               onPressed: () {
                 Navigator.push(
@@ -298,6 +276,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
+  // --- Carte annonce : prix en texte normal, cœur devient rouge UNIQUEMENT si favori ---
   Widget _annonceCard(Map<String, dynamic> data) {
     final images = List<String>.from(data['images'] ?? []);
     final id = data['id']?.toString() ?? '';
@@ -310,23 +289,21 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
 
     final rawDate = data['date_creation'] as String? ?? '';
     DateTime date;
-    try {
-      date = DateTime.parse(rawDate);
-    } catch (_) {
-      date = DateTime.now();
-    }
+    try { date = DateTime.parse(rawDate); } catch (_) { date = DateTime.now(); }
     final now = DateTime.now();
-    final dateText = (date.year == now.year &&
-            date.month == now.month &&
-            date.day == now.day)
+    final dateText = (date.year == now.year && date.month == now.month && date.day == now.day)
         ? "aujourd’hui ${DateFormat.Hm().format(date)}"
         : DateFormat('dd/MM/yyyy').format(date);
 
     final isFav = _favIds.contains(id);
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 1,
+      color: _cardBg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _stroke),
+      ),
       clipBehavior: Clip.hardEdge,
       child: InkWell(
         onTap: () => Navigator.push(
@@ -367,13 +344,15 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: _textPrimary),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         "${_fmtGNF(prix)} $devise",
                         style: const TextStyle(
-                          color: _annoncesPrimary,
+                          color: _textPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -382,13 +361,13 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                       if (catLabel.isNotEmpty)
                         Text(catLabel,
                             style: const TextStyle(
-                                color: Colors.black54, fontSize: 12)),
+                                color: _textSecondary, fontSize: 12)),
                       Text(ville,
                           style: const TextStyle(
-                              color: Colors.grey, fontSize: 12)),
+                              color: _textSecondary, fontSize: 12)),
                       Text(dateText,
                           style: const TextStyle(
-                              color: Colors.grey, fontSize: 12)),
+                              color: _textSecondary, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -406,14 +385,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.black12, blurRadius: 3)
-                      ],
+                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 3)],
                     ),
                     child: Icon(
                       isFav ? Icons.favorite : Icons.favorite_border,
                       size: 24,
-                      color: isFav ? Colors.red : Colors.grey.shade600,
+                      color: isFav ? _brandRed : _textSecondary,
                     ),
                   ),
                 ),
@@ -429,36 +406,47 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     int crossAxis = 2;
-    if (width >= 1400) {
-      crossAxis = 5;
-    } else if (width >= 1100) {
-      crossAxis = 4;
-    } else if (width >= 800) {
-      crossAxis = 3;
-    }
+    if (width >= 1400) crossAxis = 5;
+    else if (width >= 1100) crossAxis = 4;
+    else if (width >= 800) crossAxis = 3;
 
     final annonces = _filtered();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FB),
+      backgroundColor: _pageBg,
       appBar: AppBar(
-        backgroundColor: _annoncesPrimary,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: _onPrimary),
+        backgroundColor: _cardBg,
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: _textSecondary), // icônes grises
         title: TextField(
           controller: _searchCtrl,
-          style: const TextStyle(color: _onPrimary),
-          decoration: const InputDecoration(
+          style: const TextStyle(color: _textPrimary),
+          decoration: InputDecoration(
             hintText: 'Rechercher une annonce...',
-            hintStyle: TextStyle(color: Color(0xFFE0E7FF)),
-            border: InputBorder.none,
-            prefixIcon: Icon(Icons.search, color: _onPrimary),
+            hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+            border: OutlineInputBorder(
+              borderSide: const BorderSide(color: _stroke),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: _stroke),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: _brandRed, width: 1.4),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF3F4F6),
+            prefixIcon: const Icon(Icons.search, color: _textSecondary),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
           ),
-          cursorColor: _onPrimary,
+          cursorColor: _brandRed,
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.favorite_border, color: _onPrimary),
+            icon: const Icon(Icons.favorite_border, color: _textSecondary),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const FavorisPage()),
@@ -473,7 +461,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Catégories (fixes sous l'AppBar)
+                    // Catégories
                     Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 8),
@@ -481,7 +469,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         builder: (_, c) {
                           final isMobile = c.maxWidth < 600;
                           if (isMobile) {
-                            // Swipe gauche/droite pour voir tous les filtres
                             return SizedBox(
                               height: 44,
                               child: SingleChildScrollView(
@@ -496,7 +483,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                               ),
                             );
                           }
-                          // Desktop/tablette: wrap
                           return Wrap(
                             spacing: 6,
                             runSpacing: 8,
@@ -509,7 +495,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                       ),
                     ),
 
-                    // Tout le reste scrolle ensemble
+                    // Contenu
                     Expanded(
                       child: CustomScrollView(
                         controller: _scrollCtrl,
@@ -524,7 +510,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 17,
-                                  color: Colors.grey,
+                                  color: _textSecondary,
                                 ),
                               ),
                             ),
@@ -532,9 +518,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           if (annonces.isEmpty)
                             const SliverFillRemaining(
                               hasScrollBody: false,
-                              child: Center(
-                                  child:
-                                      Text('Aucune annonce trouvée.')),
+                              child: Center(child: Text('Aucune annonce trouvée.')),
                             )
                           else
                             SliverPadding(
@@ -560,9 +544,11 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   ],
                 ),
+      // --- FAB clair, bord rouge, texte/icon rouges (pas d’aplat) ---
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _annoncesSecondary,
-        foregroundColor: Colors.black,
+        elevation: 2,
+        backgroundColor: _cardBg,
+        foregroundColor: _brandRed,
         onPressed: () {
           Navigator.push(
             context,
@@ -571,6 +557,9 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('Déposer une annonce'),
+        shape: StadiumBorder(
+          side: BorderSide(color: _brandRed, width: 1),
+        ),
       ),
     );
   }

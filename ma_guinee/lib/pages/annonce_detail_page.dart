@@ -1,3 +1,4 @@
+// lib/pages/annonce_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
@@ -20,10 +21,17 @@ class AnnonceDetailPage extends StatefulWidget {
 class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   final _sb = Supabase.instance.client;
 
-  // ---------- Palette ANNONCES ----------
-  static const Color kPrimary = Color(0xFF1E3A8A);   // annoncesPrimary
-  static const Color kSecondary = Color(0xFF60A5FA); // annoncesSecondary
-  static const Color kOnPrimary = Colors.white;
+  // ---------- PALETTE DOUCE (identique à la liste) ----------
+  static const Color kPrimary    = Color(0xFFD92D20); // rouge doux (actif)
+  static const Color kPrimaryD   = Color(0xFFB42318); // rouge doux foncé (pressed)
+  static const Color kSecondary  = Color(0xFFFFF1F1); // fond très léger (chips/état)
+  static const Color kOnPrimary  = Colors.white;
+
+  // Neutres
+  static const Color kPageBg     = Color(0xFFF5F7FA);
+  static const Color kCardStroke = Color(0xFFE5E7EB);
+  static const Color kText       = Color(0xFF1F2937);
+  static const Color kText2      = Color(0xFF6B7280);
 
   // ---------- Storage ----------
   static const String _annonceBucket = 'annonce-photos';
@@ -44,17 +52,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   late Future<List<AnnonceModel>> _futureSimilaires;
   late Future<List<AnnonceModel>> _futureSellerAnnonces;
 
-  // Vues (compteur stocké dans public.annonces.views)
-  int _views = 0; // toujours visible (0 par défaut)
-  bool _viewLogged = false; // éviter double incrément
+  // Vues
+  int _views = 0;
+  bool _viewLogged = false;
 
-  // Style
-  Color get _bg => const Color(0xFFF8F8FB);
+  Color get _bg => kPageBg;
 
   bool get _isOwner => _sb.auth.currentUser?.id == widget.annonce.userId;
   String? get _meId => _sb.auth.currentUser?.id;
 
-  // Format prix 10.000, 300.000
   String _fmtInt(num v) =>
       NumberFormat('#,##0', 'en_US').format(v.round()).replaceAll(',', '.');
 
@@ -83,9 +89,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         '_annonce_id': widget.annonce.id,
       });
       if (v is int && mounted) setState(() => _views = v);
-    } catch (_) {
-      // silencieux
-    }
+    } catch (_) {}
   }
 
   // ---------- Vendeur & listes ----------
@@ -105,15 +109,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   Future<List<AnnonceModel>> _fetchAnnoncesSimilaires() async {
     try {
       final raw = await _sb
-          .from('annonces')
-          .select()
+          .from('annonces').select()
           .eq('ville', widget.annonce.ville)
           .neq('id', widget.annonce.id)
           .limit(5);
       final list = raw is List ? raw : <dynamic>[];
-      return list
-          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
     } catch (_) {
       return <AnnonceModel>[];
     }
@@ -121,12 +122,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
     try {
-      final raw =
-          await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
+      final raw = await _sb
+          .from('annonces').select()
+          .eq('user_id', widget.annonce.userId);
       final list = raw is List ? raw : <dynamic>[];
-      return list
-          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
     } catch (_) {
       return <AnnonceModel>[];
     }
@@ -155,8 +155,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       width: double.infinity,
                       errorBuilder: (_, __, ___) => Container(
                         color: Colors.grey.shade200,
-                        child: const Center(
-                            child: Icon(Icons.image_not_supported)),
+                        child: const Center(child: Icon(Icons.image_not_supported)),
                       ),
                     ),
                   ),
@@ -198,7 +197,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           ),
         ),
 
-        // Actions
+        // Actions (icônes blanches au-dessus de la photo, pas de rouge)
         Positioned(
           top: 12,
           right: 12,
@@ -288,17 +287,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   void _openReportSheet() {
     if (_meId == null) return _snack('Connexion requise pour signaler.');
-    if (_isOwner) {
-      return _snack('Vous ne pouvez pas signaler votre propre annonce.');
-    }
+    if (_isOwner) return _snack('Vous ne pouvez pas signaler votre propre annonce.');
 
     final reasons = [
-      'Fausse annonce',
-      'Tentative de fraude',
-      'Contenu inapproprié',
-      'Mauvaise expérience',
-      'Usurpation d’identité',
-      'Autre'
+      'Fausse annonce','Tentative de fraude','Contenu inapproprié',
+      'Mauvaise expérience','Usurpation d’identité','Autre'
     ];
     final ctrl = TextEditingController();
     String selected = reasons.first;
@@ -312,9 +305,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => Padding(
           padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
+            left: 16, right: 16, top: 16,
             bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Column(
@@ -325,16 +316,13 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: reasons
-                    .map((r) => ChoiceChip(
-                          label: Text(r),
-                          selected: selected == r,
-                          selectedColor: kSecondary.withOpacity(.25),
-                          onSelected: (_) => setLocal(() => selected = r),
-                        ))
-                    .toList(),
+                spacing: 8, runSpacing: 8,
+                children: reasons.map((r) => ChoiceChip(
+                  label: Text(r),
+                  selected: selected == r,
+                  selectedColor: kSecondary,      // fond très léger
+                  onSelected: (_) => setLocal(() => selected = r),
+                )).toList(),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -357,6 +345,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
+                    ),
+                  ).copyWith(
+                    overlayColor: MaterialStateProperty.resolveWith(
+                      (s) => s.contains(MaterialState.pressed)
+                          ? kPrimaryD.withOpacity(.12) : null,
                     ),
                   ),
                   onPressed: () async {
@@ -434,15 +427,17 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 radius: 24,
                 backgroundColor: Colors.grey.shade300,
                 backgroundImage: hasPhoto ? NetworkImage(photo) : null,
-                child:
-                    hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
+                child: hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
               ),
               title: Text(displayName,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text([
-                if (membreDepuis.isNotEmpty) membreDepuis,
-                '$totalAnnonces ${totalAnnonces > 1 ? 'annonces' : 'annonce'}'
-              ].join(' • ')),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: kText)),
+              subtitle: Text(
+                [
+                  if (membreDepuis.isNotEmpty) membreDepuis,
+                  '$totalAnnonces ${totalAnnonces > 1 ? 'annonces' : 'annonce'}'
+                ].join(' • '),
+                style: const TextStyle(color: kText2),
+              ),
             ),
           ],
         );
@@ -501,7 +496,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     child: Container(
                       width: 150,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: kCardStroke),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -542,14 +537,16 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: kText),
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text("${_fmtInt(a.prix)} ${a.devise}",
                                 style: const TextStyle(
-                                    fontSize: 12, color: Colors.black54)),
+                                    fontSize: 12, color: kText2)),
                           ),
                         ],
                       ),
@@ -623,7 +620,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     child: Container(
                       width: 160,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: kCardStroke),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -659,13 +656,13 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
+                                  const TextStyle(fontWeight: FontWeight.bold, color: kText),
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text("${_fmtInt(a.prix)} ${a.devise}",
-                                style: const TextStyle(color: Colors.black54)),
+                                style: const TextStyle(color: kText2)),
                           ),
                         ],
                       ),
@@ -701,6 +698,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         ),
         child: Row(
           children: [
+            // Message : OUTLINE rouge (discret)
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -733,6 +731,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               ),
             ),
             const SizedBox(width: 12),
+            // Contacter : plein (action principale)
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -741,6 +740,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
+                ).copyWith(
+                  overlayColor: MaterialStateProperty.resolveWith(
+                    (s) => s.contains(MaterialState.pressed)
+                        ? kPrimaryD.withOpacity(.12)
+                        : null,
+                  ),
                 ),
                 onPressed: () async {
                   final tel = a.telephone.trim();
@@ -750,8 +755,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   }
                   final ok = await canLaunchUrl(Uri.parse('tel:$tel'));
                   if (!ok) {
-                    _snack(
-                        "Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
+                    _snack("Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
                     return;
                   }
                   await launchUrl(Uri.parse('tel:$tel'));
@@ -782,8 +786,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               children: [
                 Text(
                   a.titre,
-                  style:
-                      const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w700, color: kText,
+                  ),
                 ),
                 const SizedBox(height: 8),
 
@@ -798,17 +803,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                             TextSpan(
                               text: '${_fmtInt(a.prix)} ${a.devise}',
                               style: const TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.black87,
+                                fontSize: 19, fontWeight: FontWeight.w800, color: kText,
                               ),
                             ),
                             TextSpan(
                               text: '  •  ${a.ville}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.black54,
-                              ),
+                              style: const TextStyle(fontSize: 16, color: kText2),
                             ),
                           ],
                         ),
@@ -819,11 +819,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       child: Row(
                         children: [
                           const Icon(Icons.remove_red_eye_outlined,
-                              size: 18, color: Colors.black45),
+                              size: 18, color: kText2),
                           const SizedBox(width: 4),
                           Text('${_fmtInt(_views)} vues',
-                              style: const TextStyle(
-                                  fontSize: 13, color: Colors.black54)),
+                              style: const TextStyle(fontSize: 13, color: kText2)),
                         ],
                       ),
                     ),
@@ -831,9 +830,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 ),
 
                 const SizedBox(height: 16),
-                Text(a.description),
+                Text(a.description, style: const TextStyle(color: kText)),
                 const SizedBox(height: 18),
-                const Divider(height: 1),
+                const Divider(height: 1, color: kCardStroke),
                 const SizedBox(height: 18),
 
                 _buildVendeurComplet(),

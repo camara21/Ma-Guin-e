@@ -14,10 +14,15 @@ class RestoPage extends StatefulWidget {
 }
 
 class _RestoPageState extends State<RestoPage> {
-  // Couleurs — Restaurants
-  static const Color _restoPrimary = Color(0xFFE76F51);
+  // Couleurs — Restaurants (on garde la palette)
+  static const Color _restoPrimary   = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
+
+  // Neutres (comme Annonces/Tourisme “moins flashy”)
+  static const Color _neutralBg      = Color(0xFFF7F7F9);
+  static const Color _neutralSurface = Color(0xFFFFFFFF);
+  static const Color _neutralBorder  = Color(0xFFE5E7EB);
 
   final _searchCtrl = TextEditingController();
 
@@ -224,101 +229,119 @@ class _RestoPageState extends State<RestoPage> {
         ? 'Autour de ${_villeGPS!.isEmpty ? "vous" : _villeGPS}'
         : (_locationDenied ? 'Localisation refusée — tri par défaut' : null);
 
+    const bottomGradient = LinearGradient(
+      colors: [_restoPrimary, _restoSecondary],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _neutralBg,
       appBar: AppBar(
-        title: const Text('Restaurants'),
-        backgroundColor: _restoPrimary,
-        foregroundColor: _restoOnPrimary,
+        title: const Text(
+          'Restaurants',
+          style: TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: _neutralSurface,   // AppBar blanche
+        foregroundColor: _restoPrimary,
         elevation: 1,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: _restoPrimary),
             onPressed: _loadAll,
             tooltip: 'Rafraîchir',
           ),
         ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: bottomGradient),
+            ),
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _restos.isEmpty
               ? const Center(child: Text('Aucun restaurant trouvé.'))
               : Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
-                      // Bandeau
+                      // Bandeau d’accroche — version subtile
                       Container(
                         width: double.infinity,
-                        height: 76,
-                        margin: const EdgeInsets.only(bottom: 14),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          gradient: const LinearGradient(
-                            colors: [_restoSecondary, _restoPrimary],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
+                          color: _restoPrimary.withOpacity(0.08), // fond pâle
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _restoPrimary.withOpacity(0.15)),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 10),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  'Découvrez les meilleurs restaurants de Guinée',
-                                  style: TextStyle(
-                                    color: _restoOnPrimary,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    height: 1.2,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.restaurant_menu, color: _restoPrimary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Découvrez les meilleurs restaurants de Guinée',
+                                    style: TextStyle(
+                                      color: _restoPrimary,
+                                      fontSize: 16.5,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
+                                    ),
                                   ),
-                                ),
-                                if (subtitleInfo != null) const SizedBox(height: 2),
-                                if (subtitleInfo != null)
-                                  Text(
-                                    subtitleInfo,
-                                    style: const TextStyle(
-                                        color: _restoOnPrimary, fontSize: 12),
-                                  ),
-                              ],
+                                  if (subtitleInfo != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      subtitleInfo,
+                                      style: TextStyle(
+                                        color: Colors.black.withOpacity(.55),
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
-                      // Recherche
+
+                      // Recherche — neutre
                       TextField(
                         controller: _searchCtrl,
                         decoration: InputDecoration(
-                          hintText: 'Rechercher un resto ou une ville...',
-                          prefixIcon:
-                              const Icon(Icons.search, color: _restoPrimary),
+                          hintText: 'Rechercher un resto ou une ville…',
+                          prefixIcon: const Icon(Icons.search, color: _restoPrimary),
+                          filled: true,
+                          fillColor: _neutralSurface,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide:
-                                const BorderSide(color: Colors.transparent),
+                            borderSide: const BorderSide(color: _neutralBorder),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide:
-                                const BorderSide(color: Colors.transparent),
+                            borderSide: const BorderSide(color: _neutralBorder),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide:
-                                const BorderSide(color: _restoPrimary),
+                            borderSide: const BorderSide(color: _restoSecondary, width: 1.5),
                           ),
-                          filled: true,
-                          fillColor: const Color(0xFFFFF3E5),
                         ),
                         onChanged: _applyFilter,
                       ),
+
                       const SizedBox(height: 12),
+
                       Expanded(
                         child: RefreshIndicator(
                           color: _restoPrimary,
@@ -327,14 +350,11 @@ class _RestoPageState extends State<RestoPage> {
                               ? ListView(
                                   children: const [
                                     SizedBox(height: 200),
-                                    Center(
-                                        child:
-                                            Text('Aucun restaurant trouvé.')),
+                                    Center(child: Text('Aucun restaurant trouvé.')),
                                   ],
                                 )
                               : GridView.builder(
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: 2,
                                     mainAxisSpacing: 16,
                                     crossAxisSpacing: 16,
@@ -344,40 +364,30 @@ class _RestoPageState extends State<RestoPage> {
                                   itemBuilder: (context, i) {
                                     final resto = _filtered[i];
 
-                                    final images =
-                                        _imagesFrom(resto['images']);
+                                    final images = _imagesFrom(resto['images']);
                                     final image = images.isNotEmpty
                                         ? images.first
                                         : 'https://via.placeholder.com/300x200.png?text=Restaurant';
 
                                     final hasPrix = (resto['prix'] is num) ||
                                         (resto['prix'] is String &&
-                                            (resto['prix'] as String)
-                                                .trim()
-                                                .isNotEmpty);
+                                            (resto['prix'] as String).trim().isNotEmpty);
                                     final prixVal = (resto['prix'] is num)
                                         ? (resto['prix'] as num).toInt()
-                                        : int.tryParse(
-                                            (resto['prix'] ?? '')
-                                                .toString(),
-                                          );
+                                        : int.tryParse((resto['prix'] ?? '').toString());
 
                                     final avgInt =
                                         (resto['_avg_int'] as int?) ??
-                                            ((resto['note_moyenne']
-                                                        is num)
-                                                    ? (resto['note_moyenne']
-                                                            as num)
-                                                        .round()
-                                                    : null) ??
-                                            ((resto['etoiles'] is int)
-                                                ? resto['etoiles'] as int
-                                                : null);
+                                        ((resto['note_moyenne'] is num)
+                                            ? (resto['note_moyenne'] as num).round()
+                                            : null) ??
+                                        ((resto['etoiles'] is int)
+                                            ? resto['etoiles'] as int
+                                            : null);
 
                                     return GestureDetector(
                                       onTap: () {
-                                        final String restoId =
-                                            resto['id'].toString();
+                                        final String restoId = resto['id'].toString();
                                         Navigator.pushNamed(
                                           context,
                                           AppRoutes.restoDetail,
@@ -385,14 +395,15 @@ class _RestoPageState extends State<RestoPage> {
                                         );
                                       },
                                       child: Card(
-                                        elevation: 2,
+                                        color: _neutralSurface,
+                                        elevation: 1.5,
                                         shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(16)),
+                                          borderRadius: BorderRadius.circular(16),
+                                          side: const BorderSide(color: _neutralBorder),
+                                        ),
                                         clipBehavior: Clip.hardEdge,
                                         child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             AspectRatio(
                                               aspectRatio: 16 / 11,
@@ -402,61 +413,37 @@ class _RestoPageState extends State<RestoPage> {
                                                     child: Image.network(
                                                       image,
                                                       fit: BoxFit.cover,
-                                                      errorBuilder: (_, __,
-                                                              ___) =>
-                                                          Container(
-                                                        color:
-                                                            Colors.grey[200],
+                                                      errorBuilder: (_, __, ___) => Container(
+                                                        color: Colors.grey[200],
                                                         child: const Icon(
-                                                            Icons.restaurant,
-                                                            size: 40,
-                                                            color:
-                                                                Colors.grey),
+                                                          Icons.restaurant,
+                                                          size: 40,
+                                                          color: Colors.grey,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
-                                                  if ((resto['ville'] ?? '')
-                                                      .toString()
-                                                      .isNotEmpty)
+                                                  if ((resto['ville'] ?? '').toString().isNotEmpty)
                                                     Positioned(
                                                       left: 8,
                                                       top: 8,
                                                       child: Container(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                    .symmetric(
-                                                                horizontal: 8,
-                                                                vertical: 4),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: Colors.black
-                                                              .withOpacity(
-                                                                  0.55),
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(
-                                                                      12),
+                                                        padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.black.withOpacity(0.55),
+                                                          borderRadius: BorderRadius.circular(12),
                                                         ),
                                                         child: Row(
-                                                          mainAxisSize:
-                                                              MainAxisSize.min,
+                                                          mainAxisSize: MainAxisSize.min,
                                                           children: [
-                                                            const Icon(
-                                                                Icons
-                                                                    .location_on,
-                                                                size: 14,
-                                                                color: Colors
-                                                                    .white),
-                                                            const SizedBox(
-                                                                width: 4),
+                                                            const Icon(Icons.location_on,
+                                                                size: 14, color: Colors.white),
+                                                            const SizedBox(width: 4),
                                                             Text(
-                                                              resto['ville']
-                                                                  .toString(),
+                                                              resto['ville'].toString(),
                                                               style: const TextStyle(
-                                                                  color: Colors
-                                                                      .white,
-                                                                  fontSize:
-                                                                      12),
+                                                                  color: Colors.white, fontSize: 12),
                                                             ),
                                                           ],
                                                         ),
@@ -466,84 +453,60 @@ class _RestoPageState extends State<RestoPage> {
                                               ),
                                             ),
                                             Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 8),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
                                               child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    (resto['nom'] ??
-                                                            'Sans nom')
-                                                        .toString(),
+                                                    (resto['nom'] ?? 'Sans nom').toString(),
                                                     maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
+                                                    overflow: TextOverflow.ellipsis,
                                                     style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 15),
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 15,
+                                                    ),
                                                   ),
                                                   const SizedBox(height: 3),
                                                   Row(
                                                     children: [
                                                       Flexible(
                                                         child: Text(
-                                                          (resto['ville'] ??
-                                                                  '')
-                                                              .toString(),
+                                                          (resto['ville'] ?? '').toString(),
                                                           maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
+                                                          overflow: TextOverflow.ellipsis,
                                                           style: const TextStyle(
-                                                              color:
-                                                                  Colors.grey,
-                                                              fontSize: 13),
+                                                            color: Colors.grey,
+                                                            fontSize: 13,
+                                                          ),
                                                         ),
                                                       ),
-                                                      if (resto.containsKey(
-                                                              '_distance') &&
-                                                          resto['_distance'] !=
-                                                              null) ...[
+                                                      if (resto.containsKey('_distance') &&
+                                                          resto['_distance'] != null) ...[
                                                         const Text('  •  ',
-                                                            style: TextStyle(
-                                                                color: Colors
-                                                                    .grey,
-                                                                fontSize: 13)),
+                                                            style: TextStyle(color: Colors.grey, fontSize: 13)),
                                                         Text(
                                                           '${(resto['_distance'] / 1000).toStringAsFixed(1)} km',
-                                                          style: const TextStyle(
-                                                              color:
-                                                                  Colors.grey,
-                                                              fontSize: 13),
+                                                          style: const TextStyle(color: Colors.grey, fontSize: 13),
                                                         ),
                                                       ],
                                                     ],
                                                   ),
-                                                  if (hasPrix &&
-                                                      prixVal != null)
+                                                  if (hasPrix && prixVal != null)
                                                     Padding(
-                                                      padding:
-                                                          const EdgeInsets
-                                                              .only(top: 2),
+                                                      padding: const EdgeInsets.only(top: 2),
                                                       child: Text(
                                                         'Prix : ${_formatGNF(prixVal)} (plat)',
                                                         style: const TextStyle(
-                                                          color:
-                                                              _restoPrimary,
+                                                          color: _restoPrimary,
                                                           fontSize: 12,
                                                         ),
                                                       ),
                                                     ),
                                                   if (avgInt != null)
                                                     Padding(
-                                                      padding:
-                                                          const EdgeInsets
-                                                              .only(top: 2),
-                                                      child:
-                                                          _buildStarsInt(avgInt),
+                                                      padding: const EdgeInsets.only(top: 2),
+                                                      child: _buildStarsInt(avgInt),
                                                     ),
                                                 ],
                                               ),

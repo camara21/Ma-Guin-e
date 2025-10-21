@@ -1,4 +1,3 @@
-// lib/pages/tourisme_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +11,11 @@ const Color tourismePrimary = Color(0xFFDAA520);
 const Color tourismeSecondary = Color(0xFFFFD700);
 const Color tourismeOnPrimary = Color(0xFF000000);
 const Color tourismeOnSecondary = Color(0xFF000000);
+
+// Neutres cohérents avec les autres pages “moins flashy”
+const Color neutralBg      = Color(0xFFF7F7F9);
+const Color neutralSurface = Color(0xFFFFFFFF);
+const Color neutralBorder  = Color(0xFFE5E7EB);
 
 class TourismePage extends StatefulWidget {
   const TourismePage({super.key});
@@ -236,7 +240,7 @@ class _TourismePageState extends State<TourismePage> {
         }
       });
     } catch (_) {
-      // silencieux : si RLS bloque certains avis, on ignore
+      // silencieux
     }
   }
 
@@ -260,11 +264,11 @@ class _TourismePageState extends State<TourismePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Dégradé Tourisme pour AppBar
-    const appBarGradient = LinearGradient(
+    // Dégradé fin pour la barre inférieure de l’AppBar (comme Annonces)
+    const bottomGradient = LinearGradient(
       colors: [tourismePrimary, tourismeSecondary],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
     );
 
     // Responsive simple : 1 colonne sur petit écran
@@ -281,94 +285,111 @@ class _TourismePageState extends State<TourismePage> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: neutralBg,
       appBar: AppBar(
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
         title: const Text(
           "Sites touristiques",
-          style: TextStyle(color: tourismeOnPrimary, fontWeight: FontWeight.w700),
+          style: TextStyle(color: tourismePrimary, fontWeight: FontWeight.w700),
         ),
-        elevation: 0.0,
-        foregroundColor: tourismeOnPrimary,
-        backgroundColor: Colors.transparent,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: appBarGradient),
-        ),
+        backgroundColor: neutralSurface, // ✅ AppBar blanche
+        elevation: 1,
+        foregroundColor: tourismePrimary,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: tourismeOnPrimary),
+            icon: const Icon(Icons.refresh, color: tourismePrimary),
             tooltip: 'Rafraîchir',
             onPressed: _loadAll,
           ),
         ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(3),
+          child: SizedBox(
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: bottomGradient),
+            ),
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Bandeau promo
+                // Bandeau d’accroche — version discrète
                 Container(
                   width: double.infinity,
-                  height: 75,
-                  margin: const EdgeInsets.only(left: 14, right: 14, top: 14, bottom: 10),
+                  margin: const EdgeInsets.only(left: 14, right: 14, top: 12, bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(
-                      colors: [tourismePrimary, tourismeSecondary],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: tourismePrimary.withOpacity(.18),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
+                    color: tourismePrimary.withOpacity(0.08), // ✅ fond pâle
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: tourismePrimary.withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.terrain, color: tourismePrimary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Découvrez les plus beaux sites touristiques de Guinée",
+                              style: TextStyle(
+                                color: tourismePrimary,
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              (_position == null)
+                                  ? "Localisation refusée — tri par défaut"
+                                  : (_villeGPS?.isNotEmpty == true
+                                      ? "Autour de ${_villeGPS![0].toUpperCase()}${_villeGPS!.substring(1)}"
+                                      : "Tri par proximité"),
+                              style: TextStyle(
+                                color: Colors.black.withOpacity(.55),
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        "Découvrez les plus beaux sites touristiques de Guinée",
-                        style: TextStyle(
-                          color: tourismeOnPrimary,
-                          fontSize: 19,
-                          fontWeight: FontWeight.bold,
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                  ),
                 ),
 
-                // Barre de recherche
+                // Barre de recherche (neutre, lisible)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   child: TextField(
                     decoration: InputDecoration(
-                      hintText: 'Rechercher un site, une ville…',
+                      hintText: 'Rechercher un site ou une ville…',
                       prefixIcon: const Icon(Icons.search, color: tourismePrimary),
                       filled: true,
-                      fillColor: Colors.grey[100],
+                      fillColor: neutralSurface,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
+                        borderSide: const BorderSide(color: neutralBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: neutralBorder),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: tourismeSecondary),
+                        borderSide: const BorderSide(color: tourismeSecondary, width: 1.5),
                       ),
                     ),
                     onChanged: _filterLieux,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
 
                 // Grille
                 Expanded(
@@ -406,10 +427,12 @@ class _TourismePageState extends State<TourismePage> {
                                   );
                                 },
                                 child: Card(
+                                  color: neutralSurface,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
+                                    side: const BorderSide(color: neutralBorder),
                                   ),
-                                  elevation: 2,
+                                  elevation: 1.5,
                                   clipBehavior: Clip.hardEdge,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,7 +526,7 @@ class _TourismePageState extends State<TourismePage> {
                                             ),
                                             const SizedBox(height: 4),
 
-                                            // Ville + distance (noir 54%)
+                                            // Ville + distance
                                             Row(
                                               children: [
                                                 Flexible(
@@ -533,7 +556,6 @@ class _TourismePageState extends State<TourismePage> {
                                               ],
                                             ),
 
-                                            // Description (noir)
                                             if (hasDesc)
                                               Padding(
                                                 padding: const EdgeInsets.only(top: 3),
@@ -542,7 +564,7 @@ class _TourismePageState extends State<TourismePage> {
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: const TextStyle(
-                                                    color: Colors.black, // ✅ noir
+                                                    color: Colors.black,
                                                     fontSize: 13,
                                                     fontWeight: FontWeight.w500,
                                                   ),
