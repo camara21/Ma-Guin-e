@@ -14,7 +14,9 @@ String _resetRedirectUrl() {
   return '';
 }
 
-/// -------- Page 1 : Demander l'email et envoyer le lien
+/// ===========================
+/// Page 1 : ForgotPasswordPage
+/// ===========================
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
 
@@ -51,36 +53,27 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final supa = Supabase.instance.client;
 
     try {
-      // ✅ 1) Vérifier l'existence de l'e-mail via la fonction RPC sécurisée
-      // (SQL créé dans Supabase: public.email_exists(p_email text) returns boolean)
-      final exists = await supa.rpc('email_exists', params: {
-        'p_email': email,
-      }) as bool?;
+      // (Optionnel) Vérifier l'existence de l'e-mail via une RPC
+      // final exists = await supa.rpc('email_exists', params: {'p_email': email}) as bool?;
+      // if (exists != true) {
+      //   if (!mounted) return;
+      //   ScaffoldMessenger.of(context).showSnackBar(
+      //     const SnackBar(content: Text("Ce mail n'a pas de compte chez nous.")),
+      //   );
+      //   return;
+      // }
 
-      if (exists != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Ce mail n'a pas de compte chez nous.")),
-        );
-        return;
-      }
-
-      // ✅ 2) Envoyer le mail de réinitialisation
+      // 2) Envoyer le mail de réinitialisation
       final redirect = _resetRedirectUrl();
       if (redirect.isEmpty) {
         await supa.auth.resetPasswordForEmail(email);
       } else {
-        await supa.auth.resetPasswordForEmail(
-          email,
-          redirectTo: redirect,
-        );
+        await supa.auth.resetPasswordForEmail(email, redirectTo: redirect);
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Un lien de réinitialisation a été envoyé par e-mail.'),
-        ),
+        const SnackBar(content: Text('Un lien de réinitialisation a été envoyé par e-mail.')),
       );
       Navigator.pop(context); // Retour (connexion)
     } on AuthException catch (e) {
@@ -125,9 +118,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 validator: (v) {
                   final val = v?.trim() ?? '';
                   if (val.isEmpty) return 'E-mail requis';
-                  if (!val.contains('@') || !val.contains('.')) {
-                    return 'E-mail invalide';
-                  }
+                  if (!val.contains('@') || !val.contains('.')) return 'E-mail invalide';
                   return null;
                 },
               ),
@@ -153,7 +144,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 }
 
-/// -------- Page 2 : Saisie du nouveau mot de passe (route /reset_password)
+/// ===========================
+/// Page 2 : ResetPasswordPage
+/// ===========================
 class ResetPasswordPage extends StatefulWidget {
   const ResetPasswordPage({super.key});
 
@@ -171,20 +164,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   @override
   void initState() {
     super.initState();
+    _prepareRecoverySession(); // ⬅️ crée la session depuis l’URL si besoin
 
-    // Si l’utilisateur arrive depuis le lien Supabase, une session “password recovery”
-    // est créée automatiquement. On vérifie qu’elle est bien là.
-    final session = Supabase.instance.client.auth.currentSession;
-    _hasRecoverySession = session != null;
-
-    // Écouter les changements d’état (utile quand Supabase injecte la session)
+    // (Optionnel) écouter les changements d'état
     Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (!mounted) return;
       if (event.event == AuthChangeEvent.passwordRecovery ||
           event.event == AuthChangeEvent.signedIn) {
-        if (mounted) {
-          setState(() => _hasRecoverySession =
-              Supabase.instance.client.auth.currentSession != null);
-        }
+        setState(() =>
+            _hasRecoverySession = Supabase.instance.client.auth.currentSession != null);
       }
     });
   }
@@ -196,20 +184,63 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     super.dispose();
   }
 
+  /// Crée la session "recovery" à partir de l'URL (web)
+  Future<void> _prepareRecoverySession() async {
+    try {
+      final uri = Uri.base;
+
+      // 1) Format moderne : ?code=...&type=recovery (GoTrue v2)
+      final code = uri.queryParameters['code'];
+      final type = uri.queryParameters['type'];
+      if (kIsWeb && code != null && type == 'recovery') {
+        // v2 → on passe le code (String), PAS l'Uri
+        await Supabase.instance.client.auth.exchangeCodeForSession(code);
+        if (mounted) {
+          setState(() => _hasRecoverySession =
+              Supabase.instance.client.auth.currentSession != null);
+        }
+        return;
+      }
+
+      // 2) Ancien format : #access_token=...&refresh_token=...&type=recovery
+      if (kIsWeb && uri.fragment.isNotEmpty) {
+        final frag = Uri.splitQueryString(uri.fragment);
+        final refresh = frag['refresh_token'];
+        final fType = frag['type'];
+        if (refresh != null && fType == 'recovery') {
+          // v2 → setSession prend UNIQUEMENT le refreshToken (String)
+          await Supabase.instance.client.auth.setSession(refresh);
+          if (mounted) {
+            setState(() => _hasRecoverySession =
+                Supabase.instance.client.auth.currentSession != null);
+          }
+          return;
+        }
+      }
+
+      // 3) Si déjà connecté (mobile/deep link)
+      if (Supabase.instance.client.auth.currentSession != null) {
+        if (mounted) setState(() => _hasRecoverySession = true);
+        return;
+      }
+
+      if (mounted) setState(() => _hasRecoverySession = false);
+    } catch (_) {
+      if (mounted) setState(() => _hasRecoverySession = false);
+    }
+  }
+
   Future<void> _updatePassword() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
 
     try {
-      final newPwd = _pwd1Ctrl.text;
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: newPwd),
-      );
+      final newPwd = _pwd1Ctrl.text.trim();
+      await Supabase.instance.client.auth.updateUser(UserAttributes(password: newPwd));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mot de passe mis à jour.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Mot de passe mis à jour.')));
 
       // Optionnel: déconnexion puis retour à la page de connexion
       await Supabase.instance.client.auth.signOut();
@@ -217,14 +248,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       Navigator.of(context).popUntil((r) => r.isFirst);
     } on AuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auth error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Auth error: ${e.message}')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -241,10 +270,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    const Text(
-                      'Choisis un nouveau mot de passe.',
-                      textAlign: TextAlign.center,
-                    ),
+                    const Text('Choisis un nouveau mot de passe.', textAlign: TextAlign.center),
                     const SizedBox(height: 24),
                     TextFormField(
                       controller: _pwd1Ctrl,
@@ -254,13 +280,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         prefixIcon: Icon(Icons.lock),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) {
-                        final val = v ?? '';
-                        if (val.length < 6) {
-                          return '6 caractères minimum';
-                        }
-                        return null;
-                      },
+                      validator: (v) =>
+                          (v == null || v.length < 6) ? '6 caractères minimum' : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -271,12 +292,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         prefixIcon: Icon(Icons.lock_outline),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) {
-                        if (v != _pwd1Ctrl.text) {
-                          return 'Les mots de passe ne correspondent pas';
-                        }
-                        return null;
-                      },
+                      validator: (v) =>
+                          (v != _pwd1Ctrl.text) ? 'Les mots de passe ne correspondent pas' : null,
                     ),
                     const SizedBox(height: 20),
                     SizedBox(
@@ -285,10 +302,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         onPressed: _busy ? null : _updatePassword,
                         child: _busy
                             ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
+                                height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Text('Mettre à jour'),
                       ),
                     ),

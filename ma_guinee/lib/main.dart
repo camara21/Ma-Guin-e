@@ -10,8 +10,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-// ✅ Ajout pour les DatePicker / locales
+// ✅ Locales (DatePicker, formats…)
 import 'package:flutter_localizations/flutter_localizations.dart';
+// ✅ Hash routing pour Flutter Web (Netlify SPA)
+import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'firebase_options.dart';
 import 'routes.dart';
@@ -228,9 +230,19 @@ Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ Hash routing pour le web (URLs /#/...) — utile pour Netlify SPA
+  if (kIsWeb) {
+    setUrlStrategy(const HashUrlStrategy());
+  }
+
   // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // ✅ Background handler uniquement en mobile/desktop
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
+
   await _initLocalNotification();
   await _createAndroidNotificationChannel();
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
@@ -287,6 +299,13 @@ Future<void> main() async {
   // Auth state : rebrancher realtime + recharger profil + rediriger
   Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
     final session = event.session;
+
+    // ✅ Si Supabase déclenche un recovery (cas deep-link mobile, etc.)
+    if (event.event == AuthChangeEvent.passwordRecovery) {
+      _pushUnique(AppRoutes.resetPassword);
+      return;
+    }
+
     if (session?.user != null) {
       final uid = session!.user.id;
       _subscribeUserNotifications(uid);
@@ -318,7 +337,7 @@ class MyApp extends StatelessWidget {
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
 
-      // ✅ Ajouts pour les DatePicker, textes, formats, etc.
+      // ✅ Locales (DatePicker, textes, formats…)
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
