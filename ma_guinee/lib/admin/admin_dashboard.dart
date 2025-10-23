@@ -1,6 +1,11 @@
 import 'dart:math' show min, max;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ⬇️ pour la carte
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../supabase_client.dart';
 import '../routes.dart';
@@ -25,17 +30,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<_OnlineUser> onlineUsers = [];
   List<_ActiveChat> activeChats = [];
 
-  // compteurs fiables pour reports
+  // reports fiables
   int reportsTotal = 0;
   int reportsToday = 0;
+
+  // ➕ INSCRITS
+  int usersTotal = 0;
+  int usersWithLocation = 0;
+
+  // ➕ LOCALISATIONS
+  List<_UserLoc> userLocs = [];
+  final MapController _mapController = MapController();
 
   final services = <_Service>[
     _Service('Annonces', Icons.campaign, 'annonces'),
     _Service('Prestataires', Icons.handyman, 'prestataires'),
     _Service('Restaurants', Icons.restaurant, 'restaurants'),
     _Service('Lieux (Culte / Divertissement / Tourisme)', Icons.place, 'lieux'),
-    _Service('SantÃ©Â©Ã†â€™Â© (Cliniques)', Icons.local_hospital, 'cliniques'),
-    _Service('HÃ©Â©Ã†â€™Â´tels', Icons.hotel, 'hotels'),
+    _Service('Santé (Cliniques)', Icons.local_hospital, 'cliniques'),
+    _Service('Hôtels', Icons.hotel, 'hotels'),
     _Service('Logements', Icons.apartment, 'logements'),
     _Service('Wali fen (Emplois)', Icons.work, 'emplois'),
     _Service('Billetterie (Events)', Icons.confirmation_number, 'events'),
@@ -54,7 +67,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       error = null;
     });
     try {
-      // Lance les chargements (plutÃ©Â©Ã†â€™Â´t en parallÃ©Â©Ã†â€™Â¨le)
       await Future.wait([
         _loadMetrics(),
         _loadCharts(),
@@ -62,6 +74,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _loadOnline(),
         _loadActiveChats(),
         _loadReportsCounters(),
+        _loadUsersCounters(),      // ➕
+        _loadUserLocations(),      // ➕
       ]);
     } catch (e) {
       if (!mounted) return;
@@ -72,7 +86,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ metrics globales (RPC si dispo)
+  // métriques globales (RPC si dispo)
   Future<void> _loadMetrics() async {
     try {
       final res = await SB.i.rpc('rpc_metrics_overview');
@@ -85,23 +99,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         m = {};
       }
       if (!mounted) return;
-      setState(() {
-        metrics = m;
-      });
+      setState(() => metrics = m);
     } catch (e) {
       if (!mounted) return;
       setState(() => error = '$e');
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ graphe J-N
+  // graphe J-N
   Future<void> _loadCharts() async {
     try {
       final data = await SB.i.rpc(
         'rpc_daily_content',
         params: {'_table': currentTable, '_days': days},
       );
-      final list = (data is List) ? data : <dynamic>[];
+      final list = (data is List) ? data : const <dynamic>[];
       final s = list.map<_Point>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _Point(
@@ -111,25 +123,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }).toList()
         ..sort((a, b) => a.d.compareTo(b.d));
       if (!mounted) return;
-      setState(() {
-        series = s;
-      });
+      setState(() => series = s);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        series = [];
-      });
+      setState(() => series = []);
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ top villes
+  // top villes
   Future<void> _loadTopCities() async {
     try {
       final data = await SB.i.rpc(
         'rpc_top_cities',
         params: {'_table': currentTable, '_limit': 8},
       );
-      final list = (data is List) ? data : <dynamic>[];
+      final list = (data is List) ? data : const <dynamic>[];
       final cities = list.map<_TopCity>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _TopCity(
@@ -138,22 +146,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       }).toList();
       if (!mounted) return;
-      setState(() {
-        topCities = cities;
-      });
+      setState(() => topCities = cities);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        topCities = [];
-      });
+      setState(() => topCities = []);
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ online
+  // online
   Future<void> _loadOnline() async {
     try {
       final data = await SB.i.rpc('rpc_online_users');
-      final list = (data is List) ? data : <dynamic>[];
+      final list = (data is List) ? data : const <dynamic>[];
       final users = list.map<_OnlineUser>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _OnlineUser(
@@ -164,25 +168,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       }).toList();
       if (!mounted) return;
-      setState(() {
-        onlineUsers = users;
-      });
+      setState(() => onlineUsers = users);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        onlineUsers = [];
-      });
+      setState(() => onlineUsers = []);
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ active chats
+  // active chats
   Future<void> _loadActiveChats() async {
     try {
       final data = await SB.i.rpc(
         'rpc_active_chats',
         params: {'_minutes': 60, '_limit': 10},
       );
-      final list = (data is List) ? data : <dynamic>[];
+      final list = (data is List) ? data : const <dynamic>[];
       final chats = list.map<_ActiveChat>((e) {
         final m = Map<String, dynamic>.from(e as Map);
         return _ActiveChat(
@@ -192,25 +192,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       }).toList();
       if (!mounted) return;
-      setState(() {
-        activeChats = chats;
-      });
+      setState(() => activeChats = chats);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        activeChats = [];
-      });
+      setState(() => activeChats = []);
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ compteurs Ã©Â©Â¢â‚¬Å¡Â¬Ã©â€¦â‚¬Å“reportsÃ©Â©Â¢â‚¬Å¡Â¬Â fiables (total + today)
+  // reports (total + today)
   Future<void> _loadReportsCounters() async {
     try {
-      // total
       final totalRes = await SB.i.from('reports').select('id');
       final total = (totalRes as List).length;
 
-      // aujourdÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢hui (UTC)
       final now = DateTime.now().toUtc();
       final start = DateTime.utc(now.year, now.month, now.day);
       final end = start.add(const Duration(days: 1));
@@ -222,7 +216,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final today = (todayRes as List).length;
 
       if (!mounted) return;
-      // patch dans metrics au besoin
       metrics ??= {};
       final m = Map<String, dynamic>.from(metrics!);
       m['reports'] = {'total': total, 'today': today};
@@ -232,8 +225,67 @@ class _AdminDashboardState extends State<AdminDashboard> {
         reportsToday = today;
       });
     } catch (_) {
-      // on ignore si erreur rÃ©Â©Ã†â€™Â©seau
+      // ignore
     }
+  }
+
+  // ➕ INSCRITS : total & avec localisation
+  Future<void> _loadUsersCounters() async {
+    try {
+      final all = await SB.i.from('utilisateurs').select('id');
+      final withLoc = await SB.i
+          .from('utilisateurs')
+          .select('id')
+          .not('last_lat', 'is', null)
+          .not('last_lon', 'is', null);
+      if (!mounted) return;
+      setState(() {
+        usersTotal = (all as List).length;
+        usersWithLocation = (withLoc as List).length;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        usersTotal = 0;
+        usersWithLocation = 0;
+      });
+    }
+  }
+
+  // ➕ GLOBE/CARTE : positions via RPC
+  Future<void> _loadUserLocations({int limit = 1000}) async {
+    try {
+      final res = await SB.i.rpc('rpc_user_locations', params: {'_limit': limit});
+      final list = (res is List) ? res : const <dynamic>[];
+      final pts = list.map<_UserLoc>((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return _UserLoc(
+          (m['id'] ?? '').toString(),
+          (m['lat'] as num).toDouble(),
+          (m['lon'] as num).toDouble(),
+          (m['ville'] ?? '').toString(),
+        );
+      }).toList();
+      if (!mounted) return;
+      setState(() => userLocs = pts);
+      _fitBoundsToUsers();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => userLocs = []);
+    }
+  }
+
+  void _fitBoundsToUsers() {
+    if (userLocs.isEmpty) return;
+    double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    for (final u in userLocs) {
+      minLat = min<double>(minLat, u.lat);
+      maxLat = max<double>(maxLat, u.lat);
+      minLon = min<double>(minLon, u.lon);
+      maxLon = max<double>(maxLon, u.lon);
+    }
+    final center = LatLng((minLat + maxLat) / 2, (minLon + maxLon) / 2);
+    _mapController.move(center, 3.5); // zoom monde
   }
 
   Future<void> _refreshAll() async {
@@ -244,6 +296,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _loadOnline(),
       _loadActiveChats(),
       _loadReportsCounters(),
+      _loadUsersCounters(),
+      _loadUserLocations(),
     ]);
   }
 
@@ -266,14 +320,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         actions: [
           IconButton(onPressed: _refreshAll, icon: const Icon(Icons.refresh)),
           IconButton(
-            tooltip: 'DÃ©Â©Ã†â€™Â©connexion',
-            onPressed: () async {
-              // IMPORTANT :
-              // 1) On se contente de signOut
-              // 2) PAS de navigation ici Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ le listener global (main.dart)
-              //    va gÃ©Â©Ã†â€™Â©rer la redirection proprement (Ã©Â©Ã†â€™Â©vite double push/flash)
-              await SB.i.auth.signOut();
-            },
+            tooltip: 'Déconnexion',
+            onPressed: () async => SB.i.auth.signOut(),
             icon: const Icon(Icons.logout),
           ),
         ],
@@ -289,16 +337,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       // KPI
                       LayoutBuilder(builder: (context, c) {
                         final cards = [
-                          _kpiCard('Utilisateurs actifs 24h', active,
-                              Icons.flash_on),
-                          _kpiCard(
-                              'Contenus (total)', '$totalAll', Icons.storage),
+                          _kpiCard('Utilisateurs actifs 24h', active, Icons.flash_on),
+                          _kpiCard('Contenus (total)', '$totalAll', Icons.storage),
+                          _kpiCard('Inscrits (total)', '$usersTotal', Icons.people),              // ➕
+                          _kpiCard('Avec localisation', '$usersWithLocation', Icons.location_on), // ➕
                         ];
                         if (c.maxWidth > 900) {
-                          return Row(
-                            children:
-                                cards.map((w) => Expanded(child: w)).toList(),
-                          );
+                          return Row(children: cards.map((w) => Expanded(child: w)).toList());
                         }
                         return Column(children: cards);
                       }),
@@ -310,8 +355,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         DropdownButton<String>(
                           value: currentTable,
                           items: services
-                              .map((s) => DropdownMenuItem(
-                                  value: s.table, child: Text(s.name)))
+                              .map((s) => DropdownMenuItem(value: s.table, child: Text(s.name)))
                               .toList(),
                           onChanged: (v) async {
                             if (v == null) return;
@@ -324,8 +368,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         DropdownButton<int>(
                           value: days,
                           items: const [7, 14, 30, 60, 90]
-                              .map((d) => DropdownMenuItem(
-                                  value: d, child: Text('J-$d')))
+                              .map((d) => DropdownMenuItem(value: d, child: Text('J-$d')))
                               .toList(),
                           onChanged: (v) async {
                             if (v == null) return;
@@ -355,17 +398,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         final left = Expanded(child: _chartCard());
                         final right = Expanded(child: _topCitiesCard());
                         if (c.maxWidth > 900) {
-                          return Row(children: [
-                            left,
-                            const SizedBox(width: 12),
-                            right
-                          ]);
+                          return Row(children: [left, const SizedBox(width: 12), right]);
                         }
-                        return Column(children: [
-                          left,
-                          const SizedBox(height: 12),
-                          right
-                        ]);
+                        return Column(children: [left, const SizedBox(height: 12), right]);
                       }),
 
                       const SizedBox(height: 16),
@@ -375,18 +410,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         final left = Expanded(child: _onlineCard());
                         final right = Expanded(child: _activeChatsCard());
                         if (c.maxWidth > 900) {
-                          return Row(children: [
-                            left,
-                            const SizedBox(width: 12),
-                            right
-                          ]);
+                          return Row(children: [left, const SizedBox(width: 12), right]);
                         }
-                        return Column(children: [
-                          left,
-                          const SizedBox(height: 12),
-                          right
-                        ]);
+                        return Column(children: [left, const SizedBox(height: 12), right]);
                       }),
+
+                      const SizedBox(height: 16),
+
+                      // ➕ Carte/globe des utilisateurs
+                      _usersMapCard(),
 
                       const SizedBox(height: 16),
 
@@ -398,7 +430,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ UI helpers
+  // UI helpers ----------------------------------------------------
 
   Widget _kpiCard(String title, String value, IconData icon) {
     return Card(
@@ -411,8 +443,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 Text(value, style: const TextStyle(fontSize: 18)),
               ],
@@ -430,9 +461,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: SizedBox(
           height: 240,
           child: series.isEmpty
-              ? const Center(
-                  child: Text(
-                      'Pas de donnÃ©Â©Ã†â€™Â©es de sÃ©Â©Ã†â€™Â©rie pour cette table.'))
+              ? const Center(child: Text('Pas de données de série pour cette table.'))
               : _LineChart(points: series),
         ),
       ),
@@ -446,11 +475,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Top villes',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Top villes', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (topCities.isEmpty)
-              const Text('Aucune donnÃ©Â©Ã†â€™Â©e (colonne "ville" absente).')
+              const Text('Aucune donnée (colonne "ville" absente).')
             else
               ...topCities.map((c) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -472,8 +500,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Utilisateurs en ligne (Ã©Â©Â¢â€šÂ¬Â°Â¤ 5 min)',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Utilisateurs en ligne (≤ 5 min)', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (onlineUsers.isEmpty)
               const Text('Aucun utilisateur en ligne.')
@@ -500,25 +527,73 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Chats actifs (60 min)',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Chats actifs (60 min)', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (activeChats.isEmpty)
-              const Text('Aucune activitÃ©Â©Ã†â€™Â© de chat.')
+              const Text('Aucune activité de chat.')
             else
               ...activeChats.map((c) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(children: [
                       Expanded(
-                        child: Text(
-                          '${c.contextType} ${c.contextId.substring(0, min(6, c.contextId.length))}Ã©Â©Â¢â‚¬Å¡Â¬Â¦',
-                        ),
+                        child: Text('${c.contextType} ${c.contextId.substring(0, min(6, c.contextId.length))}…'),
                       ),
                       Text('${c.messages} msg'),
                     ]),
                   )),
           ],
         ),
+      ),
+    );
+  }
+
+  // ➕ Carte des utilisateurs
+  Widget _usersMapCard() {
+    final markers = userLocs
+        .map((u) => Marker(
+              point: LatLng(u.lat, u.lon),
+              width: 24,
+              height: 24,
+              child: const Icon(Icons.location_on, color: Colors.redAccent, size: 22),
+            ))
+        .toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(
+            children: [
+              const Text('Répartition des utilisateurs', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Rafraîchir',
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadUserLocations,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 300,
+            child: FlutterMap(
+              mapController: _mapController,
+              options: const MapOptions(
+                initialCenter: LatLng(0, 0),
+                initialZoom: 1.5,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.admin',
+                ),
+                MarkerLayer(markers: markers),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('${userLocs.length} utilisateurs géolocalisés affichés'),
+        ]),
       ),
     );
   }
@@ -568,13 +643,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ]),
                 const Spacer(),
                 Text('Total: $total'),
-                Text('AujourdÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢hui: $today'),
+                Text('Aujourd\'hui: $today'),
               ],
             ),
           ),
         );
 
-        // petit badge Ã©Â©Â¢â‚¬Å¡Â¬Ã©â€¦â‚¬Å“todayÃ©Â©Â¢â‚¬Å¡Â¬Â pour les signalements
         final withBadge = s.table == 'reports' && reportsToday > 0
             ? Stack(
                 clipBehavior: Clip.none,
@@ -584,18 +658,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     right: 10,
                     top: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
                         '$reportsToday',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -604,12 +674,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
             : card;
 
         return InkWell(
-          onTap: () {
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) =>
-                  ContentAdvancedPage(title: s.name, table: s.table),
-            ));
-          },
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ContentAdvancedPage(title: s.name, table: s.table),
+            ),
+          ),
           child: withBadge,
         );
       },
@@ -623,7 +692,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
-// Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ models/UI
+// models/UI -------------------------------------------------------
 
 class _Service {
   final String name;
@@ -659,6 +728,15 @@ class _ActiveChat {
   _ActiveChat(this.contextType, this.contextId, this.messages);
 }
 
+class _UserLoc {
+  final String id;
+  final double lat;
+  final double lon;
+  final String ville;
+  _UserLoc(this.id, this.lat, this.lon, this.ville);
+}
+
+// --------- Line chart (fix Path) ----------
 class _LineChart extends StatelessWidget {
   final List<_Point> points;
   const _LineChart({required this.points});
@@ -682,34 +760,25 @@ class _LineChartPainter extends CustomPainter {
 
     const margin = 24.0;
     final area = Rect.fromLTWH(
-      margin,
-      margin,
-      size.width - 2 * margin,
-      size.height - 2 * margin,
-    );
+      margin, margin, size.width - 2 * margin, size.height - 2 * margin);
 
     final axis = Paint()
       ..color = const Color(0xFFBDBDBD)
       ..strokeWidth = 1;
-    canvas.drawLine(
-        Offset(area.left, area.bottom), Offset(area.right, area.bottom), axis);
-    canvas.drawLine(
-        Offset(area.left, area.top), Offset(area.left, area.bottom), axis);
+    canvas.drawLine(Offset(area.left, area.bottom), Offset(area.right, area.bottom), axis);
+    canvas.drawLine(Offset(area.left, area.top), Offset(area.left, area.bottom), axis);
 
     final minX = pts.first.d.millisecondsSinceEpoch.toDouble();
     final maxX = pts.last.d.millisecondsSinceEpoch.toDouble();
     final spanX = (maxX - minX).abs() < 1 ? 1 : (maxX - minX);
-    final maxV = pts
-        .map((e) => e.v)
-        .fold<int>(0, max)
-        .toDouble()
-        .clamp(1, double.infinity);
+    final maxV = pts.map((e) => e.v).fold<int>(0, max).toDouble().clamp(1, double.infinity);
 
     final line = Paint()
       ..color = const Color(0xFF246BFD)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
-    final path = Path();
+
+    final path = ui.Path(); // ⬅️ évite l’erreur d’import
     for (int i = 0; i < pts.length; i++) {
       final t = (pts[i].d.millisecondsSinceEpoch - minX) / spanX;
       final x = area.left + t * area.width;

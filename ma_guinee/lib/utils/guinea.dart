@@ -1,31 +1,28 @@
 // lib/utils/guinea.dart
 
 /// -------------------------------
-/// VILLES / PRÃ©Â©Ã†â€™â€šÂ¬Â°FECTURES DE GUINÃ©Â©Ã†â€™â€šÂ¬Â°E
+/// VILLES / PRÉFECTURES DE GUINÉE
 /// -------------------------------
 const List<String> villesGN = [
-  // SpÃ©Â©Ã†â€™Â©cial
+  // Spécial
   'Conakry',
-  // RÃ©Â©Ã†â€™Â©gion de BokÃ©Â©Ã†â€™Â©
-  'BokÃ©Â©Ã†â€™Â©', 'Boffa', 'Fria', 'Gaoual', 'Koundara',
-  // RÃ©Â©Ã†â€™Â©gion de Kindia
-  'Kindia', 'Coyah', 'DubrÃ©Â©Ã†â€™Â©ka', 'ForÃ©Â©Ã†â€™Â©cariah',
-  'TÃ©Â©Ã†â€™Â©limÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©',
-  // RÃ©Â©Ã†â€™Â©gion de LabÃ©Â©Ã†â€™Â©
-  'LabÃ©Â©Ã†â€™Â©', 'Koubia', 'LÃ©Â©Ã†â€™Â©louma', 'Mali', 'TouguÃ©Â©Ã†â€™Â©',
-  // RÃ©Â©Ã†â€™Â©gion de Mamou
+  // Région de Boké
+  'Boké', 'Boffa', 'Fria', 'Gaoual', 'Koundara',
+  // Région de Kindia
+  'Kindia', 'Coyah', 'Dubréka', 'Forécariah', 'Télimélé',
+  // Région de Labé
+  'Labé', 'Koubia', 'Lélouma', 'Mali', 'Tougué',
+  // Région de Mamou
   'Mamou', 'Dalaba', 'Pita',
-  // RÃ©Â©Ã†â€™Â©gion de Faranah
+  // Région de Faranah
   'Faranah', 'Dabola', 'Dinguiraye', 'Kissidougou',
-  // RÃ©Â©Ã†â€™Â©gion de Kankan
-  'Kankan', 'KÃ©Â©Ã†â€™Â©rouanÃ©Â©Ã†â€™Â©', 'Kouroussa', 'Mandiana', 'Siguiri',
-  // RÃ©Â©Ã†â€™Â©gion de NzÃ©Â©Ã†â€™Â©rÃ©Â©Ã†â€™Â©korÃ©Â©Ã†â€™Â©
-  'NzÃ©Â©Ã†â€™Â©rÃ©Â©Ã†â€™Â©korÃ©Â©Ã†â€™Â©', 'Beyla',
-  'GuÃ©Â©Ã†â€™Â©ckÃ©Â©Ã†â€™Â©dou', 'Lola', 'Macenta',
-  'Yomou',
+  // Région de Kankan
+  'Kankan', 'Kérouané', 'Kouroussa', 'Mandiana', 'Siguiri',
+  // Région de Nzérékoré
+  'Nzérékoré', 'Beyla', 'Guéckédou', 'Lola', 'Macenta', 'Yomou',
 ];
 
-/// Communes de Conakry (utilisÃ©Â©Ã†â€™Â©es quand ville == 'Conakry')
+/// Communes de Conakry (utilisées quand ville == 'Conakry')
 const List<String> communesConakry = [
   'Kaloum',
   'Dixinn',
@@ -34,42 +31,54 @@ const List<String> communesConakry = [
   'Matoto',
 ];
 
-/// (Optionnel) Communes par ville si tu veux Ã©Â©Ã†â€™Â©tendre plus tard.
+/// (Optionnel) Communes par ville si tu veux étendre plus tard.
+/// Ailleurs, la « commune urbaine » = la ville elle-même.
 const Map<String, List<String>> communesByVilleGN = {
   'Conakry': communesConakry,
-  // Ailleurs, la Ã©Â©Â¢â‚¬Å¡Â¬Ã©â€¦â‚¬Å“commune urbaineÃ©Â©Â¢â‚¬Å¡Â¬Â = la ville elle-mÃ©Â©Ã†â€™Âªme
-  'BokÃ©Â©Ã†â€™Â©': ['BokÃ©Â©Ã†â€™Â©'], 'Boffa': ['Boffa'], 'Fria': ['Fria'],
-  'Gaoual': ['Gaoual'], 'Koundara': ['Koundara'],
+
+  'Boké': ['Boké'],
+  'Boffa': ['Boffa'],
+  'Fria': ['Fria'],
+  'Gaoual': ['Gaoual'],
+  'Koundara': ['Koundara'],
+
   'Kindia': ['Kindia'],
   'Coyah': ['Coyah'],
-  'DubrÃ©Â©Ã†â€™Â©ka': ['DubrÃ©Â©Ã†â€™Â©ka'],
-  'ForÃ©Â©Ã†â€™Â©cariah': ['ForÃ©Â©Ã†â€™Â©cariah'],
-  'TÃ©Â©Ã†â€™Â©limÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©': [
-    'TÃ©Â©Ã†â€™Â©limÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©'
-  ],
-  'LabÃ©Â©Ã†â€™Â©': ['LabÃ©Â©Ã†â€™Â©'],
+  'Dubréka': ['Dubréka'],
+  'Forécariah': ['Forécariah'],
+  'Télimélé': ['Télimélé'],
+
+  'Labé': ['Labé'],
   'Koubia': ['Koubia'],
-  'LÃ©Â©Ã†â€™Â©louma': ['LÃ©Â©Ã†â€™Â©louma'],
+  'Lélouma': ['Lélouma'],
   'Mali': ['Mali'],
-  'TouguÃ©Â©Ã†â€™Â©': ['TouguÃ©Â©Ã†â€™Â©'],
-  'Mamou': ['Mamou'], 'Dalaba': ['Dalaba'], 'Pita': ['Pita'],
-  'Faranah': ['Faranah'], 'Dabola': ['Dabola'], 'Dinguiraye': ['Dinguiraye'],
+  'Tougué': ['Tougué'],
+
+  'Mamou': ['Mamou'],
+  'Dalaba': ['Dalaba'],
+  'Pita': ['Pita'],
+
+  'Faranah': ['Faranah'],
+  'Dabola': ['Dabola'],
+  'Dinguiraye': ['Dinguiraye'],
   'Kissidougou': ['Kissidougou'],
+
   'Kankan': ['Kankan'],
-  'KÃ©Â©Ã†â€™Â©rouanÃ©Â©Ã†â€™Â©': ['KÃ©Â©Ã†â€™Â©rouanÃ©Â©Ã†â€™Â©'],
-  'Kouroussa': ['Kouroussa'], 'Mandiana': ['Mandiana'], 'Siguiri': ['Siguiri'],
-  'NzÃ©Â©Ã†â€™Â©rÃ©Â©Ã†â€™Â©korÃ©Â©Ã†â€™Â©': [
-    'NzÃ©Â©Ã†â€™Â©rÃ©Â©Ã†â€™Â©korÃ©Â©Ã†â€™Â©'
-  ],
+  'Kérouané': ['Kérouané'],
+  'Kouroussa': ['Kouroussa'],
+  'Mandiana': ['Mandiana'],
+  'Siguiri': ['Siguiri'],
+
+  'Nzérékoré': ['Nzérékoré'],
   'Beyla': ['Beyla'],
-  'GuÃ©Â©Ã†â€™Â©ckÃ©Â©Ã†â€™Â©dou': ['GuÃ©Â©Ã†â€™Â©ckÃ©Â©Ã†â€™Â©dou'],
+  'Guéckédou': ['Guéckédou'],
   'Lola': ['Lola'],
   'Macenta': ['Macenta'],
   'Yomou': ['Yomou'],
 };
 
 /// -----------------------------------------
-/// CONTRATS (ENUM Postgres + helpers dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢affichage)
+/// CONTRATS (ENUM Postgres + helpers d’affichage)
 /// -----------------------------------------
 const kContratsDb = <String>[
   'cdi',
@@ -81,7 +90,7 @@ const kContratsDb = <String>[
   'temps_plein',
 ];
 
-/// LibellÃ©Â©Ã†â€™Â© lisible pour un code de contrat.
+/// Libellé lisible pour un code de contrat.
 String contratLabel(String v) {
   switch (v) {
     case 'cdi':
@@ -103,7 +112,7 @@ String contratLabel(String v) {
   }
 }
 
-/// Si tu reÃ©Â©Ã†â€™Â§ois un libellÃ©Â©Ã†â€™Â© et dois revenir au code ENUM.
+/// Si tu reçois un libellé et dois revenir au code ENUM.
 String contratCodeFromLabel(String label) {
   switch (label.toLowerCase()) {
     case 'cdi':
@@ -121,7 +130,8 @@ String contratCodeFromLabel(String label) {
     case 'temps plein':
       return 'temps_plein';
     default:
-      return label; // renvoie tel quel si dÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  un code
+      // Renvoie tel quel si c'est déjà un code
+      return label;
   }
 }
 
@@ -133,5 +143,5 @@ String contratCodeFromLabel(String label) {
 String? dateForDb(DateTime? d) => d == null
     ? null
     : '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';

@@ -1,12 +1,13 @@
+// lib/routes.dart — Routes + RecoveryGuard (sans activer dans case reset)
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'models/annonce_model.dart';
 import 'models/utilisateur_model.dart';
-import 'models/job_models.dart'; // EmploiModel
-import 'models/logement_models.dart'; // ✅ enums & model Logement
+import 'models/job_models.dart';
+import 'models/logement_models.dart';
 
-// Pages principales
 import 'pages/splash_screen.dart';
 import 'pages/welcome_page.dart';
 import 'pages/home_page.dart';
@@ -16,7 +17,6 @@ import 'pages/carte_page.dart';
 import 'pages/divertissement_page.dart';
 import 'pages/admin_page.dart';
 
-// Alias clairs
 import 'pages/resto_page.dart' as resto_pg;
 import 'pages/register_page.dart' as register_pg;
 
@@ -40,7 +40,6 @@ import 'pages/annonce_detail_page.dart';
 import 'pages/resto_detail_page.dart';
 import 'pages/hotel_detail_page.dart';
 
-// Édition & Inscription
 import 'pages/edit_prestataire_page.dart';
 import 'pages/edit_hotel_page.dart';
 import 'pages/edit_resto_page.dart';
@@ -52,45 +51,42 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
-// Billetterie
 import 'pages/events_list_page.dart';
 import 'pages/my_tickets_page.dart';
 import 'pages/scanner_page.dart';
 
-// JOB – pages existantes
 import 'pages/jobs/job_home_page.dart';
 import 'pages/jobs/jobs_page.dart';
 import 'pages/jobs/job_detail_page.dart';
-
-// ⚠️ IMPORTANT: alias pour éviter tout conflit
 import 'pages/jobs/my_applications_page.dart' as apps;
 
 import 'pages/cv/cv_maker_page.dart';
 import 'pages/jobs/employer/mes_offres_page.dart';
 import 'pages/jobs/employer/offre_edit_page.dart';
 
-// JOB – nouvelles pages Candidatures
 import 'pages/jobs/candidatures_page.dart';
 import 'pages/jobs/candidature_detail_page.dart';
-
-// Employeur & garde
 import 'pages/jobs/employer/devenir_employeur_page.dart';
 import 'services/employeur_service.dart';
 
-// ✅ Module Logement (toutes les pages)
 import 'pages/logement/logement_home_page.dart';
 import 'pages/logement/logement_list_page.dart';
 import 'pages/logement/logement_detail_page.dart';
 import 'pages/logement/logement_edit_page.dart';
 import 'pages/logement/logement_map_page.dart';
 
-// ✅ AJOUTS ADMIN (nouveaux fichiers)
 import 'admin/admin_dashboard.dart';
 import 'admin/admin_gate.dart';
 import 'admin/content_advanced_page.dart';
 
-// ✅ Auth – Reset password flow (ForgotPasswordPage & ResetPasswordPage)
 import 'pages/auth/reset_password_flow.dart';
+
+/// 🔒 RecoveryGuard — simple drapeau global partagé
+class RecoveryGuard {
+  static bool isActive = false;
+  static void activate() => isActive = true;
+  static void deactivate() => isActive = false;
+}
 
 class AppRoutes {
   // Core
@@ -104,17 +100,17 @@ class AppRoutes {
   static const String pro = '/prestataires';
   static const String carte = '/carte';
   static const String divertissement = '/divertissement';
-  static const String admin = '/administratif'; // ⚠️ inchangé
+  static const String admin = '/administratif';
 
   static const String resto = '/restos';
   static const String culte = '/culte';
 
-  // ✅ LOGEMENT
-  static const String logement = '/logement'; // Home
-  static const String logementList = '/logement/list'; // Liste
-  static const String logementDetail = '/logement/detail'; // Détail
-  static const String logementEdit = '/logement/edit'; // Créer/éditer
-  static const String logementMap = '/logement/map'; // Carte
+  // LOGEMENT
+  static const String logement = '/logement';
+  static const String logementList = '/logement/list';
+  static const String logementDetail = '/logement/detail';
+  static const String logementEdit = '/logement/edit';
+  static const String logementMap = '/logement/map';
 
   static const String login = '/login';
   static const String register = '/register';
@@ -124,7 +120,6 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String profil = '/profil';
 
-  // Paramètres
   static const String parametre = '/parametre';
 
   static const String aide = '/aide';
@@ -165,53 +160,52 @@ class AppRoutes {
   static const String employerOfferEdit = '/jobs/employer/offre_edit';
   static const String employerOfferCandidatures = '/jobs/employer/candidatures';
 
-  // ✅ NOUVEL ESPACE ADMIN (en plus, séparé de /administratif)
+  // NOUVEL ESPACE ADMIN
   static const String adminCenter = '/admin';
   static const String adminManage = '/admin/manage';
 
-  // ✅ Auth – reset password
+  // Auth – reset password
   static const String forgotPassword = '/forgot_password';
   static const String resetPassword = '/reset_password';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
-      // ✅ Nouvelles routes admin (indépendantes de /administratif)
       case adminCenter:
+        RecoveryGuard.deactivate();
         return MaterialPageRoute(
           builder: (_) => const AdminGate(child: AdminDashboard()),
         );
 
-      case adminManage:
-        {
-          final a = _argsMap(settings);
-          final table =
-              (a['table']?.toString().trim().toLowerCase() ?? 'logements');
-          final title = (a['title']?.toString().trim().isNotEmpty == true)
-              ? a['title'].toString()
-              : _prettyServiceName(table);
-          return MaterialPageRoute(
-            builder: (_) => AdminGate(
-              child: ContentAdvancedPage(title: title, table: table),
-            ),
-          );
-        }
+      case adminManage: {
+        RecoveryGuard.deactivate();
+        final a = _argsMap(settings);
+        final table = (a['table']?.toString().trim().toLowerCase() ?? 'logements');
+        final title = (a['title']?.toString().trim().isNotEmpty == true)
+            ? a['title'].toString()
+            : _prettyServiceName(table);
+        return MaterialPageRoute(
+          builder: (_) => AdminGate(
+            child: ContentAdvancedPage(title: title, table: table),
+          ),
+        );
+      }
 
       // Core
       case splash:       return _page(const SplashScreen());
-      case welcome:      return _page(const WelcomePage());
-      case mainNav:      return _page(const MainNavigationPage());
-      case home:         return _page(const HomePage());
+      case welcome:      { RecoveryGuard.deactivate(); return _page(const WelcomePage()); }
+      case mainNav:      { RecoveryGuard.deactivate(); return _page(const MainNavigationPage()); }
+      case home:         { RecoveryGuard.deactivate(); return _page(const HomePage()); }
 
       // Existants
       case annonces:         return _page(const AnnoncesPage());
       case pro:              return _page(const ProPage());
       case carte:            return _page(const CartePage());
       case divertissement:   return _page(const DivertissementPage());
-      case admin:            return _page(const AdminPage()); // ⚠️ inchangé
+      case admin:            return _page(const AdminPage());
       case resto:            return _page(const resto_pg.RestoPage());
       case culte:            return _page(const CultePage());
 
-      // ===================== LOGEMENT =====================
+      // LOGEMENT
       case logement:         return _page(const LogementHomePage());
       case logementList: {
         final a = _argsMap(settings);
@@ -258,10 +252,9 @@ class AppRoutes {
           ),
         );
       }
-      // ===================== /LOGEMENT =====================
 
       // Auth / profil / divers
-      case login:           return _page(const LoginPage());
+      case login:           { RecoveryGuard.deactivate(); return _page(const LoginPage()); }
       case register:        return _page(const register_pg.RegisterPage());
       case tourisme:        return _page(const TourismePage());
       case sante:           return _page(const SantePage());
@@ -363,7 +356,6 @@ class AppRoutes {
       case myApplications:  return _userProtected((_) => const apps.MyApplicationsPage());
       case cvMaker:         return _userProtected((_) => const CvMakerPage());
 
-      // ---------- ESPACE EMPLOYEUR ----------
       case employerOffers:  return _userProtected(
         (_) => _EmployeurGate(
           builder: (empId) => MesOffresPage(employeurId: empId),
@@ -406,9 +398,11 @@ class AppRoutes {
         );
       }
 
-      // ----- Auth: reset password -----
+      // Auth: reset password
       case forgotPassword:  return _page(const ForgotPasswordPage());
-      case resetPassword:   return _page(const ResetPasswordPage());
+      case resetPassword:
+        // ⚠️ Ne PAS activer RecoveryGuard ici → déjà géré par onGenerateInitialRoutes pour éviter le double.
+        return _page(const ResetPasswordPage());
 
       default:
         return _error('Page non trouvée : ${settings.name}');
@@ -440,6 +434,14 @@ class AppRoutes {
       builder: (context) {
         final user =
             Provider.of<UserProvider>(context, listen: false).utilisateur;
+
+        if (user == null && RecoveryGuard.isActive) {
+          // Pendant le reset: ne pas pousser /login
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (ModalRoute.of(context)?.settings.name != login) {
@@ -456,7 +458,7 @@ class AppRoutes {
   }
 }
 
-// ------------------ Helpers ajoutés pour JOB ------------------
+// ------------------ Helpers JOB ------------------
 
 class _EmployeurGate extends StatelessWidget {
   const _EmployeurGate({
@@ -523,45 +525,28 @@ LogementCategorie? _parseCategorieOrNull(dynamic v) {
   if (v is LogementCategorie) return v;
   if (v is String) {
     switch (v.toLowerCase()) {
-      case 'maison':
-        return LogementCategorie.maison;
-      case 'appartement':
-        return LogementCategorie.appartement;
-      case 'studio':
-        return LogementCategorie.studio;
-      case 'terrain':
-        return LogementCategorie.terrain;
-      case 'autres':
-        return LogementCategorie.autres;
-      case 'tous':
-        return null; // important: pas de filtre
+      case 'maison': return LogementCategorie.maison;
+      case 'appartement': return LogementCategorie.appartement;
+      case 'studio': return LogementCategorie.studio;
+      case 'terrain': return LogementCategorie.terrain;
+      case 'autres': return LogementCategorie.autres;
+      case 'tous': return null;
     }
   }
   return LogementCategorie.autres;
 }
 
-// ✅ Helper lisible pour les titres de /admin/manage quand "title" n’est pas fourni
 String _prettyServiceName(String table) {
   switch (table) {
-    case 'annonces':
-      return 'Annonces';
-    case 'prestataires':
-      return 'Prestataires';
-    case 'restaurants':
-      return 'Restaurants';
-    case 'lieux':
-      return 'Lieux (Culte / Divertissement / Tourisme)';
-    case 'cliniques':
-      return 'Cliniques';
-    case 'hotels':
-      return 'Hôtels';
-    case 'logements':
-      return 'Logements';
-    case 'emplois':
-      return 'Wali fen (Emplois)';
-    case 'events':
-      return 'Billetterie (Events)';
-    default:
-      return table[0].toUpperCase() + table.substring(1);
+    case 'annonces': return 'Annonces';
+    case 'prestataires': return 'Prestataires';
+    case 'restaurants': return 'Restaurants';
+    case 'lieux': return 'Lieux (Culte / Divertissement / Tourisme)';
+    case 'cliniques': return 'Cliniques';
+    case 'hotels': return 'Hôtels';
+    case 'logements': return 'Logements';
+    case 'emplois': return 'Wali fen (Emplois)';
+    case 'events': return 'Billetterie (Events)';
+    default: return table[0].toUpperCase() + table.substring(1);
   }
 }

@@ -1,3 +1,4 @@
+// lib/pages/annonces_page.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,9 +17,8 @@ class AnnoncesPage extends StatefulWidget {
 
 class _AnnoncesPageState extends State<AnnoncesPage> {
   // ===== PALETTE DOUCE : rouge seulement quand actif =====
-  // (tu peux ajuster la teinte du rouge si besoin)
-  static const Color _brandRed       = Color(0xFFD92D20); // rouge doux (actif)
-  static const Color _softRedBg      = Color(0xFFFFF1F1); // fond très léger
+  static const Color _brandRed       = Color(0xFFD92D20);
+  static const Color _softRedBg      = Color(0xFFFFF1F1);
   static const Color _pageBg         = Color(0xFFF5F7FA);
   static const Color _cardBg         = Color(0xFFFFFFFF);
   static const Color _stroke         = Color(0xFFE5E7EB);
@@ -39,7 +39,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   bool _favLoaded = false;
 
   // catégories
-  final Map<String, dynamic> _catTous = {
+  final Map<String, dynamic> _catTous = const {
     'label': 'Tous',
     'icon': Icons.apps,
     'id': null
@@ -84,7 +84,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     try {
       final raw = await Supabase.instance.client
           .from('annonces')
-          .select()
+          .select('id, titre, description, prix, devise, ville, categorie_id, images, date_creation')
           .order('date_creation', ascending: false);
       _allAnnonces = (raw as List).cast<Map<String, dynamic>>();
     } catch (e) {
@@ -162,12 +162,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     return s.replaceAll(',', '.');
   }
 
-  // --- Chips : fond clair, texte + icône gris; quand sélectionné -> bord + texte/icône rouges (pas d'inversion) ---
+  // --- Chip catégorie ---
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
       onTap: () => setState(() {
-        _selectedCatId = cat['id'];
-        _selectedLabel = cat['label'];
+        _selectedCatId = cat['id'] as int?;
+        _selectedLabel = cat['label'] as String;
       }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
@@ -181,12 +181,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(cat['icon'],
+            Icon(cat['icon'] as IconData,
                 size: 18,
                 color: selected ? _brandRed : _textSecondary),
             const SizedBox(width: 4),
             Text(
-              cat['label'],
+              cat['label'] as String,
               style: TextStyle(
                 color: selected ? _brandRed : _textSecondary,
                 fontWeight: FontWeight.w600,
@@ -204,7 +204,8 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       context: context,
       backgroundColor: _cardBg,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
       builder: (_) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
         child: Wrap(
@@ -218,7 +219,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  // --- Bannière : CTA en outline rouge (pas de gros aplat) ---
+  // --- Bannière ---
   Widget _sellBanner() {
     final theme = Theme.of(context);
     return Padding(
@@ -276,20 +277,26 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  // --- Carte annonce : prix en texte normal, cœur devient rouge UNIQUEMENT si favori ---
+  // --- Carte annonce ---
   Widget _annonceCard(Map<String, dynamic> data) {
-    final images = List<String>.from(data['images'] ?? []);
+    final images = List<String>.from(data['images'] ?? const []);
     final id = data['id']?.toString() ?? '';
     final prix = data['prix'] ?? 0;
     final devise = data['devise'] ?? 'GNF';
     final ville = data['ville'] ?? '';
     final catId = data['categorie_id'] as int?;
-    final catLabel = _cats.firstWhere((c) => c['id'] == catId,
-        orElse: () => {'label': ''})['label'] as String;
+    final catLabel = _cats.firstWhere(
+      (c) => c['id'] == catId,
+      orElse: () => const {'label': ''},
+    )['label'] as String;
 
-    final rawDate = data['date_creation'] as String? ?? '';
+    final rawDate = data['date_creation']?.toString() ?? '';
     DateTime date;
-    try { date = DateTime.parse(rawDate); } catch (_) { date = DateTime.now(); }
+    try {
+      date = DateTime.parse(rawDate);
+    } catch (_) {
+      date = DateTime.now();
+    }
     final now = DateTime.now();
     final dateText = (date.year == now.year && date.month == now.month && date.day == now.day)
         ? "aujourd’hui ${DateFormat.Hm().format(date)}"
@@ -309,8 +316,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                AnnonceDetailPage(annonce: AnnonceModel.fromJson(data)),
+            builder: (_) => AnnonceDetailPage(annonce: AnnonceModel.fromJson(data)),
           ),
         ),
         child: Stack(
@@ -334,8 +340,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                   ),
                 ),
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -344,9 +349,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: _textPrimary),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: _textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -359,15 +365,9 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                       ),
                       const SizedBox(height: 4),
                       if (catLabel.isNotEmpty)
-                        Text(catLabel,
-                            style: const TextStyle(
-                                color: _textSecondary, fontSize: 12)),
-                      Text(ville,
-                          style: const TextStyle(
-                              color: _textSecondary, fontSize: 12)),
-                      Text(dateText,
-                          style: const TextStyle(
-                              color: _textSecondary, fontSize: 12)),
+                        Text(catLabel, style: const TextStyle(color: _textSecondary, fontSize: 12)),
+                      Text(ville,     style: const TextStyle(color: _textSecondary, fontSize: 12)),
+                      Text(dateText, style: const TextStyle(color: _textSecondary, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -417,7 +417,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
       appBar: AppBar(
         backgroundColor: _cardBg,
         elevation: 0.5,
-        iconTheme: const IconThemeData(color: _textSecondary), // icônes grises
+        iconTheme: const IconThemeData(color: _textSecondary),
         title: TextField(
           controller: _searchCtrl,
           style: const TextStyle(color: _textPrimary),
@@ -439,8 +439,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
             filled: true,
             fillColor: const Color(0xFFF3F4F6),
             prefixIcon: const Icon(Icons.search, color: _textSecondary),
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
           ),
           cursorColor: _brandRed,
         ),
@@ -463,34 +462,26 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                   children: [
                     // Catégories
                     Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       child: LayoutBuilder(
                         builder: (_, c) {
                           final isMobile = c.maxWidth < 600;
+                          final chips = [_catTous, ..._cats].map((cat) {
+                            final sel = _selectedLabel == cat['label'];
+                            return _categoryChip(cat, sel);
+                          }).toList();
+
                           if (isMobile) {
                             return SizedBox(
                               height: 44,
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 physics: const BouncingScrollPhysics(),
-                                child: Row(
-                                  children: [_catTous, ..._cats].map((cat) {
-                                    final sel = _selectedLabel == cat['label'];
-                                    return _categoryChip(cat, sel);
-                                  }).toList(),
-                                ),
+                                child: Row(children: chips),
                               ),
                             );
                           }
-                          return Wrap(
-                            spacing: 6,
-                            runSpacing: 8,
-                            children: [_catTous, ..._cats].map((cat) {
-                              final sel = _selectedLabel == cat['label'];
-                              return _categoryChip(cat, sel);
-                            }).toList(),
-                          );
+                          return Wrap(spacing: 6, runSpacing: 8, children: chips);
                         },
                       ),
                     ),
@@ -503,8 +494,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           SliverToBoxAdapter(child: _sellBanner()),
                           const SliverToBoxAdapter(
                             child: Padding(
-                              padding:
-                                  EdgeInsets.only(left: 18, bottom: 4, top: 8),
+                              padding: EdgeInsets.only(left: 18, bottom: 4, top: 8),
                               child: Text(
                                 'Annonces récentes',
                                 style: TextStyle(
@@ -522,19 +512,16 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                             )
                           else
                             SliverPadding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               sliver: SliverGrid(
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: crossAxis,
                                   crossAxisSpacing: 10,
                                   mainAxisSpacing: 16,
                                   childAspectRatio: 0.72,
                                 ),
                                 delegate: SliverChildBuilderDelegate(
-                                  (context, index) =>
-                                      _annonceCard(annonces[index]),
+                                  (context, index) => _annonceCard(annonces[index]),
                                   childCount: annonces.length,
                                 ),
                               ),
@@ -544,7 +531,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   ],
                 ),
-      // --- FAB clair, bord rouge, texte/icon rouges (pas d’aplat) ---
+      // FAB
       floatingActionButton: FloatingActionButton.extended(
         elevation: 2,
         backgroundColor: _cardBg,
@@ -557,7 +544,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('Déposer une annonce'),
-        shape: StadiumBorder(
+        shape: const StadiumBorder(
           side: BorderSide(color: _brandRed, width: 1),
         ),
       ),

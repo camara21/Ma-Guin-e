@@ -4,22 +4,20 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'tourisme_detail_page.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
-/// === Palette Tourisme (donnée) ===
+import '../services/app_cache.dart';
+import 'tourisme_detail_page.dart';
+import '../services/geoloc_service.dart'; // ✅ NEW: centraliser l’envoi localisation
+
 const Color tourismePrimary = Color(0xFFDAA520);
 const Color tourismeSecondary = Color(0xFFFFD700);
-const Color tourismeOnPrimary = Color(0xFF000000);
-const Color tourismeOnSecondary = Color(0xFF000000);
-
-// Neutres cohérents avec les autres pages “moins flashy”
 const Color neutralBg      = Color(0xFFF7F7F9);
 const Color neutralSurface = Color(0xFFFFFFFF);
 const Color neutralBorder  = Color(0xFFE5E7EB);
 
 class TourismePage extends StatefulWidget {
   const TourismePage({super.key});
-
   @override
   State<TourismePage> createState() => _TourismePageState();
 }
@@ -27,30 +25,28 @@ class TourismePage extends StatefulWidget {
 class _TourismePageState extends State<TourismePage> {
   final _sb = Supabase.instance.client;
 
-  // Données
+  static const _cacheKey = 'tourisme:lieux:list:v1';
+
   List<Map<String, dynamic>> _allLieux = [];
   List<Map<String, dynamic>> _filteredLieux = [];
   bool _loading = true;
+  bool _syncing = false;
 
-  // Recherche
   String searchQuery = '';
-
-  // Localisation
   Position? _position;
   String? _villeGPS;
 
-  // ⭐ Notes (moyenne + nombre d’avis) par lieu_id
   final Map<String, double> _avgByLieuId = {};
   final Map<String, int> _countByLieuId = {};
-  String? _lastRatingsKey; // évite recharges inutiles
+  String? _lastRatingsKey;
 
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadAllSWR();
   }
 
-  // ---------------- Localisation ----------------
+  // ---------- Localisation ----------
   Future<void> _getLocation() async {
     _position = null;
     _villeGPS = null;
@@ -72,6 +68,9 @@ class _TourismePageState extends State<TourismePage> {
       );
       _position = pos;
 
+      // ✅ NEW: envoyer la localisation comme sur les autres pages
+      try { await GeolocService.reportPosition(pos); } catch (_) {}
+
       final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
@@ -82,15 +81,13 @@ class _TourismePageState extends State<TourismePage> {
                 : null);
         _villeGPS = city?.toLowerCase().trim();
       }
-    } catch (e) {
-      debugPrint('Erreur localisation tourisme: $e');
-    }
+    } catch (_) {}
   }
 
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
     if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
-    const R = 6371000.0; // m
+    const R = 6371000.0;
     final dLat = (lat2! - lat1!) * (pi / 180);
     final dLon = (lon2! - lon1!) * (pi / 180);
     final a = sin(dLat / 2) * sin(dLat / 2) +
@@ -100,17 +97,30 @@ class _TourismePageState extends State<TourismePage> {
             sin(dLon / 2);
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
-  // ----------------------------------------------
 
-  Future<void> _loadAll() async {
-    setState(() => _loading = true);
+  // ---------- SWR : montre le cache puis sync réseau ----------
+  Future<void> _loadAllSWR() async {
+    final cached = AppCache.I.getList(_cacheKey, maxAge: const Duration(hours: 24));
+    if (cached != null) {
+      setState(() {
+        _loading = false;
+        _allLieux = cached;
+        _filterLieux(searchQuery);
+      });
+      _loadRatingsFor(_filteredLieux.map((l) => (l['id'] ?? '').toString()).toList());
+    } else {
+      setState(() => _loading = true);
+    }
+
+    setState(() => _syncing = true);
     try {
       await _getLocation();
 
+      // ⚠️ description NON sélectionnée (moins de données)
       final response = await _sb
           .from('lieux')
           .select('''
-            id, nom, ville, description, type, categorie,
+            id, nom, ville, type, categorie,
             images, latitude, longitude, created_at,
             contact, photo_url
           ''')
@@ -119,7 +129,6 @@ class _TourismePageState extends State<TourismePage> {
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // Ajoute la distance + tri intelligent (ville GPS prioritaire)
       if (_position != null) {
         for (final l in list) {
           final lat = (l['latitude'] as num?)?.toDouble();
@@ -142,7 +151,6 @@ class _TourismePageState extends State<TourismePage> {
             if (ad != null && bd != null) return ad.compareTo(bd);
             if (ad != null) return -1;
             if (bd != null) return 1;
-
             return byName(a, b);
           });
         } else {
@@ -157,16 +165,22 @@ class _TourismePageState extends State<TourismePage> {
         }
       }
 
-      _allLieux = list;
-      _filterLieux(searchQuery);
+      AppCache.I.setList(_cacheKey, list);
+
+      if (!mounted) return;
+      setState(() {
+        _allLieux = list;
+        _filterLieux(searchQuery);
+      });
+
+      _loadRatingsFor(_filteredLieux.map((l) => (l['id'] ?? '').toString()).toList());
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur chargement sites : $e')));
-      _allLieux = [];
-      _filteredLieux = [];
+          .showSnackBar(SnackBar(content: Text('Réseau lent — cache affiché. ($e)')));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _syncing = false);
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 
@@ -177,10 +191,9 @@ class _TourismePageState extends State<TourismePage> {
       _filteredLieux = _allLieux.where((lieu) {
         final nom = (lieu['nom'] ?? '').toString().toLowerCase();
         final ville = (lieu['ville'] ?? '').toString().toLowerCase();
-        final desc = (lieu['description'] ?? '').toString().toLowerCase();
-        final tag =
-            (lieu['categorie'] ?? lieu['type'] ?? '').toString().toLowerCase();
-        return nom.contains(q) || ville.contains(q) || desc.contains(q) || tag.contains(q);
+        final tag  = (lieu['categorie'] ?? lieu['type'] ?? '').toString().toLowerCase();
+        // ❌ pas de recherche dans description
+        return nom.contains(q) || ville.contains(q) || tag.contains(q);
       }).toList();
     });
   }
@@ -200,23 +213,25 @@ class _TourismePageState extends State<TourismePage> {
     return 'https://via.placeholder.com/300x200.png?text=Tourisme';
   }
 
-  /// ------- Chargement des moyennes pour la liste visible (aucune modif DB) -------
-  Future<void> _loadRatingsFor(List<String> lieuIds) async {
-    if (lieuIds.isEmpty) return;
+  Future<void> _loadRatingsFor(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final key = ids.join(',');
+    if (key == _lastRatingsKey) return;
+    _lastRatingsKey = key;
 
     try {
       const int batchSize = 20;
       final Map<String, int> sum = {};
       final Map<String, int> cnt = {};
 
-      for (var i = 0; i < lieuIds.length; i += batchSize) {
-        final batch = lieuIds.sublist(i, (i + batchSize > lieuIds.length) ? lieuIds.length : i + batchSize);
+      for (var i = 0; i < ids.length; i += batchSize) {
+        final batch = ids.sublist(i, (i + batchSize > ids.length) ? ids.length : i + batchSize);
         final orFilter = batch.map((id) => 'lieu_id.eq.$id').join(',');
 
         final rows = await _sb
             .from('avis_lieux')
             .select('lieu_id, etoiles')
-            .or(orFilter); // ✅ compatible SDK (au lieu de .in_)
+            .or(orFilter);
 
         final list = List<Map<String, dynamic>>.from(rows);
         for (final r in list) {
@@ -232,19 +247,16 @@ class _TourismePageState extends State<TourismePage> {
       setState(() {
         _avgByLieuId.clear();
         _countByLieuId.clear();
-        for (final id in lieuIds) {
+        for (final id in ids) {
           final c = cnt[id] ?? 0;
           final s = sum[id] ?? 0;
           _avgByLieuId[id] = c > 0 ? s / c : 0.0;
           _countByLieuId[id] = c;
         }
       });
-    } catch (_) {
-      // silencieux
-    }
+    } catch (_) {}
   }
 
-  // Affichage étoiles (comme Prestataires)
   Widget _stars(double value, {double size = 14}) {
     final full = value.floor();
     final half = (value - full) >= 0.5;
@@ -264,23 +276,19 @@ class _TourismePageState extends State<TourismePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Dégradé fin pour la barre inférieure de l’AppBar (comme Annonces)
     const bottomGradient = LinearGradient(
       colors: [tourismePrimary, tourismeSecondary],
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
     );
 
-    // Responsive simple : 1 colonne sur petit écran
     int crossAxisCount = 2;
     final width = MediaQuery.of(context).size.width;
     if (width < 380) crossAxisCount = 1;
 
-    // Déclencher chargement des notes pour la liste filtrée visible
     final visibleIds = _filteredLieux.map((l) => (l['id'] ?? '').toString()).where((s) => s.isNotEmpty).toList();
     final key = visibleIds.join(',');
     if (key != _lastRatingsKey && !_loading) {
-      _lastRatingsKey = key;
       _loadRatingsFor(visibleIds);
     }
 
@@ -288,18 +296,29 @@ class _TourismePageState extends State<TourismePage> {
       backgroundColor: neutralBg,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle.dark,
-        title: const Text(
-          "Sites touristiques",
-          style: TextStyle(color: tourismePrimary, fontWeight: FontWeight.w700),
+        title: Row(
+          children: [
+            const Text(
+              "Sites touristiques",
+              style: TextStyle(color: tourismePrimary, fontWeight: FontWeight.w700),
+            ),
+            if (_syncing) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 14, height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
         ),
-        backgroundColor: neutralSurface, // ✅ AppBar blanche
+        backgroundColor: neutralSurface,
         elevation: 1,
         foregroundColor: tourismePrimary,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: tourismePrimary),
             tooltip: 'Rafraîchir',
-            onPressed: _loadAll,
+            onPressed: _loadAllSWR, // instant + sync
           ),
         ],
         bottom: const PreferredSize(
@@ -316,54 +335,37 @@ class _TourismePageState extends State<TourismePage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Bandeau d’accroche — version discrète
+                // Bandeau
                 Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(left: 14, right: 14, top: 12, bottom: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    color: tourismePrimary.withOpacity(0.08), // ✅ fond pâle
+                    color: tourismePrimary.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: tourismePrimary.withOpacity(0.15)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.terrain, color: tourismePrimary),
-                      const SizedBox(width: 10),
+                    children: const [
+                      Icon(Icons.terrain, color: tourismePrimary),
+                      SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Découvrez les plus beaux sites touristiques de Guinée",
-                              style: TextStyle(
-                                color: tourismePrimary,
-                                fontSize: 16.5,
-                                fontWeight: FontWeight.w700,
-                                height: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              (_position == null)
-                                  ? "Localisation refusée — tri par défaut"
-                                  : (_villeGPS?.isNotEmpty == true
-                                      ? "Autour de ${_villeGPS![0].toUpperCase()}${_villeGPS!.substring(1)}"
-                                      : "Tri par proximité"),
-                              style: TextStyle(
-                                color: Colors.black.withOpacity(.55),
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          "Découvrez les plus beaux sites touristiques de Guinée",
+                          style: TextStyle(
+                            color: tourismePrimary,
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                // Barre de recherche (neutre, lisible)
+                // Recherche
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   child: TextField(
@@ -393,193 +395,160 @@ class _TourismePageState extends State<TourismePage> {
 
                 // Grille
                 Expanded(
-                  child: _filteredLieux.isEmpty
-                      ? const Center(child: Text("Aucun site trouvé."))
-                      : RefreshIndicator(
-                          onRefresh: _loadAll,
-                          child: GridView.builder(
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: crossAxisCount == 1 ? 2.0 : 0.77,
+                  child: RefreshIndicator(
+                    onRefresh: _loadAllSWR, // instant + sync
+                    child: GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: crossAxisCount == 1 ? 2.0 : 0.77,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      itemCount: _filteredLieux.length,
+                      itemBuilder: (context, index) {
+                        final lieu = _filteredLieux[index];
+                        final id = (lieu['id'] ?? '').toString();
+                        final image = _bestImage(lieu);
+                        final hasVille = (lieu['ville'] ?? '').toString().isNotEmpty;
+                        final dist = (lieu['_distance'] as double?);
+                        final rating = _avgByLieuId[id] ?? 0.0;
+                        final count = _countByLieuId[id] ?? 0;
+
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => TourismeDetailPage(lieu: lieu),
+                              ),
+                            );
+                          },
+                          child: Card(
+                            color: neutralSurface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: const BorderSide(color: neutralBorder),
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            itemCount: _filteredLieux.length,
-                            itemBuilder: (context, index) {
-                              final lieu = _filteredLieux[index];
-                              final id = (lieu['id'] ?? '').toString();
-                              final image = _bestImage(lieu);
-                              final hasVille = (lieu['ville'] ?? '').toString().isNotEmpty;
-                              final hasDesc = (lieu['description'] ?? '').toString().isNotEmpty;
-                              final dist = (lieu['_distance'] as double?);
-
-                              final rating = _avgByLieuId[id] ?? 0.0;
-                              final count = _countByLieuId[id] ?? 0;
-
-                              return GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => TourismeDetailPage(lieu: lieu),
-                                    ),
-                                  );
-                                },
-                                child: Card(
-                                  color: neutralSurface,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    side: const BorderSide(color: neutralBorder),
+                            elevation: 1.5,
+                            clipBehavior: Clip.hardEdge,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Image + ville (cached)
+                                AspectRatio(
+                                  aspectRatio: 16 / 11,
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: CachedNetworkImage(
+                                          imageUrl: image,
+                                          fit: BoxFit.cover,
+                                          placeholder: (_, __) => Container(color: Colors.grey.shade300),
+                                          errorWidget: (_, __, ___) => const Icon(Icons.landscape, size: 40),
+                                        ),
+                                      ),
+                                      if (hasVille)
+                                        Positioned(
+                                          left: 8,
+                                          top: 8,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withOpacity(0.55),
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.location_on, size: 14, color: Colors.white),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  lieu['ville'].toString(),
+                                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  elevation: 1.5,
-                                  clipBehavior: Clip.hardEdge,
+                                ),
+
+                                // Texte (sans description)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // Image + badge ville
-                                      AspectRatio(
-                                        aspectRatio: 16 / 11,
-                                        child: Stack(
-                                          children: [
-                                            Positioned.fill(
-                                              child: Image.network(
-                                                image,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) => Container(
-                                                  color: Colors.grey.shade300,
-                                                  child: const Icon(Icons.landscape, size: 50),
-                                                ),
-                                              ),
-                                            ),
-                                            if (hasVille)
-                                              Positioned(
-                                                left: 8,
-                                                top: 8,
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                      horizontal: 8, vertical: 4),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black.withOpacity(0.55),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      const Icon(Icons.location_on,
-                                                          size: 14, color: Colors.white),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        lieu['ville'].toString(),
-                                                        style: const TextStyle(
-                                                            color: Colors.white, fontSize: 12),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
+                                      Text(
+                                        (lieu['nom'] ?? '').toString(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
                                         ),
                                       ),
-
-                                      // Texte
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          _stars(rating),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            count > 0 ? rating.toStringAsFixed(1) : '—',
+                                            style: TextStyle(
+                                              color: Colors.black.withOpacity(.85),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12.5,
+                                            ),
+                                          ),
+                                          if (count > 0) ...[
+                                            const SizedBox(width: 4),
                                             Text(
-                                              (lieu['nom'] ?? '').toString(),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
+                                              '($count)',
+                                              style: TextStyle(
+                                                color: Colors.black.withOpacity(.6),
+                                                fontSize: 12,
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
-
-                                            // ⭐ Note moyenne + nb avis
-                                            Row(
-                                              children: [
-                                                _stars(rating),
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  count > 0 ? rating.toStringAsFixed(1) : '—',
-                                                  style: TextStyle(
-                                                    color: Colors.black.withOpacity(.85),
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 12.5,
-                                                  ),
-                                                ),
-                                                if (count > 0) ...[
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    '($count)',
-                                                    style: TextStyle(
-                                                      color: Colors.black.withOpacity(.6),
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                            const SizedBox(height: 4),
-
-                                            // Ville + distance
-                                            Row(
-                                              children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    (lieu['ville'] ?? '').toString(),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      color: Colors.black.withOpacity(.54),
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (dist != null) ...[
-                                                  Text('  •  ',
-                                                      style: TextStyle(
-                                                          color: Colors.black.withOpacity(.54),
-                                                          fontSize: 13)),
-                                                  Text(
-                                                    '${(dist / 1000).toStringAsFixed(1)} km',
-                                                    style: TextStyle(
-                                                      color: Colors.black.withOpacity(.54),
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-
-                                            if (hasDesc)
-                                              Padding(
-                                                padding: const EdgeInsets.only(top: 3),
-                                                child: Text(
-                                                  lieu['description'].toString(),
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: Colors.black,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
                                           ],
-                                        ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              (lieu['ville'] ?? '').toString(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.black.withOpacity(.54),
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                          if (dist != null) ...[
+                                            Text('  •  ',
+                                                style: TextStyle(color: Colors.black.withOpacity(.54), fontSize: 13)),
+                                            Text(
+                                              '${(dist / 1000).toStringAsFixed(1)} km',
+                                              style: TextStyle(color: Colors.black.withOpacity(.54), fontSize: 13),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ],
                                   ),
                                 ),
-                              );
-                            },
+                              ],
+                            ),
                           ),
-                        ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),

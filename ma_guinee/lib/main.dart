@@ -1,4 +1,4 @@
-// main.dart — PROD (Realtime + Heartbeat + FCM)
+// lib/main.dart — PROD (Realtime + Heartbeat + FCM + RecoveryGuard)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -10,13 +10,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-// ✅ Locales (DatePicker, formats…)
 import 'package:flutter_localizations/flutter_localizations.dart';
-// ✅ Hash routing pour Flutter Web (Netlify SPA)
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'firebase_options.dart';
-import 'routes.dart';
+import 'routes.dart'; // contient RecoveryGuard + AppRoutes
+
+// ✅ nécessaires pour onGenerateInitialRoutes
+import 'pages/splash_screen.dart';
+import 'pages/auth/reset_password_flow.dart';
 
 import 'providers/user_provider.dart';
 import 'providers/favoris_provider.dart';
@@ -37,9 +39,9 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 Future<void> _initLocalNotification() async {
-  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const settings = InitializationSettings(
-    android: androidSettings,
+    android: android,
     iOS: DarwinInitializationSettings(),
   );
   await flutterLocalNotificationsPlugin.initialize(settings);
@@ -92,13 +94,13 @@ Timer? _heartbeatTimer;
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
   try {
-    await Supabase.instance.client.rpc('update_heartbeat',
-        params: {'_device': kIsWeb ? 'web' : 'flutter'});
+    await Supabase.instance.client
+        .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
   } catch (_) {}
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
-      await Supabase.instance.client.rpc('update_heartbeat',
-          params: {'_device': kIsWeb ? 'web' : 'flutter'});
+      await Supabase.instance.client
+          .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
     } catch (_) {}
   });
 }
@@ -186,15 +188,12 @@ Future<void> enablePushNotifications() async {
       if (!kReleaseMode) debugPrint('Notifications non autorisées');
       return;
     }
-    String? token;
-    if (kIsWeb) {
-      token = await messaging.getToken(
-        vapidKey:
-            const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
-      );
-    } else {
-      token = await messaging.getToken();
-    }
+    final token = kIsWeb
+        ? await messaging.getToken(
+            vapidKey:
+                const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
+          )
+        : await messaging.getToken();
     if (!kReleaseMode) debugPrint('FCM token: $token');
   } catch (e, st) {
     if (!kReleaseMode) debugPrint('Erreur enablePushNotifications: $e\n$st');
@@ -221,24 +220,28 @@ Future<bool> isCurrentUserAdmin() async {
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
   final dest = (role == 'admin' || role == 'owner')
-      ? AppRoutes.adminCenter // espace admin (/admin)
-      : AppRoutes.mainNav; // navigation standard
+      ? AppRoutes.adminCenter
+      : AppRoutes.mainNav;
   _pushUnique(dest);
+}
+
+/// ——— Détecte si l’URL de démarrage est un lien de recovery Supabase ———
+bool _isRecoveryUrl(Uri uri) {
+  final hasCode = uri.queryParameters['code'] != null;
+  final fragPath = uri.fragment.split('?').first; // ex: "/reset_password"
+  final hasTypeRecovery =
+      (uri.queryParameters['type'] ?? '') == 'recovery';
+  return (hasCode && fragPath.contains('reset_password')) || hasTypeRecovery;
 }
 
 // ——— main ———
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Hash routing pour le web (URLs /#/...) — utile pour Netlify SPA
-  if (kIsWeb) {
-    setUrlStrategy(const HashUrlStrategy());
-  }
+  if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
 
-  // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // ✅ Background handler uniquement en mobile/desktop
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
@@ -251,7 +254,6 @@ Future<void> main() async {
     sound: true,
   );
 
-  // Supabase
   await Supabase.initialize(
     url: const String.fromEnvironment(
       'SUPABASE_URL',
@@ -264,16 +266,18 @@ Future<void> main() async {
     ),
   );
 
-  // FCM (foreground)
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    _showNotification(message.notification?.title, message.notification?.body);
+  // ✅ Active le guard AVANT runApp si l’URL est un lien de recovery
+  if (kIsWeb && _isRecoveryUrl(Uri.base)) {
+    RecoveryGuard.activate();
+  }
+
+  FirebaseMessaging.onMessage.listen((m) {
+    _showNotification(m.notification?.title, m.notification?.body);
   });
 
-  // Providers
   final userProvider = UserProvider();
   await userProvider.chargerUtilisateurConnecte();
 
-  // Démarrage : si déjà connecté → souscriptions + heartbeat
   final user = Supabase.instance.client.auth.currentUser;
   if (user != null) {
     _subscribeUserNotifications(user.id);
@@ -286,23 +290,31 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider<UserProvider>.value(value: userProvider),
         ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
-        ChangeNotifierProvider(
-            create: (_) => PrestatairesProvider()..loadPrestataires()),
+        ChangeNotifierProvider(create: (_) => PrestatairesProvider()..loadPrestataires()),
       ],
       child: const MyApp(),
     ),
   );
 
-  // Redirection initiale selon le rôle (après montage de l'app)
-  scheduleMicrotask(() => _goHomeBasedOnRole(userProvider));
+  // Redirection initiale si PAS en recovery (sinon on laisse Reset/Splash gérer)
+  scheduleMicrotask(() {
+    if (!RecoveryGuard.isActive) {
+      _goHomeBasedOnRole(userProvider);
+    }
+  });
 
-  // Auth state : rebrancher realtime + recharger profil + rediriger
+  // Auth state
   Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
     final session = event.session;
 
-    // ✅ Si Supabase déclenche un recovery (cas deep-link mobile, etc.)
+    // ✅ Quand Supabase signale le flow de recovery, ne PUSHE rien ici
     if (event.event == AuthChangeEvent.passwordRecovery) {
-      _pushUnique(AppRoutes.resetPassword);
+      RecoveryGuard.activate();
+      return;
+    }
+
+    // Pendant le recovery, ignorer toute connexion automatique
+    if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
       return;
     }
 
@@ -313,12 +325,18 @@ Future<void> main() async {
       await _startHeartbeat();
 
       await userProvider.chargerUtilisateurConnecte();
-      await _goHomeBasedOnRole(userProvider);
+
+      if (!RecoveryGuard.isActive) {
+        await _goHomeBasedOnRole(userProvider);
+      }
     } else {
       _unsubscribeUserNotifications();
       _unsubscribeAdminKick();
       await _stopHeartbeat();
-      _pushUnique(AppRoutes.welcome);
+
+      if (!RecoveryGuard.isActive) {
+        _pushUnique(AppRoutes.welcome);
+      }
     }
   });
 }
@@ -326,27 +344,46 @@ Future<void> main() async {
 // ——— App ———
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navKey, // ← important pour les redirections
+      navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-      initialRoute: AppRoutes.splash,
+
+      // ❌ PAS d'initialRoute — on pilote la 1re page ici :
+      onGenerateInitialRoutes: (String _) {
+        if (kIsWeb && _isRecoveryUrl(Uri.base)) {
+          // Lien de réinitialisation → ouvrir directement la page Reset
+          return [
+            MaterialPageRoute(
+              settings: const RouteSettings(name: AppRoutes.resetPassword),
+              builder: (_) => const ResetPasswordPage(),
+            ),
+          ];
+        }
+        // Sinon démarrer par Splash
+        return [
+          MaterialPageRoute(
+            settings: const RouteSettings(name: AppRoutes.splash),
+            builder: (_) => const SplashScreen(),
+          ),
+        ];
+      },
+
+      // Router app standard
       onGenerateRoute: AppRoutes.generateRoute,
+
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
 
-      // ✅ Locales (DatePicker, textes, formats…)
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('fr'),
-        Locale('en'),
-      ],
+      supportedLocales: const [Locale('fr'), Locale('en')],
       locale: const Locale('fr'),
 
       builder: (context, child) {

@@ -12,6 +12,7 @@ import 'resto_detail_page.dart';
 import 'tourisme_detail_page.dart';
 import 'culte_detail_page.dart';
 import 'divertissement_detail_page.dart';
+import '../services/geoloc_service.dart'; // ✅ NEW: centraliser l’envoi localisation
 
 class CartePage extends StatefulWidget {
   const CartePage({super.key});
@@ -80,6 +81,10 @@ class _CartePageState extends State<CartePage> {
 
       final pos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.medium);
+
+      // ✅ NEW: envoi de la position de l’utilisateur à Supabase (comme ailleurs)
+      try { await GeolocService.reportPosition(pos); } catch (_) {}
+
       _maPosition = LatLng(pos.latitude, pos.longitude);
     } catch (_) {/* silencieux */}
   }
@@ -166,7 +171,7 @@ class _CartePageState extends State<CartePage> {
           )
           .order('nom', ascending: true)
           .range(0, 99999);
-      setState(
+    setState(
           () => _data['culte'] = List<Map<String, dynamic>>.from(res as List));
     } catch (e) {
       // ignore
@@ -527,23 +532,24 @@ class _CartePageState extends State<CartePage> {
     }
   }
 
-  // Couleurs par catégorie
-  Color _getColorByCategorie(String categorie) {
-    switch (categorie) {
-      case 'hotels':
-        return const Color(0xFF7E57C2); // violet
-      case 'restos':
-        return const Color(0xFFFFA000); // orange
-      case 'sante':
-        return const Color(0xFF00897B); // teal
-      case 'tourisme':
-        return const Color(0xFF1E88E5); // bleu
-      case 'culte':
-        return const Color(0xFF43A047); // vert
-      case 'divertissement':
-        return const Color(0xFFE53935); // rouge
-      default:
-        return Colors.grey;
-    }
+  // Couleurs par catégorie (alignées avec les pages)
+Color _getColorByCategorie(String categorie) {
+  switch (categorie) {
+    case 'hotels':
+      return const Color(0xFF264653); // Hôtels (teal sombre)
+    case 'restos':
+      return const Color(0xFFF4A261); // Restaurants (orange)
+    case 'sante':
+      return const Color(0xFF009460); // Santé (vert)
+    case 'tourisme':
+      return const Color(0xFFDAA520); // Tourisme (doré)
+    case 'culte':
+      return const Color(0xFF1E88E5); // Lieux de culte (bleu)
+    case 'divertissement':
+      return const Color(0xFF7E57C2); // Divertissement (violet)
+    default:
+      return Colors.grey;
   }
+}
+
 }

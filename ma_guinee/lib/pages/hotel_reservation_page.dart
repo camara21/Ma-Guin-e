@@ -304,15 +304,25 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                     ),
 
                     const SizedBox(height: 12),
-                    // Occupants
+
+                    // --- Occupants (Responsive) ---
                     _Section(
                       title: "Occupants",
                       primaryColor: widget.primaryColor,
-                      child: Column(
-                        children: [
-                          Row(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final w = constraints.maxWidth;
+                          // 1 colonne < 420px, 2 colonnes < 680px, sinon 3 colonnes
+                          final cols = w >= 680 ? 3 : (w >= 420 ? 2 : 1);
+                          const spacing = 12.0;
+                          final itemW = (w - (cols - 1) * spacing) / cols;
+
+                          return Wrap(
+                            spacing: spacing,
+                            runSpacing: spacing,
                             children: [
-                              Expanded(
+                              SizedBox(
+                                width: itemW,
                                 child: _CounterCard(
                                   title: "Chambres",
                                   value: _rooms,
@@ -320,8 +330,8 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                                   primaryColor: widget.primaryColor,
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
+                              SizedBox(
+                                width: itemW,
                                 child: _CounterCard(
                                   title: "Adultes",
                                   value: _adults,
@@ -329,20 +339,23 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                                   primaryColor: widget.primaryColor,
                                 ),
                               ),
+                              SizedBox(
+                                width: itemW,
+                                child: _CounterCard(
+                                  title: "Enfants",
+                                  value: _children,
+                                  onChanged: (v) => setState(() => _children = v.clamp(0, 10)),
+                                  primaryColor: widget.primaryColor,
+                                ),
+                              ),
                             ],
-                          ),
-                          const SizedBox(height: 10),
-                          _CounterCard(
-                            title: "Enfants",
-                            value: _children,
-                            onChanged: (v) => setState(() => _children = v.clamp(0, 10)),
-                            primaryColor: widget.primaryColor,
-                          ),
-                        ],
+                          );
+                        },
                       ),
                     ),
 
                     const SizedBox(height: 12),
+
                     // Coordonnées
                     _Section(
                       title: "Vos informations",
@@ -372,6 +385,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                     ),
 
                     const SizedBox(height: 12),
+
                     // Préférences
                     _Section(
                       title: "Préférences",
@@ -411,6 +425,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                     ),
 
                     const SizedBox(height: 12),
+
                     _Section(
                       title: "Confirmation",
                       primaryColor: widget.primaryColor,
@@ -623,6 +638,7 @@ class _TileButton extends StatelessWidget {
   }
 }
 
+// --- Nouvelle version compacte du compteur (titres non cassés)
 class _CounterCard extends StatelessWidget {
   final String title;
   final int value;
@@ -639,23 +655,55 @@ class _CounterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surface,
       ),
       child: Row(
         children: [
-          Expanded(child: Text(title)),
-          IconButton(
-            onPressed: () => onChanged(value - 1),
-            icon: Icon(Icons.remove_circle_outline, color: primaryColor),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+              softWrap: false,
+            ),
           ),
-          Text('$value', style: Theme.of(context).textTheme.titleMedium),
-          IconButton(
-            onPressed: () => onChanged(value + 1),
-            icon: Icon(Icons.add_circle_outline, color: primaryColor),
+          const SizedBox(width: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                onPressed: () => onChanged(value - 1),
+                icon: Icon(Icons.remove_circle_outline, color: primaryColor),
+                tooltip: 'Diminuer',
+              ),
+              SizedBox(
+                width: 32,
+                child: Text(
+                  '$value',
+                  textAlign: TextAlign.center,
+                  style: textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                onPressed: () => onChanged(value + 1),
+                icon: Icon(Icons.add_circle_outline, color: primaryColor),
+                tooltip: 'Augmenter',
+              ),
+            ],
           ),
         ],
       ),

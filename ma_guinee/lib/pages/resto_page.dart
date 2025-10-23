@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../routes.dart';
+import '../services/app_cache.dart';
+import '../services/geoloc_service.dart'; // NEW: centralisation envoi position
 
 class RestoPage extends StatefulWidget {
   const RestoPage({super.key});
@@ -14,15 +18,18 @@ class RestoPage extends StatefulWidget {
 }
 
 class _RestoPageState extends State<RestoPage> {
-  // Couleurs — Restaurants (on garde la palette)
+  // Couleurs — Restaurants
   static const Color _restoPrimary   = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
 
-  // Neutres (comme Annonces/Tourisme “moins flashy”)
+  // Neutres
   static const Color _neutralBg      = Color(0xFFF7F7F9);
   static const Color _neutralSurface = Color(0xFFFFFFFF);
   static const Color _neutralBorder  = Color(0xFFE5E7EB);
+
+  // Clé de cache (mémoire + disque)
+  static const String _cacheKey = 'restaurants:list:v1';
 
   final _searchCtrl = TextEditingController();
 
@@ -30,14 +37,15 @@ class _RestoPageState extends State<RestoPage> {
   String? _villeGPS;
   bool _locationDenied = false;
 
-  List<Map<String, dynamic>> _restos = [];
+  List<Map<String, dynamic>> _restos = [];   // source actuelle (réseau ou cache)
   List<Map<String, dynamic>> _filtered = [];
   bool _loading = true;
 
+  // ----------- lifecycle -----------
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadAllSWR(); // SWR : montre le cache immédiatement puis synchronise
   }
 
   @override
@@ -82,6 +90,13 @@ class _RestoPageState extends State<RestoPage> {
       );
       _position = pos;
 
+      // NEW: pousse la position dans `utilisateurs` (RPC + dédoublonnage)
+      try {
+        await GeolocService.reportPosition(pos);
+      } catch (_) {
+        // silencieux : échec réseau/RLS n'empêche pas l'UI
+      }
+
       final placemarks =
           await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
@@ -105,7 +120,7 @@ class _RestoPageState extends State<RestoPage> {
     }
     const R = 6371000.0;
     final dLat = _deg2rad(lat2 - lat1);
-    final dLon = _deg2rad(lon2 - lon1);
+    final dLon = _deg2rad(lon2 - lon1); // (symétrie cohérente)
     final a = sin(dLat / 2) * sin(dLat / 2) +
         cos(_deg2rad(lat1)) *
             cos(_deg2rad(lat2)) *
@@ -117,15 +132,43 @@ class _RestoPageState extends State<RestoPage> {
 
   double _deg2rad(double deg) => deg * (pi / 180.0);
 
-  // -------------------- chargement --------------------
-  Future<void> _loadAll() async {
-    setState(() => _loading = true);
+  List<String> _imagesFrom(dynamic raw) {
+    if (raw is List) return raw.map((e) => e.toString()).toList();
+    if (raw is String && raw.trim().isNotEmpty) return [raw];
+    return const [];
+  }
+
+  // -------------------- SWR: cache -> réseau --------------------
+  Future<void> _loadAllSWR() async {
+    // 1) Tente cache mémoire (rapide)
+    final mem = AppCache.I.getListMemory(_cacheKey, maxAge: const Duration(days: 7));
+    if (mem != null && mem.isNotEmpty) {
+      _restos = List<Map<String, dynamic>>.from(mem);
+      _applyFilter(_searchCtrl.text);
+      if (mounted) setState(() => _loading = false);
+    } else {
+      // 2) Tente cache disque (asynchrone) si mémoire vide
+      final disk = await AppCache.I.getListPersistent(_cacheKey, maxAge: const Duration(days: 14));
+      if (disk != null && disk.isNotEmpty) {
+        _restos = List<Map<String, dynamic>>.from(disk);
+        _applyFilter(_searchCtrl.text);
+        if (mounted) setState(() => _loading = false);
+      }
+    }
+
+    // 3) Synchronise réseau (n’écrase pas l’UI pendant qu’on a du cache)
+    await _loadFromNetwork();
+  }
+
+  Future<void> _loadFromNetwork() async {
+    if (mounted && _restos.isEmpty) setState(() => _loading = true);
     try {
       await _getLocation();
 
-      // On lit la VUE avec note_moyenne, nb_avis
+      // On lit la VUE avec note_moyenne, nb_avis si tu l’as,
+      // sinon remplace par la table de tes restos.
       final data = await Supabase.instance.client
-          .from('v_restaurants_ratings')
+          .from('v_restaurants_ratings') // <- adapte si besoin
           .select()
           .order('nom');
 
@@ -139,7 +182,6 @@ class _RestoPageState extends State<RestoPage> {
           r['_distance'] = _distanceMeters(
               _position!.latitude, _position!.longitude, lat, lon);
         }
-        // étoile entière à afficher (arrondi)
         final avg = (r['note_moyenne'] as num?)?.toDouble();
         if (avg != null) r['_avg_int'] = avg.round();
       }
@@ -175,18 +217,25 @@ class _RestoPageState extends State<RestoPage> {
         }
       }
 
+      // Écrit dans le cache (mémoire + disque)
+      AppCache.I.setList(_cacheKey, restos, persist: true);
+
       _restos = restos;
       _applyFilter(_searchCtrl.text);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de chargement : $e')),
-      );
+      if (_restos.isEmpty) {
+        // Pas de cache et réseau en panne -> on montre un message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur de chargement : $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  // -------------------- filtre --------------------
   void _applyFilter(String value) {
     final q = value.toLowerCase().trim();
     if (q.isEmpty) {
@@ -200,12 +249,6 @@ class _RestoPageState extends State<RestoPage> {
         return nom.contains(q) || ville.contains(q);
       }).toList();
     });
-  }
-
-  List<String> _imagesFrom(dynamic raw) {
-    if (raw is List) return raw.map((e) => e.toString()).toList();
-    if (raw is String && raw.trim().isNotEmpty) return [raw];
-    return const [];
   }
 
   Widget _buildStarsInt(int n) {
@@ -242,13 +285,13 @@ class _RestoPageState extends State<RestoPage> {
           'Restaurants',
           style: TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700),
         ),
-        backgroundColor: _neutralSurface,   // AppBar blanche
+        backgroundColor: _neutralSurface,
         foregroundColor: _restoPrimary,
         elevation: 1,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: _restoPrimary),
-            onPressed: _loadAll,
+            onPressed: _loadFromNetwork, // rafraîchir sans toucher au cache affiché
             tooltip: 'Rafraîchir',
           ),
         ],
@@ -262,7 +305,7 @@ class _RestoPageState extends State<RestoPage> {
           ),
         ),
       ),
-      body: _loading
+      body: _loading && _restos.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : _restos.isEmpty
               ? const Center(child: Text('Aucun restaurant trouvé.'))
@@ -270,13 +313,13 @@ class _RestoPageState extends State<RestoPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     children: [
-                      // Bandeau d’accroche — version subtile
+                      // Bandeau
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         decoration: BoxDecoration(
-                          color: _restoPrimary.withOpacity(0.08), // fond pâle
+                          color: _restoPrimary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: _restoPrimary.withOpacity(0.15)),
                         ),
@@ -315,7 +358,7 @@ class _RestoPageState extends State<RestoPage> {
                         ),
                       ),
 
-                      // Recherche — neutre
+                      // Recherche
                       TextField(
                         controller: _searchCtrl,
                         decoration: InputDecoration(
@@ -345,7 +388,7 @@ class _RestoPageState extends State<RestoPage> {
                       Expanded(
                         child: RefreshIndicator(
                           color: _restoPrimary,
-                          onRefresh: _loadAll,
+                          onRefresh: _loadFromNetwork,
                           child: _filtered.isEmpty
                               ? ListView(
                                   children: const [
@@ -410,10 +453,11 @@ class _RestoPageState extends State<RestoPage> {
                                               child: Stack(
                                                 children: [
                                                   Positioned.fill(
-                                                    child: Image.network(
-                                                      image,
+                                                    child: CachedNetworkImage(
+                                                      imageUrl: image,
                                                       fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => Container(
+                                                      placeholder: (_, __) => Container(color: Colors.grey[200]),
+                                                      errorWidget: (_, __, ___) => Container(
                                                         color: Colors.grey[200],
                                                         child: const Icon(
                                                           Icons.restaurant,

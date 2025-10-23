@@ -1,16 +1,20 @@
+// lib/pages/auth/reset_password_flow.dart
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../routes.dart'; // RecoveryGuard (déclaré dans routes.dart)
+import '../../main.dart' show navKey; // pour la redirection finale
+import '../../utils/error_messages_fr.dart'; // ⬅️ traduction FR des erreurs
+
 /// -------- Helpers
 String _resetRedirectUrl() {
-  // Pour Flutter Web, on redirige vers /#/reset_password (HashRouter)
+  // Pour Flutter Web (HashRouter), on cible la page dédiée.
   if (kIsWeb) {
-    final origin = Uri.base.origin; // ex: http://localhost:xxxxx ou https://app.tld
+    final origin = Uri.base.origin; // ex: https://tangerine-halva-c59cd2.netlify.app
     return '$origin/#/reset_password';
   }
-  // Sur mobile: utiliser tes deep links si configurés (ex: soneya://reset_password)
-  // Sinon, on peut omettre redirectTo.
+  // Sur mobile: deep link si disponible, sinon '' (laisse Supabase ouvrir l’app)
   return '';
 }
 
@@ -32,7 +36,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Pré-remplissage optionnel via arguments: {'prefillEmail': '...'}
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map && (args['prefillEmail'] as String?)?.isNotEmpty == true) {
       _emailCtrl.text = args['prefillEmail'] as String;
@@ -53,17 +56,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final supa = Supabase.instance.client;
 
     try {
-      // (Optionnel) Vérifier l'existence de l'e-mail via une RPC
-      // final exists = await supa.rpc('email_exists', params: {'p_email': email}) as bool?;
-      // if (exists != true) {
-      //   if (!mounted) return;
-      //   ScaffoldMessenger.of(context).showSnackBar(
-      //     const SnackBar(content: Text("Ce mail n'a pas de compte chez nous.")),
-      //   );
-      //   return;
-      // }
-
-      // 2) Envoyer le mail de réinitialisation
       final redirect = _resetRedirectUrl();
       if (redirect.isEmpty) {
         await supa.auth.resetPasswordForEmail(email);
@@ -75,16 +67,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Un lien de réinitialisation a été envoyé par e-mail.')),
       );
-      Navigator.pop(context); // Retour (connexion)
-    } on AuthException catch (e) {
+      Navigator.pop(context); // Retour (page de connexion)
+    } catch (e, st) {
       if (!mounted) return;
+      // 🇫🇷 message d’erreur utilisateur
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auth error: ${e.message}')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e')),
+        SnackBar(content: Text(frMessageFromError(e, st))),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -164,9 +152,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   @override
   void initState() {
     super.initState();
-    _prepareRecoverySession(); // ⬅️ crée la session depuis l’URL si besoin
+    _prepareRecoverySession();
 
-    // (Optionnel) écouter les changements d'état
+    // Met à jour l’état si la session arrive après coup
     Supabase.instance.client.auth.onAuthStateChange.listen((event) {
       if (!mounted) return;
       if (event.event == AuthChangeEvent.passwordRecovery ||
@@ -184,7 +172,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     super.dispose();
   }
 
-  /// Crée la session "recovery" à partir de l'URL (web)
+  /// Crée la session "recovery" à partir de l'URL (Web) ou valide la session existante.
   Future<void> _prepareRecoverySession() async {
     try {
       final uri = Uri.base;
@@ -193,7 +181,6 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       final code = uri.queryParameters['code'];
       final type = uri.queryParameters['type'];
       if (kIsWeb && code != null && type == 'recovery') {
-        // v2 → on passe le code (String), PAS l'Uri
         await Supabase.instance.client.auth.exchangeCodeForSession(code);
         if (mounted) {
           setState(() => _hasRecoverySession =
@@ -202,13 +189,28 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         return;
       }
 
-      // 2) Ancien format : #access_token=...&refresh_token=...&type=recovery
+      // 2) Cas Netlify HashRouter: ?code=...#/reset_password (pas de type=recovery)
+      final hasCode = uri.queryParameters['code'];
+      final fragPath = uri.fragment.split('?').first;
+      if (kIsWeb && hasCode != null && fragPath.contains('reset_password')) {
+        // Certaines config renvoient déjà une session via passwordRecovery → _hasRecoverySession sera true.
+        // Si aucune session, on essaie d’échanger le code comme ci-dessus.
+        try {
+          await Supabase.instance.client.auth.exchangeCodeForSession(hasCode);
+        } catch (_) {}
+        if (mounted) {
+          setState(() => _hasRecoverySession =
+              Supabase.instance.client.auth.currentSession != null);
+        }
+        return;
+      }
+
+      // 3) Ancien format : #access_token=...&refresh_token=...&type=recovery
       if (kIsWeb && uri.fragment.isNotEmpty) {
         final frag = Uri.splitQueryString(uri.fragment);
         final refresh = frag['refresh_token'];
         final fType = frag['type'];
         if (refresh != null && fType == 'recovery') {
-          // v2 → setSession prend UNIQUEMENT le refreshToken (String)
           await Supabase.instance.client.auth.setSession(refresh);
           if (mounted) {
             setState(() => _hasRecoverySession =
@@ -218,15 +220,21 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         }
       }
 
-      // 3) Si déjà connecté (mobile/deep link)
+      // 4) Si déjà connecté (mobile/deep link) ou session déjà posée par ailleurs
       if (Supabase.instance.client.auth.currentSession != null) {
         if (mounted) setState(() => _hasRecoverySession = true);
         return;
       }
 
       if (mounted) setState(() => _hasRecoverySession = false);
-    } catch (_) {
-      if (mounted) setState(() => _hasRecoverySession = false);
+    } catch (e, st) {
+      if (mounted) {
+        _hasRecoverySession = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(frMessageFromError(e, st))),
+        );
+        setState(() {});
+      }
     }
   }
 
@@ -242,18 +250,16 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Mot de passe mis à jour.')));
 
-      // Optionnel: déconnexion puis retour à la page de connexion
+      // ✅ Désactiver le flow recovery, puis déconnecter
+      RecoveryGuard.deactivate();
       await Supabase.instance.client.auth.signOut();
-      if (!mounted) return;
-      Navigator.of(context).popUntil((r) => r.isFirst);
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Auth error: ${e.message}')));
-    } catch (e) {
+
+      // ✅ Revenir proprement sur Welcome (main.dart routera ensuite selon état)
+      navKey.currentState?.pushNamedAndRemoveUntil(AppRoutes.welcome, (_) => false);
+    } catch (e, st) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
+          .showSnackBar(SnackBar(content: Text(frMessageFromError(e, st))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

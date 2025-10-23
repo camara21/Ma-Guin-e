@@ -4,6 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'hotel_detail_page.dart';
+// ⬇️ AppCache (SWR)
+import '../services/app_cache.dart';
+// ⬇️ NEW: centralisation de l’envoi vers la table `utilisateurs`
+import '../services/geoloc_service.dart';
 
 class HotelPage extends StatefulWidget {
   const HotelPage({super.key});
@@ -22,6 +26,10 @@ class _HotelPageState extends State<HotelPage> {
   static const Color neutralBg      = Color(0xFFF7F7F9);
   static const Color neutralSurface = Color(0xFFFFFFFF);
   static const Color neutralBorder  = Color(0xFFE5E7EB);
+
+  // Cache SWR
+  static const String _CACHE_KEY = 'hotels_v1';
+  static const Duration _CACHE_MAX_AGE = Duration(hours: 12);
 
   // Données
   List<Map<String, dynamic>> hotels = [];
@@ -43,7 +51,7 @@ class _HotelPageState extends State<HotelPage> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadAll(); // SWR par défaut
   }
 
   // ------- format prix (espaces) -------
@@ -88,16 +96,28 @@ class _HotelPageState extends State<HotelPage> {
       );
       _position = pos;
 
-      final placemarks =
-          await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final city = (p.locality?.isNotEmpty == true)
-            ? p.locality
-            : (p.subAdministrativeArea?.isNotEmpty == true
-                ? p.subAdministrativeArea
-                : null);
-        _villeGPS = city?.toLowerCase().trim();
+      // ville (pour le tri local)
+      try {
+        final placemarks =
+            await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          final city = (p.locality?.isNotEmpty == true)
+              ? p.locality
+              : (p.subAdministrativeArea?.isNotEmpty == true
+                  ? p.subAdministrativeArea
+                  : null);
+          _villeGPS = city?.toLowerCase().trim();
+        }
+      } catch (_) {
+        // pas bloquant pour l’UI
+      }
+
+      // ⭐ NEW: centralise l’envoi dans la table `utilisateurs` (RPC + dédoublonnage)
+      try {
+        await GeolocService.reportPosition(pos);
+      } catch (_) {
+        // silencieux si échec réseau/RLS
       }
     } catch (e) {
       debugPrint('Erreur localisation hôtels: $e');
@@ -109,8 +129,8 @@ class _HotelPageState extends State<HotelPage> {
     if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
     const R = 6371000.0;
     double dLat = (lat2 - lat1) * (pi / 180);
-    double dLon = (lon1 - lon2) * (pi / 180); // (small fix) keep symmetry
-    dLon = -dLon; // same as (lat2,lon2) - (lat1,lon1)
+    double dLon = (lon1 - lon2) * (pi / 180);
+    dLon = -dLon;
     double a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * (pi / 180)) *
             cos(lat2 * (pi / 180)) *
@@ -121,66 +141,46 @@ class _HotelPageState extends State<HotelPage> {
   }
   // ----------------------------------------------
 
-  Future<void> _loadAll() async {
-    setState(() => loading = true);
-    try {
-      await _getLocation();
+  // ========= TRI + enrichissement (distance) commun cache / réseau =========
+  Future<List<Map<String, dynamic>>> _enrichAndSort(List<Map<String, dynamic>> list) async {
+    await _getLocation();
 
-      final data = await Supabase.instance.client.from('hotels').select('''
-            id, nom, ville, adresse, prix,
-            latitude, longitude, images, description, created_at
-          ''').order('nom');
-
-      final list = List<Map<String, dynamic>>.from(data);
-
-      // Distance + tri
-      if (_position != null) {
-        for (final h in list) {
-          final lat = (h['latitude'] as num?)?.toDouble();
-          final lon = (h['longitude'] as num?)?.toDouble();
-          h['_distance'] = _distanceMeters(
-              _position!.latitude, _position!.longitude, lat, lon);
-        }
-
-        if (_villeGPS != null && _villeGPS!.isNotEmpty) {
-          list.sort((a, b) {
-            final aSame =
-                (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-            final bSame =
-                (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-
-            if (aSame != bSame) return aSame ? -1 : 1;
-
-            final ad = (a['_distance'] as double?);
-            final bd = (b['_distance'] as double?);
-            if (ad != null && bd != null) return ad.compareTo(bd);
-            if (ad != null) return -1;
-            if (bd != null) return 1;
-            return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
-          });
-        } else {
-          list.sort((a, b) {
-            final ad = (a['_distance'] as double?);
-            final bd = (b['_distance'] as double?);
-            if (ad != null && bd != null) return ad.compareTo(bd);
-            if (ad != null) return -1;
-            if (bd != null) return 1;
-            return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
-          });
-        }
+    if (_position != null) {
+      for (final h in list) {
+        final lat = (h['latitude'] as num?)?.toDouble();
+        final lon = (h['longitude'] as num?)?.toDouble();
+        h['_distance'] = _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
       }
 
-      hotels = list;
-      await _preloadAverages(list.map((e) => e['id'].toString()).toList());
-      _filterHotels(searchQuery);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement hôtels : $e')),
-      );
-    } finally {
-      if (mounted) setState(() => loading = false);
+      if (_villeGPS != null && _villeGPS!.isNotEmpty) {
+        list.sort((a, b) {
+          final aSame = (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+          final bSame = (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+
+          if (aSame != bSame) return aSame ? -1 : 1;
+
+          final ad = (a['_distance'] as double?);
+          final bd = (b['_distance'] as double?);
+          if (ad != null && bd != null) return ad.compareTo(bd);
+          if (ad != null) return -1;
+          if (bd != null) return 1;
+          return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        });
+      } else {
+        list.sort((a, b) {
+          final ad = (a['_distance'] as double?);
+          final bd = (b['_distance'] as double?);
+          if (ad != null && bd != null) return ad.compareTo(bd);
+          if (ad != null) return -1;
+          if (bd != null) return 1;
+          return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        });
+      }
+    } else {
+      list.sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
     }
+
+    return list;
   }
 
   // --------- récupère moyennes ⭐️ en une requête ----------
@@ -195,7 +195,6 @@ class _HotelPageState extends State<HotelPage> {
         .select('hotel_id, etoiles')
         .or(orFilter);
 
-    // calcule moyenne locale (même logique que sur la page détail)
     final list = List<Map<String, dynamic>>.from(rows);
     final Map<String, double> sums = {};
     final Map<String, int> counts = {};
@@ -252,6 +251,75 @@ class _HotelPageState extends State<HotelPage> {
     );
   }
 
+  // =======================
+  // CHARGEMENT SWR PRINCIPAL
+  // =======================
+  Future<void> _loadAll({bool forceNetwork = false}) async {
+    if (!forceNetwork) {
+      // 1) Instantané: mémoire ou disque si non expiré
+      final mem = AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+      List<Map<String, dynamic>>? disk;
+      if (mem == null) {
+        disk = await AppCache.I.getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+      }
+      final snapshot = mem ?? disk;
+
+      if (snapshot != null) {
+        // Affiche tout de suite le cache
+        final snapClone = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+        final enriched = await _enrichAndSort(snapClone);
+        hotels = enriched;
+        await _preloadAverages(enriched.map((e) => e['id'].toString()).toList());
+        _filterHotels(searchQuery);
+        if (mounted) setState(() => loading = false);
+      } else {
+        if (mounted) setState(() => loading = true);
+      }
+    } else {
+      if (mounted) setState(() => loading = true);
+    }
+
+    // 2) Réseau: rafraîchit en arrière-plan et met à jour l'UI + le cache
+    try {
+      final data = await Supabase.instance.client.from('hotels').select('''
+            id, nom, ville, adresse, prix,
+            latitude, longitude, images, description, created_at
+          ''');
+
+      final list = List<Map<String, dynamic>>.from(data);
+
+      final enriched = await _enrichAndSort(list);
+
+      // Notes moyennes
+      await _preloadAverages(enriched.map((e) => e['id'].toString()).toList());
+
+      // Met à jour l'écran
+      hotels = enriched;
+      _filterHotels(searchQuery);
+
+      // Persist cache (retire le champ volatil _distance)
+      final toCache = enriched.map((h) {
+        final clone = Map<String, dynamic>.from(h);
+        clone.remove('_distance');
+        return clone;
+      }).toList(growable: false).cast<Map<String, dynamic>>();
+
+      // On n'attend pas: AppCache.setList est async void
+      AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
+
+      if (mounted) setState(() => loading = false);
+    } catch (e) {
+      if (mounted && hotels.isEmpty) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chargement hôtels : $e')),
+        );
+      } else {
+        debugPrint('Erreur rafraîchissement hôtels : $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -271,7 +339,7 @@ class _HotelPageState extends State<HotelPage> {
           IconButton(
             icon: const Icon(Icons.refresh, color: hotelsPrimary),
             tooltip: 'Rafraîchir',
-            onPressed: _loadAll,
+            onPressed: () => _loadAll(forceNetwork: true),
           ),
         ],
         bottom: const PreferredSize(

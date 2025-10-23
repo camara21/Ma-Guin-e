@@ -1,28 +1,33 @@
 import 'package:intl/intl.dart';
 
 class Helpers {
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬â‚¬Ââ€šÂ¬Ã…â€œ Formattage simple de date
+  /// Formatage simple de date (ex: 22/10/2025)
   static String formatDate(DateTime date) {
-    return DateFormat('dd/MM/yyyy').format(date);
+    return DateFormat('dd/MM/yyyy', 'fr_FR').format(date);
   }
 
-  /// Ã©Â©Â¢ÂÂ± Formattage avec heure
+  /// Formatage avec heure (ex: 22/10/2025 à 14:35)
   static String formatDateTime(DateTime date) {
-    return DateFormat('dd/MM/yyyy Ã©Â©Ã†â€™  HH:mm').format(date);
+    return DateFormat('dd/MM/yyyy à HH:mm', 'fr_FR').format(date);
   }
 
-  /// Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Ã…Â¡Ã©Â©Â¯Â¸Â Raccourcir un texte trop long
+  /// Raccourcir un texte trop long
   static String truncate(String text, {int max = 50}) {
     if (text.length <= max) return text;
     return '${text.substring(0, max)}...';
+    // Astuce : si tu veux éviter de couper un mot,
+    // cherche le dernier espace avant "max" et coupe là.
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œÂ Distance lisible
+  /// Distance lisible (mètres < 1000, sinon km avec 1 décimale)
   static String formatDistance(double distanceMeters) {
     if (distanceMeters < 1000) {
       return '${distanceMeters.toStringAsFixed(0)} m';
     } else {
-      return '${(distanceMeters / 1000).toStringAsFixed(1)} km';
+      final km = distanceMeters / 1000.0;
+      // Utilise la virgule en français (ex: 1,5 km)
+      final nf = NumberFormat('#,##0.0', 'fr_FR');
+      return '${nf.format(km)} km';
     }
   }
 }

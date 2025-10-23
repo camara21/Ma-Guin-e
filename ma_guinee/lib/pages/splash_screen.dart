@@ -1,4 +1,3 @@
-// lib/pages/splash_screen.dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -14,29 +13,24 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  // Durée minimale d’affichage de l’écran de splash
   static const Duration _minSplash = Duration(milliseconds: 4200);
 
   Timer? _t;
   bool _navigated = false;
 
-  // Anim titre (fondu + zoom)
   late final AnimationController _ctl;
   late final Animation<double> _fade;
   late final Animation<double> _scale;
 
-  // Animation de dégradé pour le sous-titre
   late final AnimationController _gradientCtl;
-  late final Animation<double> _slide; // 0 → 1 (repeat)
+  late final Animation<double> _slide;
 
-  // Nouveau : halo / glow derrière le logo
   late final AnimationController _glowCtl;
-  late final Animation<double> _glowScale;   // 0.92 → 1.08
-  late final Animation<double> _glowOpacity; // 0.0  → 0.6
+  late final Animation<double> _glowScale;
+  late final Animation<double> _glowOpacity;
 
-  // Nouveau : lueur “shimmer” sur le titre
   late final AnimationController _shineCtl;
-  late final Animation<double> _shine; // 0 → 1 (repeat)
+  late final Animation<double> _shine;
 
   @override
   void initState() {
@@ -57,7 +51,6 @@ class _SplashScreenState extends State<SplashScreen>
     )..repeat();
     _slide = CurvedAnimation(parent: _gradientCtl, curve: Curves.linear);
 
-    // Halo pulsant (coût GPU faible)
     _glowCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
@@ -67,7 +60,6 @@ class _SplashScreenState extends State<SplashScreen>
     _glowOpacity = Tween<double>(begin: 0.0, end: 0.6)
         .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
 
-    // Lueur “shimmer” sur le titre
     _shineCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
@@ -80,6 +72,12 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _goNextOnce() async {
     if (_navigated || !mounted) return;
     _navigated = true;
+
+    // ⛔️ Si un flux de recovery est actif, on va directement sur /reset_password
+    if (RecoveryGuard.isActive) {
+      Navigator.of(context).pushReplacementNamed(AppRoutes.resetPassword);
+      return;
+    }
 
     final supa = Supabase.instance.client;
     final user = supa.auth.currentUser;
@@ -122,7 +120,6 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Couleur actuelle conservée (pas de changement de logique)
       backgroundColor: const Color(0xFF0175C2),
       body: Stack(
         fit: StackFit.expand,
@@ -141,7 +138,6 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Logo + halo pulsant
                     SizedBox(
                       height: 180,
                       width: 200,
@@ -160,7 +156,6 @@ class _SplashScreenState extends State<SplashScreen>
                                     height: 150,
                                     decoration: const BoxDecoration(
                                       shape: BoxShape.circle,
-                                      // Radial white glow très doux
                                       gradient: RadialGradient(
                                         colors: [
                                           Color.fromARGB(180, 255, 255, 255),
@@ -174,7 +169,6 @@ class _SplashScreenState extends State<SplashScreen>
                               );
                             },
                           ),
-                          // Logo
                           Image.asset('assets/logo_guinee.png', height: 160),
                         ],
                       ),
@@ -182,7 +176,6 @@ class _SplashScreenState extends State<SplashScreen>
 
                     const SizedBox(height: 24),
 
-                    // Titre avec lueur “shimmer”
                     AnimatedBuilder(
                       animation: _shine,
                       builder: (context, _) {
@@ -233,8 +226,6 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// Texte coloré par un dégradé Rouge → Jaune → Vert qui glisse horizontalement.
-/// `slide` décale le dégradé de −1.0 à +1.0.
 class _AnimatedGradientText extends StatelessWidget {
   final String text;
   final double slide; // −1.0 .. +1.0
@@ -284,7 +275,6 @@ class _AnimatedGradientText extends StatelessWidget {
   }
 }
 
-/// Shimmer très léger sur le texte (bande blanche qui balaye horizontalement).
 class _ShimmerText extends StatelessWidget {
   final String text;
   final double slide; // -1 .. +1
@@ -308,7 +298,7 @@ class _ShimmerText extends StatelessWidget {
             Colors.white.withOpacity(0.95),
             Colors.white.withOpacity(0.20),
           ],
-          stops: const [0.45, 0.50, 0.55], // bande fine
+          stops: const [0.45, 0.50, 0.55],
         ).createShader(bounds);
       },
       child: Text(text, textAlign: TextAlign.center, style: style),

@@ -16,8 +16,7 @@ class AppPadding {
 }
 
 class AppStrings {
-  static const String appName = "Ma GuinÃ©Â©Ã†â€™Â©e";
-  static const String aucunFavori =
-      "Aucun favori pour lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢instant.";
+  static const String appName = "Soneya";
+  static const String aucunFavori = "Aucun favori pour l’instant.";
   static const String rechercher = "Rechercher...";
 }

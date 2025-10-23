@@ -1,7 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import '../routes.dart';
 import 'package:flutter/scheduler.dart';
+import 'cgu_page.dart'; // 👈 même dossier lib/pages/
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -11,7 +13,6 @@ class WelcomePage extends StatefulWidget {
 }
 
 class _WelcomePageState extends State<WelcomePage> {
-  // Liste courte des services
   static const List<_ServiceChip> _services = [
     _ServiceChip(Icons.campaign, 'Annonces'),
     _ServiceChip(Icons.work, 'Emplois'),
@@ -24,6 +25,26 @@ class _WelcomePageState extends State<WelcomePage> {
     _ServiceChip(Icons.store_mall_directory, 'Prestataires'),
   ];
 
+  late final TapGestureRecognizer _termsTap;
+
+  @override
+  void initState() {
+    super.initState();
+    _termsTap = TapGestureRecognizer()
+      ..onTap = () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CGUPage()),
+        );
+      };
+  }
+
+  @override
+  void dispose() {
+    _termsTap.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -35,16 +56,9 @@ class _WelcomePageState extends State<WelcomePage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Image de fond
             Positioned.fill(
-              child: Image.asset(
-                'assets/nimba.png',
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-              ),
+              child: Image.asset('assets/nimba.png', fit: BoxFit.cover, alignment: Alignment.center),
             ),
-
-            // Bandeau haut (défile automatiquement)
             Align(
               alignment: Alignment.topCenter,
               child: Padding(
@@ -52,13 +66,10 @@ class _WelcomePageState extends State<WelcomePage> {
                 child: _TopGlassHeader(services: _services),
               ),
             ),
-
-            // Boutons en bas
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 38, vertical: 90),
+                padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 90),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -67,23 +78,12 @@ class _WelcomePageState extends State<WelcomePage> {
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           backgroundColor: Colors.transparent,
-                          side: const BorderSide(
-                              color: Color(0xFFCE1126), width: 2),
+                          side: const BorderSide(color: Color(0xFFCE1126), width: 2),
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                         ),
-                        onPressed: () =>
-                            Navigator.pushNamed(context, AppRoutes.login),
-                        child: const Text(
-                          'Connexion',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Color(0xFFCE1126),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.login),
+                        child: const Text('Connexion', style: TextStyle(fontSize: 18, color: Color(0xFFCE1126), fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -92,22 +92,41 @@ class _WelcomePageState extends State<WelcomePage> {
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           backgroundColor: Colors.transparent,
-                          side: const BorderSide(
-                              color: Color(0xFF009460), width: 2),
+                          side: const BorderSide(color: Color(0xFF009460), width: 2),
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                         ),
-                        onPressed: () =>
-                            Navigator.pushNamed(context, AppRoutes.register),
-                        child: const Text(
-                          'Créer un compte',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Color(0xFF009460),
-                            fontWeight: FontWeight.bold,
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
+                        child: const Text('Créer un compte', style: TextStyle(fontSize: 18, color: Color(0xFF009460), fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.28),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(.25)),
+                      ),
+                      child: Center(
+                        child: Text.rich(
+                          TextSpan(
+                            text: 'En créant un compte, vous acceptez les ',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white,
+                              height: 1.35,
+                              shadows: [Shadow(blurRadius: 2, color: Colors.black54, offset: Offset(0, 1))],
+                            ),
+                            children: [
+                              TextSpan(
+                                text: 'Conditions Générales d’Utilisation',
+                                style: const TextStyle(decoration: TextDecoration.underline, fontWeight: FontWeight.w700),
+                                recognizer: _termsTap,
+                              ),
+                            ],
                           ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
@@ -122,9 +141,6 @@ class _WelcomePageState extends State<WelcomePage> {
   }
 }
 
-/// ——— BANDEAU HAUT ———
-/// Carte « verre » + défilement horizontal automatique des services.
-/// (Stateful pour piloter l’auto-scroll)
 class _TopGlassHeader extends StatefulWidget {
   final List<_ServiceChip> services;
   const _TopGlassHeader({required this.services});
@@ -133,12 +149,9 @@ class _TopGlassHeader extends StatefulWidget {
   State<_TopGlassHeader> createState() => _TopGlassHeaderState();
 }
 
-class _TopGlassHeaderState extends State<_TopGlassHeader>
-    with SingleTickerProviderStateMixin {
+class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProviderStateMixin {
   final _ctrl = ScrollController();
   late final Ticker _ticker;
-
-  // vitesse en pixels/seconde
   static const double _speed = 40;
 
   @override
@@ -147,9 +160,9 @@ class _TopGlassHeaderState extends State<_TopGlassHeader>
     _ticker = createTicker((elapsed) {
       if (!_ctrl.hasClients) return;
       final max = _ctrl.position.maxScrollExtent;
-      final newOffset = _ctrl.offset + (_speed / 60.0); // ~60 FPS
+      final newOffset = _ctrl.offset + (_speed / 60.0);
       if (newOffset >= max) {
-        _ctrl.jumpTo(0); // boucle
+        _ctrl.jumpTo(0);
       } else {
         _ctrl.jumpTo(newOffset);
       }
@@ -165,7 +178,6 @@ class _TopGlassHeaderState extends State<_TopGlassHeader>
 
   @override
   Widget build(BuildContext context) {
-    // on duplique une fois la liste pour une boucle plus fluide
     final items = [...widget.services, ...widget.services];
 
     return ClipRRect(
@@ -190,29 +202,15 @@ class _TopGlassHeaderState extends State<_TopGlassHeader>
                     height: 34,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF113CFC), Color(0xFF2EC4F1)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      gradient: const LinearGradient(colors: [Color(0xFF113CFC), Color(0xFF2EC4F1)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     ),
-                    child: const Icon(Icons.star_rounded,
-                        color: Colors.white, size: 20),
+                    child: const Icon(Icons.star_rounded, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 10),
-                  const Text(
-                    'Soneya',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  const Text('Soneya', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                 ],
               ),
               const SizedBox(height: 10),
-
-              // Scroll horizontal AUTO
               SizedBox(
                 height: 34,
                 child: ListView.separated(
@@ -224,26 +222,18 @@ class _TopGlassHeaderState extends State<_TopGlassHeader>
                   itemBuilder: (context, i) {
                     final s = items[i];
                     return Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(.22),
                         borderRadius: BorderRadius.circular(18),
-                        border:
-                            Border.all(color: Colors.white.withOpacity(.35)),
+                        border: Border.all(color: Colors.white.withOpacity(.35)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(s.icon, size: 16, color: Colors.white),
                           const SizedBox(width: 6),
-                          Text(
-                            s.label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          Text(s.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     );
