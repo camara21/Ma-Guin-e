@@ -1,7 +1,11 @@
+// lib/pages/mes_hotels_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
 import 'hotel_detail_page.dart';
+
+// 👇 AJOUT : import de la page propriétaire des réservations hôtels
+import 'pro_reservations_hotels.dart';
 
 class MesHotelsPage extends StatefulWidget {
   final List<Map<String, dynamic>> hotels;
@@ -58,6 +62,13 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
     }
   }
 
+  void _openProReservations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ProReservationsHotelsPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -72,17 +83,17 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
         elevation: 1,
         iconTheme: const IconThemeData(color: hotelsPrimary),
 
-        // Bouton "Mes réservations" (désactivé – feature à venir)
+        // Bouton "Mes réservations" -> ouvre la page propriétaire
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: OutlinedButton.icon(
-              onPressed: null, // désactivé
-              icon: const Icon(Icons.calendar_month),
+              onPressed: _openProReservations,
+              icon: const Icon(Icons.calendar_month, size: 18),
               label: const Text("Mes réservations"),
               style: OutlinedButton.styleFrom(
-                disabledForegroundColor: hotelsPrimary.withOpacity(.55),
-                side: BorderSide(color: hotelsPrimary.withOpacity(.25)),
+                foregroundColor: hotelsPrimary,
+                side: const BorderSide(color: hotelsPrimary),
                 visualDensity: VisualDensity.compact,
               ),
             ),
@@ -184,20 +195,20 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                         }
                       },
                       itemBuilder: (context) => [
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'modifier',
                           child: Row(
-                            children: const [
+                            children: [
                               Icon(Icons.edit, color: hotelsPrimary),
                               SizedBox(width: 8),
                               Text("Modifier"),
                             ],
                           ),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'supprimer',
                           child: Row(
-                            children: const [
+                            children: [
                               Icon(Icons.delete, color: Colors.red),
                               SizedBox(width: 8),
                               Text("Supprimer"),
@@ -210,7 +221,8 @@ class _MesHotelsPageState extends State<MesHotelsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => HotelDetailPage(hotelId: hotel['id']),
+                          builder: (_) =>
+                              HotelDetailPage(hotelId: hotel['id']),
                         ),
                       );
                     },

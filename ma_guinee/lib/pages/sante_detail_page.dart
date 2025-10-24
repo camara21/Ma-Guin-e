@@ -13,7 +13,8 @@ const kHealthGreen   = Color(0xFF009460);
 const kNeutralBorder = Color(0xFFE5E7EB);
 
 class SanteDetailPage extends StatefulWidget {
-  final dynamic cliniqueId; // int ou String (UUID)
+  /// Identifiant de la clinique (BIGINT en base). Peut être int, num, String, etc.
+  final dynamic cliniqueId;
   const SanteDetailPage({super.key, required this.cliniqueId});
 
   @override
@@ -36,10 +37,25 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
 
   Future<void> _loadClinique() async {
     setState(() => loading = true);
+
+    // ✅ Conversion sûre -> int (compatible BIGINT)
+    final int? idForQuery = (widget.cliniqueId is num)
+        ? (widget.cliniqueId as num).toInt()
+        : int.tryParse(widget.cliniqueId.toString());
+
+    if (idForQuery == null) {
+      if (!mounted) return;
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ID de clinique invalide.')),
+      );
+      return;
+    }
+
     final data = await Supabase.instance.client
         .from('cliniques')
         .select()
-        .eq('id', widget.cliniqueId)
+        .eq('id', idForQuery)
         .maybeSingle();
 
     if (!mounted) return;
@@ -148,10 +164,23 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     final address = (clinique?['adresse'] ?? clinique?['ville'] ?? '').toString();
     final images  = _imagesFromClinique();
 
+    // ✅ Convertit l’ID en int pour la page RDV
+    final int? cliniqueIdInt = (widget.cliniqueId is num)
+        ? (widget.cliniqueId as num).toInt()
+        : int.tryParse(widget.cliniqueId.toString());
+
+    if (cliniqueIdInt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ID de clinique invalide.')),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => SanteRdvPage(
+          cliniqueId: cliniqueIdInt, // <- IMPORTANT
           cliniqueName: nom.isEmpty ? 'Centre médical' : nom,
           phone: tel.trim().isEmpty ? null : tel.trim(),
           address: address.trim().isEmpty ? null : address.trim(),
@@ -196,7 +225,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,                 // ✅ sobre
+        backgroundColor: Colors.white,
         elevation: 1,
         iconTheme: const IconThemeData(color: kHealthGreen),
         title: Text(

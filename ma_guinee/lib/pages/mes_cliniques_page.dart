@@ -1,7 +1,10 @@
+// lib/pages/mes_cliniques_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:ma_guinee/pages/edit_clinique_page.dart';
-import 'package:ma_guinee/pages/sante_detail_page.dart';
+
+import 'edit_clinique_page.dart';
+import 'sante_detail_page.dart';
+import 'medecin_slots_page.dart'; // 👈 page médecin (créneaux + RDV)
 
 class MesCliniquesPage extends StatefulWidget {
   const MesCliniquesPage({super.key, required this.cliniques});
@@ -57,12 +60,6 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
     }
   }
 
-  void _mesRendezVousPasActif() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Mes rendez-vous : fonctionnalité bientôt disponible.")),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,22 +73,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
         foregroundColor: kHealthGreen,
         elevation: 1,
         iconTheme: const IconThemeData(color: kHealthGreen),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton.icon(
-              onPressed: _mesRendezVousPasActif, // non actif pour l’instant
-              icon: const Icon(Icons.event_note, size: 18, color: kHealthGreen),
-              label: const Text(
-                "Mes rendez-vous",
-                style: TextStyle(color: kHealthGreen, fontWeight: FontWeight.w600),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: kHealthGreen,
-              ),
-            ),
-          ),
-        ],
+        // 👇 plus de bouton "Mes rendez-vous" ici
       ),
       body: cliniques.isEmpty
           ? Center(
@@ -106,6 +88,9 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
               separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE0E0E0)),
               itemBuilder: (context, index) {
                 final clinique = cliniques[index];
+                final int cliniqueId = (clinique['id'] as num).toInt();
+                final String nom = (clinique['nom'] ?? '').toString();
+
                 return Card(
                   elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -118,7 +103,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                       child: const Icon(Icons.local_hospital, color: kHealthGreen, size: 27),
                     ),
                     title: Text(
-                      clinique['nom'] ?? '',
+                      nom,
                       style: const TextStyle(
                         color: kHealthGreen, // VERT santé
                         fontWeight: FontWeight.w600,
@@ -126,20 +111,36 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                       ),
                     ),
                     subtitle: Text(
-                      clinique['ville'] ?? '',
+                      (clinique['ville'] ?? '').toString(),
                       style: TextStyle(color: Colors.grey[800], fontSize: 15),
                     ),
                     onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => SanteDetailPage(cliniqueId: clinique['id']),
+                          builder: (_) => SanteDetailPage(cliniqueId: cliniqueId),
                         ),
                       );
                     },
                     trailing: Wrap(
                       spacing: 8,
                       children: [
+                        // 👇 nouveau bouton médecin : gérer créneaux / RDV
+                        IconButton(
+                          tooltip: "Gérer créneaux / RDV",
+                          icon: const Icon(Icons.calendar_month, color: kHealthYellow),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MedecinSlotsPage(
+                                  cliniqueId: cliniqueId,
+                                  titre: nom.isEmpty ? 'Clinique' : nom,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                         IconButton(
                           tooltip: "Modifier",
                           icon: const Icon(Icons.edit, color: kHealthGreen),
@@ -170,7 +171,7 @@ class _MesCliniquesPageState extends State<MesCliniquesPage> {
                               ),
                             );
                             if (confirm == true) {
-                              supprimerClinique(clinique['id']);
+                              supprimerClinique(cliniqueId);
                             }
                           },
                         ),

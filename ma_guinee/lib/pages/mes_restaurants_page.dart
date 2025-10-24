@@ -1,6 +1,10 @@
+// lib/pages/mes_restaurants_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
+
+// ✅ bon import (corrigé)
+import 'pro_reservations_restaurants.dart';
 
 class MesRestaurantsPage extends StatefulWidget {
   final List<Map<String, dynamic>> restaurants;
@@ -58,6 +62,15 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
     }
   }
 
+  void _openProReservations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ProReservationsRestaurantsPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,16 +86,16 @@ class _MesRestaurantsPageState extends State<MesRestaurantsPage> {
         elevation: 1,
         iconTheme: const IconThemeData(color: restoPrimary),
 
-        // Bouton "Mes réservations" (désactivé – fonctionnalité à venir)
+        // ✅ Bouton "Mes réservations" (ouvre la gestion PRO)
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: OutlinedButton.icon(
-              onPressed: null, // désactivé
+              onPressed: _openProReservations,
               icon: const Icon(Icons.calendar_month),
               label: const Text("Mes réservations"),
               style: OutlinedButton.styleFrom(
-                disabledForegroundColor: restoPrimary.withOpacity(.60),
+                foregroundColor: restoPrimary,
                 side: BorderSide(color: restoPrimary.withOpacity(.25)),
                 visualDensity: VisualDensity.compact,
               ),

@@ -3,23 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ insertion DB
 
 class RestaurantReservationPage extends StatefulWidget {
+  final String restaurantId;           // ✅ FK -> public.restaurants.id
   final String restoName;
-  // téléphone du restaurant (affiché, pas prérempli)
-  final String? phone;
-  final String? address;      // optionnel
-  final String? coverImage;   // optionnel (URL)
-  // pour matcher la page détail (par défaut: palette Restaurants)
+  final String? phone;                 // affiché, pas prérempli
+  final String? address;               // optionnel
+  final String? coverImage;            // optionnel (URL)
   final Color primaryColor;
 
   const RestaurantReservationPage({
     super.key,
+    required this.restaurantId,        // ✅ nouveau requis
     required this.restoName,
     this.phone,
     this.address,
     this.coverImage,
-    this.primaryColor = const Color(0xFFE76F51), // Restaurants primary
+    this.primaryColor = const Color(0xFFE76F51),
   });
 
   @override
@@ -30,33 +31,26 @@ class RestaurantReservationPage extends StatefulWidget {
 class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
   final _formKey = GlobalKey<FormState>();
 
-  DateTime _date = DateTime.now().add(const Duration(hours: 2));
+  DateTime _date = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _time = const TimeOfDay(hour: 20, minute: 0);
   int _adults = 2;
   int _children = 0;
 
   final _nameCtrl = TextEditingController();
-  // téléphone du CLIENT (jamais prérempli)
-  final _phoneCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController(); // tel CLIENT (jamais prérempli)
   final _notesCtrl = TextEditingController();
 
   String _seating = 'Peu importe';
-  final List<String> _occasions = [
-    'Aucune',
-    'Anniversaire',
-    'RDV pro',
-    'Rendez-vous',
-    'Famille'
-  ];
+  final List<String> _occasions = ['Aucune','Anniversaire','RDV pro','Rendez-vous','Famille'];
   String _occasion = 'Aucune';
   bool _accept = true;
+
+  bool _loading = false; // ✅ état envoi
 
   @override
   void initState() {
     super.initState();
-    // Sécurité: init Intl si hot-restart
     initializeDateFormatting('fr_FR');
-    // le champ téléphone client n'est PAS prérempli
     _phoneCtrl.text = '';
   }
 
@@ -70,12 +64,13 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
 
   // Helpers
   String get _dateLabel {
-    final dt =
-        DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
+    final dt = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
     return DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(dt);
   }
 
   String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
+  String _hhmm(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Future<void> _call(String? number) async {
     final raw = (number ?? '').trim();
@@ -85,16 +80,13 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     await launchUrl(uri);
   }
 
-  void _showNotAvailableSheet() {
-    final dt =
-        DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
+  Future<void> _showSuccessSheet(Map<String, dynamic> row) async {
+    final dt = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
     final resume = StringBuffer()
-      ..writeln('Demande de réservation')
+      ..writeln('Réservation confirmée ✅')
       ..writeln('Restaurant : ${widget.restoName}')
-      ..writeln(
-          'Date & heure : ${DateFormat('EEEE d MMMM y, HH:mm', 'fr_FR').format(dt)}')
-      ..writeln(
-          'Convives : $_adults adulte(s)${_children > 0 ? " + $_children enfant(s)" : ""}')
+      ..writeln('Date & heure : ${DateFormat('EEEE d MMMM y, HH:mm', 'fr_FR').format(dt)}')
+      ..writeln('Convives : $_adults adulte(s)${_children > 0 ? " + $_children enfant(s)" : ""}')
       ..writeln('Placement : $_seating')
       ..writeln('Occasion : $_occasion')
       ..write(_notesCtrl.text.isNotEmpty ? '\nNotes : ${_notesCtrl.text}' : '');
@@ -102,6 +94,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     final phone = (widget.phone ?? '').trim();
     final scheme = Theme.of(context).colorScheme;
 
+    // ignore: use_build_context_synchronously
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -110,10 +103,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
       builder: (context) {
         return Padding(
           padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            top: 8,
+            left: 16, right: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24, top: 8,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -121,35 +111,14 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, color: widget.primaryColor),
+                  Icon(Icons.check_circle_rounded, color: widget.primaryColor),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "Ce restaurant ne propose pas pour l’instant la réservation.\n"
-                      "${phone.isNotEmpty ? "Vous pouvez les contacter directement par téléphone :" : "Aucun numéro n’a été renseigné."}",
-                    ),
+                  const Expanded(
+                    child: Text("Votre demande a été enregistrée et est confirmée."),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              if (phone.isNotEmpty)
-                _CallCard(
-                  phoneNumber: phone,
-                  onCall: () => _call(phone),
-                  primaryColor: widget.primaryColor,
-                ),
-              if (phone.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: scheme.surfaceVariant.withOpacity(.35),
-                  ),
-                  child:
-                      const Text("Numéro non renseigné par le restaurant."),
-                ),
-              const SizedBox(height: 12),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -157,14 +126,20 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                   borderRadius: BorderRadius.circular(14),
                   color: scheme.surfaceVariant.withOpacity(.6),
                 ),
-                child: Text(resume.toString(),
-                    style: Theme.of(context).textTheme.bodySmall),
+                child: Text(resume.toString(), style: Theme.of(context).textTheme.bodySmall),
               ),
               const SizedBox(height: 12),
+              if (phone.isNotEmpty)
+                _CallCard(
+                  phoneNumber: phone,
+                  onCall: () => _call(phone),
+                  primaryColor: widget.primaryColor,
+                ),
+              const SizedBox(height: 8),
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.check_circle_outline),
-                label: const Text("OK, j’ai compris"),
+                label: const Text("OK"),
               ),
               const SizedBox(height: 8),
             ],
@@ -174,54 +149,51 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     );
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 180)),
-      locale: const Locale('fr', 'FR'),
-      builder: (context, child) {
-        // harmoniser couleurs avec la page détail
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: widget.primaryColor,
-                  secondary: widget.primaryColor,
-                  onPrimary: Colors.white,
-                ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) setState(() => _date = picked);
-  }
+  Future<void> _submitReservation() async {
+    setState(() => _loading = true);
+    try {
+      final supa = Supabase.instance.client;
+      final uid = supa.auth.currentUser?.id;
 
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _time,
-      helpText: "Heure d’arrivée",
-      // évite l’erreur de saisie manuelle sur Web
-      initialEntryMode: TimePickerEntryMode.dial,
-      builder: (context, child) {
-        // forcer 24h + thème couleurs
-        final mq = MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true);
-        final themed = Theme.of(context).copyWith(
-          colorScheme: Theme.of(context).colorScheme.copyWith(
-                primary: widget.primaryColor,
-                secondary: widget.primaryColor,
-                onPrimary: Colors.white,
-              ),
-        );
-        return MediaQuery(
-          data: mq,
-          child: Theme(data: themed, child: child!),
-        );
-      },
-    );
-    if (picked != null) setState(() => _time = picked);
+      final payload = {
+        'restaurant_id': widget.restaurantId,                 // ✅ FK
+        'user_id': uid,                                       // peut être null si tu autorises anonyme
+        'client_nom': _nameCtrl.text.trim(),
+        'client_phone': _phoneCtrl.text.trim(),
+        'res_date': DateFormat('yyyy-MM-dd').format(_date),
+        'res_time': _hhmm(_time),
+        'adults': _adults,
+        'children': _children,
+        'seating_pref': _seating,
+        'occasion': _occasion,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'consent_contact': _accept,
+        // 'status': 'confirme',   // inutile: défaut DB
+      };
+
+      final inserted = await supa
+          .from('reservations_restaurants')
+          .insert(payload)
+          .select()
+          .single();
+
+      if (!mounted) return;
+      _showSuccessSheet(inserted);
+    } on PostgrestException catch (e) {
+      final msg = e.message.toLowerCase();
+      String human = "Impossible d'enregistrer la réservation.";
+      if (msg.contains('unique') || msg.contains('duplicate')) {
+        human = "Vous avez déjà une réservation active à cette date/heure pour ce restaurant.";
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(human)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Une erreur est survenue.")));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   void _onReservePressed() {
@@ -232,7 +204,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
       return;
     }
     if (_formKey.currentState?.validate() != true) return;
-    _showNotAvailableSheet();
+    _submitReservation(); // ✅ insert DB + feuille succès
   }
 
   @override
@@ -252,11 +224,9 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
           SliverToBoxAdapter(
             child: _HeroBanner(
               title: widget.restoName,
-              // affiche d'abord le téléphone du restaurant s'il existe
               subtitle: (widget.phone?.trim().isNotEmpty ?? false)
                   ? widget.phone!.trim()
-                  : (widget.address ??
-                      "Sélectionnez la date, l’heure et vos préférences"),
+                  : (widget.address ?? "Sélectionnez la date, l’heure et vos préférences"),
               imageUrl: widget.coverImage,
               primaryColor: widget.primaryColor,
             ),
@@ -276,8 +246,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                           Expanded(
                             child: _TileButton(
                               icon: Icons.event_rounded,
-                              label: DateFormat('EEE d MMM', 'fr_FR')
-                                  .format(_date),
+                              label: DateFormat('EEE d MMM', 'fr_FR').format(_date),
                               onTap: _pickDate,
                               primaryColor: widget.primaryColor,
                             ),
@@ -295,8 +264,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                       ),
                       trailing: Text(
                         _dateLabel,
-                        style: theme.textTheme.labelMedium
-                            ?.copyWith(color: widget.primaryColor),
+                        style: theme.textTheme.labelMedium?.copyWith(color: widget.primaryColor),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -310,16 +278,14 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                           _CounterCard(
                             title: "Adultes",
                             value: _adults,
-                            onChanged: (v) =>
-                                setState(() => _adults = v.clamp(1, 20)),
+                            onChanged: (v) => setState(() => _adults = v.clamp(1, 20)),
                             primaryColor: widget.primaryColor,
                           ),
                           const SizedBox(height: 10),
                           _CounterCard(
                             title: "Enfants",
                             value: _children,
-                            onChanged: (v) =>
-                                setState(() => _children = v.clamp(0, 20)),
+                            onChanged: (v) => setState(() => _children = v.clamp(0, 20)),
                             primaryColor: widget.primaryColor,
                           ),
                         ],
@@ -339,9 +305,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                               labelText: "Nom et prénom",
                               prefixIcon: Icon(Icons.person_rounded),
                             ),
-                            validator: (v) => (v == null || v.trim().length < 2)
-                                ? "Votre nom"
-                                : null,
+                            validator: (v) => (v == null || v.trim().length < 2) ? "Votre nom" : null,
                           ),
                           const SizedBox(height: 10),
                           TextFormField(
@@ -351,9 +315,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                               labelText: "Téléphone",
                               prefixIcon: Icon(Icons.phone_rounded),
                             ),
-                            validator: (v) => (v == null || v.trim().length < 6)
-                                ? "Votre numéro"
-                                : null,
+                            validator: (v) => (v == null || v.trim().length < 6) ? "Votre numéro" : null,
                           ),
                         ],
                       ),
@@ -368,27 +330,14 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                           DropdownButtonFormField<String>(
                             value: _seating,
                             items: const [
-                              DropdownMenuItem(
-                                  value: 'Peu importe',
-                                  child: Text('Placement : Peu importe')),
-                              DropdownMenuItem(
-                                  value: 'Intérieur',
-                                  child: Text('Placement : Intérieur')),
-                              DropdownMenuItem(
-                                  value: 'Terrasse',
-                                  child: Text('Placement : Terrasse')),
-                              DropdownMenuItem(
-                                  value: 'Près d’une fenêtre',
-                                  child:
-                                      Text('Placement : Près d’une fenêtre')),
-                              DropdownMenuItem(
-                                  value: 'Zone non-fumeur',
-                                  child: Text('Placement : Zone non-fumeur')),
+                              DropdownMenuItem(value: 'Peu importe', child: Text('Placement : Peu importe')),
+                              DropdownMenuItem(value: 'Intérieur', child: Text('Placement : Intérieur')),
+                              DropdownMenuItem(value: 'Terrasse', child: Text('Placement : Terrasse')),
+                              DropdownMenuItem(value: 'Près d’une fenêtre', child: Text('Placement : Près d’une fenêtre')),
+                              DropdownMenuItem(value: 'Zone non-fumeur', child: Text('Placement : Zone non-fumeur')),
                             ],
-                            onChanged: (v) =>
-                                setState(() => _seating = v ?? 'Peu importe'),
-                            decoration: const InputDecoration(
-                                prefixIcon: Icon(Icons.chair_alt_rounded)),
+                            onChanged: (v) => setState(() => _seating = v ?? 'Peu importe'),
+                            decoration: const InputDecoration(prefixIcon: Icon(Icons.chair_alt_rounded)),
                           ),
                           const SizedBox(height: 10),
                           Wrap(
@@ -399,10 +348,8 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                               return ChoiceChip(
                                 label: Text(o),
                                 selected: selected,
-                                selectedColor:
-                                    widget.primaryColor.withOpacity(.2),
-                                onSelected: (_) =>
-                                    setState(() => _occasion = o),
+                                selectedColor: widget.primaryColor.withOpacity(.2),
+                                onSelected: (_) => setState(() => _occasion = o),
                               );
                             }).toList(),
                           ),
@@ -411,8 +358,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                             controller: _notesCtrl,
                             maxLines: 4,
                             decoration: const InputDecoration(
-                              labelText:
-                                  "Notes (allergies, haute-chaise, message au chef…) ",
+                              labelText: "Notes (allergies, haute-chaise, message au chef…)",
                               alignLabelWithHint: true,
                               prefixIcon: Icon(Icons.note_alt_outlined),
                             ),
@@ -428,8 +374,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                         contentPadding: EdgeInsets.zero,
                         value: _accept,
                         onChanged: (v) => setState(() => _accept = v ?? false),
-                        title: const Text(
-                            "J’accepte d’être contacté(e) par le restaurant pour finaliser ma demande."),
+                        title: const Text("J’accepte d’être contacté(e) par le restaurant pour finaliser ma demande."),
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
                     ),
@@ -446,12 +391,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
-          boxShadow: [
-            BoxShadow(
-                blurRadius: 16,
-                color: Colors.black.withOpacity(.08),
-                offset: const Offset(0, -4))
-          ],
+          boxShadow: [BoxShadow(blurRadius: 16, color: Colors.black.withOpacity(.08), offset: const Offset(0, -4))],
         ),
         child: SafeArea(
           top: false,
@@ -459,9 +399,11 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _onReservePressed,
-                  icon: const Icon(Icons.event_available_rounded),
-                  label: const Text("Réserver"),
+                  onPressed: _loading ? null : _onReservePressed,
+                  icon: _loading
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.event_available_rounded),
+                  label: Text(_loading ? "Enregistrement..." : "Réserver"),
                   style: FilledButton.styleFrom(
                     backgroundColor: widget.primaryColor,
                     foregroundColor: Colors.white,
@@ -475,6 +417,46 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
       ),
     );
   }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 180)),
+      locale: const Locale('fr', 'FR'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+                  primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
+                ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _time,
+      helpText: "Heure d’arrivée",
+      initialEntryMode: TimePickerEntryMode.dial,
+      builder: (context, child) {
+        final mq = MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true);
+        final themed = Theme.of(context).copyWith(
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
+              ),
+        );
+        return MediaQuery(data: mq, child: Theme(data: themed, child: child!));
+      },
+    );
+    if (picked != null) setState(() => _time = picked);
+  }
 }
 
 // ======== Widgets réutilisables ========
@@ -485,11 +467,7 @@ class _Section extends StatelessWidget {
   final Widget? trailing;
   final Color primaryColor;
 
-  const _Section(
-      {required this.title,
-      required this.child,
-      this.trailing,
-      required this.primaryColor});
+  const _Section({required this.title, required this.child, this.trailing, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -506,9 +484,7 @@ class _Section extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text(title,
-                style:
-                    theme.textTheme.titleMedium?.copyWith(color: primaryColor)),
+            Text(title, style: theme.textTheme.titleMedium?.copyWith(color: primaryColor)),
             const Spacer(),
             if (trailing != null) trailing!,
           ]),
@@ -525,11 +501,7 @@ class _HeroBanner extends StatelessWidget {
   final String subtitle;
   final String? imageUrl;
   final Color primaryColor;
-  const _HeroBanner(
-      {required this.title,
-      required this.subtitle,
-      this.imageUrl,
-      required this.primaryColor});
+  const _HeroBanner({required this.title, required this.subtitle, this.imageUrl, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -537,13 +509,8 @@ class _HeroBanner extends StatelessWidget {
       height: 180,
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
-        ),
-        image: imageUrl != null
-            ? DecorationImage(image: NetworkImage(imageUrl!), fit: BoxFit.cover)
-            : null,
+        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24)),
+        image: imageUrl != null ? DecorationImage(image: NetworkImage(imageUrl!), fit: BoxFit.cover) : null,
         color: primaryColor.withOpacity(.12),
       ),
       child: Stack(
@@ -560,24 +527,14 @@ class _HeroBanner extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: 18,
+            left: 16, right: 16, bottom: 18,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: Colors.white,
-                    )),
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.white)),
                 const SizedBox(height: 4),
-                Text(subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white70)),
               ],
             ),
@@ -594,11 +551,7 @@ class _TileButton extends StatelessWidget {
   final VoidCallback onTap;
   final Color primaryColor;
 
-  const _TileButton(
-      {required this.icon,
-      required this.label,
-      required this.onTap,
-      required this.primaryColor});
+  const _TileButton({required this.icon, required this.label, required this.onTap, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -616,9 +569,7 @@ class _TileButton extends StatelessWidget {
           children: [
             Icon(icon, color: primaryColor),
             const SizedBox(width: 10),
-            Expanded(
-                child:
-                    Text(label, style: Theme.of(context).textTheme.titleSmall)),
+            Expanded(child: Text(label, style: Theme.of(context).textTheme.titleSmall)),
             const Icon(Icons.expand_more_rounded),
           ],
         ),
@@ -627,24 +578,18 @@ class _TileButton extends StatelessWidget {
   }
 }
 
-// ===== CounterCard version responsive (aucune couleur changée) =====
+// ===== CounterCard version responsive =====
 class _CounterCard extends StatelessWidget {
   final String title;
   final int value;
   final ValueChanged<int> onChanged;
   final Color primaryColor;
-  const _CounterCard({
-    required this.title,
-    required this.value,
-    required this.onChanged,
-    required this.primaryColor,
-  });
+  const _CounterCard({required this.title, required this.value, required this.onChanged, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    // bornes : Adultes mini 1 / Enfants mini 0
     final int minVal = title.toLowerCase().contains('adulte') ? 1 : 0;
     final int maxVal = 20;
 
@@ -666,42 +611,24 @@ class _CounterCard extends StatelessWidget {
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: scheme.surface,
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: scheme.surface),
             child: Row(
               children: [
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   onPressed: canMinus ? () => onChanged(value - 1) : null,
-                  icon: Icon(
-                    Icons.remove_circle_outline,
-                    color: canMinus
-                        ? primaryColor
-                        : scheme.outline.withOpacity(.6),
-                  ),
+                  icon: Icon(Icons.remove_circle_outline, color: canMinus ? primaryColor : scheme.outline.withOpacity(.6)),
                 ),
                 Expanded(
                   child: Center(
-                    child: Text(
-                      '$value',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
+                    child: Text('$value',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
                   ),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   onPressed: canPlus ? () => onChanged(value + 1) : null,
-                  icon: Icon(
-                    Icons.add_circle_outline,
-                    color: canPlus
-                        ? primaryColor
-                        : scheme.outline.withOpacity(.6),
-                  ),
+                  icon: Icon(Icons.add_circle_outline, color: canPlus ? primaryColor : scheme.outline.withOpacity(.6)),
                 ),
               ],
             ),
@@ -716,10 +643,7 @@ class _CallCard extends StatelessWidget {
   final String phoneNumber;
   final VoidCallback onCall;
   final Color primaryColor;
-  const _CallCard(
-      {required this.phoneNumber,
-      required this.onCall,
-      required this.primaryColor});
+  const _CallCard({required this.phoneNumber, required this.onCall, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -734,27 +658,18 @@ class _CallCard extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Téléphone"),
-                const SizedBox(height: 6),
-                SelectableText(
-                  phoneNumber,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ],
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text("Téléphone"),
+              const SizedBox(height: 6),
+              SelectableText(phoneNumber, style: Theme.of(context).textTheme.titleLarge),
+            ]),
           ),
           const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: onCall,
             icon: const Icon(Icons.phone_rounded),
             label: const Text("Appeler"),
-            style: FilledButton.styleFrom(
-              backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white),
           ),
         ],
       ),

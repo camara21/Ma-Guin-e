@@ -1,3 +1,4 @@
+// lib/pages/mes_lieux_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -5,6 +6,9 @@ import 'inscription_lieu_page.dart';
 import 'divertissement_detail_page.dart';
 import 'culte_detail_page.dart';
 import 'tourisme_detail_page.dart';
+
+// 👇 AJOUT : page propriétaire pour gérer les réservations Tourisme
+import 'pro_reservations_tourisme.dart';
 
 class MesLieuxPage extends StatefulWidget {
   const MesLieuxPage({super.key});
@@ -123,11 +127,16 @@ class _MesLieuxPageState extends State<MesLieuxPage> {
     }
   }
 
+  // 👇 AJOUT : ouvre la gestion PRO des réservations Tourisme
+  void _openProReservationsTourisme() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ProReservationsTourismePage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final disabledFg = Colors.white.withOpacity(.55);
-    final disabledIcon = Colors.white.withOpacity(.55);
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FB),
       appBar: AppBar(
@@ -135,19 +144,15 @@ class _MesLieuxPageState extends State<MesLieuxPage> {
         backgroundColor: bleu,
         foregroundColor: Colors.white,
         actions: [
-          // === Bouton “Mes réservations” DÉSACTIVÉ (grisé) ===
+          // === Bouton “Mes réservations” ACTIVÉ -> ProReservationsTourismePage ===
           Padding(
             padding: const EdgeInsets.only(right: 6.0),
             child: TextButton.icon(
-              onPressed: null, // <-- désactivé
-              icon: Icon(Icons.book_online, color: disabledIcon),
-              label: Text(
+              onPressed: _openProReservationsTourisme,
+              icon: const Icon(Icons.book_online, color: Colors.white),
+              label: const Text(
                 "Mes réservations",
-                style: TextStyle(color: disabledFg),
-              ),
-              style: TextButton.styleFrom(
-                // pour forcer l'aspect grisé même en Material 3
-                disabledForegroundColor: disabledFg,
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
               ),
             ),
           ),

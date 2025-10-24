@@ -8,7 +8,6 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-// Page de réservation (appel uniquement)
 import 'restaurant_reservation_page.dart';
 
 class RestoDetailPage extends StatefulWidget {
@@ -22,13 +21,13 @@ class RestoDetailPage extends StatefulWidget {
 class _RestoDetailPageState extends State<RestoDetailPage> {
   final _sb = Supabase.instance.client;
 
-  // Palette Restaurants (identique)
+  // Palette Restaurants
   static const Color _restoPrimary   = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
   static const Color _restoOnSecondary = Color(0xFF000000);
 
-  // Neutres pour un rendu "moins flashy"
+  // Neutres
   static const Color _neutralBg      = Color(0xFFF7F7F9);
   static const Color _neutralSurface = Color(0xFFFFFFFF);
   static const Color _neutralBorder  = Color(0xFFE5E7EB);
@@ -38,15 +37,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   String? _error;
 
   // Avis
-  List<Map<String, dynamic>> _avis = []; // {auteur_id, etoiles, commentaire, created_at}
+  List<Map<String, dynamic>> _avis = [];
   double _noteMoyenne = 0.0;
   bool _dejaNote = false;
 
-  // Cache profils auteurs
+  // Cache profils
   final Map<String, Map<String, dynamic>> _userCache = {};
 
   // Saisie avis
-  int _noteUtilisateur = 0; // 1..5
+  int _noteUtilisateur = 0;
   final _avisController = TextEditingController();
 
   // Galerie
@@ -56,8 +55,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   String get _id => widget.restoId;
 
   bool _isUuid(String id) {
-    final r = RegExp(
-        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    final r = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     return r.hasMatch(id);
   }
 
@@ -81,11 +79,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return const [];
   }
 
-  // Si tu actives un CDN, adapte ici
   String _thumbUrl(String url) => url;
   String _fullUrl(String url) => url;
 
-  // RESTO
+  // ------- RESTO -------
   Future<void> _loadResto() async {
     setState(() {
       loading = true;
@@ -94,11 +91,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     try {
       final data = await _sb
           .from('restaurants')
-          .select(
-              'id, nom, ville, description, specialites, horaires, images, latitude, longitude, tel')
+          .select('id, nom, ville, description, specialites, horaires, images, latitude, longitude, tel')
           .eq('id', _id)
           .maybeSingle();
 
+      if (!mounted) return; // ✅ évite setState après dispose
       setState(() {
         resto = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
@@ -109,12 +106,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         loading = false;
         _error = 'Erreur de chargement: $e';
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_error!)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
     }
   }
 
-  // AVIS
+  // ------- AVIS -------
   Future<void> _loadAvisBloc() async {
     try {
       final res = await _sb
@@ -127,21 +123,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
       double moyenne = 0.0;
       if (list.isNotEmpty) {
-        final notes =
-            list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        final sum = notes.fold<double>(0.0, (a, b) => a + b);
-        moyenne = sum / notes.length;
+        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        moyenne = notes.fold<double>(0.0, (a, b) => a + b) / notes.length;
       }
 
       final user = _sb.auth.currentUser;
       final deja = user != null && list.any((a) => a['auteur_id'] == user.id);
 
-      final ids = list
-          .map((e) => e['auteur_id'])
-          .whereType<String>()
-          .where(_isUuid)
-          .toSet()
-          .toList();
+      final ids = list.map((e) => e['auteur_id']).whereType<String>().where(_isUuid).toSet().toList();
 
       Map<String, Map<String, dynamic>> fetched = {};
       if (ids.isNotEmpty) {
@@ -161,7 +150,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) return; // ✅
       setState(() {
         _avis = list;
         _noteMoyenne = moyenne;
@@ -216,7 +205,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         _dejaNote = true;
       });
       FocusScope.of(context).unfocus();
-
       await _loadAvisBloc();
 
       if (!mounted) return;
@@ -231,12 +219,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     }
   }
 
-  // Ouvre la page de réservation (aucun fallback de numéro)
+  // ------- Actions -------
   void _reserver() {
     final nom = (resto?['nom'] ?? '').toString();
-    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '')
-        .toString()
-        .trim(); // reste vide si absent
+    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
     final images = _imagesFrom(resto?['images']);
     final address = (resto?['ville'] ?? '').toString();
 
@@ -244,23 +230,23 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => RestaurantReservationPage(
+          restaurantId: _id,                     // ✅ on passe l’ID pour l’insertion
           restoName: nom.isEmpty ? 'Restaurant' : nom,
-          phone: telRaw.isEmpty ? null : telRaw, // null si pas de numéro
+          phone: telRaw.isEmpty ? null : telRaw,
           address: address.isEmpty ? null : address,
           coverImage: images.isNotEmpty ? _fullUrl(images.first) : null,
+          primaryColor: _restoPrimary,
         ),
       ),
     );
   }
 
   void _appeler() async {
-    final telRaw =
-        (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
+    final telRaw = (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
     final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (tel.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Numéro indisponible.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Numéro indisponible.")));
       return;
     }
     final uri = Uri(scheme: 'tel', path: tel);
@@ -268,8 +254,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Impossible d'appeler $tel")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Impossible d'appeler $tel")));
     }
   }
 
@@ -281,26 +266,21 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           iconSize: 22,
-          icon: Icon(i < rating ? Icons.star : Icons.star_border,
-              color: _restoSecondary),
+          icon: Icon(i < rating ? Icons.star : Icons.star_border, color: _restoSecondary),
           onPressed: onTap == null ? null : () => onTap(i + 1),
         );
       }),
     );
   }
 
-  // Affichage non interactif pour la moyenne
   Widget _starsStatic(double avg, {double size = 16}) {
     final full = avg.floor();
     final half = (avg - full) >= 0.5;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full) {
-          return Icon(Icons.star, size: size, color: _restoSecondary);
-        } else if (i == full && half) {
-          return Icon(Icons.star_half, size: size, color: _restoSecondary);
-        }
+        if (i < full) return Icon(Icons.star, size: size, color: _restoSecondary);
+        if (i == full && half) return Icon(Icons.star_half, size: size, color: _restoSecondary);
         return Icon(Icons.star_border, size: size, color: _restoSecondary);
       }),
     );
@@ -322,12 +302,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 pageController: controller,
                 builder: (context, index) {
                   return PhotoViewGalleryPageOptions(
-                    imageProvider:
-                        CachedNetworkImageProvider(_fullUrl(images[index])),
+                    imageProvider: CachedNetworkImageProvider(_fullUrl(images[index])),
                     minScale: PhotoViewComputedScale.contained,
                     maxScale: PhotoViewComputedScale.covered * 3,
-                    heroAttributes:
-                        PhotoViewHeroAttributes(tag: 'resto_$index'),
+                    heroAttributes: PhotoViewHeroAttributes(tag: 'resto_$index'),
                   );
                 },
                 onPageChanged: (i) => setS(() => current = i),
@@ -339,16 +317,13 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 right: 0,
                 child: Center(
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '${current + 1}/${images.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
+                    child: Text('${current + 1}/${images.length}',
+                        style: const TextStyle(color: Colors.white, fontSize: 14)),
                   ),
                 ),
               ),
@@ -394,20 +369,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return Scaffold(
       backgroundColor: _neutralBg,
       appBar: AppBar(
-        title: Text(
-          nom,
-          style: const TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: _neutralSurface,     // ✅ AppBar blanche
+        title: Text(nom, style: const TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700)),
+        backgroundColor: _neutralSurface,
         foregroundColor: _restoPrimary,
         elevation: 1,
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(3),
           child: SizedBox(
             height: 3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(gradient: bottomGradient),
-            ),
+            child: DecoratedBox(decoration: BoxDecoration(gradient: bottomGradient)),
           ),
         ),
       ),
@@ -421,7 +391,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // ---------- Galerie
+            // Galerie
             if (images.isNotEmpty) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -442,10 +412,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                               imageUrl: _fullUrl(images[index]),
                               fit: BoxFit.cover,
                               width: double.infinity,
-                              placeholder: (_, __) =>
-                                  Container(color: Colors.grey[200]),
-                              errorWidget: (_, __, ___) => const Center(
-                                  child: Icon(Icons.image_not_supported)),
+                              placeholder: (_, __) => Container(color: Colors.grey[200]),
+                              errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported)),
                             ),
                           ),
                         ),
@@ -460,10 +428,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                           color: Colors.black.withOpacity(0.45),
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Text(
-                          '${_currentIndex + 1}/${images.length}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
+                        child: Text('${_currentIndex + 1}/${images.length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12)),
                       ),
                     ),
                   ],
@@ -503,8 +469,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                             imageUrl: _thumbUrl(images[index]),
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(color: Colors.grey[200]),
-                            errorWidget: (_, __, ___) =>
-                                const Center(child: Icon(Icons.broken_image)),
+                            errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
                           ),
                         ),
                       );
@@ -515,7 +480,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const SizedBox(height: 14),
 
-            // ---------- En-tête texte
+            // En-tête texte
             Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Row(
@@ -557,7 +522,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             const SizedBox(height: 18),
             const Divider(height: 30),
 
-            // ---------- Avis (saisie)
+            // Avis (saisie)
             const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
             if (_dejaNote)
               const Padding(
@@ -609,7 +574,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const SizedBox(height: 28),
 
-            // ---------- Carte
+            // Carte
             if (lat != null && lng != null) ...[
               const Text("Localisation", style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -657,7 +622,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
             const SizedBox(height: 28),
 
-            // ---------- Liste des avis
+            // Liste des avis
             const Text("Avis des utilisateurs", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             if (_avis.isEmpty)
@@ -670,15 +635,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   final prenom = (u['prenom'] ?? '').toString();
                   final nomU = (u['nom'] ?? '').toString();
                   final photo = (u['photo_url'] ?? '').toString();
-                  final fullName = ('$prenom $nomU').trim().isEmpty
-                      ? 'Utilisateur'
-                      : ('$prenom $nomU').trim();
+                  final fullName = ('$prenom $nomU').trim().isEmpty ? 'Utilisateur' : ('$prenom $nomU').trim();
 
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundImage: (photo.isNotEmpty)
-                          ? CachedNetworkImageProvider(photo)
-                          : null,
+                      backgroundImage: (photo.isNotEmpty) ? CachedNetworkImageProvider(photo) : null,
                       child: photo.isEmpty ? const Icon(Icons.person) : null,
                     ),
                     title: Text(fullName),
@@ -686,8 +647,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text("${a['etoiles']} ★"),
-                        if (a['commentaire'] != null &&
-                            a['commentaire'].toString().trim().isNotEmpty)
+                        if (a['commentaire'] != null && a['commentaire'].toString().trim().isNotEmpty)
                           Text(a['commentaire'].toString()),
                         const SizedBox(height: 4),
                         Text(
@@ -705,7 +665,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         ),
       ),
 
-      // Barre collée en bas (toujours visible)
+      // Barre collée en bas
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -731,8 +691,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                     backgroundColor: _restoSecondary,
                     foregroundColor: _restoOnSecondary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -746,8 +705,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                     backgroundColor: _restoPrimary,
                     foregroundColor: _restoOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),

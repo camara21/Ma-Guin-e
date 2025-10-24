@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ insertion DB
 
 class HotelReservationPage extends StatefulWidget {
+  final String hotelId;     // ✅ ID de l'hôtel (FK vers public.hotels.id)
   final String hotelName;
   final String? phone;      // téléphone (affiché, jamais prérempli)
   final String? address;    // optionnel
@@ -13,11 +15,11 @@ class HotelReservationPage extends StatefulWidget {
 
   const HotelReservationPage({
     super.key,
+    required this.hotelId,           // ✅ nouveau requis
     required this.hotelName,
     this.phone,
     this.address,
     this.coverImage,
-    // Couleur service Hôtels
     this.primaryColor = const Color(0xFF264653),
   });
 
@@ -49,6 +51,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   final _bedOptions = const ['Peu importe', 'Lit double', 'Lits jumeaux', 'King', 'Queen'];
 
   bool _accept = true;
+  bool _loading = false; // ✅ état envoi
 
   @override
   void initState() {
@@ -67,6 +70,8 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
   // Helpers
   String _formatDate(DateTime d) => DateFormat('EEE d MMM', 'fr_FR').format(d);
   String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
+  String _hhmm(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Future<void> _call(String? number) async {
     final raw = (number ?? '').trim();
@@ -76,19 +81,21 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
     await launchUrl(uri);
   }
 
-  void _showNotAvailableSheet() {
+  Future<void> _showSuccessSheet(Map<String, dynamic> row) async {
     final nights = _checkOut.difference(_checkIn).inDays;
     final resume = StringBuffer()
-      ..writeln('Demande de réservation')
+      ..writeln('Réservation confirmée ✅')
       ..writeln('Hôtel : ${widget.hotelName}')
       ..writeln('Arrivée : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkIn)} à ${_arrivalTime.format(context)}')
-      ..writeln('Départ : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkOut)}  (${nights} nuit${nights > 1 ? 's' : ''})')
+      ..writeln('Départ : ${DateFormat('EEEE d MMMM y', 'fr_FR').format(_checkOut)} (${nights} nuit${nights > 1 ? 's' : ''})')
       ..writeln('Chambres : $_rooms  |  Occupants : $_adults adulte(s)${_children > 0 ? ' + $_children enfant(s)' : ''}')
       ..writeln('Lit : $_bed  |  $_smoking')
       ..write(_notesCtrl.text.isNotEmpty ? '\nNotes : ${_notesCtrl.text}' : '');
 
     final phone = (widget.phone ?? '').trim();
 
+    // UI
+    // ignore: use_build_context_synchronously
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -109,34 +116,17 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, color: widget.primaryColor),
+                  Icon(Icons.check_circle_rounded, color: widget.primaryColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "Cet hôtel ne propose pas pour l’instant la réservation en ligne.\n"
-                      "${phone.isNotEmpty ? "Vous pouvez les contacter directement par téléphone :" : "Aucun numéro n’a été renseigné."}",
+                      "Votre demande a été enregistrée et est **confirmée**.",
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              if (phone.isNotEmpty)
-                _CallCard(
-                  phoneNumber: phone,
-                  onCall: () => _call(phone),
-                  primaryColor: widget.primaryColor,
-                )
-              else
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: scheme.surfaceVariant.withOpacity(.35),
-                  ),
-                  child: const Text("Numéro non renseigné par l’hôtel."),
-                ),
-              const SizedBox(height: 12),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -147,10 +137,17 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                 child: Text(resume.toString(), style: Theme.of(context).textTheme.bodySmall),
               ),
               const SizedBox(height: 12),
+              if (phone.isNotEmpty)
+                _CallCard(
+                  phoneNumber: phone,
+                  onCall: () => _call(phone),
+                  primaryColor: widget.primaryColor,
+                ),
+              const SizedBox(height: 8),
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.check_circle_outline),
-                label: const Text("OK, j’ai compris"),
+                label: const Text("OK"),
               ),
               const SizedBox(height: 8),
             ],
@@ -158,6 +155,60 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
         );
       },
     );
+  }
+
+  Future<void> _submitReservation() async {
+    setState(() => _loading = true);
+    try {
+      final supa = Supabase.instance.client;
+      final uid = supa.auth.currentUser?.id;
+
+      final payload = {
+        'hotel_id': widget.hotelId, // ✅ FK
+        'user_id': uid,             // peut être null si tu autorises l’anonyme
+        'client_nom': _nameCtrl.text.trim(),
+        'client_phone': _phoneCtrl.text.trim(),
+        'check_in': DateFormat('yyyy-MM-dd').format(_checkIn),
+        'check_out': DateFormat('yyyy-MM-dd').format(_checkOut),
+        'arrival_time': _hhmm(_arrivalTime),
+        'rooms': _rooms,
+        'adults': _adults,
+        'children': _children,
+        'bed_pref': _bed,
+        'smoking_pref': _smoking,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'consent_contact': _accept,
+        // 'status': 'confirme', // inutile: défaut DB
+      };
+
+      final inserted = await supa
+          .from('reservations_hotels')
+          .insert(payload)
+          .select()
+          .single();
+
+      // Success
+      if (!mounted) return;
+      _showSuccessSheet(inserted);
+    } on PostgrestException catch (e) {
+      // Gestion “doublon actif” (index partiel)
+      final msg = e.message.toLowerCase();
+      String human = "Impossible d'enregistrer la réservation.";
+      if (msg.contains('unique') || msg.contains('duplicate')) {
+        human =
+            "Vous avez déjà une réservation active pour ces dates dans cet hôtel. "
+            "Annulez l’ancienne ou modifiez les dates.";
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(human)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Une erreur est survenue.")),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _pickCheckIn() async {
@@ -227,7 +278,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
       return;
     }
     if (_formKey.currentState?.validate() != true) return;
-    _showNotAvailableSheet();
+    _submitReservation(); // ✅ insert DB + sheet de succès
   }
 
   @override
@@ -312,7 +363,6 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                       child: LayoutBuilder(
                         builder: (context, constraints) {
                           final w = constraints.maxWidth;
-                          // 1 colonne < 420px, 2 colonnes < 680px, sinon 3 colonnes
                           final cols = w >= 680 ? 3 : (w >= 420 ? 2 : 1);
                           const spacing = 12.0;
                           final itemW = (w - (cols - 1) * spacing) / cols;
@@ -394,9 +444,7 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
                         children: [
                           DropdownButtonFormField<String>(
                             value: _bed,
-                            items: _bedOptions
-                                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                                .toList(),
+                            items: _bedOptions.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                             onChanged: (v) => setState(() => _bed = v ?? 'Peu importe'),
                             decoration: const InputDecoration(prefixIcon: Icon(Icons.bed)),
                           ),
@@ -466,12 +514,15 @@ class _HotelReservationPageState extends State<HotelReservationPage> {
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _onReservePressed,
-                  icon: const Icon(Icons.event_available_rounded),
-                  label: const Text("Réserver"),
+                  onPressed: _loading ? null : _onReservePressed,
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.event_available_rounded),
+                  label: Text(_loading ? "Enregistrement..." : "Réserver"),
                   style: FilledButton.styleFrom(
                     backgroundColor: widget.primaryColor,
-                    foregroundColor: Colors.white, // ✅ plus de onPrimary
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
@@ -754,7 +805,7 @@ class _CallCard extends StatelessWidget {
             label: const Text("Appeler"),
             style: FilledButton.styleFrom(
               backgroundColor: primaryColor,
-              foregroundColor: Colors.white, // ✅ plus de onPrimary
+              foregroundColor: Colors.white,
             ),
           ),
         ],

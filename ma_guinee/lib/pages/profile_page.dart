@@ -1,3 +1,4 @@
+// lib/pages/profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
@@ -15,6 +16,11 @@ import 'inscription_lieu_page.dart';
 import 'mes_lieux_page.dart';
 import 'parametre_page.dart';
 import '../routes.dart';
+
+// 👇 Ajouté
+import 'mes_rdv_page.dart'; // Page utilisateur “Mes rendez-vous”
+// 👇 NOUVEAU : hub de réservations (hôtels, restos, tourisme)
+import 'reservations/mes_reservations_hub.dart';
 
 class ProfilePage extends StatefulWidget {
   final UtilisateurModel user;
@@ -39,7 +45,7 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  /// Reconstruit le numéro sans l'exposer en clair dans le code ni l'UI
+  /// Reconstruit le numéro sans l'exposer en clair dans l'UI
   String _waNumber() {
     // 00224620452964 -> reconstruit par morceaux
     const parts = ['002', '24', '620', '45', '29', '64'];
@@ -134,6 +140,22 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  // 👇 Ajouté : ouvre MesRdvPage
+  void _openMesRdv() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MesRdvPage()),
+    );
+  }
+
+  // 👇 MODIFIÉ : ouvre désormais le HUB des réservations
+  void _openMesReservations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MesReservationsHubPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<UserProvider>();
@@ -156,6 +178,7 @@ class _ProfilePageState extends State<ProfilePage> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
+          // ---------- En-tête profil ----------
           Container(
             padding: const EdgeInsets.symmetric(vertical: 26),
             color: Colors.grey[50],
@@ -209,7 +232,44 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
           ),
-          // Annonces
+
+          // ---------- RDV + Réservations ----------
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            child: InkWell(
+              onTap: _openMesRdv,
+              borderRadius: BorderRadius.circular(14),
+              child: Card(
+                elevation: 0.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: const ListTile(
+                  leading: Icon(Icons.event_available, color: Color(0xFF009460)),
+                  title: Text('Mes rendez-vous',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Suivre / annuler mes rendez-vous santé'),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: InkWell(
+              onTap: _openMesReservations,
+              borderRadius: BorderRadius.circular(14),
+              child: Card(
+                elevation: 0.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: const ListTile(
+                  leading: Icon(Icons.book_online, color: Color(0xFFF39C12)),
+                  title: Text('Mes réservations',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Hôtels, restaurants, lieux touristiques'),
+                ),
+              ),
+            ),
+          ),
+
+          // ---------- Mes annonces ----------
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: InkWell(
@@ -246,7 +306,8 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-          // Espaces
+
+          // ---------- Espaces ----------
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Column(
@@ -268,7 +329,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             context,
                             MaterialPageRoute(
                                 builder: (_) =>
-                                    const InscriptionPrestatairePage()),
+                                    const InscriptionPrestatairePage() ),
                           )
                       : null,
                   buttonLabel:
@@ -359,7 +420,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const Divider(height: 30, thickness: 1),
 
-          // Paramètres
+          // ---------- Paramètres ----------
           ListTile(
             leading: const Icon(Icons.settings, color: Colors.black),
             title: const Text('Paramètres',
@@ -372,7 +433,7 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           ),
 
-          // Support (aucune mention de WhatsApp/numéro)
+          // ---------- Support ----------
           ListTile(
             leading: Container(
               width: 38,
@@ -389,7 +450,7 @@ class _ProfilePageState extends State<ProfilePage> {
             onTap: _openWhatsApp,
           ),
 
-          // Déconnexion
+          // ---------- Déconnexion ----------
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text(
