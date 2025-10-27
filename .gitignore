@@ -1,0 +1,5 @@
+
+# ignore grosses archives / SDK
+*.tar.xz
+flutter/
+ma_guinee/flutter/
