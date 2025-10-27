@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# --- Billetterie/Flutter: ignorer gros fichiers ---
+ma_guinee/flutter_*.tar.xz
+*.tar.xz
+flutter/
+ma_guinee/flutter/
