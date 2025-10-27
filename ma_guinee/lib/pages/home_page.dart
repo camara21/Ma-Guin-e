@@ -532,12 +532,9 @@ class _HomePageState extends State<HomePage> {
                     context: context,
                   ),
                   label: "Billetterie",
-                  onTap: () => _showComingSoon(
-                    context,
-                    title: "Billetterie",
-                    message:
-                        "Un service de billetterie sera bientôt disponible pour vendre vos billets d'événements avec un système de QR Code sécurisé et traçable pour toutes vos organisations.",
-                  ),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.billetterie),
+              
+                  
                 ),
               ],
             ),

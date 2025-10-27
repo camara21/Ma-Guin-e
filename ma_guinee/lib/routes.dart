@@ -1,4 +1,4 @@
-// lib/routes.dart — Routes + RecoveryGuard (sans activer dans case reset)
+// lib/routes.dart — Routes + RecoveryGuard
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -51,9 +51,14 @@ import 'pages/inscription_hotel_page.dart';
 
 import 'providers/user_provider.dart';
 
-import 'pages/events_list_page.dart';
-import 'pages/my_tickets_page.dart';
-import 'pages/scanner_page.dart';
+// ====== NOUVELLE BILLETTERIE ======
+import 'pages/billetterie/billetterie_home_page.dart';
+import 'pages/billetterie/event_detail_page.dart';
+import 'pages/billetterie/mes_billets_page.dart';
+import 'pages/billetterie/ticket_scanner_page.dart';
+import 'pages/billetterie/pro_evenements_page.dart';
+import 'pages/billetterie/pro_ventes_page.dart';
+// ==================================
 
 import 'pages/jobs/job_home_page.dart';
 import 'pages/jobs/jobs_page.dart';
@@ -145,10 +150,15 @@ class AppRoutes {
   static const String editAnnonce = '/edit_annonce';
   static const String editClinique = '/edit_clinique';
 
-  // Billetterie
+  // ====== BILLETTERIE (NOUVEAU) ======
   static const String billetterie = '/billetterie';
+  static const String billetterieDetail = '/billetterie/detail';
   static const String myTickets = '/mes_billets';
   static const String scanner = '/scanner';
+  // Espace organisateur (facultatif mais utile)
+  static const String billetteriePro = '/billetterie/pro';
+  static const String billetterieVentes = '/billetterie/pro/ventes';
+  // ===================================
 
   // JOB
   static const String jobHome = '/jobs';
@@ -170,6 +180,7 @@ class AppRoutes {
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
+      // ----- ADMIN CENTER -----
       case adminCenter:
         RecoveryGuard.deactivate();
         return MaterialPageRoute(
@@ -190,13 +201,13 @@ class AppRoutes {
         );
       }
 
-      // Core
+      // ----- CORE -----
       case splash:       return _page(const SplashScreen());
       case welcome:      { RecoveryGuard.deactivate(); return _page(const WelcomePage()); }
       case mainNav:      { RecoveryGuard.deactivate(); return _page(const MainNavigationPage()); }
       case home:         { RecoveryGuard.deactivate(); return _page(const HomePage()); }
 
-      // Existants
+      // ----- EXISTANTS -----
       case annonces:         return _page(const AnnoncesPage());
       case pro:              return _page(const ProPage());
       case carte:            return _page(const CartePage());
@@ -205,7 +216,7 @@ class AppRoutes {
       case resto:            return _page(const resto_pg.RestoPage());
       case culte:            return _page(const CultePage());
 
-      // LOGEMENT
+      // ----- LOGEMENT -----
       case logement:         return _page(const LogementHomePage());
       case logementList: {
         final a = _argsMap(settings);
@@ -253,7 +264,7 @@ class AppRoutes {
         );
       }
 
-      // Auth / profil / divers
+      // ----- AUTH / PROFIL / DIVERS -----
       case login:           { RecoveryGuard.deactivate(); return _page(const LoginPage()); }
       case register:        return _page(const register_pg.RegisterPage());
       case tourisme:        return _page(const TourismePage());
@@ -330,12 +341,34 @@ class AppRoutes {
       case editAnnonce:     return _page(EditAnnoncePage(annonce: _argsMap(settings)));
       case editClinique:    return _page(EditCliniquePage(clinique: _argsMap(settings)));
 
-      // Billetterie
-      case billetterie:     return _page(const EventsListPage());
-      case myTickets:       return _userProtected((_) => const MyTicketsPage());
-      case scanner:         return _userProtected((_) => const ScannerPage());
+      // ====== BILLETTERIE (NOUVEAU) ======
+      case billetterie:
+        return _page(const BilletterieHomePage());
 
-      // JOB
+      case billetterieDetail: {
+        final a = settings.arguments;
+        final String? eventId = (a is String) ? a : (a is Map ? a['id']?.toString() : null);
+        if (eventId == null || eventId.isEmpty) {
+          return _error('eventId requis pour $billetterieDetail');
+        }
+        return _page(EventDetailPage(eventId: eventId));
+      }
+
+      case myTickets:
+        return _userProtected((_) => const MesBilletsPage());
+
+      case scanner:
+        return _userProtected((_) => const TicketScannerPage());
+
+      // Espace organisateur (pro)
+      case billetteriePro:
+        return _userProtected((_) => const ProEvenementsPage());
+
+      case billetterieVentes:
+        return _userProtected((_) => const ProVentesPage());
+      // ===================================
+
+      // ====== JOB ======
       case jobHome:         return _page(const JobHomePage());
       case jobList:         return _page(const JobsPage());
       case jobDetail: {
@@ -398,7 +431,7 @@ class AppRoutes {
         );
       }
 
-      // Auth: reset password
+      // ----- AUTH: reset password -----
       case forgotPassword:  return _page(const ForgotPasswordPage());
       case resetPassword:
         // ⚠️ Ne PAS activer RecoveryGuard ici → déjà géré par onGenerateInitialRoutes pour éviter le double.
@@ -547,6 +580,6 @@ String _prettyServiceName(String table) {
     case 'logements': return 'Logements';
     case 'emplois': return 'Wali fen (Emplois)';
     case 'events': return 'Billetterie (Events)';
-    default: return table[0].toUpperCase() + table.substring(1);
+    default: return table.isNotEmpty ? table[0].toUpperCase() + table.substring(1) : table;
   }
 }
