@@ -1,11 +1,15 @@
+// lib/pages/admin/admin_dashboard.dart
 import 'dart:math' show min, max;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ⬇️ pour la carte
+// Carte
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+
+// Ouvrir les URLs des pièces
+import 'package:url_launcher/url_launcher.dart';
 
 import '../supabase_client.dart';
 import '../routes.dart';
@@ -22,7 +26,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   bool loading = true;
   String? error;
 
-  // graphiques
+  // Graphiques
   String currentTable = 'logements';
   int days = 30;
   List<_Point> series = [];
@@ -30,17 +34,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<_OnlineUser> onlineUsers = [];
   List<_ActiveChat> activeChats = [];
 
-  // reports fiables
+  // Reports
   int reportsTotal = 0;
   int reportsToday = 0;
 
-  // ➕ INSCRITS
+  // Utilisateurs
   int usersTotal = 0;
   int usersWithLocation = 0;
 
-  // ➕ LOCALISATIONS
+  // Carte
   List<_UserLoc> userLocs = [];
   final MapController _mapController = MapController();
+
+  // Vérification organisateurs
+  static const _kEventPrimary = Color(0xFF7B2CBF);
+  List<_Organizer> _pendingOrgs = [];
+  bool _loadingOrgs = true;
 
   final services = <_Service>[
     _Service('Annonces', Icons.campaign, 'annonces'),
@@ -74,8 +83,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _loadOnline(),
         _loadActiveChats(),
         _loadReportsCounters(),
-        _loadUsersCounters(),      // ➕
-        _loadUserLocations(),      // ➕
+        _loadUsersCounters(),
+        _loadUserLocations(),
+        _loadPendingOrganizers(),
       ]);
     } catch (e) {
       if (!mounted) return;
@@ -86,7 +96,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // métriques globales (RPC si dispo)
+  // === Data loads ===
   Future<void> _loadMetrics() async {
     try {
       final res = await SB.i.rpc('rpc_metrics_overview');
@@ -106,7 +116,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // graphe J-N
   Future<void> _loadCharts() async {
     try {
       final data = await SB.i.rpc(
@@ -130,7 +139,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // top villes
   Future<void> _loadTopCities() async {
     try {
       final data = await SB.i.rpc(
@@ -153,7 +161,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // online
   Future<void> _loadOnline() async {
     try {
       final data = await SB.i.rpc('rpc_online_users');
@@ -175,7 +182,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // active chats
   Future<void> _loadActiveChats() async {
     try {
       final data = await SB.i.rpc(
@@ -199,7 +205,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // reports (total + today)
   Future<void> _loadReportsCounters() async {
     try {
       final totalRes = await SB.i.from('reports').select('id');
@@ -224,12 +229,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         reportsTotal = total;
         reportsToday = today;
       });
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {/* ignore */}
   }
 
-  // ➕ INSCRITS : total & avec localisation
   Future<void> _loadUsersCounters() async {
     try {
       final all = await SB.i.from('utilisateurs').select('id');
@@ -252,7 +254,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // ➕ GLOBE/CARTE : positions via RPC
   Future<void> _loadUserLocations({int limit = 1000}) async {
     try {
       final res = await SB.i.rpc('rpc_user_locations', params: {'_limit': limit});
@@ -285,7 +286,63 @@ class _AdminDashboardState extends State<AdminDashboard> {
       maxLon = max<double>(maxLon, u.lon);
     }
     final center = LatLng((minLat + maxLat) / 2, (minLon + maxLon) / 2);
-    _mapController.move(center, 3.5); // zoom monde
+    _mapController.move(center, 3.5);
+  }
+
+  Future<void> _loadPendingOrganizers() async {
+    setState(() => _loadingOrgs = true);
+    try {
+      final res = await SB.i
+          .from('organisateurs')
+          .select('id, user_id, nom_structure, telephone, email_pro, ville, description, nif, rccm, verifie, documents_urls')
+          .eq('verifie', false)
+          .order('created_at', ascending: true);
+      final list = (res as List).cast<Map<String, dynamic>>();
+      final mapped = list.map((m) => _Organizer.fromMap(m)).toList();
+      if (!mounted) return;
+      setState(() => _pendingOrgs = mapped);
+    } catch (e) {
+      debugPrint('Erreur load pending organizers: $e');
+    } finally {
+      if (mounted) setState(() => _loadingOrgs = false);
+    }
+  }
+
+  Future<void> _approveOrganizer(_Organizer org, {String? note}) async {
+    try {
+      await SB.i.from('organisateurs').update({'verifie': true}).eq('id', org.id);
+      try {
+        await SB.i.from('organisateurs').update({'verification_note': note}).eq('id', org.id);
+      } catch (_) {}
+      await _loadPendingOrganizers();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Validé: ${org.nomStructure}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur validation: $e')),
+      );
+    }
+  }
+
+  Future<void> _rejectOrganizer(_Organizer org, {required String reason}) async {
+    try {
+      try {
+        await SB.i.from('organisateurs').update({'verification_note': 'REFUS: $reason'}).eq('id', org.id);
+      } catch (_) {}
+      await _loadPendingOrganizers();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Refus enregistré pour ${org.nomStructure}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur refus: $e')),
+      );
+    }
   }
 
   Future<void> _refreshAll() async {
@@ -298,9 +355,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _loadReportsCounters(),
       _loadUsersCounters(),
       _loadUserLocations(),
+      _loadPendingOrganizers(),
     ]);
   }
 
+  // === UI ===
   @override
   Widget build(BuildContext context) {
     final m = metrics ?? {};
@@ -339,14 +398,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         final cards = [
                           _kpiCard('Utilisateurs actifs 24h', active, Icons.flash_on),
                           _kpiCard('Contenus (total)', '$totalAll', Icons.storage),
-                          _kpiCard('Inscrits (total)', '$usersTotal', Icons.people),              // ➕
-                          _kpiCard('Avec localisation', '$usersWithLocation', Icons.location_on), // ➕
+                          _kpiCard('Inscrits (total)', '$usersTotal', Icons.people),
+                          _kpiCard('Avec localisation', '$usersWithLocation', Icons.location_on),
                         ];
                         if (c.maxWidth > 900) {
                           return Row(children: cards.map((w) => Expanded(child: w)).toList());
                         }
                         return Column(children: cards);
                       }),
+
+                      const SizedBox(height: 16),
+
+                      // Bloc Validation organisateurs
+                      _organizersVerificationCard(),
 
                       const SizedBox(height: 16),
 
@@ -417,7 +481,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                       const SizedBox(height: 16),
 
-                      // ➕ Carte/globe des utilisateurs
+                      // Carte utilisateurs
                       _usersMapCard(),
 
                       const SizedBox(height: 16),
@@ -429,8 +493,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
     );
   }
-
-  // UI helpers ----------------------------------------------------
 
   Widget _kpiCard(String title, String value, IconData icon) {
     return Card(
@@ -452,6 +514,140 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ]),
       ),
     );
+  }
+
+  // ------- Bloc Vérification Organisateurs -------
+  Widget _organizersVerificationCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(
+            children: [
+              const Text('Organisateurs à vérifier', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _kEventPrimary.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${_pendingOrgs.length}',
+                  style: const TextStyle(color: _kEventPrimary, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Rafraîchir',
+                onPressed: _loadPendingOrganizers,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_loadingOrgs)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: LinearProgressIndicator(),
+            )
+          else if (_pendingOrgs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('Aucun dossier en attente.'),
+            )
+          else
+            Column(
+              children: _pendingOrgs.map((o) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black.withOpacity(.06)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.verified_user_outlined, size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(o.nomStructure, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 2),
+                            Text('${o.ville ?? '-'} • ${o.telephone ?? '-'}'),
+                            if (o.emailPro != null && o.emailPro!.isNotEmpty)
+                              Text(o.emailPro!),
+                            if (o.nif != null && o.nif!.isNotEmpty)
+                              Text('NIF: ${o.nif}'),
+                            if (o.rccm != null && o.rccm!.isNotEmpty)
+                              Text('RCCM: ${o.rccm}'),
+                            if (o.description != null && o.description!.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(o.description!, maxLines: 3, overflow: TextOverflow.ellipsis),
+                            ],
+                            if (o.docs.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: o.docs.map((u) {
+                                  return InkWell(
+                                    onTap: () async {
+                                      final uri = Uri.parse(u);
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                      }
+                                    },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(u, width: 80, height: 80, fit: BoxFit.cover),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () => _openReviewDialog(o),
+                            icon: const Icon(Icons.search),
+                            label: const Text('Voir'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _kEventPrimary,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _openReviewDialog(_Organizer org) async {
+    final res = await showDialog<_ReviewAction>(
+      context: context,
+      builder: (_) => _OrganizerReviewDialog(org: org),
+    );
+    if (res == null) return;
+    if (res.action == 'approve') {
+      await _approveOrganizer(org, note: res.note);
+    } else if (res.action == 'reject') {
+      await _rejectOrganizer(org, reason: res.note ?? 'Sans motif');
+    }
   }
 
   Widget _chartCard() {
@@ -547,7 +743,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ➕ Carte des utilisateurs
   Widget _usersMapCard() {
     final markers = userLocs
         .map((u) => Marker(
@@ -612,12 +807,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       itemBuilder: (context, i) {
         final s = services[i];
 
-        // valeurs de la RPC
         final obj = (metricsMap[s.table] ?? {}) as Map? ?? {};
         int total = (obj['total'] as num?)?.toInt() ?? 0;
         int today = (obj['today'] as num?)?.toInt() ?? 0;
 
-        // override fiable pour Signalements
         if (s.table == 'reports') {
           total = reportsTotal;
           today = reportsToday;
@@ -685,58 +878,162 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // helpers
   _Service _serviceByTable(String t) =>
       services.firstWhere((s) => s.table == t, orElse: () => services.first);
   String _fmtTime(DateTime d) =>
       '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
-// models/UI -------------------------------------------------------
+// ======= Modèles & Dialogues de validation =======
+class _Organizer {
+  final String id;
+  final String? userId;
+  final String nomStructure;
+  final String? telephone;
+  final String? emailPro;
+  final String? ville;
+  final String? description;
+  final String? nif;
+  final String? rccm;
+  final bool verifie;
+  final List<String> docs;
 
-class _Service {
-  final String name;
-  final IconData icon;
-  final String table;
-  const _Service(this.name, this.icon, this.table);
+  _Organizer({
+    required this.id,
+    required this.userId,
+    required this.nomStructure,
+    required this.telephone,
+    required this.emailPro,
+    required this.ville,
+    required this.description,
+    required this.nif,
+    required this.rccm,
+    required this.verifie,
+    required this.docs,
+  });
+
+  factory _Organizer.fromMap(Map<String, dynamic> m) => _Organizer(
+        id: (m['id'] ?? '').toString(),
+        userId: (m['user_id']?.toString()),
+        nomStructure: (m['nom_structure'] ?? '').toString(),
+        telephone: (m['telephone'] as String?),
+        emailPro: (m['email_pro'] as String?),
+        ville: (m['ville'] as String?),
+        description: (m['description'] as String?),
+        nif: (m['nif'] as String?),
+        rccm: (m['rccm'] as String?),
+        verifie: (m['verifie'] == true),
+        docs: (m['documents_urls'] is List)
+            ? List<String>.from(m['documents_urls'] as List)
+            : const <String>[],
+      );
 }
 
+class _ReviewAction {
+  final String action; // 'approve' | 'reject'
+  final String? note;
+  const _ReviewAction({required this.action, this.note});
+}
+
+class _OrganizerReviewDialog extends StatefulWidget {
+  final _Organizer org;
+  const _OrganizerReviewDialog({required this.org});
+
+  @override
+  State<_OrganizerReviewDialog> createState() => _OrganizerReviewDialogState();
+}
+
+class _OrganizerReviewDialogState extends State<_OrganizerReviewDialog> {
+  final _noteCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final o = widget.org;
+
+    return AlertDialog(
+      title: const Text('Vérification organisateur'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(o.nomStructure, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            if (o.ville != null && o.ville!.isNotEmpty) Text('Ville : ${o.ville}'),
+            if (o.telephone != null && o.telephone!.isNotEmpty) Text('Téléphone : ${o.telephone}'),
+            if (o.emailPro != null && o.emailPro!.isNotEmpty) Text('Email : ${o.emailPro}'),
+            if (o.nif != null && o.nif!.isNotEmpty) Text('NIF : ${o.nif}'),
+            if (o.rccm != null && o.rccm!.isNotEmpty) Text('RCCM : ${o.rccm}'),
+            if (o.description != null && o.description!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(o.description!),
+            ],
+            const SizedBox(height: 12),
+            if (o.docs.isNotEmpty) ...[
+              const Text('Pièces justificatives', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: o.docs.map((u) {
+                  return GestureDetector(
+                    onTap: () => launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(u, width: 90, height: 90, fit: BoxFit.cover),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: _noteCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Note interne (optionnel)',
+                hintText: 'Commentaire de vérification…',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+        TextButton(
+          onPressed: () {
+            final note = _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim();
+            Navigator.pop(context, _ReviewAction(action: 'reject', note: note ?? 'Dossier incomplet'));
+          },
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Refuser'),
+        ),
+        ElevatedButton.icon(
+          onPressed: () {
+            final note = _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim();
+            Navigator.pop(context, _ReviewAction(action: 'approve', note: note));
+          },
+          icon: const Icon(Icons.check),
+          label: const Text('Valider'),
+        ),
+      ],
+    );
+  }
+}
+
+// ======= Chart =======
 class _Point {
   final DateTime d;
   final int v;
   _Point(this.d, this.v);
 }
 
-class _TopCity {
-  final String ville;
-  final int total;
-  _TopCity(this.ville, this.total);
-}
-
-class _OnlineUser {
-  final String userId;
-  final DateTime lastSeen;
-  final String device;
-  final String ip;
-  _OnlineUser(this.userId, this.lastSeen, this.device, this.ip);
-}
-
-class _ActiveChat {
-  final String contextType;
-  final String contextId;
-  final int messages;
-  _ActiveChat(this.contextType, this.contextId, this.messages);
-}
-
-class _UserLoc {
-  final String id;
-  final double lat;
-  final double lon;
-  final String ville;
-  _UserLoc(this.id, this.lat, this.lon, this.ville);
-}
-
-// --------- Line chart (fix Path) ----------
 class _LineChart extends StatelessWidget {
   final List<_Point> points;
   const _LineChart({required this.points});
@@ -778,7 +1075,7 @@ class _LineChartPainter extends CustomPainter {
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
-    final path = ui.Path(); // ⬅️ évite l’erreur d’import
+    final path = ui.Path();
     for (int i = 0; i < pts.length; i++) {
       final t = (pts[i].d.millisecondsSinceEpoch - minX) / spanX;
       final x = area.left + t * area.width;
@@ -802,4 +1099,41 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LineChartPainter old) => old.pts != pts;
+}
+
+// ======= Autres modèles =======
+class _TopCity {
+  final String ville;
+  final int total;
+  _TopCity(this.ville, this.total);
+}
+
+class _OnlineUser {
+  final String userId;
+  final DateTime lastSeen;
+  final String device;
+  final String ip;
+  _OnlineUser(this.userId, this.lastSeen, this.device, this.ip);
+}
+
+class _ActiveChat {
+  final String contextType;
+  final String contextId;
+  final int messages;
+  _ActiveChat(this.contextType, this.contextId, this.messages);
+}
+
+class _UserLoc {
+  final String id;
+  final double lat;
+  final double lon;
+  final String ville;
+  _UserLoc(this.id, this.lat, this.lon, this.ville);
+}
+
+class _Service {
+  final String name;
+  final IconData icon;
+  final String table;
+  const _Service(this.name, this.icon, this.table);
 }

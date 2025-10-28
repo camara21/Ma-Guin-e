@@ -492,11 +492,12 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     height: 240,
                     child: FlutterMap(
                       options: MapOptions(
-                        center: LatLng(
+                        // ✅ API v6+ : initialCenter / initialZoom
+                        initialCenter: LatLng(
                           latitude ?? _defaultCenter.latitude,
                           longitude ?? _defaultCenter.longitude,
                         ),
-                        zoom: latitude != null ? 16 : 12,
+                        initialZoom: (latitude != null) ? 16 : 12,
                         onTap: (tapPosition, point) {
                           if (!_modeManuel) {
                             _showInfo("Activez le mode manuel pour déplacer le marqueur.");

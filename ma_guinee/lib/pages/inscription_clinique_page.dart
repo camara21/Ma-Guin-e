@@ -19,8 +19,7 @@ class InscriptionCliniquePage extends StatefulWidget {
   const InscriptionCliniquePage({super.key, this.clinique});
 
   @override
-  State<InscriptionCliniquePage> createState() =>
-      _InscriptionCliniquePageState();
+  State<InscriptionCliniquePage> createState() => _InscriptionCliniquePageState();
 }
 
 class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
@@ -53,10 +52,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     description = c['description'] ?? '';
     specialites = c['specialites'] ?? '';
     horaires = c['horaires'] ?? '';
-    latitude =
-        c['latitude'] != null ? double.tryParse('${c['latitude']}') : null;
-    longitude =
-        c['longitude'] != null ? double.tryParse('${c['longitude']}') : null;
+    latitude = c['latitude'] != null ? double.tryParse('${c['latitude']}') : null;
+    longitude = c['longitude'] != null ? double.tryParse('${c['longitude']}') : null;
 
     if (c['images'] is List) {
       for (final it in (c['images'] as List)) {
@@ -68,19 +65,15 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   Future<void> _recupererPosition() async {
     try {
       final permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) return;
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
       setState(() {
         latitude = position.latitude;
         longitude = position.longitude;
       });
 
-      final placemarks =
-          await placemarkFromCoordinates(position.latitude, position.longitude);
+      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
         adresse = [
@@ -96,9 +89,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  "Position récupérée. Placez-vous à l’intérieur de l’établissement.")),
+          const SnackBar(content: Text("Position récupérée. Placez-vous à l’intérieur de l’établissement.")),
         );
       }
     } catch (e) {
@@ -118,8 +109,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
   Future<void> _prendrePhoto() async {
     final picker = ImagePicker();
-    final shot =
-        await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+    final shot = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
     if (shot != null) {
       setState(() => _pickedImages.add(shot));
     }
@@ -148,8 +138,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
       await Supabase.instance.client.storage
           .from(_bucket)
-          .uploadBinary(path, bytes,
-              fileOptions: const FileOptions(upsert: true));
+          .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
 
       return Supabase.instance.client.storage.from(_bucket).getPublicUrl(path);
     } catch (e) {
@@ -158,37 +147,28 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     }
   }
 
-  Future<void> _supprimerImage(String imageUrl,
-      {required bool isExisting}) async {
+  Future<void> _supprimerImage(String imageUrl, {required bool isExisting}) async {
     try {
       final storagePath = _storagePathFromPublicUrl(imageUrl);
       if (storagePath != null) {
-        await Supabase.instance.client
-            .storage
-            .from(_bucket)
-            .remove([storagePath]);
+        await Supabase.instance.client.storage.from(_bucket).remove([storagePath]);
       }
 
       if (isExisting && widget.clinique != null) {
         final updated = List<String>.from(_existingImageUrls)..remove(imageUrl);
-        await Supabase.instance.client
-            .from('cliniques')
-            .update({'images': updated}).eq('id', widget.clinique!['id']);
+        await Supabase.instance.client.from('cliniques').update({'images': updated}).eq('id', widget.clinique!['id']);
         setState(() => _existingImageUrls.remove(imageUrl));
       }
     } catch (e) {
       debugPrint("Erreur suppression image : $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("Erreur lors de la suppression de l'image")),
+          const SnackBar(content: Text("Erreur lors de la suppression de l'image")),
         );
       }
     }
   }
 
-  /// Vérifie la règle métier « un seul établissement par utilisateur ».
-  /// Retourne true si l'utilisateur a DÉJÀ un établissement (donc création interdite).
   Future<bool> _dejaUnEtablissement(String userId) async {
     try {
       final rows = await Supabase.instance.client
@@ -199,7 +179,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
           .limit(1);
       return rows is List && rows.isNotEmpty;
     } catch (_) {
-      // en cas d'erreur réseau on laisse l’enregistrement continuer
       return false;
     }
   }
@@ -208,8 +187,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     if (!_formKey.currentState!.validate()) return;
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Veuillez définir la position géographique.")),
+        const SnackBar(content: Text("Veuillez définir la position géographique.")),
       );
       return;
     }
@@ -221,7 +199,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
       return;
     }
 
-    // 🔒 Sécurité : un seul établissement par utilisateur (en création uniquement)
     if (widget.clinique == null && await _dejaUnEtablissement(userId)) {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -235,10 +212,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               "depuis l’onglet « Profil » → « Support » afin que nous activions la multi-gestion.",
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
-              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
             ],
           ),
         );
@@ -271,18 +245,9 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
       Map<String, dynamic> row;
 
       if (widget.clinique != null) {
-        row = await Supabase.instance.client
-            .from('cliniques')
-            .update(data)
-            .eq('id', widget.clinique!['id'])
-            .select()
-            .single();
+        row = await Supabase.instance.client.from('cliniques').update(data).eq('id', widget.clinique!['id']).select().single();
       } else {
-        row = await Supabase.instance.client
-            .from('cliniques')
-            .insert(data)
-            .select()
-            .single();
+        row = await Supabase.instance.client.from('cliniques').insert(data).select().single();
       }
 
       if (!mounted) return;
@@ -291,15 +256,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text("Succès"),
-          content: Text(widget.clinique != null
-              ? "Clinique mise à jour avec succès."
-              : "Clinique enregistrée avec succès."),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
-          ],
+          content: Text(widget.clinique != null ? "Clinique mise à jour avec succès." : "Clinique enregistrée avec succès."),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
         ),
       );
 
@@ -307,9 +265,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Erreur enregistrement.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Erreur enregistrement.")));
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -331,10 +287,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
           child: InkWell(
             onTap: () => _supprimerImage(url, isExisting: true),
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.all(2),
               child: const Icon(Icons.close, color: Colors.white, size: 18),
             ),
@@ -347,9 +300,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
   Widget _thumbFromXFile(XFile xf) {
     final child = ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: kIsWeb
-          ? Image.network(xf.path, fit: BoxFit.cover)
-          : Image.file(File(xf.path), fit: BoxFit.cover),
+      child: kIsWeb ? Image.network(xf.path, fit: BoxFit.cover) : Image.file(File(xf.path), fit: BoxFit.cover),
     );
 
     return Stack(
@@ -363,10 +314,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               setState(() => _pickedImages.remove(xf));
             },
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.all(2),
               child: const Icon(Icons.close, color: Colors.white, size: 18),
             ),
@@ -382,9 +330,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
     ImageProvider? firstImage;
     if (_pickedImages.isNotEmpty) {
-      firstImage = kIsWeb
-          ? NetworkImage(_pickedImages.first.path)
-          : FileImage(File(_pickedImages.first.path)) as ImageProvider;
+      firstImage = kIsWeb ? NetworkImage(_pickedImages.first.path) : FileImage(File(_pickedImages.first.path)) as ImageProvider;
     } else if (_existingImageUrls.isNotEmpty) {
       firstImage = NetworkImage(_existingImageUrls.first);
     }
@@ -392,8 +338,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title:
-            Text(enEdition ? "Modifier la clinique" : "Inscription Clinique"),
+        title: Text(enEdition ? "Modifier la clinique" : "Inscription Clinique"),
         backgroundColor: kHealthGreen,
         foregroundColor: Colors.white,
       ),
@@ -407,10 +352,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 onPressed: _recupererPosition,
                 icon: const Icon(Icons.my_location),
                 label: const Text("Détecter ma position"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kHealthGreen,
-                  foregroundColor: Colors.white,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: kHealthGreen, foregroundColor: Colors.white),
               ),
               const SizedBox(height: 10),
               if (latitude != null && longitude != null) ...[
@@ -422,24 +364,23 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                   height: 200,
                   child: FlutterMap(
                     options: MapOptions(
-                      center: LatLng(latitude!, longitude!),
-                      zoom: 16,
+                      // ✅ API v6+ (v8) : initialCenter / initialZoom
+                      initialCenter: LatLng(latitude!, longitude!),
+                      initialZoom: 16,
+                      // ✅ onTap reste disponible (TapCallback: (tapPos, LatLng))
                       onTap: (tapPosition, point) {
                         setState(() {
                           latitude = point.latitude;
                           longitude = point.longitude;
                         });
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text("Position modifiée manuellement")),
+                          const SnackBar(content: Text("Position modifiée manuellement")),
                         );
                       },
                     ),
-                    // IMPORTANT : pas de `const` ici
                     children: [
                       TileLayer(
-                        urlTemplate:
-                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
                         userAgentPackageName: 'com.ma_guinee.app',
                       ),
@@ -449,8 +390,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                             width: 40,
                             height: 40,
                             point: LatLng(latitude!, longitude!),
-                            child: const Icon(Icons.location_on,
-                                color: Colors.red, size: 40),
+                            child: const Icon(Icons.location_on, color: Colors.red, size: 40),
                           ),
                         ],
                       ),
@@ -463,10 +403,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 radius: 50,
                 backgroundColor: kHealthYellow.withOpacity(.25),
                 backgroundImage: firstImage,
-                child: firstImage == null
-                    ? const Icon(Icons.camera_alt,
-                        size: 30, color: kHealthGreen)
-                    : null,
+                child: firstImage == null ? const Icon(Icons.camera_alt, size: 30, color: kHealthGreen) : null,
               ),
               const SizedBox(height: 10),
               Row(
@@ -474,23 +411,16 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 children: [
                   OutlinedButton.icon(
                     onPressed: _choisirImagesMultiples,
-                    icon:
-                        const Icon(Icons.photo_library, color: kHealthGreen),
-                    label: const Text("Ajouter des photos",
-                        style: TextStyle(color: kHealthGreen)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: kHealthGreen),
-                    ),
+                    icon: const Icon(Icons.photo_library, color: kHealthGreen),
+                    label: const Text("Ajouter des photos", style: TextStyle(color: kHealthGreen)),
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: kHealthGreen)),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
                     onPressed: _prendrePhoto,
                     icon: const Icon(Icons.photo_camera, color: kHealthGreen),
-                    label: const Text("Prendre une photo",
-                        style: TextStyle(color: kHealthGreen)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: kHealthGreen),
-                    ),
+                    label: const Text("Prendre une photo", style: TextStyle(color: kHealthGreen)),
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: kHealthGreen)),
                   ),
                 ],
               ),
@@ -512,8 +442,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                 initialValue: nom,
                 decoration: const InputDecoration(labelText: "Nom"),
                 onChanged: (v) => nom = v,
-                validator: (v) =>
-                    v == null || v.isEmpty ? "Champ requis" : null,
+                validator: (v) => v == null || v.isEmpty ? "Champ requis" : null,
               ),
               TextFormField(
                 initialValue: adresse,
@@ -533,20 +462,17 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
               ),
               TextFormField(
                 initialValue: specialites,
-                decoration:
-                    const InputDecoration(labelText: "Spécialités"),
+                decoration: const InputDecoration(labelText: "Spécialités"),
                 onChanged: (v) => specialites = v,
               ),
               TextFormField(
                 initialValue: horaires,
-                decoration: const InputDecoration(
-                    labelText: "Horaires d'ouverture"),
+                decoration: const InputDecoration(labelText: "Horaires d'ouverture"),
                 onChanged: (v) => horaires = v,
               ),
               TextFormField(
                 initialValue: description,
-                decoration:
-                    const InputDecoration(labelText: "Description"),
+                decoration: const InputDecoration(labelText: "Description"),
                 maxLines: 3,
                 onChanged: (v) => description = v,
               ),
@@ -556,13 +482,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                   : ElevatedButton.icon(
                       onPressed: _enregistrerClinique,
                       icon: const Icon(Icons.save),
-                      label:
-                          Text(enEdition ? "Mettre à jour" : "Enregistrer"),
+                      label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: kHealthGreen,
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
             ],

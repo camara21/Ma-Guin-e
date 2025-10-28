@@ -18,8 +18,9 @@ class CarteWidget extends StatelessWidget {
       height: 300,
       child: FlutterMap(
         options: MapOptions(
-          center: center,
-          zoom: 14.0,
+          // ✅ API flutter_map v6+
+          initialCenter: center,
+          initialZoom: 14.0,
         ),
         children: [
           TileLayer(
