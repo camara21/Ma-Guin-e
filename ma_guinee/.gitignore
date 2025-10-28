@@ -49,3 +49,9 @@ ma_guinee/flutter_*.tar.xz
 *.tar.xz
 flutter/
 ma_guinee/flutter/
+
+# --- Ignorer archives/SDK locaux ---
+ma_guinee/flutter_*.tar.xz
+*.tar.xz
+flutter/
+ma_guinee/flutter/
