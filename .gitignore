@@ -3,3 +3,7 @@
 *.tar.xz
 flutter/
 ma_guinee/flutter/
+
+# --- Ignorer archives/builds ---
+*.zip
+build/
