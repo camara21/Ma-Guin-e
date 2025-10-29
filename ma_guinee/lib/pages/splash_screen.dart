@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
+import '../utils/recovery_guard.dart' as rg; // ✅ alias correct
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,53 +19,44 @@ class _SplashScreenState extends State<SplashScreen>
   Timer? _t;
   bool _navigated = false;
 
-  late final AnimationController _ctl;
-  late final Animation<double> _fade;
-  late final Animation<double> _scale;
+  // Anim tagline + rope (style Heetch)
+  late final AnimationController _tagCtl; // texte dégradé
+  late final AnimationController _ropeCtl; // petit loader "rope"
 
-  late final AnimationController _gradientCtl;
-  late final Animation<double> _slide;
-
+  // Glow doux derrière le logo
   late final AnimationController _glowCtl;
   late final Animation<double> _glowScale;
   late final Animation<double> _glowOpacity;
-
-  late final AnimationController _shineCtl;
-  late final Animation<double> _shine;
 
   @override
   void initState() {
     super.initState();
 
-    _ctl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..forward();
+    // Précharger le logo pour affichage instantané
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      precacheImage(const AssetImage('assets/logo_guinee.png'), context);
+    });
 
-    _fade = CurvedAnimation(parent: _ctl, curve: Curves.easeOutCubic);
-    _scale = Tween<double>(begin: 0.94, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctl, curve: Curves.easeOutBack));
-
-    _gradientCtl = AnimationController(
+    _tagCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat();
-    _slide = CurvedAnimation(parent: _gradientCtl, curve: Curves.linear);
+
+    _ropeCtl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
 
     _glowCtl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    _glowScale = Tween<double>(begin: 0.92, end: 1.08)
-        .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
-    _glowOpacity = Tween<double>(begin: 0.0, end: 0.6)
+
+    _glowScale = Tween<double>(begin: 0.92, end: 1.06)
         .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
 
-    _shineCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat();
-    _shine = CurvedAnimation(parent: _shineCtl, curve: Curves.linear);
+    _glowOpacity = Tween<double>(begin: 0.10, end: 0.45)
+        .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
 
     _t = Timer(_minSplash, _goNextOnce);
   }
@@ -73,8 +65,8 @@ class _SplashScreenState extends State<SplashScreen>
     if (_navigated || !mounted) return;
     _navigated = true;
 
-    // ⛔️ Si un flux de recovery est actif, on va directement sur /reset_password
-    if (RecoveryGuard.isActive) {
+    // ✅ utilise l'alias rg (et pas RecoveryGuard directement)
+    if (rg.RecoveryGuard.isActive) {
       Navigator.of(context).pushReplacementNamed(AppRoutes.resetPassword);
       return;
     }
@@ -93,11 +85,9 @@ class _SplashScreenState extends State<SplashScreen>
             .maybeSingle();
 
         final role = (row?['role'] as String?)?.toLowerCase() ?? '';
-        if (role == 'admin' || role == 'owner') {
-          dest = AppRoutes.adminCenter;
-        } else {
-          dest = AppRoutes.mainNav;
-        }
+        dest = (role == 'admin' || role == 'owner')
+            ? AppRoutes.adminCenter
+            : AppRoutes.mainNav;
       } catch (_) {
         dest = AppRoutes.mainNav;
       }
@@ -110,10 +100,9 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _t?.cancel();
-    _ctl.dispose();
-    _gradientCtl.dispose();
+    _tagCtl.dispose();
+    _ropeCtl.dispose();
     _glowCtl.dispose();
-    _shineCtl.dispose();
     super.dispose();
   }
 
@@ -131,93 +120,80 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
           Center(
-            child: FadeTransition(
-              opacity: _fade,
-              child: ScaleTransition(
-                scale: _scale,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      height: 180,
-                      width: 200,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: Listenable.merge([_glowCtl]),
-                            builder: (context, _) {
-                              return Transform.scale(
-                                scale: _glowScale.value,
-                                child: Opacity(
-                                  opacity: _glowOpacity.value * 0.6,
-                                  child: Container(
-                                    width: 150,
-                                    height: 150,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: RadialGradient(
-                                        colors: [
-                                          Color.fromARGB(180, 255, 255, 255),
-                                          Color.fromARGB(0, 255, 255, 255),
-                                        ],
-                                        stops: [0.0, 1.0],
-                                      ),
-                                    ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // LOGO agrandi + glow
+                SizedBox(
+                  height: 260,
+                  width: 260,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _glowCtl,
+                        builder: (context, _) {
+                          return Transform.scale(
+                            scale: _glowScale.value,
+                            child: Opacity(
+                              opacity: _glowOpacity.value,
+                              child: Container(
+                                width: 220,
+                                height: 220,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: RadialGradient(
+                                    colors: [
+                                      Color(0xFFFF2E63), // rose
+                                      Color(0x00FF2E63),
+                                    ],
+                                    stops: [0.0, 1.0],
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                          Image.asset('assets/logo_guinee.png', height: 160),
-                        ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    AnimatedBuilder(
-                      animation: _shine,
-                      builder: (context, _) {
-                        final slide = (_shine.value * 2.0) - 1.0; // -1 → +1
-                        return _ShimmerText(
-                          'Soneya',
-                          slide: slide,
-                          style: TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 2,
-                            shadows: [
-                              Shadow(
-                                blurRadius: 5,
-                                color: Colors.white.withOpacity(0.95),
-                              ),
-                              Shadow(
-                                blurRadius: 8,
-                                color: Colors.white.withOpacity(0.5),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 8),
-                    AnimatedBuilder(
-                      animation: _slide,
-                      builder: (context, _) {
-                        final t = (_slide.value * 2.0) - 1.0; // -1 → +1
-                        return _AnimatedGradientText(
-                          "Là où tout commence",
-                          slide: t,
-                          fontSize: 18,
-                        );
-                      },
-                    ),
-                  ],
+                      Image.asset(
+                        'assets/logo_guinee.png',
+                        height: 200,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+
+                const SizedBox(height: 18),
+
+                // Texte animé dégradé
+                AnimatedBuilder(
+                  animation: _tagCtl,
+                  builder: (context, _) {
+                    final slide = (_tagCtl.value * 2.0) - 1.0; // -1 → +1
+                    return _AnimatedGradientText(
+                      'Là où tout commence',
+                      slide: slide,
+                      fontSize: 22,
+                      colors: const [
+                        Color(0xFFFF2E63),
+                        Color(0xFFFF6B6B),
+                        Color(0xFFFFA62B),
+                      ],
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // Loader capsule "rope"
+                AnimatedBuilder(
+                  animation: _ropeCtl,
+                  builder: (context, _) {
+                    return _HeetchRopeLoader(progress: _ropeCtl.value);
+                  },
+                ),
+              ],
             ),
           ),
         ],
@@ -226,14 +202,17 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
+/// Texte avec dégradé animé horizontal
 class _AnimatedGradientText extends StatelessWidget {
   final String text;
   final double slide; // −1.0 .. +1.0
   final double fontSize;
+  final List<Color> colors;
 
   const _AnimatedGradientText(
     this.text, {
     required this.slide,
+    required this.colors,
     this.fontSize = 18,
   });
 
@@ -242,30 +221,24 @@ class _AnimatedGradientText extends StatelessWidget {
     final begin = Alignment(-1.5 + slide, 0);
     final end = Alignment(1.5 + slide, 0);
 
-    final gradient = const LinearGradient(
-      colors: [
-        Color(0xFFCE1126), // rouge
-        Color(0xFFFCD116), // jaune
-        Color(0xFF009460), // vert
-      ],
-      stops: [0.0, 0.5, 1.0],
+    final gradient = LinearGradient(
+      colors: colors,
+      stops: const [0.0, 0.5, 1.0],
+      begin: begin,
+      end: end,
     );
 
     return ShaderMask(
-      shaderCallback: (Rect bounds) => gradient.createShader(Rect.fromLTWH(
-        bounds.left + (begin.x * bounds.width * 0.3),
-        bounds.top,
-        bounds.width,
-        bounds.height,
-      )),
+      shaderCallback: (Rect bounds) =>
+          gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
       child: Text(
         text,
         textAlign: TextAlign.center,
         style: TextStyle(
           fontSize: fontSize,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
-          letterSpacing: 1.1,
+          letterSpacing: 1.05,
           shadows: const [
             Shadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
           ],
@@ -275,33 +248,43 @@ class _AnimatedGradientText extends StatelessWidget {
   }
 }
 
-class _ShimmerText extends StatelessWidget {
-  final String text;
-  final double slide; // -1 .. +1
-  final TextStyle style;
+/// Petit loader capsule "rope"
+class _HeetchRopeLoader extends StatelessWidget {
+  final double progress; // 0..1
 
-  const _ShimmerText(this.text, {required this.slide, required this.style});
+  const _HeetchRopeLoader({required this.progress});
 
   @override
   Widget build(BuildContext context) {
-    final begin = Alignment(-1.0 + slide, 0);
-    final end = Alignment(1.0 + slide, 0);
+    const bg = Color(0x26FFFFFF);
+    const fg1 = Color(0xFFFF2E63);
+    const fg2 = Color(0xFFFFA62B);
 
-    return ShaderMask(
-      blendMode: BlendMode.srcATop,
-      shaderCallback: (bounds) {
-        return LinearGradient(
-          begin: begin,
-          end: end,
-          colors: [
-            Colors.white.withOpacity(0.20),
-            Colors.white.withOpacity(0.95),
-            Colors.white.withOpacity(0.20),
+    return SizedBox(
+      width: 160,
+      height: 8,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(100),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: bg),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: (0.25 + (progress * 0.75)).clamp(0.20, 1.0),
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [fg1, fg2],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+            ),
           ],
-          stops: const [0.45, 0.50, 0.55],
-        ).createShader(bounds);
-      },
-      child: Text(text, textAlign: TextAlign.center, style: style),
+        ),
+      ),
     );
   }
 }
