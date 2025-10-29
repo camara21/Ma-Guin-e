@@ -17,8 +17,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
   String? _error;
 
   // data
-  List<Map<String, dynamic>> _reservations = []; // reservations_hotels rows
-  Map<String, Map<String, dynamic>> _hotelsById = {}; // hotel_id -> {nom, ville, tel}
+  List<Map<String, dynamic>> _reservations = []; // rows + join hotels
 
   // ui filters
   String _q = '';
@@ -42,52 +41,21 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
       final uid = _sb.auth.currentUser?.id;
       if (uid == null) throw 'Non authentifié';
 
-      // 1) Mes hôtels
-      // ⚠️ Ne pas filtrer en SQL sur proprietaire_id (peut ne pas exister).
-      //    On récupère les deux colonnes et on filtre côté Dart sur proprietaire_id || user_id.
-      final hotels = await _sb
-          .from('hotels')
-          .select('id, nom, ville, tel, telephone, proprietaire_id, user_id');
-
-      final allHotels = List<Map<String, dynamic>>.from(hotels as List);
-      final hotelList = allHotels.where((h) {
-        final p = h['proprietaire_id']?.toString();
-        final u = h['user_id']?.toString();
-        return p == uid || u == uid;
-      }).toList();
-
-      final hotelIds = hotelList.map((h) => h['id'].toString()).toList();
-
-      _hotelsById = {
-        for (final h in hotelList)
-          (h['id'].toString()): {
-            'nom': (h['nom'] ?? '').toString(),
-            'ville': (h['ville'] ?? '').toString(),
-            'tel': (h['tel'] ?? h['telephone'] ?? '').toString(),
-          }
-      };
-
-      if (hotelIds.isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _reservations = [];
-          _loading = false;
-        });
-        return;
-      }
-
-      // 2) Réservations de ces hôtels
-      // Fallback universel : PostgREST filter IN (si in_() n’existe pas dans ta version)
-      final idsSql = '(${hotelIds.map((id) => '"$id"').join(",")})';
+      // Requête unique : reservations_hotels + infos hôtel
+      // ⚠️ Le filtrage "appartient à l’owner" doit se faire par RLS côté DB.
       PostgrestFilterBuilder<dynamic> query = _sb
           .from('reservations_hotels')
-          .select('*')
-          .filter('hotel_id', 'in', idsSql);
+          .select('''
+            *,
+            hotels:hotel_id (
+              id, nom, ville, tel, telephone
+            )
+          ''');
 
       // Filtre de dates
       if (_range != null) {
         query = query
-            .gte('check_in', DateFormat('yyyy-MM-dd').format(_range!.start))
+            .gte('check_in',  DateFormat('yyyy-MM-dd').format(_range!.start))
             .lte('check_out', DateFormat('yyyy-MM-dd').format(_range!.end));
       }
 
@@ -98,11 +66,14 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
         query = query.eq('status', 'annule');
       }
 
-      // Tri (ne pas réassigner query sur un autre type)
-      final rows = await query.order('check_in', ascending: true);
+      // Tri
+      final rows = await query
+          .order('check_in', ascending: true)
+          .order('arrival_time', ascending: true);
+
       final list = List<Map<String, dynamic>>.from(rows as List);
 
-      // Recherche côté client (nom/téléphone)
+      // Recherche locale (nom/téléphone client)
       final q = _q.trim().toLowerCase();
       final filtered = q.isEmpty
           ? list
@@ -139,9 +110,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
           ),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                primary: const Color(0xFF264653),
-              ),
+          colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: const Color(0xFF264653)),
         ),
         child: child!,
       ),
@@ -185,8 +154,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
     try {
       await _sb.from('reservations_hotels').update({'status': 'annule'}).eq('id', id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Réservation annulée.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Réservation annulée.')));
       await _loadAll();
     } catch (e) {
       if (!mounted) return;
@@ -210,7 +178,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Réservations — Hôtels'),
-        backgroundColor: const Color(0xFF264653),
+        backgroundColor: const Color(0xFF264653), // 🎨 couleur conservée
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -295,12 +263,14 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
                               padding: const EdgeInsets.all(12),
                               itemBuilder: (_, i) {
                                 final r = _reservations[i];
-                                final hid = (r['hotel_id'] ?? '').toString();
-                                final h = _hotelsById[hid] ?? const {};
+
+                                // infos hôtel via jointure
+                                final h = Map<String, dynamic>.from(r['hotels'] ?? {});
+                                final hotelName  = (h['nom'] ?? 'Hôtel').toString();
+                                final hotelVille = (h['ville'] ?? '').toString();
+
                                 final status = (r['status'] ?? '').toString();
                                 final cancelled = status == 'annule';
-                                final hotelName = (h['nom'] ?? 'Hôtel').toString();
-                                final hotelVille = (h['ville'] ?? '').toString();
 
                                 return Card(
                                   elevation: 0,
@@ -325,8 +295,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
                                               ),
                                             ),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8, vertical: 4),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
                                                 color: cancelled
                                                     ? Colors.red.withOpacity(.12)
@@ -350,18 +319,13 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
                                           Text(hotelVille, style: TextStyle(color: scheme.outline)),
                                         ],
                                         const SizedBox(height: 8),
-                                        Text(
-                                          _dateSpan(r),
-                                          style: const TextStyle(fontWeight: FontWeight.w600),
-                                        ),
+                                        Text(_dateSpan(r), style: const TextStyle(fontWeight: FontWeight.w600)),
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
                                             const Icon(Icons.people_alt, size: 18),
                                             const SizedBox(width: 6),
-                                            Text(
-                                              'Chambres ${r['rooms']} • Adultes ${r['adults']} • Enfants ${r['children']}',
-                                            ),
+                                            Text('Chambres ${r['rooms']} • Adultes ${r['adults']} • Enfants ${r['children']}'),
                                           ],
                                         ),
                                         const SizedBox(height: 6),
@@ -376,9 +340,7 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
                                           const SizedBox(height: 8),
                                           Text(
                                             (r['notes'] ?? '').toString(),
-                                            style: TextStyle(
-                                              color: scheme.onSurface.withOpacity(.75),
-                                            ),
+                                            style: TextStyle(color: scheme.onSurface.withOpacity(.75)),
                                           ),
                                         ],
                                         const SizedBox(height: 10),
@@ -388,22 +350,17 @@ class _ProReservationsHotelsPageState extends State<ProReservationsHotelsPage> {
                                           children: [
                                             Expanded(
                                               child: OutlinedButton.icon(
-                                                onPressed: () => _callClient(
-                                                    (r['client_phone'] ?? '').toString()),
+                                                onPressed: () => _callClient((r['client_phone'] ?? '').toString()),
                                                 icon: const Icon(Icons.phone),
-                                                label: Text(
-                                                    (r['client_nom'] ?? 'Client').toString()),
+                                                label: Text((r['client_nom'] ?? 'Client').toString()),
                                               ),
                                             ),
                                             const SizedBox(width: 10),
                                             FilledButton.icon(
                                               onPressed: cancelled
                                                   ? null
-                                                  : () => _cancelReservation(
-                                                      (r['id'] ?? '').toString()),
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: Colors.red,
-                                              ),
+                                                  : () => _cancelReservation((r['id'] ?? '').toString()),
+                                              style: FilledButton.styleFrom(backgroundColor: Colors.red),
                                               icon: const Icon(Icons.cancel),
                                               label: const Text('Annuler'),
                                             ),

@@ -18,9 +18,10 @@ class _ProReservationsTourismePageState
   bool _loading = true;
   String? _error;
 
+  // rows + join lieux
   List<Map<String, dynamic>> _reservations = [];
-  Map<String, Map<String, dynamic>> _lieuxById = {};
 
+  // ui filters
   String _q = '';
   String _status = 'actives'; // actives | annulees | toutes
   DateTimeRange? _range;
@@ -42,43 +43,21 @@ class _ProReservationsTourismePageState
       final uid = _sb.auth.currentUser?.id;
       if (uid == null) throw 'Non authentifié';
 
-      // 1) Mes lieux (même colonne que MesLieuxPage : user_id)
-      final lieux = await _sb
-          .from('lieux')
-          .select('id, nom, ville, contact, telephone, tel, phone')
-          .eq('user_id', uid);
-
-      final listL = List<Map<String, dynamic>>.from(lieux as List);
-      final ids = listL.map((l) => l['id'].toString()).toList();
-
-      _lieuxById = {
-        for (final l in listL)
-          (l['id'].toString()): {
-            'nom': (l['nom'] ?? '').toString(),
-            'ville': (l['ville'] ?? '').toString(),
-            'tel': (l['contact'] ?? l['telephone'] ?? l['tel'] ?? l['phone'] ?? '')
-                .toString(),
-          }
-      };
-
-      if (ids.isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _reservations = [];
-          _loading = false;
-        });
-        return;
-      }
-
-      // 2) Réservations de ces lieux
-      // Fallback universel : PostgREST filter IN (évite in_() selon versions)
-      final idsSql = '(${ids.map((id) => '"$id"').join(",")})';
+      // Requête unique : reservations_tourisme + infos du lieu
+      // ✅ on n'utilise QUE 'contact' (pas de "telephone"/"tel"/"phone")
       PostgrestFilterBuilder<dynamic> query = _sb
           .from('reservations_tourisme')
-          .select('*')
-          .filter('lieu_id', 'in', idsSql);
+          .select('''
+            *,
+            lieux:lieu_id (
+              id, nom, ville, contact, user_id
+            )
+          ''');
 
-      // Filtre de dates
+      // (Optionnel, recommandé) limiter aux lieux de l'utilisateur pro
+      query = query.eq('lieux.user_id', uid);
+
+      // Filtre de dates (visit_date)
       if (_range != null) {
         query = query
             .gte('visit_date', DateFormat('yyyy-MM-dd').format(_range!.start))
@@ -92,21 +71,24 @@ class _ProReservationsTourismePageState
         query = query.eq('status', 'annule');
       }
 
-      // Tri (chaîné au moment du await pour conserver le type)
+      // Tri
       final rows = await query
           .order('visit_date', ascending: true)
           .order('arrival_time', ascending: true);
 
       final list = List<Map<String, dynamic>>.from(rows as List);
 
-      // Recherche côté client (nom / téléphone)
+      // Recherche locale (nom/téléphone client + NOM LIEU + CONTACT LIEU)
       final q = _q.trim().toLowerCase();
       final filtered = q.isEmpty
           ? list
           : list.where((r) {
               final n = (r['client_nom'] ?? '').toString().toLowerCase();
               final p = (r['client_phone'] ?? '').toString().toLowerCase();
-              return n.contains(q) || p.contains(q);
+              final lieu = Map<String, dynamic>.from(r['lieux'] ?? {});
+              final ln = (lieu['nom'] ?? '').toString().toLowerCase();
+              final lc = (lieu['contact'] ?? '').toString().toLowerCase();
+              return n.contains(q) || p.contains(q) || ln.contains(q) || lc.contains(q);
             }).toList();
 
       if (!mounted) return;
@@ -154,7 +136,7 @@ class _ProReservationsTourismePageState
     await _loadAll();
   }
 
-  Future<void> _callClient(String phone) async {
+  Future<void> _call(String phone) async {
     final cleaned = phone.replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleaned.isEmpty) return;
     final uri = Uri(scheme: 'tel', path: cleaned);
@@ -205,7 +187,7 @@ class _ProReservationsTourismePageState
     return Scaffold(
       appBar: AppBar(
         title: const Text('Réservations — Tourisme'),
-        backgroundColor: const Color(0xFFDAA520),
+        backgroundColor: const Color(0xFFDAA520), // 🎨 couleur conservée
         foregroundColor: Colors.black,
       ),
       body: Column(
@@ -219,7 +201,7 @@ class _ProReservationsTourismePageState
                 TextField(
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.search),
-                    hintText: 'Rechercher (nom ou téléphone client)',
+                    hintText: 'Rechercher (nom client, téléphone, lieu, contact)',
                     filled: true,
                     fillColor: scheme.surfaceVariant.withOpacity(.35),
                     border: OutlineInputBorder(
@@ -227,7 +209,10 @@ class _ProReservationsTourismePageState
                       borderSide: BorderSide.none,
                     ),
                   ),
-                  onChanged: (v) async { setState(() => _q = v); await _loadAll(); },
+                  onChanged: (v) async {
+                    setState(() => _q = v);
+                    await _loadAll();
+                  },
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -262,21 +247,39 @@ class _ProReservationsTourismePageState
             ),
           ),
           const Divider(height: 1),
+
           Expanded(
             child: RefreshIndicator(
               onRefresh: _loadAll,
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? ListView(children: [Padding(padding: const EdgeInsets.all(16), child: Text(_error!))])
+                      ? ListView(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(_error!),
+                            ),
+                          ],
+                        )
                       : _reservations.isEmpty
-                          ? ListView(children: const [SizedBox(height: 120), Center(child: Text('Aucune réservation.'))])
+                          ? ListView(
+                              children: const [
+                                SizedBox(height: 120),
+                                Center(child: Text('Aucune réservation.')),
+                              ],
+                            )
                           : ListView.separated(
                               padding: const EdgeInsets.all(12),
                               itemBuilder: (_, i) {
                                 final r = _reservations[i];
-                                final lid = (r['lieu_id'] ?? '').toString();
-                                final lieu = _lieuxById[lid] ?? const {};
+
+                                // Infos du lieu via jointure
+                                final lieu = Map<String, dynamic>.from(r['lieux'] ?? {});
+                                final lieuNom   = (lieu['nom'] ?? 'Lieu').toString();
+                                final lieuVille = (lieu['ville'] ?? '').toString();
+                                final lieuContact = (lieu['contact'] ?? '').toString();
+
                                 final status = (r['status'] ?? '').toString();
                                 final cancelled = status == 'annule';
 
@@ -295,7 +298,7 @@ class _ProReservationsTourismePageState
                                           children: [
                                             Expanded(
                                               child: Text(
-                                                (lieu['nom'] ?? 'Lieu').toString(),
+                                                lieuNom,
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 16,
@@ -320,9 +323,22 @@ class _ProReservationsTourismePageState
                                             )
                                           ],
                                         ),
-                                        if ((lieu['ville'] ?? '').toString().isNotEmpty) ...[
+                                        if (lieuVille.isNotEmpty) ...[
                                           const SizedBox(height: 2),
-                                          Text((lieu['ville']).toString(), style: TextStyle(color: scheme.outline)),
+                                          Text(lieuVille, style: TextStyle(color: scheme.outline)),
+                                        ],
+                                        if (lieuContact.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          InkWell(
+                                            onTap: () => _call(lieuContact),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.call, size: 18),
+                                                const SizedBox(width: 6),
+                                                Text(lieuContact),
+                                              ],
+                                            ),
+                                          ),
                                         ],
                                         const SizedBox(height: 8),
                                         Text(_dateLabel(r), style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -336,8 +352,10 @@ class _ProReservationsTourismePageState
                                         ),
                                         if ((r['notes'] ?? '').toString().trim().isNotEmpty) ...[
                                           const SizedBox(height: 8),
-                                          Text((r['notes'] ?? '').toString(),
-                                              style: TextStyle(color: scheme.onSurface.withOpacity(.75))),
+                                          Text(
+                                            (r['notes'] ?? '').toString(),
+                                            style: TextStyle(color: scheme.onSurface.withOpacity(.75)),
+                                          ),
                                         ],
                                         const SizedBox(height: 10),
                                         Container(height: 1, color: scheme.outlineVariant),
@@ -346,14 +364,16 @@ class _ProReservationsTourismePageState
                                           children: [
                                             Expanded(
                                               child: OutlinedButton.icon(
-                                                onPressed: () => _callClient((r['client_phone'] ?? '').toString()),
+                                                onPressed: () => _call((r['client_phone'] ?? '').toString()),
                                                 icon: const Icon(Icons.phone),
                                                 label: Text((r['client_nom'] ?? 'Client').toString()),
                                               ),
                                             ),
                                             const SizedBox(width: 10),
                                             FilledButton.icon(
-                                              onPressed: cancelled ? null : () => _cancelReservation((r['id'] ?? '').toString()),
+                                              onPressed: cancelled
+                                                  ? null
+                                                  : () => _cancelReservation((r['id'] ?? '').toString()),
                                               style: FilledButton.styleFrom(backgroundColor: Colors.red),
                                               icon: const Icon(Icons.cancel),
                                               label: const Text('Annuler'),

@@ -17,6 +17,9 @@ class _MesRdvPageState extends State<MesRdvPage> {
   List<Rdv> _rdv = [];
   bool _loading = true;
 
+  // Onglets: avenir | passees | annules  (défaut: avenir)
+  String _scope = 'avenir';
+
   @override
   void initState() {
     super.initState();
@@ -26,11 +29,36 @@ class _MesRdvPageState extends State<MesRdvPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final data = await _svc.mesRdv(); // récupère aussi les annulés
+      final data = await _svc.mesRdv(); // récupère tous les RDV de l'utilisateur
       if (!mounted) return;
+
+      final now = DateTime.now();
+
+      bool _isCancelled(Rdv r) =>
+          r.statut == 'annule' || r.statut == 'annule_clinique';
+
+      // ✅ "Passés" = on commence à compter après l'heure de RDV : now > startAt + 5h
+      bool _isPast(Rdv r) =>
+          !_isCancelled(r) && r.startAt.add(const Duration(hours: 5)).isBefore(now);
+
+      // ✅ "À venir" = non annulé ET pas "Passés"
+      bool _isFuture(Rdv r) => !_isCancelled(r) && !_isPast(r);
+
+      List<Rdv> filtered;
+      if (_scope == 'annules') {
+        filtered = data.where(_isCancelled).toList()
+          ..sort((a, b) => a.startAt.compareTo(b.startAt)); // chrono
+      } else if (_scope == 'passees') {
+        filtered = data.where(_isPast).toList()
+          ..sort((a, b) => b.startAt.compareTo(a.startAt)); // récents d'abord
+      } else {
+        // avenir
+        filtered = data.where(_isFuture).toList()
+          ..sort((a, b) => a.startAt.compareTo(b.startAt)); // chrono
+      }
+
       setState(() {
-        // Masquer les RDV annulés
-        _rdv = data.where((r) => r.statut != 'annule' && r.statut != 'annule_clinique').toList();
+        _rdv = filtered;
         _loading = false;
       });
     } catch (e) {
@@ -94,69 +122,106 @@ class _MesRdvPageState extends State<MesRdvPage> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : (_rdv.isEmpty
-              ? _emptyState()
-              : RefreshIndicator(
-                  color: kHealthGreen,
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                    itemCount: _rdv.length,
-                    itemBuilder: (_, i) {
-                      final r = _rdv[i];
-                      final start = DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(r.startAt);
-                      final end   = DateFormat('HH:mm', 'fr_FR').format(r.endAt);
-                      final statut = r.statut;
-                      final motif = r.motif?.trim();
+      body: Column(
+        children: [
+          // Onglets filtres (3 onglets)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Row(
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'avenir',  label: Text('À venir')),
+                    ButtonSegment(value: 'passees', label: Text('Passés')),
+                    ButtonSegment(value: 'annules', label: Text('Annulés')),
+                  ],
+                  selected: {_scope},
+                  onSelectionChanged: (s) {
+                    setState(() => _scope = s.first);
+                    _load();
+                  },
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Rafraîchir',
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh, color: kHealthGreen),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
 
-                      final cancellable = statut == 'confirme' || statut == 'en_attente';
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : (_rdv.isEmpty
+                    ? _emptyState()
+                    : RefreshIndicator(
+                        color: kHealthGreen,
+                        onRefresh: _load,
+                        child: ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: _rdv.length,
+                          itemBuilder: (_, i) {
+                            final r = _rdv[i];
+                            final start = DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(r.startAt);
+                            final end = DateFormat('HH:mm', 'fr_FR').format(r.endAt);
+                            final statut = r.statut;
+                            final motif = r.motif?.trim();
 
-                      return Card(
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          leading: const Icon(Icons.event_available, color: kHealthGreen),
-                          title: Text(
-                            '$start → $end',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(children: [_statusChip(statut)]),
-                                if (motif != null && motif.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      'Motif : $motif',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
+                            final cancelled = (statut == 'annule' || statut == 'annule_clinique');
+                            final cancellable = (statut == 'confirme' || statut == 'en_attente');
+
+                            return Card(
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: ListTile(
+                                leading: const Icon(Icons.event_available, color: kHealthGreen),
+                                title: Text(
+                                  '$start → $end',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(children: [_statusChip(statut)]),
+                                      if (motif != null && motif.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            'Motif : $motif',
+                                            style: const TextStyle(fontSize: 12),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                              ],
-                            ),
-                          ),
-                          trailing: cancellable
-                              ? TextButton.icon(
-                                  onPressed: () => _cancel(r.id),
+                                ),
+                                trailing: TextButton.icon(
+                                  onPressed: cancelled
+                                      ? null // désactivé si déjà annulé
+                                      : (cancellable ? () => _cancel(r.id) : null),
                                   icon: const Icon(Icons.cancel_outlined),
                                   label: const Text('Annuler'),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.red.shade700,
+                                    foregroundColor: cancelled
+                                        ? Colors.grey
+                                        : Colors.red.shade700,
                                   ),
-                                )
-                              : null,
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
-                )),
+                      )),
+          ),
+        ],
+      ),
     );
   }
 
@@ -203,7 +268,7 @@ class _MesRdvPageState extends State<MesRdvPage> {
               Icon(Icons.event_busy, size: 42, color: kHealthGreen),
               SizedBox(height: 10),
               Text(
-                'Aucun rendez-vous actif pour le moment.',
+                'Aucun rendez-vous trouvé.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16),
               ),

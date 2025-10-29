@@ -371,7 +371,7 @@ class _HomePageState extends State<HomePage> {
                     right: 12,
                     top: 10,
                     child: Image.asset(
-                      'assets/logo_guinee.png',
+                      'assets/carte_guinee.png',
                       height: 124,
                       fit: BoxFit.contain,
                     ),

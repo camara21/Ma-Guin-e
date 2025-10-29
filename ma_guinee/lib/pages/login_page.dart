@@ -42,10 +42,8 @@ class _LoginPageState extends State<LoginPage> {
         throw const AuthException('Email ou mot de passe incorrect.');
       }
 
-      // Charge ton modèle utilisateur (Provider)
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
-      // Redirection selon le rôle
       String dest = AppRoutes.mainNav;
       try {
         final row = await supabase
@@ -149,8 +147,50 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
-                Image.asset('assets/logo_guinee.png',
-                    height: 80, fit: BoxFit.contain),
+                // 🔵🔵🔵 Remplacement du logo par le cercle dégradé + icône blanche + sous-titre
+                Column(
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF0E67B2), // bleu foncé
+                            Color(0xFF22C1C3), // cyan clair
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x22000000),
+                            blurRadius: 16,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.hub_outlined,
+                          size: 56,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      "Connectez-vous à l’essentiel",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 22),
 
                 // Email
@@ -196,12 +236,10 @@ class _LoginPageState extends State<LoginPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    // ✅ CORRECTION: ouvrir la page "Mot de passe oublié"
                     onPressed: () => Navigator.pushNamed(
                       context,
                       AppRoutes.forgotPassword,
                       arguments: {
-                        // pré-remplir l'e-mail si déjà saisi (optionnel)
                         'prefillEmail': _emailController.text.trim(),
                       },
                     ),

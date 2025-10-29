@@ -20,7 +20,6 @@ class _ProReservationsRestaurantsPageState
 
   // data
   List<Map<String, dynamic>> _reservations = [];
-  Map<String, Map<String, dynamic>> _restosById = {};
 
   // ui filters
   String _q = '';
@@ -41,65 +40,38 @@ class _ProReservationsRestaurantsPageState
     });
 
     try {
-      final uid = _sb.auth.currentUser?.id;
-      if (uid == null) throw 'Non authentifié';
-
-      // 1) Mes restaurants
-      final restos = await _sb
-          .from('restaurants')
-          .select('id, nom, ville, tel, telephone')
-          .eq('proprietaire_id', uid);
-
-      final listR = List<Map<String, dynamic>>.from(restos as List);
-      final ids = listR.map((r) => r['id'].toString()).toList();
-
-      _restosById = {
-        for (final r in listR)
-          (r['id'].toString()): {
-            'nom': (r['nom'] ?? '').toString(),
-            'ville': (r['ville'] ?? '').toString(),
-            'tel': (r['tel'] ?? r['telephone'] ?? '').toString(),
-          }
-      };
-
-      if (ids.isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _reservations = [];
-          _loading = false;
-        });
-        return;
-      }
-
-      // 2) Réservations de ces restaurants
-      // Fallback universel: PostgREST filter IN (compatible toutes versions)
-      final idsSql = '(${ids.map((id) => '"$id"').join(",")})';
+      // Base query: reservations + join restaurants
       PostgrestFilterBuilder<dynamic> query = _sb
           .from('reservations_restaurants')
-          .select('*')
-          .filter('restaurant_id', 'in', idsSql);
+          .select('''
+            *,
+            restaurants:restaurant_id (
+              id, nom, ville, tel, telephone
+            )
+          ''');
 
-      // Filtre de dates
+      // Filtre date (sur res_date)
       if (_range != null) {
         query = query
             .gte('res_date', DateFormat('yyyy-MM-dd').format(_range!.start))
             .lte('res_date', DateFormat('yyyy-MM-dd').format(_range!.end));
       }
 
-      // Filtre de statut
+      // Filtre statut
       if (_status == 'actives') {
         query = query.neq('status', 'annule');
       } else if (_status == 'annulees') {
         query = query.eq('status', 'annule');
       }
 
-      // Tri (on chaîne juste au moment du await pour éviter un changement de type)
+      // Tri & exécution
       final rows = await query
           .order('res_date', ascending: true)
           .order('res_time', ascending: true);
+
       final list = List<Map<String, dynamic>>.from(rows as List);
 
-      // Recherche côté client (nom / téléphone)
+      // Recherche locale (nom / téléphone client)
       final q = _q.trim().toLowerCase();
       final filtered = q.isEmpty
           ? list
@@ -137,9 +109,8 @@ class _ProReservationsRestaurantsPageState
           ),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx)
-              .colorScheme
-              .copyWith(primary: const Color(0xFFE76F51)),
+          colorScheme:
+              Theme.of(ctx).colorScheme.copyWith(primary: const Color(0xFFE76F51)),
         ),
         child: child!,
       ),
@@ -167,12 +138,12 @@ class _ProReservationsRestaurantsPageState
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Annuler la réservation ?'),
-        content:
-            const Text('Cette action marque la réservation comme “annulée”.'),
+        content: const Text('Cette action marque la réservation comme “annulée”.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Fermer')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Fermer'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -189,12 +160,14 @@ class _ProReservationsRestaurantsPageState
           .update({'status': 'annule'}).eq('id', id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Réservation annulée.')));
+        const SnackBar(content: Text('Réservation annulée.')),
+      );
       await _loadAll();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e')),
+      );
     }
   }
 
@@ -245,8 +218,7 @@ class _ProReservationsRestaurantsPageState
                     SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'actives', label: Text('Actives')),
-                        ButtonSegment(
-                            value: 'annulees', label: Text('Annulées')),
+                        ButtonSegment(value: 'annulees', label: Text('Annulées')),
                         ButtonSegment(value: 'toutes', label: Text('Toutes')),
                       ],
                       selected: {_status},
@@ -265,8 +237,7 @@ class _ProReservationsRestaurantsPageState
                     OutlinedButton.icon(
                       onPressed: _pickRange,
                       icon: const Icon(Icons.event),
-                      label:
-                          Text(_range == null ? 'Dates' : 'Changer'),
+                      label: Text(_range == null ? 'Dates' : 'Changer'),
                     ),
                   ],
                 ),
@@ -299,10 +270,11 @@ class _ProReservationsRestaurantsPageState
                               padding: const EdgeInsets.all(12),
                               itemBuilder: (_, i) {
                                 final r = _reservations[i];
-                                final rid =
-                                    (r['restaurant_id'] ?? '').toString();
+
+                                // données du resto via la jointure
                                 final resto =
-                                    _restosById[rid] ?? const {};
+                                    Map<String, dynamic>.from(r['restaurants'] ?? {});
+
                                 final status = (r['status'] ?? '').toString();
                                 final cancelled = status == 'annule';
 
@@ -310,22 +282,18 @@ class _ProReservationsRestaurantsPageState
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    side: BorderSide(
-                                        color: scheme.outlineVariant),
+                                    side: BorderSide(color: scheme.outlineVariant),
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.all(12),
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Row(
                                           children: [
                                             Expanded(
                                               child: Text(
-                                                (resto['nom'] ??
-                                                        'Restaurant')
-                                                    .toString(),
+                                                (resto['nom'] ?? 'Restaurant').toString(),
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 16,
@@ -333,44 +301,37 @@ class _ProReservationsRestaurantsPageState
                                               ),
                                             ),
                                             Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
                                                 color: cancelled
-                                                    ? Colors.red
-                                                        .withOpacity(.12)
+                                                    ? Colors.red.withOpacity(.12)
                                                     : const Color(0xFFF4A261)
                                                         .withOpacity(.18),
                                                 borderRadius:
                                                     BorderRadius.circular(999),
                                               ),
                                               child: Text(
-                                                cancelled
-                                                    ? 'Annulée'
-                                                    : 'Confirmée',
+                                                cancelled ? 'Annulée' : 'Confirmée',
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   color: cancelled
                                                       ? Colors.red
-                                                      : const Color(
-                                                          0xFFE67E22),
+                                                      : const Color(0xFFE67E22),
                                                 ),
                                               ),
                                             )
                                           ],
                                         ),
-                                        if ((resto['ville'] ?? '')
-                                            .toString()
-                                            .isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            (resto['ville']).toString(),
-                                            style: TextStyle(
-                                                color: scheme.outline),
+                                        if ((resto['ville'] ?? '').toString().isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              (resto['ville']).toString(),
+                                              style:
+                                                  TextStyle(color: scheme.outline),
+                                            ),
                                           ),
-                                        ],
                                         const SizedBox(height: 8),
                                         Text(
                                           _dateLabel(r),
@@ -380,51 +341,47 @@ class _ProReservationsRestaurantsPageState
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
-                                            const Icon(Icons.people_alt,
-                                                size: 18),
+                                            const Icon(Icons.people_alt, size: 18),
                                             const SizedBox(width: 6),
                                             Text(
-                                                'Adultes ${r['adults']} • Enfants ${r['children']} • ${r['seating_pref']}'),
+                                              'Adultes ${r['adults']} • '
+                                              'Enfants ${r['children']} • '
+                                              '${r['seating_pref']}',
+                                            ),
                                           ],
                                         ),
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
-                                            const Icon(Icons.celebration,
-                                                size: 18),
+                                            const Icon(Icons.celebration, size: 18),
                                             const SizedBox(width: 6),
                                             Text('Occasion : ${r['occasion']}'),
                                           ],
                                         ),
-                                        if ((r['notes'] ?? '')
-                                            .toString()
-                                            .trim()
-                                            .isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            (r['notes'] ?? '').toString(),
-                                            style: TextStyle(
-                                              color: scheme.onSurface
-                                                  .withOpacity(.75),
+                                        if ((r['notes'] ?? '').toString().trim().isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 8),
+                                            child: Text(
+                                              (r['notes'] ?? '').toString(),
+                                              style: TextStyle(
+                                                color: scheme.onSurface
+                                                    .withOpacity(.75),
+                                              ),
                                             ),
                                           ),
-                                        ],
                                         const SizedBox(height: 10),
-                                        Container(
-                                            height: 1,
-                                            color: scheme.outlineVariant),
+                                        Container(height: 1, color: scheme.outlineVariant),
                                         const SizedBox(height: 10),
                                         Row(
                                           children: [
                                             Expanded(
                                               child: OutlinedButton.icon(
                                                 onPressed: () => _callClient(
-                                                    (r['client_phone'] ?? '')
-                                                        .toString()),
+                                                  (r['client_phone'] ?? '').toString(),
+                                                ),
                                                 icon: const Icon(Icons.phone),
                                                 label: Text(
-                                                  (r['client_nom'] ??
-                                                          'Client')
+                                                  (r['client_nom'] ?? 'Client')
                                                       .toString(),
                                                 ),
                                               ),
@@ -434,11 +391,9 @@ class _ProReservationsRestaurantsPageState
                                               onPressed: cancelled
                                                   ? null
                                                   : () => _cancelReservation(
-                                                      (r['id'] ?? '')
-                                                          .toString()),
+                                                      (r['id'] ?? '').toString()),
                                               style: FilledButton.styleFrom(
-                                                  backgroundColor:
-                                                      Colors.red),
+                                                  backgroundColor: Colors.red),
                                               icon: const Icon(Icons.cancel),
                                               label: const Text('Annuler'),
                                             ),
@@ -449,8 +404,7 @@ class _ProReservationsRestaurantsPageState
                                   ),
                                 );
                               },
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 10),
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
                               itemCount: _reservations.length,
                             ),
             ),
