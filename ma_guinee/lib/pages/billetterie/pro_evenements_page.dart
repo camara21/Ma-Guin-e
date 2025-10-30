@@ -20,9 +20,17 @@ class ProEvenementsPage extends StatefulWidget {
 
 class _ProEvenementsPageState extends State<ProEvenementsPage> {
   final _sb = Supabase.instance.client;
+
   bool _loading = true;
   String? _error;
+
+  // Données
   List<Map<String, dynamic>> _events = [];
+
+  // Organisateur
+  String? _orgId;
+  bool? _orgVerified; // null => pas encore déterminé
+  bool _orgChecked = false; // a-t-on fini le check ?
 
   // Couleurs billetterie
   static const _kEventPrimary = Color(0xFF7B2CBF);
@@ -34,30 +42,57 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
     _load();
   }
 
+  bool _rowIsVerified(Map<String, dynamic> row) => row['verifie'] == true;
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+
     try {
       final user = _sb.auth.currentUser;
-      if (user == null) throw 'Veuillez vous connecter.';
+      if (user == null) {
+        throw 'Veuillez vous connecter.';
+      }
 
-      // Récupère l’id organisateur
+      // 1) Trouver l’organisateur (on ne lit que les colonnes existantes)
       final orgRaw = await _sb
           .from('organisateurs')
-          .select('id')
+          .select('id, verifie')
           .eq('user_id', user.id)
           .limit(1);
-      final orgList = (orgRaw as List).cast<Map<String, dynamic>>();
-      if (orgList.isEmpty) throw 'Crée d’abord un profil organisateur.';
-      final String orgId = orgList.first['id'].toString();
 
+      final orgList = (orgRaw as List).cast<Map<String, dynamic>>();
+      if (orgList.isEmpty) {
+        // Pas d’organisateur encore créé
+        _orgId = null;
+        _orgVerified = null;
+        _orgChecked = true;
+        _events = [];
+        setState(() {});
+        return;
+      }
+
+      final org = orgList.first;
+      _orgId = org['id'].toString();
+      _orgVerified = _rowIsVerified(org);
+      _orgChecked = true;
+
+      // 2) Si pas vérifié, on n’affiche pas les events (message gate dans le build)
+      if (_orgVerified != true) {
+        _events = [];
+        setState(() {});
+        return;
+      }
+
+      // 3) Charger les événements
       final rowsRaw = await _sb
           .from('evenements')
           .select('*')
-          .eq('organisateur_id', orgId)
+          .eq('organisateur_id', _orgId!)
           .order('date_debut', ascending: false);
+
       _events = (rowsRaw as List).cast<Map<String, dynamic>>();
     } catch (e) {
       _error = e.toString();
@@ -67,30 +102,30 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
   }
 
   Future<void> _openCreateEvent() async {
+    if (_orgVerified != true || _orgId == null) return;
     await showDialog(context: context, builder: (_) => const _CreateEventDialog());
     if (mounted) _load();
   }
 
   Future<void> _openCreateTicket(String eventId) async {
+    if (_orgVerified != true) return;
     await showDialog(context: context, builder: (_) => _CreateTicketsDialog(eventId: eventId));
     if (mounted) _load();
   }
 
   void _openStats() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ProVentesPage()),
-    );
+    if (_orgVerified != true) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const ProVentesPage()));
   }
 
   void _openScanner() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const TicketScannerPage()),
-    );
+    if (_orgVerified != true) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const TicketScannerPage()));
   }
 
   Future<void> _confirmDeleteEvent(String eventId, String title) async {
+    if (_orgVerified != true) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -115,34 +150,27 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
     );
     if (ok != true) return;
 
-    // ⬇️ Retirer l’item localement tout de suite pour que la carte disparaisse de la page
+    // Optimisme UI
     setState(() {
       _events.removeWhere((e) => e['id'].toString() == eventId);
     });
 
     try {
-      // (optionnel) supprimer d’abord les billets liés
+      // Supprimer d’abord les billets liés (si contrainte)
       await _sb.from('billets').delete().eq('evenement_id', eventId);
     } catch (_) {
-      // ignore si pas de contrainte
+      // ignore soft-fail
     }
 
     try {
-      // Supprimer l’événement
       await _sb.from('evenements').delete().eq('id', eventId);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Événement supprimé.')),
         );
-        // Recharge silencieux pour resynchroniser (ex. si d’autres champs dérivés changent)
         _load();
       }
     } catch (e) {
-      // En cas d’échec, on réaffiche l’item (rollback UI simple)
-      setState(() {
-        // rien si _load le remettra; mais on tente un reload direct
-      });
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Erreur suppression: $e')));
@@ -152,21 +180,134 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    // État “pas de profil organisateur”
+    if (_orgChecked && _orgId == null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: _kEventPrimary,
+          foregroundColor: _kOnPrimary,
+          title: const Text('Mes événements'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.business, size: 56, color: Colors.grey),
+                const SizedBox(height: 12),
+                const Text(
+                  'Créez d’abord votre profil organisateur.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Rafraîchir'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        backgroundColor: const Color(0xFFF7F7F7),
+      );
+    }
 
+    // État “profil en cours de vérification”
+    if (_orgChecked && _orgVerified == false) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: _kEventPrimary,
+          foregroundColor: _kOnPrimary,
+          title: const Text('Mes événements'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.verified_user_outlined, size: 56, color: Colors.amber),
+                const SizedBox(height: 12),
+                const Text(
+                  'Votre profil est en cours de vérification.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Dès que votre compte sera validé, vous pourrez publier et gérer vos événements.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Vérifier à nouveau'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        backgroundColor: const Color(0xFFF7F7F7),
+      );
+    }
+
+    // Loading / erreur générique
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: _kEventPrimary,
+          foregroundColor: _kOnPrimary,
+          title: const Text('Mes événements'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+        backgroundColor: const Color(0xFFF7F7F7),
+      );
+    }
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: _kEventPrimary,
+          foregroundColor: _kOnPrimary,
+          title: const Text('Mes événements'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Erreur: $_error'),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        backgroundColor: const Color(0xFFF7F7F7),
+      );
+    }
+
+    // Page principale (organisateur vérifié)
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: _kEventPrimary,
         foregroundColor: _kOnPrimary,
         title: const Text('Mes événements'),
         actions: [
-          // ⬇️ Bouton statistiques (redirige vers ProVentesPage)
           IconButton(
             tooltip: 'Ventes & statistiques',
             icon: const Icon(Icons.query_stats),
             onPressed: _openStats,
           ),
-          // ⬇️ Bouton scanner QR (redirige vers TicketScannerPage)
           IconButton(
             tooltip: 'Scanner des billets',
             icon: const Icon(Icons.qr_code_scanner),
@@ -187,115 +328,110 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text('Erreur: $_error'))
-              : _events.isEmpty
-                  ? const Center(child: Text('Aucun événement pour le moment.'))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(12),
-                      itemBuilder: (_, i) {
-                        final e = _events[i];
-                        final df = DateFormat('d MMM yyyy • HH:mm', 'fr_FR');
-                        final d1 = DateTime.parse(e['date_debut'].toString());
-                        final imageKey = (e['image_url'] ?? '').toString(); // key (pas URL complète)
-                        final thumb = _publicImageUrl(imageKey);
-                        final title = (e['titre'] ?? '').toString();
-                        final id = e['id'].toString();
+      body: _events.isEmpty
+          ? const Center(child: Text('Aucun événement pour le moment.'))
+          : ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemBuilder: (_, i) {
+                final e = _events[i];
+                final df = DateFormat('d MMM yyyy • HH:mm', 'fr_FR');
+                final d1 = DateTime.parse(e['date_debut'].toString());
+                final imageKey = (e['image_url'] ?? '').toString(); // key (pas URL)
+                final thumb = _publicImageUrl(imageKey);
+                final title = (e['titre'] ?? '').toString();
+                final id = e['id'].toString();
 
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: cs.secondary.withOpacity(.12)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.all(10),
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: (thumb != null && thumb.isNotEmpty)
-                                  ? Image.network(thumb, width: 64, height: 64, fit: BoxFit.cover)
-                                  : Container(
-                                      width: 64,
-                                      height: 64,
-                                      color: const Color(0xFFEFE7FF),
-                                      child: const Icon(Icons.event, color: Color(0xFF9A77D6)),
-                                    ),
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: cs.secondary.withOpacity(.12)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(10),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: (thumb != null && thumb.isNotEmpty)
+                          ? Image.network(thumb, width: 64, height: 64, fit: BoxFit.cover)
+                          : Container(
+                              width: 64,
+                              height: 64,
+                              color: const Color(0xFFEFE7FF),
+                              child: const Icon(Icons.event, color: Color(0xFF9A77D6)),
                             ),
-                            title: Text(
-                              title,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            subtitle: Text(
-                              '${e['ville'] ?? ''} • ${e['lieu'] ?? ''}\n${df.format(d1)}',
-                              maxLines: 2,
-                            ),
-                            isThreeLine: true,
-                            // ⬇️ Bouton Supprimer + menu actions
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Supprimer',
-                                  onPressed: () => _confirmDeleteEvent(id, title),
-                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                ),
-                                PopupMenuButton<String>(
-                                  tooltip: 'Actions',
-                                  onSelected: (v) {
-                                    if (v == 'ticket') _openCreateTicket(id);
-                                    if (v == 'scanner') _openScanner();
-                                    if (v == 'stats') _openStats();
-                                  },
-                                  itemBuilder: (_) => const [
-                                    PopupMenuItem(
-                                      value: 'ticket',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.confirmation_num_outlined),
-                                          SizedBox(width: 8),
-                                          Text('Ajouter / gérer les billets'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'scanner',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.qr_code_scanner),
-                                          SizedBox(width: 8),
-                                          Text('Scanner des billets'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'stats',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.query_stats),
-                                          SizedBox(width: 8),
-                                          Text('Ventes & statistiques'),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemCount: _events.length,
                     ),
+                    title: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${e['ville'] ?? ''} • ${e['lieu'] ?? ''}\n${df.format(d1)}',
+                      maxLines: 2,
+                    ),
+                    isThreeLine: true,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Supprimer',
+                          onPressed: () => _confirmDeleteEvent(id, title),
+                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: 'Actions',
+                          onSelected: (v) {
+                            if (v == 'ticket') _openCreateTicket(id);
+                            if (v == 'scanner') _openScanner();
+                            if (v == 'stats') _openStats();
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'ticket',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.confirmation_num_outlined),
+                                  SizedBox(width: 8),
+                                  Text('Ajouter / gérer les billets'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'scanner',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.qr_code_scanner),
+                                  SizedBox(width: 8),
+                                  Text('Scanner des billets'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'stats',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.query_stats),
+                                  SizedBox(width: 8),
+                                  Text('Ventes & statistiques'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemCount: _events.length,
+            ),
       backgroundColor: const Color(0xFFF7F7F7),
     );
   }
@@ -307,7 +443,6 @@ class _ProEvenementsPageState extends State<ProEvenementsPage> {
 }
 
 ///// ---------- DIALOG: CRÉER ÉVÉNEMENT (avec BILLETS obligatoires) ----------
-
 class _CreateEventDialog extends StatefulWidget {
   const _CreateEventDialog();
 
@@ -372,7 +507,7 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
 
   // Image
   Uint8List? _imageBytes; // preview
-  String? _imageKey;      // objet stocké (path)
+  String? _imageKey; // objet stocké (path)
   String? _uploadErr;
 
   // Inline error (au lieu de SnackBar derrière le dialog)
@@ -403,7 +538,7 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
   }
 
   void _onAnyFieldChanged() {
-    if (mounted) setState(() {}); // déclenche recalcul _canSubmit
+    if (mounted) setState(() {});
   }
 
   Future<void> _pickImage() async {
@@ -591,7 +726,7 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
         'lieu': _lieu.text.trim(),
         'date_debut': _debut.toIso8601String(),
         'date_fin': _fin.toIso8601String(),
-        'image_url': _imageKey,         // <-- path stocké
+        'image_url': _imageKey, // <-- path stocké
         'is_published': _publie,
         'is_cancelled': false,
       }).select('id').single();
@@ -602,7 +737,6 @@ class _CreateEventDialogState extends State<_CreateEventDialog> {
       final payload = <Map<String, dynamic>>[];
       for (final r in _tickets) {
         if (!r.actif) continue; // on n'enregistre pas les inactifs
-        // Ici, _validateTickets garantit déjà la borne supérieure
         final prix = int.parse(r.prix.text.replaceAll(' ', '').trim());
         final stock = int.parse(r.stock.text);
         final lim = r.limite.text.trim().isEmpty ? null : int.parse(r.limite.text.trim());
@@ -1029,7 +1163,6 @@ class _DateBox extends StatelessWidget {
 }
 
 ///// ---------- DIALOG: MULTI-BILLETS (post-édition) ----------
-// (Conservé pour permettre d’ajouter/éditer des billets après création)
 class _CreateTicketsDialog extends StatefulWidget {
   final String eventId;
   const _CreateTicketsDialog({required this.eventId});

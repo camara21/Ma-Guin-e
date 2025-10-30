@@ -28,6 +28,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
+	<!-- Orientations -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -41,22 +43,45 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
-	<!-- 🔑 Clé Google Maps iOS (google_maps_flutter) -->
+	<!-- 🔑 Google Maps iOS -->
 	<key>GMSApiKey</key>
 	<string>VOTRE_CLE_API_IOS</string>
 
-	<!-- 📍 Permissions localisation -->
+	<!-- 📍 Localisation (avant-plan + arrière-plan) -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cette app utilise votre position pour trouver des chauffeurs proches.</string>
+	<string>Cette app utilise votre position pour afficher des services proches et votre localisation sur la carte.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Votre position peut être utilisée en arrière-plan pour améliorer le suivi de course.</string>
-	<!-- (Compatibilité iOS plus anciens) -->
+	<string>Votre position peut être utilisée en arrière-plan pour améliorer le suivi si vous activez cette option.</string>
+	<!-- Compatibilité iOS plus anciens -->
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Votre position est utilisée pour la géolocalisation précise lors des courses.</string>
+	<string>Votre position est utilisée pour la géolocalisation précise même lorsque l’app est en arrière-plan.</string>
+
+	<!-- (OPTIONNEL) Active le mode arrière-plan pour la localisation si nécessaire -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+
+	<!-- 📷 Caméra -->
+	<key>NSCameraUsageDescription</key>
+	<string>Cette application utilise la caméra pour capturer vos documents et photos.</string>
+
+	<!-- 🖼️ Bibliothèque Photos (lecture + ajout) -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>L’app a besoin d’accéder à vos photos pour importer des documents et images depuis votre bibliothèque.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>L’app a besoin d’ajouter des images dans votre bibliothèque lorsque vous enregistrez un document généré.</string>
+
+	<!-- 🎙️ Micro (OPTIONNEL, utile uniquement si vous activez la vidéo avec audio) -->
+	<!--
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Le micro est utilisé pour enregistrer l’audio lors des captures vidéo.</string>
+	-->
 </dict>
 </plist>

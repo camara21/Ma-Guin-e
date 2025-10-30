@@ -14,17 +14,14 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  static const Duration _minSplash = Duration(milliseconds: 4200);
+  static const Duration _minSplash = Duration(milliseconds: 5200);
 
   Timer? _t;
   bool _navigated = false;
 
-  // Anim tagline + rope (style Heetch)
-  late final AnimationController _tagCtl; // texte dégradé
-  late final AnimationController _ropeCtl; // petit loader "rope"
-
-  // Glow doux derrière le logo
-  late final AnimationController _glowCtl;
+  // Animations
+  late final AnimationController _textSweepCtl; // lettre -> lettre blanc → noir
+  late final AnimationController _glowCtl;      // halo du logo
   late final Animation<double> _glowScale;
   late final Animation<double> _glowOpacity;
 
@@ -32,19 +29,13 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Précharger le logo pour affichage instantané
     WidgetsBinding.instance.addPostFrameCallback((_) {
       precacheImage(const AssetImage('assets/logo_guinee.png'), context);
     });
 
-    _tagCtl = AnimationController(
+    _textSweepCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
-    )..repeat();
-
-    _ropeCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
     )..repeat();
 
     _glowCtl = AnimationController(
@@ -52,10 +43,9 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
-    _glowScale = Tween<double>(begin: 0.92, end: 1.06)
+    _glowScale = Tween<double>(begin: 0.94, end: 1.06)
         .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
-
-    _glowOpacity = Tween<double>(begin: 0.10, end: 0.45)
+    _glowOpacity = Tween<double>(begin: 0.12, end: 0.40)
         .animate(CurvedAnimation(parent: _glowCtl, curve: Curves.easeInOut));
 
     _t = Timer(_minSplash, _goNextOnce);
@@ -65,8 +55,8 @@ class _SplashScreenState extends State<SplashScreen>
     if (_navigated || !mounted) return;
     _navigated = true;
 
-    // ✅ utilise l'alias rg (et pas RecoveryGuard directement)
     if (rg.RecoveryGuard.isActive) {
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed(AppRoutes.resetPassword);
       return;
     }
@@ -100,97 +90,120 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _t?.cancel();
-    _tagCtl.dispose();
-    _ropeCtl.dispose();
+    _textSweepCtl.dispose();
     _glowCtl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = MediaQuery.of(context).size;
+
+    // ✅ espaces égaux pour que la barre soit pile au milieu
+    final double midGap = (s.shortestSide * 0.04).clamp(14.0, 24.0);
+
+    // ✅ largeur max du texte pour éviter qu’il dépasse
+    final double maxTextWidth = (s.width * 0.78).clamp(240.0, 520.0);
+
+    // ✅ texte un peu plus petit qu’avant
+    final double textSize = (s.shortestSide * 0.064).clamp(20.0, 30.0);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0175C2),
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Léger flou du fond (rendu doux)
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
               child: const SizedBox(),
             ),
           ),
+
+          // Contenu central
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // LOGO agrandi + glow
-                SizedBox(
-                  height: 260,
-                  width: 260,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _glowCtl,
-                        builder: (context, _) {
-                          return Transform.scale(
-                            scale: _glowScale.value,
-                            child: Opacity(
-                              opacity: _glowOpacity.value,
-                              child: Container(
-                                width: 220,
-                                height: 220,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: RadialGradient(
-                                    colors: [
-                                      Color(0xFFFF2E63), // rose
-                                      Color(0x00FF2E63),
-                                    ],
-                                    stops: [0.0, 1.0],
+                // LOGO XXL (fixe) + halo blanc animé
+                Builder(
+                  builder: (context) {
+                    final double box = (s.shortestSide * 0.70).clamp(360.0, 560.0);
+                    final double glow = box * 0.90;
+                    final double imgH = box * 0.86;
+
+                    return SizedBox(
+                      height: box,
+                      width: box,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          AnimatedBuilder(
+                            animation: _glowCtl,
+                            builder: (context, _) {
+                              return Transform.scale(
+                                scale: _glowScale.value,
+                                child: Opacity(
+                                  opacity: _glowOpacity.value,
+                                  child: Container(
+                                    width: glow,
+                                    height: glow,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: RadialGradient(
+                                        colors: [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+                                        stops: [0.0, 1.0],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          );
-                        },
+                              );
+                            },
+                          ),
+                          Image.asset(
+                            'assets/logo_guinee.png',
+                            height: imgH,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ],
                       ),
-                      Image.asset(
-                        'assets/logo_guinee.png',
-                        height: 200,
-                        filterQuality: FilterQuality.high,
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-
-                // Texte animé dégradé
-                AnimatedBuilder(
-                  animation: _tagCtl,
-                  builder: (context, _) {
-                    final slide = (_tagCtl.value * 2.0) - 1.0; // -1 → +1
-                    return _AnimatedGradientText(
-                      'Là où tout commence',
-                      slide: slide,
-                      fontSize: 22,
-                      colors: const [
-                        Color(0xFFFF2E63),
-                        Color(0xFFFF6B6B),
-                        Color(0xFFFFA62B),
-                      ],
                     );
                   },
                 ),
 
-                const SizedBox(height: 12),
+                // espace après le logo
+                SizedBox(height: midGap),
 
-                // Loader capsule "rope"
+                // ✅ BARRE COLORÉE AU MILIEU (entre logo et texte)
                 AnimatedBuilder(
-                  animation: _ropeCtl,
+                  animation: _textSweepCtl,
                   builder: (context, _) {
-                    return _HeetchRopeLoader(progress: _ropeCtl.value);
+                    final sweep = _textSweepCtl.value; // 0..1
+                    return _SoneyaUnderline(
+                      width: maxTextWidth, // même largeur que le bloc texte
+                      height: 6,
+                      progress: sweep,
+                    );
+                  },
+                ),
+
+                // même espace avant le texte -> barre bien centrée
+                SizedBox(height: midGap),
+
+                // === TEXTE : blanc → noir lettre par lettre (avec largeur max) ===
+                AnimatedBuilder(
+                  animation: _textSweepCtl,
+                  builder: (context, _) {
+                    final progress = Curves.easeInOut.transform(_textSweepCtl.value); // 0..1
+                    return SizedBox(
+                      width: maxTextWidth,
+                      child: _LetterByLetterText(
+                        text: 'Là où tout commence',
+                        fontSize: textSize,
+                        progress: progress,
+                      ),
+                    );
                   },
                 ),
               ],
@@ -202,80 +215,94 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// Texte avec dégradé animé horizontal
-class _AnimatedGradientText extends StatelessWidget {
+/// Texte blanc → noir lettre par lettre (pas de superposition).
+class _LetterByLetterText extends StatelessWidget {
   final String text;
-  final double slide; // −1.0 .. +1.0
   final double fontSize;
-  final List<Color> colors;
+  final double progress; // 0..1
 
-  const _AnimatedGradientText(
-    this.text, {
-    required this.slide,
-    required this.colors,
-    this.fontSize = 18,
+  const _LetterByLetterText({
+    required this.text,
+    required this.fontSize,
+    required this.progress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final begin = Alignment(-1.5 + slide, 0);
-    final end = Alignment(1.5 + slide, 0);
+    final chars = text.split('');
+    final total = chars.length;
+    final active = (progress * total).clamp(0, total.toDouble()).floor();
 
-    final gradient = LinearGradient(
-      colors: colors,
-      stops: const [0.0, 0.5, 1.0],
-      begin: begin,
-      end: end,
+    final styleBase = TextStyle(
+      fontSize: fontSize,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.6,
+      height: 1.1,
+      shadows: const [
+        Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 1)),
+      ],
     );
 
-    return ShaderMask(
-      shaderCallback: (Rect bounds) =>
-          gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          letterSpacing: 1.05,
-          shadows: const [
-            Shadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
-          ],
-        ),
+    return Text.rich(
+      TextSpan(
+        children: List.generate(total, (i) {
+          final c = chars[i];
+          final txt = c == ' ' ? ' ' : c;
+          return TextSpan(
+            text: txt,
+            style: styleBase.copyWith(color: i < active ? Colors.black : Colors.white),
+          );
+        }),
       ),
+      textAlign: TextAlign.center,
+      softWrap: true,
     );
   }
 }
 
-/// Petit loader capsule "rope"
-class _HeetchRopeLoader extends StatelessWidget {
+/// Soulignement animé aux couleurs Soneya (dégradé qui défile de gauche à droite)
+class _SoneyaUnderline extends StatelessWidget {
+  final double width;
+  final double height;
   final double progress; // 0..1
 
-  const _HeetchRopeLoader({required this.progress});
+  const _SoneyaUnderline({
+    required this.width,
+    required this.height,
+    required this.progress,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0x26FFFFFF);
-    const fg1 = Color(0xFFFF2E63);
-    const fg2 = Color(0xFFFFA62B);
+    // Couleurs Soneya (rouge → orange → jaune → vert → bleu → violet)
+    const soneya = [
+      Color(0xFFE53935),
+      Color(0xFFFB8C00),
+      Color(0xFFFDD835),
+      Color(0xFF43A047),
+      Color(0xFF1E88E5),
+      Color(0xFF8E24AA),
+    ];
+
+    final slide = (progress * 2.0) - 1.0; // -1 → +1
 
     return SizedBox(
-      width: 160,
-      height: 8,
+      width: width,
+      height: height,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(100),
+        borderRadius: BorderRadius.circular(999),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Container(color: bg),
-            FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: (0.25 + (progress * 0.75)).clamp(0.20, 1.0),
+            Container(color: Colors.white24),
+            FractionalTranslation(
+              translation: Offset(slide, 0),
               child: Container(
+                width: width * 2,
+                height: height,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [fg1, fg2],
+                    colors: soneya,
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),

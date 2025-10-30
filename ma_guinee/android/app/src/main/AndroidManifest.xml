@@ -1,21 +1,32 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.ma_guinee">
 
-    <!-- 📶 Réseau (requis en release) -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 🌐 Réseau -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Optionnel mais utile pour certains checks réseau -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- 📍 Localisation -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Optionnel Android 10+ : localisation en arrière-plan -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <!-- 📍 Localisation (si tu affiches la position sur la carte, etc.) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- ❗️N’active l’arrière-plan que si tu en as VRAIMENT besoin (tracking même écran éteint) -->
+    <!-- <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" /> -->
+
+    <!-- 📷 Caméra (OBLIGATOIRE pour ouvrir l’appareil photo) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- 🔧 Déclare la caméra comme “facultative” pour ne pas exclure des appareils sans caméra -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
 
     <application
         android:label="ma_guinee"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- 🔑 Clé Google Maps directement ici -->
+        <!-- 🔑 Clé Google Maps -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="VOTRE_CLE_API_ICI" />
@@ -29,12 +40,14 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
+
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme" />
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -44,11 +57,11 @@
             android:value="2" />
     </application>
 
-    <!-- Visibilité des packages pour ACTION_PROCESS_TEXT -->
+    <!-- Visibilité de packages pour certaines intents (tel que fourni) -->
     <queries>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
     </queries>
 </manifest>

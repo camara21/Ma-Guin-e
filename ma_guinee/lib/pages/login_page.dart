@@ -52,11 +52,8 @@ class _LoginPageState extends State<LoginPage> {
             .select('role')
             .eq('id', user.id)
             .maybeSingle();
-
         final role = (row?['role'] as String?)?.toLowerCase() ?? '';
-        if (role == 'admin' || role == 'owner') {
-          dest = AppRoutes.adminCenter;
-        }
+        if (role == 'admin' || role == 'owner') dest = AppRoutes.adminCenter;
       } catch (_) {
         dest = AppRoutes.mainNav;
       }
@@ -132,34 +129,24 @@ class _LoginPageState extends State<LoginPage> {
         elevation: 0,
         title: const Text(
           "Connexion",
-          style: TextStyle(
-            // ⚠️ on évite const color = variable : on laisse ce Text non-const si tu préfères
-            color: _primary,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: _primary, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         iconTheme: const IconThemeData(color: _primary),
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
           child: Form(
             key: _formKey,
             child: Column(
               children: [
-                // ---------- EN-TÊTE AVEC CERCLE + ICÔNES DE SERVICES ----------
+                // -------- EN-TÊTE ÉPURÉE : pas de disque, icônes + flèches --------
                 Column(
-                  children: [
-                    _ServiceDial(
+                  children: const [
+                    _ServiceDialMinimal(
                       size: 150,
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF0E67B2), Color(0xFF22C1C3)],
-                      ),
-                      // 🔧 Mets les icônes de TES services ici :
-                      icons: const [
+                      icons: [
                         Icons.restaurant,         // Restaurants
                         Icons.hotel,              // Hôtels
                         Icons.local_hospital,     // Santé
@@ -170,8 +157,8 @@ class _LoginPageState extends State<LoginPage> {
                         Icons.map,                // Carte / Lieux
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    const Text(
+                    SizedBox(height: 14),
+                    Text(
                       "Connectez-vous à l’essentiel",
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -294,122 +281,131 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// “Cadran” : cercle dégradé + icône centrale + icônes de services autour,
-/// reliées par des traits blancs vers le centre.
-class _ServiceDial extends StatelessWidget {
+/// Version minimaliste : PAS de fond bleu.
+/// Anneau intérieur discret + flèches depuis le centre vers chaque icône.
+class _ServiceDialMinimal extends StatelessWidget {
   final double size;
-  final LinearGradient gradient;
   final List<IconData> icons;
 
-  const _ServiceDial({
+  const _ServiceDialMinimal({
     required this.size,
-    required this.gradient,
     required this.icons,
   });
 
   @override
   Widget build(BuildContext context) {
-    final radius = size / 2;
-
     final iconCount = icons.length.clamp(0, 12);
-    final double orbit = radius * 0.62; // distance des icônes au centre
-
-    final positions = <Offset>[];
-    for (int i = 0; i < iconCount; i++) {
-      final theta = (2 * math.pi * i / iconCount) - math.pi / 2; // départ en haut
-      positions.add(Offset(
-        radius + orbit * math.cos(theta),
-        radius + orbit * math.sin(theta),
-      ));
-    }
-
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(
-        children: [
-          // Fond dégradé
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: gradient,
-              boxShadow: const [
-                BoxShadow(color: Color(0x22000000), blurRadius: 16, offset: Offset(0, 8)),
-              ],
-            ),
-          ),
-
-          // Traits centre -> icônes (dessinés sous les icônes)
-          CustomPaint(size: Size(size, size), painter: _DialLinksPainter(positions: positions)),
-
-          // Icône centrale (halo léger)
-          Center(
-            child: Container(
-              width: radius * 0.65,
-              height: radius * 0.65,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                child: Icon(Icons.hub_outlined, color: Colors.white, size: 40),
-              ),
-            ),
-          ),
-
-          // Icônes de service autour
-          ...List.generate(iconCount, (i) {
-            final p = positions[i];
+      child: CustomPaint(
+        painter: _DialArrowsPainter(iconCount: iconCount),
+        child: Stack(
+          children: List.generate(iconCount, (i) {
+            final p = _DialArrowsPainter.positionFor(i, iconCount, size);
             return Positioned(
               left: p.dx - 16,
               top: p.dy - 16,
               child: Container(
                 width: 32,
                 height: 32,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
+                  border: Border.all(color: Colors.grey.shade300),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
+                  ],
                 ),
                 child: Icon(icons[i], size: 18, color: Color(0xFF0E67B2)),
               ),
             );
           }),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _DialLinksPainter extends CustomPainter {
-  final List<Offset> positions;
-  _DialLinksPainter({required this.positions});
+class _DialArrowsPainter extends CustomPainter {
+  final int iconCount;
+
+  _DialArrowsPainter({required this.iconCount});
+
+  static Offset positionFor(int i, int count, double size) {
+    final radius = size / 2;
+    final orbit = radius * 0.72;
+    final theta = (2 * math.pi * i / count) - math.pi / 2; // départ en haut
+    return Offset(
+      radius + orbit * math.cos(theta),
+      radius + orbit * math.sin(theta),
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
 
+    // ✅ On garde UNIQUEMENT l’anneau intérieur
+    final ring = Paint()
+      ..color = const Color(0x11000000)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(center, size.width * 0.36, ring);
+    // ❌ Anneau extérieur supprimé (avant: canvas.drawCircle(center, size.width * 0.72, ring);)
+
     final line = Paint()
-      ..color = Colors.white
+      ..color = const Color(0x33000000)
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final node = Paint()..color = Colors.white;
+    final arrow = Paint()
+      ..color = const Color(0x33000000)
+      ..style = PaintingStyle.fill;
 
-    for (final p in positions) {
-      canvas.drawLine(center, p, line);
-      canvas.drawCircle(p, 3.2, node);
+    for (int i = 0; i < iconCount; i++) {
+      final p = positionFor(i, iconCount, size.width);
+
+      // vecteur centre -> icône
+      final v = (p - center);
+      final dir = v / v.distance;
+
+      // reculer un peu la pointe pour ne pas passer sous l'icône
+      final end = p - dir * 22;
+      final start = center + dir * 16;
+
+      // trait
+      canvas.drawLine(start, end, line);
+
+      // petite tête de flèche triangulaire
+      const ah = 9.0; // hauteur
+      const aw = 6.0; // demi-largeur
+      final perp = Offset(-dir.dy, dir.dx); // perpendiculaire
+
+      final tip = end;
+      final base = end - dir * ah;
+      final p1 = base + perp * aw;
+      final p2 = base - perp * aw;
+
+      final path = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(p1.dx, p1.dy)
+        ..lineTo(p2.dx, p2.dy)
+        ..close();
+      canvas.drawPath(path, arrow);
     }
 
-    final halo = Paint()
-      ..color = Colors.white.withOpacity(0.12)
+    // petit hub central discret
+    final hubFill = Paint()..color = const Color(0x14000000);
+    final hubRing = Paint()
+      ..color = const Color(0x22000000)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 8.0;
-    canvas.drawCircle(center, size.width * 0.28, halo);
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(center, 8, hubFill);
+    canvas.drawCircle(center, 8, hubRing);
   }
 
   @override
-  bool shouldRepaint(covariant _DialLinksPainter oldDelegate) =>
-      oldDelegate.positions != positions;
+  bool shouldRepaint(covariant _DialArrowsPainter oldDelegate) => false;
 }
