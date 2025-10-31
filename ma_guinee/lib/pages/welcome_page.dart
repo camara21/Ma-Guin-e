@@ -288,25 +288,18 @@ class _ClassyTransparentButton extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
-              child: _GradientText(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  letterSpacing: 0.8,
-                  // ombre douce pour détacher sur la photo
-                  shadows: [Shadow(blurRadius: 8, color: Colors.black45, offset: Offset(0, 2))],
-                ),
-                // dégradé “couleur du logo Soneya”
-                colors: const [
-                  Color(0xFFE53935), // rouge
-                  Color(0xFFFB8C00), // orange
-                  Color(0xFFFDD835), // jaune
-                  Color(0xFF43A047), // vert
-                  Color(0xFF1E88E5), // bleu
-                  Color(0xFF8E24AA), // violet
-                ],
-              ),
+              
+               child: Text(
+  label,
+  style: const TextStyle(
+    color: Colors.white,           // ⇦ texte blanc
+    fontWeight: FontWeight.w900,
+    fontSize: 18,
+    letterSpacing: 0.8,
+    shadows: [Shadow(blurRadius: 8, color: Colors.black45, offset: Offset(0, 2))],
+  ),
+),
+
             ),
           ),
         ),

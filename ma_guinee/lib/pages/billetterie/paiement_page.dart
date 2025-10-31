@@ -1,4 +1,5 @@
 // lib/pages/billetterie/paiement_page.dart
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -67,6 +68,13 @@ class _PaiementPageState extends State<PaiementPage> {
   int get _fees => 0; // pas de frais pour l’instant
   int get _total => _subtotal + _fees;
 
+  /// Référence externe lisible générée côté app (pas besoin de package)
+  String _makeProviderRef() {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rnd = Random().nextInt(999999).toString().padLeft(6, '0');
+    return 'SNY-$ts-$rnd';
+  }
+
   Future<void> _payer() async {
     if (_processing) return;
 
@@ -90,25 +98,32 @@ class _PaiementPageState extends State<PaiementPage> {
         quantite: widget.quantite,
       );
 
-      // 3) Créer le PAIEMENT via la RPC "create_paiement_dynamic"
-      // ENUMs DB : {cash, om, mtn, wave, carte}
+      // 3) Créer le PAIEMENT via la RPC "create_paiement_dynamic" (4 params)
+      // ENUM DB pour fournisseur: {cash, om, mtn, wave, carte}
       final String moyenText = (_kind == _PayKind.mobile) ? 'om' : 'carte';
+      final String providerRef = _makeProviderRef();
 
-      final data = await _sb.rpc(
+      final res = await _sb.rpc(
         'create_paiement_dynamic',
         params: {
           'p_ride_id': reservationId, // reservations_billets.id
-          'p_moyen_text': moyenText,  // 'om' ou 'carte'
+          'p_moyen_text': moyenText,  // 'om' / 'carte' / 'mtn' / 'wave' / 'cash'
           'p_amount_gnf': _total,
-          // ne PAS envoyer p_provider_ref -> hash généré côté DB
+          'p_provider_ref': providerRef, // généré côté app
         },
-      ) as List;
+      );
 
-      if (data.isEmpty) {
+      // PostgREST peut renvoyer un Map (row) ou une List (setof). On gère les deux.
+      final ok = (res != null) &&
+          !((res is List) && res.isEmpty);
+      if (!ok) {
         throw Exception('Paiement non créé (réponse vide).');
       }
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paiement réussi ✅')),
+      );
       Navigator.pop(context, true); // succès → renvoie true à l’appelant
 
     } on PostgrestException catch (e) {
@@ -135,9 +150,7 @@ class _PaiementPageState extends State<PaiementPage> {
     if (r.contains('23503')) {
       return 'Réservation introuvable. Réessaie de réserver le billet.';
     }
-    if (r.contains('digest') || r.contains('pgcrypto')) {
-      return 'Erreur de signature interne. Réessaie dans un instant.';
-    }
+    // Plus d’usage de pgcrypto/digest côté DB, on retire ce cas.
     return 'Erreur: $raw';
   }
 

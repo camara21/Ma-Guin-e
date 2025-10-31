@@ -147,7 +147,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                         );
                       }
                     },
-                    child: Text('Payer ${nf.format(montant)} GNF'),
+                    child: Text('Réserver ${nf.format(montant)} GNF'),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -336,7 +336,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                             ticketTitle: ticketTitle,
                           )
                       : null,
-                  buttonLabel: 'Payer',
+                  buttonLabel: 'Réserver',
                 );
               }),
 
