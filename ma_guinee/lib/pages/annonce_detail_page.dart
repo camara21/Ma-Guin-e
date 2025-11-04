@@ -4,11 +4,11 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:ma_guinee/models/annonce_model.dart';
 import 'package:ma_guinee/pages/messages_annonce_page.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class AnnonceDetailPage extends StatefulWidget {
   final AnnonceModel annonce;
@@ -21,10 +21,10 @@ class AnnonceDetailPage extends StatefulWidget {
 class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   final _sb = Supabase.instance.client;
 
-  // ---------- PALETTE DOUCE (identique à la liste) ----------
+  // ---------- PALETTE DOUCE ----------
   static const Color kPrimary    = Color(0xFFD92D20); // rouge doux (actif)
   static const Color kPrimaryD   = Color(0xFFB42318); // rouge doux foncé (pressed)
-  static const Color kSecondary  = Color(0xFFFFF1F1); // fond très léger (chips/état)
+  static const Color kSecondary  = Color(0xFFFFF1F1); // fond très léger
   static const Color kOnPrimary  = Colors.white;
 
   // Neutres
@@ -89,7 +89,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         '_annonce_id': widget.annonce.id,
       });
       if (v is int && mounted) setState(() => _views = v);
-    } catch (_) {}
+    } catch (_) {/* noop */}
   }
 
   // ---------- Vendeur & listes ----------
@@ -103,18 +103,21 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (mounted && data is Map<String, dynamic>) {
         setState(() => vendeur = data);
       }
-    } catch (_) {}
+    } catch (_) {/* noop */}
   }
 
   Future<List<AnnonceModel>> _fetchAnnoncesSimilaires() async {
     try {
       final raw = await _sb
-          .from('annonces').select()
+          .from('annonces')
+          .select()
           .eq('ville', widget.annonce.ville)
           .neq('id', widget.annonce.id)
           .limit(5);
       final list = raw is List ? raw : <dynamic>[];
-      return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (_) {
       return <AnnonceModel>[];
     }
@@ -122,11 +125,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
     try {
-      final raw = await _sb
-          .from('annonces').select()
-          .eq('user_id', widget.annonce.userId);
+      final raw = await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
       final list = raw is List ? raw : <dynamic>[];
-      return list.map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (_) {
       return <AnnonceModel>[];
     }
@@ -197,7 +200,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           ),
         ),
 
-        // Actions (icônes blanches au-dessus de la photo, pas de rouge)
+        // Actions (icônes blanches au-dessus de la photo)
         Positioned(
           top: 12,
           right: 12,
@@ -320,7 +323,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 children: reasons.map((r) => ChoiceChip(
                   label: Text(r),
                   selected: selected == r,
-                  selectedColor: kSecondary,      // fond très léger
+                  selectedColor: kSecondary,
                   onSelected: (_) => setLocal(() => selected = r),
                 )).toList(),
               ),
@@ -655,8 +658,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               a.titre,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold, color: kText),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, color: kText),
                             ),
                           ),
                           Padding(
@@ -675,6 +678,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         );
       },
     );
+  }
+
+  // ---------- Utils ----------
+  String _normalizePhone(String raw) {
+    // Conserve uniquement + et chiffres pour le schéma tel:
+    return raw.replaceAll(RegExp(r'[^0-9\+]'), '');
   }
 
   // ---------- Barre d’actions bas ----------
@@ -698,7 +707,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         ),
         child: Row(
           children: [
-            // Message : OUTLINE rouge (discret)
+            // Message : OUTLINE rouge
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -731,7 +740,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               ),
             ),
             const SizedBox(width: 12),
-            // Contacter : plein (action principale)
+            // Contacter : utilise EXCLUSIVEMENT le téléphone de l’annonce
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -748,17 +757,19 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   ),
                 ),
                 onPressed: () async {
-                  final tel = a.telephone.trim();
+                  final telRaw = a.telephone; // <- vient de l'annonce
+                  final tel = _normalizePhone(telRaw);
                   if (tel.isEmpty) {
-                    _snack('Numéro de téléphone indisponible.');
+                    _snack('Numéro de téléphone indisponible dans cette annonce.');
                     return;
                   }
-                  final ok = await canLaunchUrl(Uri.parse('tel:$tel'));
+                  final uri = Uri.parse('tel:$tel');
+                  final ok = await canLaunchUrl(uri);
                   if (!ok) {
-                    _snack("Nous n’avons pas pu ouvrir l’application Téléphone sur cet appareil.");
+                    _snack("Impossible d’ouvrir l’application Téléphone.");
                     return;
                   }
-                  await launchUrl(Uri.parse('tel:$tel'));
+                  await launchUrl(uri);
                 },
                 icon: const Icon(Icons.call),
                 label: const Text("Contacter"),

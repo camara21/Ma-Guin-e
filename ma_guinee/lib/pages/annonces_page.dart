@@ -16,7 +16,7 @@ class AnnoncesPage extends StatefulWidget {
 }
 
 class _AnnoncesPageState extends State<AnnoncesPage> {
-  // ===== PALETTE DOUCE : rouge seulement quand actif =====
+  // ===== COULEURS =====
   static const Color _brandRed       = Color(0xFFD92D20);
   static const Color _softRedBg      = Color(0xFFFFF1F1);
   static const Color _pageBg         = Color(0xFFF5F7FA);
@@ -24,7 +24,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
   static const Color _stroke         = Color(0xFFE5E7EB);
   static const Color _textPrimary    = Color(0xFF1F2937);
   static const Color _textSecondary  = Color(0xFF6B7280);
-  static const Color _onPrimary      = Color(0xFFFFFFFF);
 
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -40,24 +39,22 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
 
   // catégories
   final Map<String, dynamic> _catTous = const {
-    'label': 'Tous',
-    'icon': Icons.apps,
-    'id': null
+    'label': 'Tous', 'icon': Icons.apps, 'id': null
   };
   final List<Map<String, dynamic>> _cats = const [
-    {'label': 'Immobilier',        'icon': Icons.home_work_outlined, 'id': 1},
-    {'label': 'Véhicules',         'icon': Icons.directions_car,     'id': 2},
-    {'label': 'Vacances',          'icon': Icons.beach_access,       'id': 3},
-    {'label': 'Emploi',            'icon': Icons.work_outline,       'id': 4},
-    {'label': 'Services',          'icon': Icons.handshake,          'id': 5},
-    {'label': 'Famille',           'icon': Icons.family_restroom,    'id': 6},
-    {'label': 'Électronique',      'icon': Icons.devices_other,      'id': 7},
-    {'label': 'Mode',              'icon': Icons.checkroom,          'id': 8},
-    {'label': 'Loisirs',           'icon': Icons.sports_soccer,      'id': 9},
-    {'label': 'Animaux',           'icon': Icons.pets,               'id': 10},
-    {'label': 'Maison & Jardin',   'icon': Icons.chair_alt,          'id': 11},
-    {'label': 'Matériel pro',      'icon': Icons.build,              'id': 12},
-    {'label': 'Autres',            'icon': Icons.category,           'id': 13},
+    {'label': 'Immobilier','icon': Icons.home_work_outlined, 'id': 1},
+    {'label': 'Véhicules', 'icon': Icons.directions_car,     'id': 2},
+    {'label': 'Vacances',  'icon': Icons.beach_access,        'id': 3},
+    {'label': 'Emploi',    'icon': Icons.work_outline,        'id': 4},
+    {'label': 'Services',  'icon': Icons.handshake,           'id': 5},
+    {'label': 'Famille',   'icon': Icons.family_restroom,     'id': 6},
+    {'label': 'Électronique','icon': Icons.devices_other,     'id': 7},
+    {'label': 'Mode',      'icon': Icons.checkroom,           'id': 8},
+    {'label': 'Loisirs',   'icon': Icons.sports_soccer,       'id': 9},
+    {'label': 'Animaux',   'icon': Icons.pets,                'id': 10},
+    {'label': 'Maison & Jardin', 'icon': Icons.chair_alt,     'id': 11},
+    {'label': 'Matériel pro',    'icon': Icons.build,         'id': 12},
+    {'label': 'Autres',          'icon': Icons.category,      'id': 13},
   ];
   late final List<Map<String, dynamic>> _allCats;
   int? _selectedCatId;
@@ -79,12 +76,20 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     super.dispose();
   }
 
+  // ========= DATA =========
   Future<void> _loadAnnonces() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final raw = await Supabase.instance.client
+      final supa = Supabase.instance.client;
+      final raw = await supa
           .from('annonces')
-          .select('id, titre, description, prix, devise, ville, categorie_id, images, date_creation')
+          .select('''
+            *,
+            proprietaire:utilisateurs!annonces_user_id_fkey (
+              id, prenom, nom, photo_url,
+              annonces:annonces!annonces_user_id_fkey ( count )
+            )
+          ''')
           .order('date_creation', ascending: false);
       _allAnnonces = (raw as List).cast<Map<String, dynamic>>();
     } catch (e) {
@@ -139,6 +144,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     }
   }
 
+  // ========= FILTRES =========
   List<Map<String, dynamic>> _filtered() {
     final cat = _selectedCatId;
     final f = _searchCtrl.text.trim().toLowerCase();
@@ -162,7 +168,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     return s.replaceAll(',', '.');
   }
 
-  // --- Chip catégorie ---
+  // ========= UI HELPERS =========
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
       onTap: () => setState(() {
@@ -199,33 +205,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  void _showCategoriesSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _cardBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 12,
-          children: [_catTous, ..._cats]
-              .map((c) => _categoryChip(c, _selectedLabel == c['label']))
-              .toList(),
-        ),
-      ),
-    );
-  }
-
-  // --- Bannière ---
   Widget _sellBanner() {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: _cardBg,
           borderRadius: BorderRadius.circular(16),
@@ -242,7 +227,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                         fontWeight: FontWeight.w700,
                         color: _textPrimary,
                       )),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
                     "Touchez des milliers d’acheteurs près de chez vous.",
                     style: theme.textTheme.bodySmall!.copyWith(
@@ -259,7 +244,7 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: _brandRed,
                 side: const BorderSide(color: _brandRed),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -277,10 +262,10 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
-  // --- Carte annonce ---
+  /// ======== CARD ANNONCE — compacte, ZÉRO espace perdu & aucun overflow ========
   Widget _annonceCard(Map<String, dynamic> data) {
     final images = List<String>.from(data['images'] ?? const []);
-    final id = data['id']?.toString() ?? '';
+    final id = (data['id'] ?? '').toString();
     final prix = data['prix'] ?? 0;
     final devise = data['devise'] ?? 'GNF';
     final ville = data['ville'] ?? '';
@@ -292,107 +277,163 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
 
     final rawDate = data['date_creation']?.toString() ?? '';
     DateTime date;
-    try {
-      date = DateTime.parse(rawDate);
-    } catch (_) {
-      date = DateTime.now();
-    }
-    final now = DateTime.now();
-    final dateText = (date.year == now.year && date.month == now.month && date.day == now.day)
-        ? "aujourd’hui ${DateFormat.Hm().format(date)}"
-        : DateFormat('dd/MM/yyyy').format(date);
+    try { date = DateTime.parse(rawDate); } catch (_) { date = DateTime.now(); }
+    final dateText = DateFormat('dd/MM/yyyy').format(date);
 
-    final isFav = _favIds.contains(id);
+    // infos vendeur
+    final Map<String, dynamic>? owner = data['proprietaire'] as Map<String, dynamic>?;
+    final String sellerName = [
+      (owner?['prenom'] ?? '').toString().trim(),
+      (owner?['nom'] ?? '').toString().trim()
+    ].where((p) => p.isNotEmpty).join(' ').isNotEmpty
+        ? [owner?['prenom'] ?? '', owner?['nom'] ?? '']
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .join(' ')
+        : 'Utilisateur';
+    final String? sellerAvatar = owner?['photo_url'] as String?;
+    final int sellerAdsCount   = () {
+      final lst = (owner?['annonces'] as List?) ?? const [];
+      if (lst.isEmpty) return 0;
+      final first = (lst.first as Map)['count'];
+      return (first is int) ? first : int.tryParse(first.toString()) ?? 0;
+    }();
 
     return Card(
-      elevation: 1,
       color: _cardBg,
+      elevation: 1,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: _stroke),
       ),
       clipBehavior: Clip.hardEdge,
       child: InkWell(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AnnonceDetailPage(annonce: AnnonceModel.fromJson(data)),
-          ),
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AspectRatio(
-                  aspectRatio: 16 / 11,
-                  child: Image.network(
-                    images.isNotEmpty
-                        ? images.first
-                        : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Colors.grey[200],
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.image_not_supported,
-                          size: 40, color: Colors.grey),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data['titre'] ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: _textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "${_fmtGNF(prix)} $devise",
-                        style: const TextStyle(
-                          color: _textPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      if (catLabel.isNotEmpty)
-                        Text(catLabel, style: const TextStyle(color: _textSecondary, fontSize: 12)),
-                      Text(ville,     style: const TextStyle(color: _textSecondary, fontSize: 12)),
-                      Text(dateText, style: const TextStyle(color: _textSecondary, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ],
+        onTap: () {
+          final enriched = Map<String, dynamic>.from(data);
+          enriched['seller_name'] = sellerName;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AnnonceDetailPage(
+                annonce: AnnonceModel.fromJson(enriched),
+              ),
             ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: IgnorePointer(
-                ignoring: !_favLoaded,
-                child: InkWell(
-                  onTap: () => _toggleFavori(id),
-                  child: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 3)],
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image homogène
+            AspectRatio(
+              aspectRatio: 16 / 11,
+              child: Image.network(
+                images.isNotEmpty
+                    ? images.first
+                    : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: Colors.grey[200],
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_not_supported,
+                      size: 40, color: Colors.grey),
+                ),
+              ),
+            ),
+
+            // Corps : occupe TOUT l’espace restant, vendeur plaqué en bas
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // bloc infos
+                    Text(
+                      data['titre'] ?? '',
+                      maxLines: 2, // 2 lignes visibles max
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: _textPrimary,
+                        height: 1.15,
+                      ),
                     ),
-                    child: Icon(
-                      isFav ? Icons.favorite : Icons.favorite_border,
-                      size: 24,
-                      color: isFav ? _brandRed : _textSecondary,
+                    const SizedBox(height: 6), // espace lisible entre titre & prix
+                    Text(
+                      "${_fmtGNF(prix)} $devise",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                        color: _textPrimary,
+                        height: 1.0,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      catLabel.isEmpty ? ' ' : catLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _textSecondary,
+                        fontSize: 11.5,
+                        height: 1.0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "$dateText · $ville",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _textSecondary,
+                        fontSize: 11.5,
+                        height: 1.0,
+                      ),
+                    ),
+
+                    // pousse le vendeur en bas
+                    const Spacer(),
+
+                    // Vendeur
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundColor: const Color(0xFFE5E7EB),
+                          backgroundImage: (sellerAvatar != null && sellerAvatar.isNotEmpty)
+                              ? NetworkImage(sellerAvatar)
+                              : null,
+                          child: (sellerAvatar == null || sellerAvatar.isEmpty)
+                              ? const Icon(Icons.person, size: 14, color: _textSecondary)
+                              : null,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            sellerName.isEmpty ? "Utilisateur" : sellerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          "$sellerAdsCount annonce${sellerAdsCount > 1 ? 's' : ''}",
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _textSecondary,
+                            height: 1.0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -402,15 +443,51 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
     );
   }
 
+  // ======== RESPONSIVE GRID ========
+  int _columnsForWidth(double w) {
+    if (w >= 1600) return 6; // très grand écran
+    if (w >= 1400) return 5; // xl desktop
+    if (w >= 1100) return 4; // desktop
+    if (w >= 800)  return 3; // tablette
+    return 2;                // mobile
+  }
+
+  /// Calcule un `childAspectRatio` **sécurisé** (pas d’overflow, pas de grands vides)
+  double _ratioFor(double screenWidth, int cols, double spacing, double paddingH) {
+    final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
+    final itemWidth = usableWidth / cols;
+
+    // Hauteur image (fixe par ratio 16/11)
+    final imageH = itemWidth * (11 / 16);
+
+    // Hauteur “texte + vendeur”. On surestime un peu pour éviter tout overflow.
+    double infoH;
+    if (itemWidth < 220) {
+      infoH = 148;
+    } else if (itemWidth < 280) {
+      infoH = 138;
+    } else if (itemWidth < 340) {
+      infoH = 130;
+    } else {
+      infoH = 124;
+    }
+
+    final totalH = imageH + infoH;
+    final ratio = itemWidth / totalH;
+
+    // Micro marge de sécurité
+    return ratio; // déjà “juste ce qu’il faut”
+  }
+
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    int crossAxis = 2;
-    if (width >= 1400) crossAxis = 5;
-    else if (width >= 1100) crossAxis = 4;
-    else if (width >= 800) crossAxis = 3;
+    final screenW = MediaQuery.of(context).size.width;
+    final gridCols = _columnsForWidth(screenW);
+    const gridSpacing = 10.0;
+    const gridHPadding = 12.0;
 
     final annonces = _filtered();
+    final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
     return Scaffold(
       backgroundColor: _pageBg,
@@ -494,12 +571,12 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                           SliverToBoxAdapter(child: _sellBanner()),
                           const SliverToBoxAdapter(
                             child: Padding(
-                              padding: EdgeInsets.only(left: 18, bottom: 4, top: 8),
+                              padding: EdgeInsets.only(left: 16, bottom: 4, top: 6),
                               child: Text(
                                 'Annonces récentes',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 17,
+                                  fontSize: 16.5,
                                   color: _textSecondary,
                                 ),
                               ),
@@ -512,13 +589,14 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                             )
                           else
                             SliverPadding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: gridHPadding, vertical: 6),
                               sliver: SliverGrid(
                                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxis,
-                                  crossAxisSpacing: 10,
-                                  mainAxisSpacing: 16,
-                                  childAspectRatio: 0.72,
+                                  crossAxisCount: gridCols,
+                                  crossAxisSpacing: gridSpacing,
+                                  mainAxisSpacing: gridSpacing,
+                                  childAspectRatio: ratio,
                                 ),
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) => _annonceCard(annonces[index]),
@@ -531,7 +609,6 @@ class _AnnoncesPageState extends State<AnnoncesPage> {
                     ),
                   ],
                 ),
-      // FAB
       floatingActionButton: FloatingActionButton.extended(
         elevation: 2,
         backgroundColor: _cardBg,

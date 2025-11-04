@@ -463,7 +463,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           .from('utilisateurs')
           .select('id, nom, prenom, telephone, ville, genre, created_at')
           .order('created_at', ascending: false)
-          .limit(20);
+          .limit(100);
       final list = (res as List).cast<Map<String, dynamic>>();
       final mapped = list.map((m) => _UserLite.fromMap(m)).toList();
       if (!mounted) return;
@@ -576,13 +576,13 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
 
                       const SizedBox(height: 16),
 
-                      // Derniers inscrits
+                      // Derniers inscrits (section déroulante)
                       _lastUsersCard(),
 
                       const SizedBox(height: 16),
 
-                      // Tous les services — activité du jour (%)
-                      _allServicesDonutGrid(m),
+                      // Services — section déroulante compacte (carrousel mini-cercles)
+                      _servicesCompactSection(m),
 
                       const SizedBox(height: 16),
 
@@ -663,7 +663,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
 
                       const SizedBox(height: 16),
 
-                      // Grille services classique (totaux)
+                      // Grille services classique (totaux) — reste en bas
                       _gridServices(context, m),
                     ],
                   ),
@@ -792,143 +792,224 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     );
   }
 
-  // ------- Derniers inscrits -------
+  // ------- Derniers inscrits (section déroulante + "Voir tout") -------
   Widget _lastUsersCard() {
+    final count = _lastUsers.length;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Text('Derniers inscrits', style: TextStyle(fontWeight: FontWeight.bold)),
-            const Spacer(),
+        padding: const EdgeInsets.all(8),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+          childrenPadding: const EdgeInsets.only(bottom: 8, left: 8, right: 8),
+          title: Row(
+            children: [
+              const Text('Derniers inscrits', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$count', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             IconButton(onPressed: _loadLastUsers, icon: const Icon(Icons.refresh)),
+            const Icon(Icons.expand_more),
           ]),
-          const SizedBox(height: 8),
-          if (_lastUsers.isEmpty)
-            const Text('Aucun inscrit récent.')
-          else
-            Column(
-              children: _lastUsers.map((u) {
-                final g = (u.genre ?? '').toLowerCase();
-                final icon = g.startsWith('m') || g.contains('homme') || g.contains('gar') ? Icons.male : (g.startsWith('f') || g.contains('femme') || g.contains('fill') ? Icons.female : Icons.person_outline);
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black12),
-                    borderRadius: BorderRadius.circular(10),
-                    color: Colors.white,
+          children: [
+            if (_lastUsers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('Aucun inscrit récent.'),
+              )
+            else
+              Column(
+                children: [
+                  ..._lastUsers.take(6).map(_userTile).toList(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: _showAllLastUsers,
+                        icon: const Icon(Icons.list),
+                        label: const Text('Voir tout'),
+                      ),
+                    ],
                   ),
-                  child: Row(children: [
-                    Icon(icon, color: Colors.black54),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(u.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Row(children: [
-                          if ((u.ville ?? '').isNotEmpty) ...[
-                            const Icon(Icons.place, size: 14, color: Colors.black45),
-                            const SizedBox(width: 2),
-                            Text(u.ville!, style: const TextStyle(color: Colors.black54)),
-                            const SizedBox(width: 10),
-                          ],
-                          if ((u.telephone ?? '').isNotEmpty) ...[
-                            const Icon(Icons.phone, size: 14, color: Colors.black45),
-                            const SizedBox(width: 2),
-                            Text(u.telephone!, style: const TextStyle(color: Colors.black54)),
-                          ],
-                        ]),
-                      ]),
-                    ),
-                    Text(_fmtDateShort(u.createdAt), style: const TextStyle(color: Colors.black54)),
-                  ]),
-                );
-              }).toList(),
-            ),
-        ]),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  String _fmtDateShort(DateTime d) {
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$day/$m/$y';
+  // Élément de liste pour un utilisateur
+  Widget _userTile(_UserLite u) {
+    final g = (u.genre ?? '').toLowerCase();
+    final icon = g.startsWith('m') || g.contains('homme') || g.contains('gar')
+        ? Icons.male
+        : (g.startsWith('f') || g.contains('femme') || g.contains('fill')
+            ? Icons.female
+            : Icons.person_outline);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(10),
+        color: Colors.white,
+      ),
+      child: Row(children: [
+        Icon(icon, color: Colors.black54),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(u.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Row(children: [
+              if ((u.ville ?? '').isNotEmpty) ...[
+                const Icon(Icons.place, size: 14, color: Colors.black45),
+                const SizedBox(width: 2),
+                Text(u.ville!, style: const TextStyle(color: Colors.black54)),
+                const SizedBox(width: 10),
+              ],
+              if ((u.telephone ?? '').isNotEmpty) ...[
+                const Icon(Icons.phone, size: 14, color: Colors.black45),
+                const SizedBox(width: 2),
+                Text(u.telephone!, style: const TextStyle(color: Colors.black54)),
+              ],
+            ]),
+          ]),
+        ),
+        Text(_fmtDateShort(u.createdAt), style: const TextStyle(color: Colors.black54)),
+      ]),
+    );
   }
 
-  // ------- Tous les services — activité du jour (%) -------
-  Widget _allServicesDonutGrid(Map<String, dynamic> metricsMap) {
-    final items = services.map((s) {
-      final obj = (metricsMap[s.table] ?? {}) as Map? ?? {};
-      int total = (obj['total'] as num?)?.toInt() ?? 0;
-      int today = (obj['today'] as num?)?.toInt() ?? 0;
+  // Feuille modale "Derniers inscrits" complète + recherche
+  void _showAllLastUsers() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final searchCtrl = TextEditingController();
+        List<_UserLite> filtered = List<_UserLite>.from(_lastUsers);
+        return StatefulBuilder(
+          builder: (ctx, setM) {
+            void applyFilter(String q) {
+              final qq = q.toLowerCase().trim();
+              setM(() {
+                if (qq.isEmpty) {
+                  filtered = List<_UserLite>.from(_lastUsers);
+                } else {
+                  filtered = _lastUsers.where((u) {
+                    final full = '${u.prenom ?? ''} ${u.nom ?? ''} ${u.ville ?? ''} ${u.telephone ?? ''}'.toLowerCase();
+                    return full.contains(qq);
+                  }).toList();
+                }
+              });
+            }
 
-      if (s.table == 'reports') {
-        total = reportsTotal;
-        today = reportsToday;
-      }
-
-      final pctToday = total == 0 ? 0.0 : (today / total) * 100.0;
-
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(s.icon, size: 18),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      s.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: AnimatedBuilder(
-                  animation: _miniAnim,
-                  builder: (_, __) => CustomPaint(
-                    painter: _MiniCirclePainter(percent: (pctToday.clamp(0, 100)) * _miniAnim.value),
-                    child: Center(
-                      child: Text('${pctToday.isNaN ? 0 : pctToday.toStringAsFixed(0)}%',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.85,
+                minChildSize: 0.5,
+                maxChildSize: 0.95,
+                builder: (_, controller) => Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(999))),
+                    const SizedBox(height: 12),
+                    const Text('Tous les derniers inscrits', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: TextField(
+                        controller: searchCtrl,
+                        onChanged: applyFilter,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Rechercher nom, ville, téléphone…',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: controller,
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) => _userTile(filtered[i]),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text('Aujourd’hui: $today', style: const TextStyle(color: Colors.black54)),
-              Text('Total: $total', style: const TextStyle(color: Colors.black54)),
-            ],
-          ),
-        ),
-      );
-    }).toList();
+            );
+          },
+        );
+      },
+    );
+  }
 
+  // ------- Section Services compacte (carrousel mini-cercles) -------
+  Widget _servicesCompactSection(Map<String, dynamic> metricsMap) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Tous les services — activité du jour (%)', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.05,
-            physics: const NeverScrollableScrollPhysics(),
-            shrinkWrap: true,
-            children: items,
-          ),
-        ]),
+        padding: const EdgeInsets.all(8),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+          childrenPadding: const EdgeInsets.only(bottom: 8, left: 8, right: 8),
+          title: const Text('Services (activité du jour)', style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('Aperçu rapide — cliquez pour ouvrir la gestion'),
+          trailing: const Icon(Icons.expand_more),
+          initiallyExpanded: false,
+          children: [
+            SizedBox(
+              height: 170,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: services.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final s = services[i];
+                  final obj = (metricsMap[s.table] ?? {}) as Map? ?? {};
+                  int total = (obj['total'] as num?)?.toInt() ?? 0;
+                  int today = (obj['today'] as num?)?.toInt() ?? 0;
+                  if (s.table == 'reports') {
+                    total = reportsTotal;
+                    today = reportsToday;
+                  }
+                  final pctToday = total == 0 ? 0.0 : (today / total) * 100.0;
+
+                  return _ServiceMiniCard(
+                    icon: s.icon,
+                    label: s.name,
+                    percent: pctToday.clamp(0, 100),
+                    today: today,
+                    total: total,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => ContentAdvancedPage(title: s.name, table: s.table)),
+                    ),
+                    anim: _miniAnim,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1296,6 +1377,82 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
       services.firstWhere((s) => s.table == t, orElse: () => services.first);
   String _fmtTime(DateTime d) =>
       '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  String _fmtDateShort(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$day/$m/$y';
+  }
+}
+
+// ======= Composant mini-carte Service =======
+class _ServiceMiniCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double percent; // 0..100
+  final int today;
+  final int total;
+  final VoidCallback onTap;
+  final Animation<double> anim;
+
+  const _ServiceMiniCard({
+    required this.icon,
+    required this.label,
+    required this.percent,
+    required this.today,
+    required this.total,
+    required this.onTap,
+    required this.anim,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 180,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.black12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Row(children: [
+              Icon(icon, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: anim,
+                builder: (_, __) => CustomPaint(
+                  painter: _MiniCirclePainter(percent: percent * anim.value),
+                  child: Center(
+                    child: Text('${percent.isNaN ? 0 : percent.toStringAsFixed(0)}%',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Aujourd’hui: $today', style: const TextStyle(color: Colors.black54)),
+            Text('Total: $total', style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ======= Modèles & Dialogues de validation =======

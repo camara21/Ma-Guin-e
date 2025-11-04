@@ -47,7 +47,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _notificationsNonLues = 0; // admin-only
+  int _notificationsNonLues = 0; // admin-only (type != message)
   int _messagesNonLus = 0;
 
   StreamSubscription<List<Map<String, dynamic>>>? _notifSub;
@@ -58,6 +58,13 @@ class _HomePageState extends State<HomePage> {
     _verifierCGU();
     _ecouterNotificationsAdminOnly();
     _chargerMessagesNonLus();
+  }
+
+  @override
+  void didChangeDependencies() {
+    // Si l'utilisateur change (logout/login), on resynchronise.
+    _ecouterNotificationsAdminOnly();
+    super.didChangeDependencies();
   }
 
   @override
@@ -84,20 +91,29 @@ class _HomePageState extends State<HomePage> {
   }
 
   // --------- Notifications ADMIN uniquement ---------
+  bool _estNonLue(Map<String, dynamic> n) {
+    final lu = n['lu'] == true;
+    final isRead = n['is_read'] == true;
+    return !(lu || isRead);
+  }
+
   void _ecouterNotificationsAdminOnly() {
     final user = context.read<UserProvider>().utilisateur;
     if (user == null) return;
 
     _notifSub?.cancel();
 
+    // Flux temps réel sur utilisateur_id (le plus utilisé dans ton app).
     _notifSub = Supabase.instance.client
         .from('notifications:utilisateur_id=eq.${user.id}&type=neq.message')
         .stream(primaryKey: ['id']).listen((rows) {
       if (!mounted) return;
-
-      final nonLues = rows.where((n) => n['lu'] != true).length;
+      final nonLues = rows.where((n) => _estNonLue(n)).length;
       setState(() => _notificationsNonLues = nonLues);
     });
+
+    // NOTE: si certaines lignes n'ont que user_id, aligne tes INSERTs pour remplir aussi utilisateur_id,
+    // ou crée une vue qui COALESCE(user_id, utilisateur_id) et écoute cette vue ici.
   }
 
   Future<void> _chargerMessagesNonLus() async {
@@ -105,19 +121,28 @@ class _HomePageState extends State<HomePage> {
     if (user == null) return;
 
     try {
+      // Chargement initial : couvre utilisateur_id OU user_id, et type != 'message'
       final rows = await Supabase.instance.client
           .from('notifications')
-          .select('id, utilisateur_id, lu, type')
-          .eq('utilisateur_id', user.id)
+          .select('id, utilisateur_id, user_id, lu, is_read, type')
+          .or('utilisateur_id.eq.${user.id},user_id.eq.${user.id}')
           .neq('type', 'message');
 
-      final nonLues = (rows as List).where((n) => n['lu'] != true).length;
+      final list = (rows as List).cast<Map<String, dynamic>>();
+      final nonLues = list.where((n) => _estNonLue(n)).length;
       if (mounted) setState(() => _notificationsNonLues = nonLues);
     } catch (_) {}
 
     final count = await MessageService().getUnreadMessagesCount(user.id);
     if (!mounted) return;
     setState(() => _messagesNonLus = count);
+  }
+
+  // Ouvre la page notifications et rafraîchit le badge au retour
+  Future<void> _openNotifications() async {
+    await Navigator.pushNamed(context, AppRoutes.notifications);
+    if (!mounted) return;
+    await _chargerMessagesNonLus(); // force sync du badge après lecture
   }
 
   // ========== UI helpers ==========
@@ -308,8 +333,7 @@ class _HomePageState extends State<HomePage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.notifications, color: _kNotifPrimary),
-                  onPressed: () =>
-                      Navigator.pushNamed(context, AppRoutes.notifications),
+                  onPressed: _openNotifications, // <-- attend + refresh au retour
                 ),
                 if (_notificationsNonLues > 0)
                   Positioned(
@@ -317,16 +341,19 @@ class _HomePageState extends State<HomePage> {
                     right: 10,
                     child: Container(
                       padding: const EdgeInsets.all(5),
+                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                       decoration: const BoxDecoration(
                         color: Colors.red,
                         shape: BoxShape.circle,
                       ),
-                      child: Text(
-                        _notificationsNonLues.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                      child: Center(
+                        child: Text(
+                          _notificationsNonLues.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -446,7 +473,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
                 ),
                 _ServiceTile(
-                  icon: _adminInstitutionIcon(context), // << icône admin avec pied dégradé
+                  icon: _adminInstitutionIcon(context), // icône admin avec pied dégradé
                   label: "Services Admin",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
                 ),
@@ -533,8 +560,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   label: "Billetterie",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.billetterie),
-              
-                  
                 ),
               ],
             ),
@@ -637,35 +662,41 @@ class _InstitutionGradientBasePainter extends CustomPainter {
   });
 
   @override
-  void paint(Canvas canvas, Size s) {
+  void paint(Canvas canvas, Size s) { // <-- corrigé: plus de caractère caché
     final w = s.width, h = s.height;
     final p = Paint()..style = PaintingStyle.fill;
 
     // Toit (pédiment)
     p.color = structure;
     final pediment = Path()
-      ..moveTo(w*0.12, h*0.28)
-      ..lineTo(w*0.50, h*0.09)
-      ..lineTo(w*0.88, h*0.28)
+      ..moveTo(w * 0.12, h * 0.28)
+      ..lineTo(w * 0.50, h * 0.09)
+      ..lineTo(w * 0.88, h * 0.28)
       ..close();
     canvas.drawPath(pediment, p);
 
     // Entablement
     final entabl = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w*0.16, h*0.30, w*0.68, h*0.05), const Radius.circular(1.3));
+      Rect.fromLTWH(w * 0.16, h * 0.30, w * 0.68, h * 0.05),
+      const Radius.circular(1.3),
+    );
     canvas.drawRRect(entabl, p);
 
     // 3 Piliers sobres
-    final top = h*0.36, bottom = h*0.72, colW = w*0.12, gap = w*0.08;
-    final x1 = w*0.22, x2 = x1 + colW + gap, x3 = x2 + colW + gap;
-    void col(double x) =>
-        canvas.drawRect(Rect.fromLTWH(x, top, colW, bottom - top), Paint()..color = structure);
-    col(x1); col(x2); col(x3);
+    final top = h * 0.36, bottom = h * 0.72, colW = w * 0.12, gap = w * 0.08;
+    final x1 = w * 0.22, x2 = x1 + colW + gap, x3 = x2 + colW + gap;
+    void col(double x) => canvas.drawRect(
+          Rect.fromLTWH(x, top, colW, bottom - top),
+          Paint()..color = structure,
+        );
+    col(x1);
+    col(x2);
+    col(x3);
 
-    // Pied (base) avec dégradé horizontal R→J→V et bords très arrondis (effet "pill")
+    // Pied (base) dégradé R→J→V arrondi
     final baseRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w*0.14, h*0.76, w*0.72, h*0.12),
-      Radius.circular(h*0.06),
+      Rect.fromLTWH(w * 0.14, h * 0.76, w * 0.72, h * 0.12),
+      Radius.circular(h * 0.06),
     );
 
     final shader = LinearGradient(

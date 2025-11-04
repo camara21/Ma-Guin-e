@@ -1,4 +1,3 @@
-// lib/pages/main_navigation_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,13 +9,8 @@ import 'carte_page.dart';
 import 'messages_page.dart';
 import 'profile_page.dart';
 
-// Palette (Ma Guinée)
 const Color kBleu = Color(0xFF113CFC);
-// const Color kJaune = Color(0xFFFCD116); // utile si besoin plus tard
-// const Color kVert  = Color(0xFF009460);
-// const Color kRouge = Color(0xFFCE1126);
 
-// Pastille du badge (affiche le nombre)
 class Badge extends StatelessWidget {
   final int count;
   final double size;
@@ -35,11 +29,7 @@ class Badge extends StatelessWidget {
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
+        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -56,12 +46,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
   final _svc = MessageService();
 
+  Future<void> _onTapTab(int index, String? userId) async {
+    setState(() => _currentIndex = index);
+    // ❌ Ne marque plus tout comme lu ici.
+    // La mise à jour "lu" se fait à l'ouverture d'un fil dans MessagesPage.
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // Stream du badge Messages (nombre de messages non lus)
-    final Stream<int> badgeStream =
+    final Stream<int> supabaseUnreadStream =
         (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
 
     final pages = <Widget>[
@@ -94,30 +89,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed,
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-
-          // Couleurs harmonisées
+          onTap: (i) => _onTapTab(i, user?.id),
           selectedItemColor: kBleu,
           unselectedItemColor: Colors.grey,
-
-          // Taille des icônes
-          iconSize: 30, // taille de base
+          iconSize: 30,
           selectedIconTheme: const IconThemeData(size: 34),
           unselectedIconTheme: const IconThemeData(size: 28),
-
-          // Lisibilité des labels
           selectedFontSize: 12,
           unselectedFontSize: 12,
-
           items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: 'Accueil',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: 'Carte',
-            ),
+            const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
+            const BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Carte'),
             BottomNavigationBarItem(
               label: 'Messages',
               icon: Stack(
@@ -125,24 +107,32 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 children: [
                   const Icon(Icons.forum_rounded),
                   Positioned(
-                    right: -6, // ajusté pour icônes plus grandes
+                    right: -6,
                     top: -6,
                     child: StreamBuilder<int>(
-                      stream: badgeStream,
+                      stream: supabaseUnreadStream,
                       initialData: 0,
                       builder: (context, snapshot) {
-                        final count = snapshot.data ?? 0;
-                        return Badge(count: count, size: 18);
+                        final fromStream = snapshot.data ?? 0;
+                        return ValueListenableBuilder<int>(
+                          valueListenable: _svc.optimisticUnreadDelta,
+                          builder: (_, delta, __) {
+                            final shown = (fromStream - delta).clamp(0, 9999);
+                            if (delta > 0 && fromStream <= delta) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _svc.clearOptimisticDelta();
+                              });
+                            }
+                            return Badge(count: shown, size: 18);
+                          },
+                        );
                       },
                     ),
                   ),
                 ],
               ),
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Profil',
-            ),
+            const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
           ],
         ),
       ),

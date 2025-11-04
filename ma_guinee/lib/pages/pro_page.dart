@@ -82,9 +82,9 @@ class _ProPageState extends State<ProPage> {
   String selectedJob = 'Tous';
   String searchQuery = '';
 
-  // --- Notes moyennes (calculées côté app à partir de avis_prestataires) ---
-  final Map<String, double> _avgByPrestataireId = {}; // id -> moyenne
-  final Map<String, int> _countByPrestataireId = {};  // id -> nb avis
+  // --- Notes moyennes ---
+  final Map<String, double> _avgByPrestataireId = {};
+  final Map<String, int> _countByPrestataireId = {};
   String? _lastQueryKey;
 
   // --- Listes pré-calculées ---
@@ -112,13 +112,9 @@ class _ProPageState extends State<ProPage> {
     );
   }
 
-  /// Charge toutes les notes pour une liste d'IDs (même logique que page détail).
-  /// Utilise `.or(...)` pour rester compatible avec toutes versions du SDK.
   Future<void> _loadNotesMoyennesFor(List<String> prestataireIds) async {
     if (prestataireIds.isEmpty) return;
-
     try {
-      // Découpage pour éviter des URL trop longues
       const int batchSize = 20;
       final Map<String, int> sum = {};
       final Map<String, int> cnt = {};
@@ -130,13 +126,12 @@ class _ProPageState extends State<ProPage> {
               ? prestataireIds.length
               : i + batchSize,
         );
-
         final orFilter = batch.map((id) => 'prestataire_id.eq.$id').join(',');
 
         final rows = await _client
             .from('avis_prestataires')
             .select('prestataire_id, etoiles')
-            .or(orFilter); // ✅ au lieu de .in_()
+            .or(orFilter);
 
         final list = List<Map<String, dynamic>>.from(rows);
         for (final r in list) {
@@ -160,7 +155,7 @@ class _ProPageState extends State<ProPage> {
         }
       });
     } catch (_) {
-      // silencieux: si RLS bloque certains avis, on ignore.
+      // silencieux
     }
   }
 
@@ -190,7 +185,7 @@ class _ProPageState extends State<ProPage> {
       }).toList();
     }
 
-    // Déclenche le chargement des moyennes pour la liste visible (une seule requête)
+    // notes moyennes pour la liste visible
     final visibleIds = list.map((p) => p.id.toString()).toList();
     final key = visibleIds.join(',');
     if (key != _lastQueryKey && !prov.loading) {
@@ -235,17 +230,7 @@ class _ProPageState extends State<ProPage> {
           ],
         ),
         iconTheme: const IconThemeData(color: prestatairesPrimary),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
-            ),
-            icon: const Icon(Icons.person_add_alt_1, color: prestatairesPrimary),
-            label: const Text("S'inscrire", style: TextStyle(color: prestatairesPrimary)),
-          ),
-          const SizedBox(width: 6),
-        ],
+        actions: const <Widget>[], // ✅ on supprime le bouton d'inscription en haut
       ),
       body: prov.loading
           ? const Center(child: CircularProgressIndicator())
@@ -255,7 +240,7 @@ class _ProPageState extends State<ProPage> {
                   padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
                   child: Column(
                     children: [
-                      const _HeroBanner(),
+                      const _HeroBanner(), // garde le bouton "S'inscrire" dans la bannière
                       const SizedBox(height: 8),
                       _SearchField(onChanged: (v) => setState(() => searchQuery = v)),
                       const SizedBox(height: 10),
@@ -356,6 +341,28 @@ class _HeroBanner extends StatelessWidget {
             right: -20,
             top: -10,
             child: Icon(Icons.settings, size: 120, color: Colors.white.withOpacity(.06)),
+          ),
+          // bouton "S'inscrire" dans la bannière
+          Positioned(
+            right: 16,
+            bottom: 12,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: prestatairesPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                elevation: 0,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
+                );
+              },
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text("S'inscrire"),
+            ),
           ),
           const Positioned.fill(
             child: Padding(
@@ -633,7 +640,6 @@ class _ProCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  // ⭐ note moyenne + nb avis
                   Row(
                     children: [
                       _stars(rating),

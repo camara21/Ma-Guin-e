@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
-import 'messages_annonce_page.dart'; // ANNONCES
-import 'messages/message_chat_page.dart'; // LOGEMENT & PRESTATAIRE
+import 'messages_annonce_page.dart';       // Chat ANNONCES
+import 'messages/message_chat_page.dart'; // Chat LOGEMENT & PRESTATAIRE
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
@@ -39,6 +39,13 @@ class _MessagesPageState extends State<MessagesPage> {
 
   String _dateLabel(dynamic v) {
     final d = _asDate(v).toLocal();
+    final now = DateTime.now();
+    final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+    if (isToday) {
+      final hh = d.hour.toString().padLeft(2, '0');
+      final mm = d.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
     final dd = d.day.toString().padLeft(2, '0');
     final mm = d.month.toString().padLeft(2, '0');
     return '$dd/$mm/${d.year}';
@@ -47,8 +54,7 @@ class _MessagesPageState extends State<MessagesPage> {
   String _initials(Map<String, dynamic>? u) {
     final p = (u?['prenom'] ?? '').toString().trim();
     final n = (u?['nom'] ?? '').toString().trim();
-    final s =
-        '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
+    final s = '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
     return s.isNotEmpty ? s : '·';
   }
 
@@ -60,13 +66,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
   String? _rawPath(Map<String, dynamic>? u) {
     if (u == null) return null;
-    for (final k in const [
-      'photo_path',
-      'photo_url',
-      'image_url',
-      'avatar_url',
-      'photo'
-    ]) {
+    for (final k in const ['photo_path','photo_url','image_url','avatar_url','photo']) {
       final v = u[k]?.toString();
       if (v != null && v.isNotEmpty && !v.startsWith('http')) return v;
     }
@@ -97,6 +97,7 @@ class _MessagesPageState extends State<MessagesPage> {
       return url;
     }
 
+    // Fallback (devine un chemin simple)
     for (final ext in const ['jpg', 'png', 'jpeg']) {
       final guess = 'u/$userId.$ext';
       final url = _publicUrl(guess);
@@ -104,6 +105,9 @@ class _MessagesPageState extends State<MessagesPage> {
       return url;
     }
   }
+
+  String _threadKey(String contexte, dynamic ctxId, String otherId) =>
+      '$contexte-${ctxId ?? ''}-$otherId';
 
   @override
   void initState() {
@@ -118,9 +122,6 @@ class _MessagesPageState extends State<MessagesPage> {
     _searchCtrl.dispose();
     super.dispose();
   }
-
-  String _threadKey(String contexte, dynamic ctxId, String otherId) =>
-      '$contexte-${ctxId ?? ''}-$otherId';
 
   Future<void> _loadConversations() async {
     final me = _sb.auth.currentUser;
@@ -144,62 +145,77 @@ class _MessagesPageState extends State<MessagesPage> {
       for (final raw in messages) {
         final msg = Map<String, dynamic>.from(raw as Map);
 
-        final otherId = (msg['sender_id'] == me.id)
-            ? (msg['receiver_id']?.toString() ?? '')
-            : (msg['sender_id']?.toString() ?? '');
+        final String senderId   = (msg['sender_id']   ?? '').toString();
+        final String receiverId = (msg['receiver_id'] ?? '').toString();
+        final String myId       = me.id;
+        final String otherId    = (senderId == myId) ? receiverId : senderId;
+
         if (otherId.isNotEmpty) participantIds.add(otherId);
 
-        final ctx = (msg['contexte'] ?? '').toString();
+        final ctx = (msg['contexte'] ?? '').toString();          // annonce | logement | prestataire
         final ctxId = (ctx == 'prestataire')
-            ? (msg['prestataire_id'] ?? '')
-            : (msg['annonce_id'] ?? '');
+            ? (msg['prestataire_id'] ?? '').toString()
+            : (msg['annonce_id'] ?? '').toString();
 
-        if (hiddenKeys.contains(_threadKey(ctx, ctxId, otherId))) continue;
+        // --- Clés de masquage robustes
+        final keyExact = _threadKey(ctx, ctxId, otherId);
+        final keyEmpty = _threadKey(ctx, '', otherId); // anciens masquages sans ctxId
+
+        // --- Bypass masquage pour PRESTATAIRE quand JE SUIS le destinataire
+        final iAmReceiver = receiverId == myId;
+        final isPrestataire = ctx == 'prestataire';
+
+        final isHidden = hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
+        if (isHidden && !(isPrestataire && iAmReceiver)) {
+          // respecte le masquage sauf si (prestataire && je suis le destinataire)
+          continue;
+        }
 
         final gkey = '$ctx-$ctxId-$otherId';
         if (!grouped.containsKey(gkey) ||
-            _asDate(msg['date_envoi'])
-                .isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
+            _asDate(msg['date_envoi']).isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
           grouped[gkey] = msg;
         }
       }
 
-      // Récup infos interlocuteurs (robuste aux colonnes manquantes)
-      List users;
-      try {
-        users = await _sb
-            .from('utilisateurs')
-            .select(
-                'id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
-            .inFilter('id', participantIds.toList());
-      } catch (_) {
+      Map<String, Map<String, dynamic>> usersMap = {};
+      if (participantIds.isNotEmpty) {
+        List users;
         try {
           users = await _sb
               .from('utilisateurs')
-              .select('id,nom,prenom,photo_url,image_url,avatar_url,photo')
+              .select('id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
               .inFilter('id', participantIds.toList());
         } catch (_) {
-          users = await _sb
-              .from('utilisateurs')
-              .select('id,nom,prenom,photo_url')
-              .inFilter('id', participantIds.toList());
+          try {
+            users = await _sb
+                .from('utilisateurs')
+                .select('id,nom,prenom,photo_url,image_url,avatar_url,photo')
+                .inFilter('id', participantIds.toList());
+          } catch (_) {
+            users = await _sb
+                .from('utilisateurs')
+                .select('id,nom,prenom,photo_url')
+                .inFilter('id', participantIds.toList());
+          }
+        }
+
+        usersMap = {
+          for (final u in (users as List? ?? const []))
+            (u['id'] ?? '').toString(): Map<String, dynamic>.from(u as Map)
+        };
+
+        for (final id in participantIds) {
+          unawaited(_resolveAvatarForUser(id));
         }
       }
 
-      _utilisateurs = {
-        for (final u in (users as List? ?? const []))
-          u['id'].toString(): Map<String, dynamic>.from(u as Map)
-      };
-      for (final id in participantIds) {
-        unawaited(_resolveAvatarForUser(id));
-      }
-
       final list = grouped.values.toList()
-        ..sort((a, b) =>
-            _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
+        ..sort((a, b) => _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
 
       if (!mounted) return;
       setState(() {
+        _utilisateurs = usersMap;
         _conversations = list;
         _loading = false;
       });
@@ -219,15 +235,17 @@ class _MessagesPageState extends State<MessagesPage> {
     _channel = _sb
         .channel('public:messages')
         .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'messages',
-            callback: (_) => _loadConversations())
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          callback: (_) => _loadConversations(),
+        )
         .onPostgresChanges(
-            event: PostgresChangeEvent.update,
-            schema: 'public',
-            table: 'messages',
-            callback: (_) => _loadConversations())
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'messages',
+          callback: (_) => _loadConversations(),
+        )
         .subscribe();
   }
 
@@ -239,26 +257,37 @@ class _MessagesPageState extends State<MessagesPage> {
     if (me == null) return;
 
     try {
-      final ctx = (convo['contexte'] ?? '').toString();
-      final isAnnonceOrLogement = (ctx == 'annonce' || ctx == 'logement');
-      await _sb
-          .from('messages')
-          .update({'lu': true})
-          .eq('contexte', ctx)
-          .eq(
-              isAnnonceOrLogement ? 'annonce_id' : 'prestataire_id',
-              isAnnonceOrLogement
-                  ? convo['annonce_id']
-                  : convo['prestataire_id'])
-          .eq('receiver_id', me.id)
-          .eq('sender_id', otherId);
+      final ctx = (convo['contexte'] ?? '').toString(); // annonce | logement | prestataire
+      final isAnnOrLog = (ctx == 'annonce' || ctx == 'logement');
+      final ctxId = isAnnOrLog
+          ? (convo['annonce_id'] ?? '').toString()
+          : (convo['prestataire_id'] ?? '').toString();
+
+      // Optimisme UI (on baisse le badge immédiatement)
+      _messageService.decUnreadOptimistic(1);
+
+      // Tolérant aux schémas différents
+      try {
+        await _messageService.markThreadAsReadInstant(
+          viewerUserId: me.id,
+          contexte: ctx,
+          otherUserId: otherId,
+          annonceOrLogementId: isAnnOrLog ? ctxId : null,
+          prestataireId: isAnnOrLog ? null : ctxId,
+        );
+      } catch (e) {
+        final msg = e.toString();
+        if (msg.contains('42703') || msg.contains('user_id')) {
+          if (kDebugMode) debugPrint('markThreadAsReadInstant ignoré: $e');
+        } else {
+          rethrow;
+        }
+      }
 
       final idx = _conversations.indexOf(convo);
       if (idx != -1 && mounted) {
-        setState(
-            () => _conversations[idx] = {..._conversations[idx], 'lu': true});
+        setState(() => _conversations[idx] = {..._conversations[idx], 'lu': true});
       }
-      _messageService.unreadChanged.add(null);
     } catch (e) {
       debugPrint('markAsRead error: $e');
     }
@@ -269,15 +298,10 @@ class _MessagesPageState extends State<MessagesPage> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Supprimer la conversation ?'),
-            content: const Text(
-                "Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
+            content: const Text("Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
             actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Annuler')),
-              TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Supprimer')),
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
             ],
           ),
         ) ??
@@ -293,9 +317,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
     final ctx = (convo['contexte'] ?? '').toString();
     final ctxId = ((ctx == 'annonce' || ctx == 'logement')
-            ? convo['annonce_id']
-            : convo['prestataire_id'])
-        ?.toString();
+            ? (convo['annonce_id'] ?? '').toString()
+            : (convo['prestataire_id'] ?? '').toString());
 
     try {
       await _messageService.hideThread(
@@ -308,8 +331,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
       if (!mounted) return;
       setState(() => _conversations.remove(convo));
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Conversation supprimée.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Conversation supprimée.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -319,21 +342,28 @@ class _MessagesPageState extends State<MessagesPage> {
 
   @override
   Widget build(BuildContext context) {
-    const primary = Color(0xFF2563EB);    // messagesPrimary
-    const onPrimary = Color(0xFFFFFFFF);  // messagesOnPrimary
-    const secondary = Color(0xFF93C5FD);  // messagesSecondary
+    const primary = Color(0xFF2563EB);
+    const secondary = Color(0xFF93C5FD);
 
     final me = _sb.auth.currentUser;
     final filter = _searchCtrl.text.toLowerCase();
 
     final list = _conversations.where((m) {
       final contenu = (m['contenu'] ?? '').toString().toLowerCase();
-      final otherId =
-          (m['sender_id'] == me?.id) ? m['receiver_id'] : m['sender_id'];
-      final u = _utilisateurs[otherId];
-      final nom =
-          ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
-      return contenu.contains(filter) || nom.contains(filter);
+
+      final myId = me?.id ?? '';
+      final otherIdStr = ((m['sender_id'] ?? '').toString() == myId)
+          ? (m['receiver_id'] ?? '').toString()
+          : (m['sender_id'] ?? '').toString();
+
+      final u = _utilisateurs[otherIdStr];
+      final nom = ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
+
+      final titreAnnonce = (m['annonce_titre'] ?? '').toString().toLowerCase();
+      final titrePresta  = (m['prestataire_name'] ?? '').toString().toLowerCase();
+      final titre = titreAnnonce.isNotEmpty ? titreAnnonce : titrePresta;
+
+      return filter.isEmpty || contenu.contains(filter) || nom.contains(filter) || titre.contains(filter);
     }).toList();
 
     return Scaffold(
@@ -379,25 +409,27 @@ class _MessagesPageState extends State<MessagesPage> {
                         itemBuilder: (ctx, i) {
                           final m = list[i];
 
-                          final isUnread =
-                              (m['receiver_id'] == me?.id) && (m['lu'] != true);
-                          final otherId = (m['sender_id'] == me?.id)
-                              ? m['receiver_id']
-                              : m['sender_id'];
+                          final myId = me?.id ?? '';
+                          final senderId = (m['sender_id'] ?? '').toString();
+                          final receiverId = (m['receiver_id'] ?? '').toString();
+                          final otherIdStr = (senderId == myId) ? receiverId : senderId;
 
-                          final utilisateur = _utilisateurs[otherId];
+                          final isUnread = (receiverId == myId) && (m['lu'] != true);
+
+                          final utilisateur = _utilisateurs[otherIdStr];
                           final interlocutorName = (utilisateur != null)
-                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}"
-                                  .trim()
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
                               : "Utilisateur";
 
                           final subtitle = (m['contenu'] ?? '').toString();
-                          final dateLabel = _dateLabel(m['date_envoi']);
+                          final dateLabel = _date_label_safe(m['date_envoi']);
 
-                          final userId = (otherId ?? '').toString();
+                          final userId = otherIdStr;
                           final initials = _initials(utilisateur);
 
-                          final photoUrl = _avatarCache[userId];
+                          // --- AVATAR: direct URL > cache > résolution asynchrone ---
+                          final directUrl = _rawUrl(utilisateur);
+                          String? photoUrl = directUrl ?? _avatarCache[userId];
                           if (photoUrl == null) {
                             unawaited(_resolveAvatarForUser(userId).then((_) {
                               if (mounted) setState(() {});
@@ -406,8 +438,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final convKey = ValueKey<String>([
                             (m['contexte'] ?? '').toString(),
-                            (m['annonce_id'] ?? m['prestataire_id'] ?? '')
-                                .toString(),
+                            ((m['annonce_id'] ?? m['prestataire_id'] ?? '')).toString(),
                             userId,
                           ].join('-'));
 
@@ -415,23 +446,17 @@ class _MessagesPageState extends State<MessagesPage> {
                             key: convKey,
                             direction: DismissDirection.endToStart,
                             confirmDismiss: (_) => _confirmDelete(),
-                            onDismissed: (_) =>
-                                _deleteConversation(convo: m, otherId: userId),
+                            onDismissed: (_) => _deleteConversation(convo: m, otherId: userId),
                             background: Container(
                               color: Colors.red,
                               alignment: Alignment.centerRight,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child:
-                                  const Icon(Icons.delete, color: Colors.white),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: const Icon(Icons.delete, color: Colors.white),
                             ),
                             child: ListTile(
                               onLongPress: () async {
                                 final ok = await _confirmDelete();
-                                if (ok) {
-                                  await _deleteConversation(
-                                      convo: m, otherId: userId);
-                                }
+                                if (ok) await _deleteConversation(convo: m, otherId: userId);
                               },
                               leading: Stack(
                                 children: [
@@ -444,8 +469,7 @@ class _MessagesPageState extends State<MessagesPage> {
                                           : Image.network(
                                               photoUrl,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  _initialsAvatar(initials),
+                                              errorBuilder: (_, __, ___) => _initialsAvatar(initials),
                                             ),
                                     ),
                                   ),
@@ -455,14 +479,16 @@ class _MessagesPageState extends State<MessagesPage> {
                                       top: 0,
                                       child: CircleAvatar(
                                         radius: 6,
-                                        backgroundColor: primary,
+                                        backgroundColor: Colors.red,
                                       ),
                                     ),
                                 ],
                               ),
                               title: Text(
-                                interlocutorName,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                interlocutorName.isEmpty ? "Utilisateur" : interlocutorName,
+                                style: TextStyle(
+                                  fontWeight: isUnread ? FontWeight.w800 : FontWeight.w600,
+                                ),
                               ),
                               subtitle: Text(
                                 subtitle,
@@ -473,26 +499,22 @@ class _MessagesPageState extends State<MessagesPage> {
                                 dateLabel,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey.shade600,
+                                  color: isUnread ? Colors.red : Colors.grey.shade600,
+                                  fontWeight: isUnread ? FontWeight.w700 : FontWeight.w400,
                                 ),
                               ),
                               onTap: () async {
-                                await _markThreadAsRead(
-                                    convo: m, otherId: userId);
+                                // Marque le fil comme lu (serveur + UI)
+                                await _markThreadAsRead(convo: m, otherId: userId);
 
-                                final contexte =
-                                    (m['contexte'] ?? '').toString();
+                                final contexte = (m['contexte'] ?? '').toString();
 
                                 if (contexte == 'annonce') {
-                                  // Chat d'ANNONCE
-                                  final annonceId =
-                                      (m['annonce_id'] ?? '').toString();
-                                  final annonceTitre =
-                                      ((m['annonce_titre'] ?? '') as String)
-                                              .trim()
-                                              .isNotEmpty
-                                          ? (m['annonce_titre'] as String)
-                                          : 'Annonce';
+                                  final annonceId = (m['annonce_id'] ?? '').toString();
+                                  final annonceTitreRaw = (m['annonce_titre'] ?? '').toString();
+                                  final annonceTitre = annonceTitreRaw.trim().isNotEmpty
+                                      ? annonceTitreRaw
+                                      : 'Annonce';
 
                                   await Navigator.push(
                                     context,
@@ -501,20 +523,16 @@ class _MessagesPageState extends State<MessagesPage> {
                                         annonceId: annonceId,
                                         annonceTitre: annonceTitre,
                                         receiverId: userId,
-                                        senderId: _sb.auth.currentUser!.id,
+                                        senderId: myId,
                                       ),
                                     ),
                                   );
                                 } else if (contexte == 'logement') {
-                                  // Chat de LOGEMENT (ouvre une carte logement)
-                                  final logementId = (m['annonce_id'] ?? '')
-                                      .toString(); // réutilise annonce_id
-                                  final logementTitre =
-                                      ((m['annonce_titre'] ?? '') as String)
-                                              .trim()
-                                              .isNotEmpty
-                                          ? (m['annonce_titre'] as String)
-                                          : 'Logement';
+                                  final logementId = (m['annonce_id'] ?? '').toString();
+                                  final logementTitreRaw = (m['annonce_titre'] ?? '').toString();
+                                  final logementTitre = logementTitreRaw.trim().isNotEmpty
+                                      ? logementTitreRaw
+                                      : 'Logement';
 
                                   await Navigator.push(
                                     context,
@@ -529,23 +547,24 @@ class _MessagesPageState extends State<MessagesPage> {
                                     ),
                                   );
                                 } else {
-                                  // Chat PRESTATAIRE (générique)
+                                  final prestataireId = (m['prestataire_id'] ?? '').toString();
+                                  final titre = (m['prestataire_name'] ?? interlocutorName).toString();
+
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => MessageChatPage(
                                         peerUserId: userId,
-                                        title: interlocutorName,
+                                        title: titre,
                                         contextType: 'prestataire',
-                                        contextId: (m['prestataire_id'] ?? '')
-                                            .toString(),
-                                        contextTitle: interlocutorName,
+                                        contextId: prestataireId,
+                                        contextTitle: titre,
                                       ),
                                     ),
                                   );
                                 }
 
-                                _loadConversations();
+                                _loadConversations(); // refresh au retour
                               },
                             ),
                           );
@@ -557,13 +576,21 @@ class _MessagesPageState extends State<MessagesPage> {
     );
   }
 
+  String _date_label_safe(dynamic v) {
+    try {
+      return _dateLabel(v);
+    } catch (_) {
+      return '';
+    }
+  }
+
   Widget _initialsAvatar(String initials) => Container(
-        color: const Color(0xFF2563EB), // messagesPrimary
+        color: const Color(0xFF2563EB),
         alignment: Alignment.center,
         child: Text(
           initials,
           style: const TextStyle(
-            color: Color(0xFFFFFFFF), // onPrimary
+            color: Color(0xFFFFFFFF),
             fontWeight: FontWeight.w700,
           ),
         ),
