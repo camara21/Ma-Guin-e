@@ -1,4 +1,5 @@
 // lib/pages/home_page.dart
+// (fichier complet – différences principales : _openNotifications force un recalcul au retour)
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -13,31 +14,19 @@ import '../routes.dart';
 import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
 /// --- Palette locale (indépendante) ---
-/// Accueil / App
 const _kMainPrimary         = Color(0xFF0077B6);
 const _kMainSecondary       = Color(0xFF00B4D8);
-// Santé
 const _kSantePrimary        = Color(0xFF009460);
-// Restaurants
 const _kRestoPrimary        = Color(0xFFE76F51);
-// Tourisme
 const _kTourismePrimary     = Color(0xFFDAA520);
-// Hôtels
 const _kHotelsPrimary       = Color(0xFF264653);
-// Billetterie / Évents
 const _kEventPrimary        = Color(0xFF7B2CBF);
 const _kEventSecondary      = Color(0xFFB5179E);
-// Prestataires
 const _kPrestatairesPrimary = Color(0xFF0F766E);
-// Annonces
-const _kAnnoncesPrimary     = Color(0xFFDC2626); // rouge
-// Notifications
+const _kAnnoncesPrimary     = Color(0xFFDC2626);
 const _kNotifPrimary        = Color(0xFFB91C1C);
-// Carte / Lieux / Logement
 const _kMapPrimary          = Color(0xFF2B6CB0);
-// Aide
 const _kAidePrimary         = Color(0xFF475569);
-// Commerce (Jobs / Wali fen)
 const _kCommercePrimary     = Color(0xFF6B21A8);
 
 class HomePage extends StatefulWidget {
@@ -62,7 +51,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void didChangeDependencies() {
-    // Si l'utilisateur change (logout/login), on resynchronise.
     _ecouterNotificationsAdminOnly();
     super.didChangeDependencies();
   }
@@ -90,7 +78,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --------- Notifications ADMIN uniquement ---------
   bool _estNonLue(Map<String, dynamic> n) {
     final lu = n['lu'] == true;
     final isRead = n['is_read'] == true;
@@ -103,7 +90,6 @@ class _HomePageState extends State<HomePage> {
 
     _notifSub?.cancel();
 
-    // Flux temps réel sur utilisateur_id (le plus utilisé dans ton app).
     _notifSub = Supabase.instance.client
         .from('notifications:utilisateur_id=eq.${user.id}&type=neq.message')
         .stream(primaryKey: ['id']).listen((rows) {
@@ -111,9 +97,6 @@ class _HomePageState extends State<HomePage> {
       final nonLues = rows.where((n) => _estNonLue(n)).length;
       setState(() => _notificationsNonLues = nonLues);
     });
-
-    // NOTE: si certaines lignes n'ont que user_id, aligne tes INSERTs pour remplir aussi utilisateur_id,
-    // ou crée une vue qui COALESCE(user_id, utilisateur_id) et écoute cette vue ici.
   }
 
   Future<void> _chargerMessagesNonLus() async {
@@ -121,7 +104,6 @@ class _HomePageState extends State<HomePage> {
     if (user == null) return;
 
     try {
-      // Chargement initial : couvre utilisateur_id OU user_id, et type != 'message'
       final rows = await Supabase.instance.client
           .from('notifications')
           .select('id, utilisateur_id, user_id, lu, is_read, type')
@@ -138,7 +120,7 @@ class _HomePageState extends State<HomePage> {
     setState(() => _messagesNonLus = count);
   }
 
-  // Ouvre la page notifications et rafraîchit le badge au retour
+  // ► Ouvre la page notifications et rafraîchit le badge au retour
   Future<void> _openNotifications() async {
     await Navigator.pushNamed(context, AppRoutes.notifications);
     if (!mounted) return;
@@ -212,7 +194,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Icône Jobs (Wali fen) -> commerce
   Widget _soneyaIcon(BuildContext context) {
     final size = _adaptiveIconSize(context);
     const color = _kCommercePrimary;
@@ -227,7 +208,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Icône Logement -> map
   Widget _logementIcon(BuildContext context) {
     final size = _adaptiveIconSize(context);
     const primary = _kMapPrimary;
@@ -242,7 +222,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ===== ADMIN : Institution avec pied en dégradé R→J→V =====
   Widget _adminInstitutionIcon(BuildContext context) {
     final size = _adaptiveIconSize(context);
     return _iconCard(
@@ -252,11 +231,10 @@ class _HomePageState extends State<HomePage> {
           Center(
             child: _InstitutionGradientBaseIcon(
               size: size,
-              structure: _kAidePrimary,          // toit + entablement + piliers
-              // dégradé du pied
-              gradientLeft: Color(0xFFDC2626),   // rouge
-              gradientMid:  Color(0xFFDAA520),   // jaune/doré
-              gradientRight: Color(0xFF009460),  // vert
+              structure: _kAidePrimary,
+              gradientLeft: Color(0xFFDC2626),
+              gradientMid:  Color(0xFFDAA520),
+              gradientRight: Color(0xFF009460),
             ),
           ),
           Positioned(right: 6, bottom: 6, child: _smallBadge(_kAidePrimary, Icons.description_rounded)),
@@ -264,21 +242,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  void _showComingSoon(BuildContext context,
-      {required String title, required String message}) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))
-        ],
-      ),
-    );
-  }
-  // =================================
 
   @override
   Widget build(BuildContext context) {
@@ -333,7 +296,7 @@ class _HomePageState extends State<HomePage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.notifications, color: _kNotifPrimary),
-                  onPressed: _openNotifications, // <-- attend + refresh au retour
+                  onPressed: _openNotifications,
                 ),
                 if (_notificationsNonLues > 0)
                   Positioned(
@@ -372,7 +335,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bannière Accueil -> mainPrimary → mainSecondary
+            // Bannière
             Container(
               margin: const EdgeInsets.only(bottom: 18),
               width: double.infinity,
@@ -413,10 +376,7 @@ class _HomePageState extends State<HomePage> {
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         shadows: [
-                          Shadow(
-                              color: Colors.black26,
-                              blurRadius: 6,
-                              offset: Offset(0, 2))
+                          Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))
                         ],
                       ),
                     ),
@@ -431,10 +391,7 @@ class _HomePageState extends State<HomePage> {
                         color: Colors.white,
                         fontWeight: FontWeight.w400,
                         shadows: [
-                          Shadow(
-                              color: Colors.black12,
-                              blurRadius: 6,
-                              offset: Offset(0, 1))
+                          Shadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 1))
                         ],
                       ),
                     ),
@@ -473,7 +430,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => Navigator.pushNamed(context, AppRoutes.pro),
                 ),
                 _ServiceTile(
-                  icon: _adminInstitutionIcon(context), // icône admin avec pied dégradé
+                  icon: _adminInstitutionIcon(context),
                   label: "Services Admin",
                   onTap: () => Navigator.pushNamed(context, AppRoutes.admin),
                 ),
@@ -505,8 +462,7 @@ class _HomePageState extends State<HomePage> {
                     context: context,
                   ),
                   label: "Divertissement",
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.divertissement),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.divertissement),
                 ),
                 _ServiceTile(
                   icon: _iconWithBadge(
@@ -662,11 +618,11 @@ class _InstitutionGradientBasePainter extends CustomPainter {
   });
 
   @override
-  void paint(Canvas canvas, Size s) { // <-- corrigé: plus de caractère caché
+  void paint(Canvas canvas, Size s) {
     final w = s.width, h = s.height;
     final p = Paint()..style = PaintingStyle.fill;
 
-    // Toit (pédiment)
+    // Toit
     p.color = structure;
     final pediment = Path()
       ..moveTo(w * 0.12, h * 0.28)
@@ -682,7 +638,7 @@ class _InstitutionGradientBasePainter extends CustomPainter {
     );
     canvas.drawRRect(entabl, p);
 
-    // 3 Piliers sobres
+    // Piliers
     final top = h * 0.36, bottom = h * 0.72, colW = w * 0.12, gap = w * 0.08;
     final x1 = w * 0.22, x2 = x1 + colW + gap, x3 = x2 + colW + gap;
     void col(double x) => canvas.drawRect(
@@ -693,7 +649,7 @@ class _InstitutionGradientBasePainter extends CustomPainter {
     col(x2);
     col(x3);
 
-    // Pied (base) dégradé R→J→V arrondi
+    // Base dégradée
     final baseRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(w * 0.14, h * 0.76, w * 0.72, h * 0.12),
       Radius.circular(h * 0.06),

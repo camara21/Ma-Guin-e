@@ -360,7 +360,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
     String salaireText() {
       final per = (periodeSalaire.isEmpty ? 'mois' : periodeSalaire);
       if (salMin != null && salMax != null) {
-        return 'Salaire : entre ${_fmtMontant(salMin)} et ${_fmtMontant(salMax)} GNF par $per';
+        return '{_fmtMontant(salMin)} et ${_fmtMontant(salMax)} GNF par $per';
       } else if (salMin != null) {
         return 'Salaire : ${_fmtMontant(salMin)} GNF par $per';
       } else if (salMax != null) {

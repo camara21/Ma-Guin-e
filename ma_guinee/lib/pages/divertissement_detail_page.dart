@@ -1,4 +1,3 @@
-// lib/pages/divertissement_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_view/photo_view.dart';
@@ -17,6 +16,8 @@ class DivertissementDetailPage extends StatefulWidget {
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   static const Color kPrimary = Colors.deepPurple;
 
+  final _sb = Supabase.instance.client;
+
   // Avis (édition)
   int _note = 0;
   final TextEditingController _avisController = TextEditingController();
@@ -26,14 +27,27 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   int _nbAvis = 0;
   bool _loadingAvis = true;
 
+  // Commentaires (liste + profils)
+  bool _loadingCommentaires = true;
+  List<Map<String, dynamic>> _avisList = []; // avis_lieux rows
+  final Map<String, Map<String, dynamic>> _usersById = {}; // auteur_id -> {prenom, nom, photo_url}
+
   // Galerie
   final PageController _pageController = PageController();
   int _currentImage = 0;
+
+  bool _isUuid(String s) {
+    final r = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return r.hasMatch(s);
+  }
 
   @override
   void initState() {
     super.initState();
     _loadAvisStats();
+    _loadAvisCommentaires();
   }
 
   @override
@@ -43,19 +57,17 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     super.dispose();
   }
 
-  // ----------------- SUPABASE: Avis -----------------
+  // ----------------- SUPABASE: Avis (stats) -----------------
   Future<void> _loadAvisStats() async {
     setState(() => _loadingAvis = true);
     try {
-      final supa = Supabase.instance.client;
       final lieuId = widget.lieu['id']?.toString();
 
       if (lieuId == null || lieuId.isEmpty) {
         _noteMoyenne = null;
         _nbAvis = 0;
       } else {
-        // ✅ Lire les notes et faire l’agrégation localement (robuste, pas d’avg() côté PostgREST)
-        final rows = await supa
+        final rows = await _sb
             .from('avis_lieux')
             .select('etoiles')
             .eq('lieu_id', lieuId);
@@ -81,9 +93,68 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     }
   }
 
+  // ----------------- SUPABASE: Avis (liste + profils via `utilisateurs`) -----------------
+  Future<void> _loadAvisCommentaires() async {
+    setState(() => _loadingCommentaires = true);
+    try {
+      final lieuId = widget.lieu['id']?.toString();
+      if (lieuId == null || !_isUuid(lieuId)) {
+        _avisList = [];
+      } else {
+        // 1) Récupère les 20 avis les plus récents (sans jointure)
+        final rows = await _sb
+            .from('avis_lieux')
+            .select('auteur_id, etoiles, commentaire, created_at')
+            .eq('lieu_id', lieuId)
+            .order('created_at', ascending: false)
+            .limit(20);
+
+        final list = List<Map<String, dynamic>>.from(rows);
+
+        // 2) Récupère les profils dans `utilisateurs` comme dans Tourisme
+        _usersById.clear();
+        final ids = list
+            .map((e) => (e['auteur_id'] ?? '').toString())
+            .where(_isUuid)
+            .toSet()
+            .toList();
+
+        if (ids.isNotEmpty) {
+          final orFilter = ids.map((id) => 'id.eq.$id').join(',');
+          final profs = await _sb
+              .from('utilisateurs')
+              .select('id, prenom, nom, photo_url')
+              .or(orFilter);
+
+          for (final p in List<Map<String, dynamic>>.from(profs)) {
+            final id = (p['id'] ?? '').toString();
+            _usersById[id] = {
+              'prenom': p['prenom'],
+              'nom': p['nom'],
+              'photo_url': p['photo_url'],
+            };
+          }
+        }
+
+        // 3) On garde uniquement ceux qui ont un commentaire non vide
+        _avisList = list
+            .where((r) =>
+                (r['commentaire']?.toString().trim().isNotEmpty ?? false))
+            .toList();
+      }
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur commentaires: ${e.message}')),
+      );
+      _avisList = [];
+    } finally {
+      if (mounted) setState(() => _loadingCommentaires = false);
+    }
+  }
+
   Future<void> _submitAvis() async {
-    final supa = Supabase.instance.client;
-    final userId = supa.auth.currentUser?.id;
+    final userId = _sb.auth.currentUser?.id;
     final lieuId = widget.lieu['id']?.toString();
 
     if (userId == null) {
@@ -116,8 +187,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             _avisController.text.trim().isEmpty ? null : _avisController.text.trim(),
       };
 
-      // upsert pour (lieu_id, auteur_id) si contrainte unique présente
-      await supa.from('avis_lieux').upsert(
+      await _sb.from('avis_lieux').upsert(
             payload,
             onConflict: 'lieu_id,auteur_id',
           );
@@ -131,6 +201,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         _avisController.clear();
       });
       await _loadAvisStats();
+      await _loadAvisCommentaires(); // rafraîchit la liste + profils
     } on PostgrestException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,6 +283,14 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     const BoxDecoration(color: Colors.black),
               ),
               Positioned(
+                top: 24,
+                right: 8,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ),
+              Positioned(
                 bottom: 24,
                 left: 0,
                 right: 0,
@@ -231,14 +310,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
                 ),
               ),
-              Positioned(
-                top: 24,
-                right: 8,
-                child: IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ),
             ],
           );
         });
@@ -255,6 +326,21 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         5,
         (i) => Icon(
           i < n ? Icons.star : Icons.star_border,
+          color: Colors.amber,
+          size: size,
+        ),
+      ),
+    );
+  }
+
+  Widget _starsFromInt(int n, {double size = 16}) {
+    final clamped = n.clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        5,
+        (i) => Icon(
+          i < clamped ? Icons.star : Icons.star_border,
           color: Colors.amber,
           size: size,
         ),
@@ -529,6 +615,101 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               ),
 
             const Divider(height: 30),
+
+            // ---------- Liste des commentaires ----------
+            const Text("Avis des utilisateurs",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (_loadingCommentaires)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (_avisList.isEmpty)
+              const Text(
+                "Aucun commentaire pour le moment.",
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              ListView.separated(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                itemCount: _avisList.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, idx) {
+                  final r = _avisList[idx];
+                  final int etoiles = (r['etoiles'] as num?)?.toInt() ?? 0;
+                  final String commentaire = (r['commentaire'] ?? '').toString();
+                  final String auteurId = (r['auteur_id'] ?? '').toString();
+                  final u = _usersById[auteurId] ?? const {};
+                  final prenom = (u['prenom'] ?? '').toString();
+                  final nomU = (u['nom'] ?? '').toString();
+                  final avatarUrl = (u['photo_url'] ?? '').toString();
+                  final fullName =
+                      ('$prenom $nomU').trim().isEmpty ? 'Utilisateur' : ('$prenom $nomU').trim();
+                  final String dateShort = (() {
+                    final raw = r['created_at']?.toString();
+                    if (raw == null) return '';
+                    return raw.length >= 10 ? raw.substring(0, 10) : raw;
+                  })();
+
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      border: Border.all(color: const Color(0xFFEAEAEA)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundImage:
+                                  avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                              child: avatarUrl.isEmpty
+                                  ? const Icon(Icons.person, size: 18)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(fullName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 2),
+                                  _starsFromInt(etoiles, size: 14),
+                                ],
+                              ),
+                            ),
+                            if (dateShort.isNotEmpty)
+                              Text(dateShort,
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          commentaire,
+                          style: const TextStyle(fontSize: 14.5),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+            const Divider(height: 32),
 
             // ---------- Saisie avis ----------
             const Text("Notez ce lieu :",
