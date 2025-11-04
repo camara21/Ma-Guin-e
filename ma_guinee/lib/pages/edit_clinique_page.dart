@@ -1,16 +1,19 @@
+// lib/pages/edit_clinique_page.dart
+import 'dart:async';
 import 'dart:io' show File;
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditCliniquePage extends StatefulWidget {
   final Map<String, dynamic>? clinique;
-  final bool autoAskLocation; // pour déclencher la géoloc auto à l’ouverture
+  final bool autoAskLocation; // déclenche la géoloc à l’ouverture
   const EditCliniquePage({super.key, this.clinique, this.autoAskLocation = false});
 
   @override
@@ -21,9 +24,9 @@ class EditCliniquePage extends StatefulWidget {
 const Color santePrimary = Color(0xFF00897B);
 const Color santeSecondary = Color(0xFF80CBC4);
 const Color santeOnPrimary = Color(0xFFFFFFFF);
-const Color santeOnSecondary = Color(0xFF000000);
 
 class _EditCliniquePageState extends State<EditCliniquePage> {
+  // contrôleurs
   late TextEditingController nomController;
   late TextEditingController villeController;
   late TextEditingController adresseController;
@@ -34,10 +37,9 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   late TextEditingController latitudeController;
   late TextEditingController longitudeController;
 
-  // nouvelles images choisies (prévisualisations + fichiers)
-  final List<_LocalImg> _local = [];
-  // images déjà en ligne (URLs publiques)
-  List<String> imagesUrls = [];
+  // images
+  final List<_LocalImg> _local = []; // nouvelles images (bytes)
+  List<String> imagesUrls = [];      // images déjà en ligne (URLs publiques)
 
   bool loading = false;
   final String _bucket = 'clinique-photos';
@@ -46,22 +48,21 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   void initState() {
     super.initState();
     final c = widget.clinique ?? {};
-    nomController = TextEditingController(text: c['nom'] ?? '');
-    villeController = TextEditingController(text: c['ville'] ?? '');
-    adresseController = TextEditingController(text: c['adresse'] ?? '');
-    telephoneController = TextEditingController(text: c['tel'] ?? '');
+    nomController         = TextEditingController(text: c['nom'] ?? '');
+    villeController       = TextEditingController(text: c['ville'] ?? '');
+    adresseController     = TextEditingController(text: c['adresse'] ?? '');
+    telephoneController   = TextEditingController(text: c['tel'] ?? '');
     descriptionController = TextEditingController(text: c['description'] ?? '');
     specialitesController = TextEditingController(text: c['specialites'] ?? '');
-    horairesController = TextEditingController(text: c['horaires'] ?? '');
-    latitudeController = TextEditingController(text: c['latitude']?.toString() ?? '');
-    longitudeController = TextEditingController(text: c['longitude']?.toString() ?? '');
-    imagesUrls = (c['images'] as List?)?.cast<String>() ?? [];
+    horairesController    = TextEditingController(text: c['horaires'] ?? '');
+    latitudeController    = TextEditingController(text: c['latitude']?.toString() ?? '');
+    longitudeController   = TextEditingController(text: c['longitude']?.toString() ?? '');
+    imagesUrls            = (c['images'] as List?)?.cast<String>() ?? [];
 
-    // astuce + auto-géoloc si demandé
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Astuce : placez-vous dans la clinique pour une meilleure géolocalisation."),
+          content: Text("Astuce : place-toi dans la clinique pour une meilleure géolocalisation."),
           duration: Duration(seconds: 4),
         ),
       );
@@ -69,80 +70,104 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     });
   }
 
-  // ---------- Géolocalisation ----------
+  // ---------------- Géolocalisation robuste ----------------
   Future<void> _recupererPosition() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Permission de localisation refusée.")),
-          );
-          return;
-        }
-      }
-      if (permission == LocationPermission.deniedForever) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Activez la localisation dans les paramètres.")),
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        final go = await _ask(
+          title: 'Localisation désactivée',
+          content: "Active d’abord la localisation (GPS) dans les réglages.",
+          ok: 'Ouvrir réglages',
         );
+        if (go) await Geolocator.openLocationSettings();
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      latitudeController.text = pos.latitude.toString();
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        _toast("Autorisation refusée. Saisis l’adresse manuellement.");
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        final go = await _ask(
+          title: 'Autorisation bloquée',
+          content: "La localisation est bloquée pour cette app. Autorise-la dans les réglages.",
+          ok: 'Ouvrir réglages',
+        );
+        if (go) await Geolocator.openAppSettings();
+        return;
+      }
+
+      Position pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 12),
+        );
+      } on TimeoutException {
+        _toast("Localisation trop longue. Réessaie près d’une fenêtre.");
+        return;
+      }
+
+      latitudeController.text  = pos.latitude.toString();
       longitudeController.text = pos.longitude.toString();
 
-      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final adresse = [
-          p.street,
-          p.subLocality,
-          p.locality,
-          p.administrativeArea,
-          p.country
-        ].where((e) => e != null && e.isNotEmpty).join(", ");
-        adresseController.text = adresse;
-        if ((villeController.text).isEmpty && (p.locality ?? '').isNotEmpty) {
-          villeController.text = p.locality!;
+      // Reverse geocoding non bloquant
+      try {
+        final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude)
+            .timeout(const Duration(seconds: 8));
+        if (marks.isNotEmpty) {
+          final p = marks.first;
+          final adresse = [
+            p.street, p.subLocality, p.locality, p.administrativeArea, p.country
+          ].where((e) => (e != null && e!.trim().isNotEmpty)).join(', ');
+          adresseController.text = adresse;
+          if (villeController.text.trim().isEmpty && (p.locality ?? '').isNotEmpty) {
+            villeController.text = p.locality!;
+          }
         }
+      } catch (_) {/* ignore */}
+
+      if (mounted) {
+        setState(() {});
+        _toast("Position détectée !");
       }
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Position détectée !")),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur localisation : $e")),
-      );
+    } catch (_) {
+      _toast("Localisation indisponible pour le moment.");
     }
   }
 
-  // ---------- Images ----------
+  // ---------------- Images ----------------
   Future<void> _pickImages({bool fromCamera = false}) async {
     final picker = ImagePicker();
-    final XFile? one = fromCamera
-        ? await picker.pickImage(source: ImageSource.camera, imageQuality: 80)
-        : null;
-    final List<XFile> many = !fromCamera ? await picker.pickMultiImage(imageQuality: 80) : [];
+    try {
+      final XFile? one = fromCamera
+          ? await picker.pickImage(source: ImageSource.camera, imageQuality: 85)
+          : null;
+      final List<XFile> many = !fromCamera
+          ? await picker.pickMultiImage(imageQuality: 80)
+          : [];
 
-    final files = [
-      if (one != null) one,
-      ...many,
-    ];
-    if (files.isEmpty) return;
+      final files = [
+        if (one != null) one,
+        ...many,
+      ];
+      if (files.isEmpty) return;
 
-    for (final f in files) {
-      final bytes = await f.readAsBytes();
-      _local.add(_LocalImg(file: f, bytes: bytes));
+      for (final f in files) {
+        final bytes = await f.readAsBytes();
+        _local.add(_LocalImg(file: f, bytes: bytes));
+      }
+      setState(() {});
+    } catch (_) {
+      _toast("Impossible d’ouvrir la galerie ou la caméra.");
     }
-    setState(() {});
   }
 
-  void _removeLocalAt(int idx) {
-    setState(() => _local.removeAt(idx));
-  }
+  void _removeLocalAt(int idx) => setState(() => _local.removeAt(idx));
 
   Future<void> _removeImageOnline(int idx) async {
     final imageUrl = imagesUrls[idx];
@@ -150,9 +175,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     if (pathInStorage != null) {
       try {
         await Supabase.instance.client.storage.from(_bucket).remove([pathInStorage]);
-      } catch (e) {
-        debugPrint("Erreur suppression storage : $e");
-      }
+      } catch (_) {/* ignore */}
     }
     setState(() => imagesUrls.removeAt(idx));
     if (widget.clinique?['id'] != null) {
@@ -161,9 +184,7 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
             .from('cliniques')
             .update({'images': imagesUrls})
             .eq('id', widget.clinique!['id']);
-      } catch (e) {
-        debugPrint("Erreur update DB : $e");
-      }
+      } catch (_) {/* ignore */}
     }
   }
 
@@ -174,35 +195,29 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     final alt = '$_bucket/';
     final j = url.indexOf(alt);
     if (j != -1) return url.substring(j + alt.length);
-    return null; // ne jamais inclure le nom du bucket dans objectPath à l’upload
+    return null; // ne jamais renvoyer le bucket entier
   }
 
   Future<String?> _uploadOne(Uint8List bytes, String userId) async {
     try {
       final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
       String ext = 'bin';
-      if (mime.contains('jpeg')) {
-        ext = 'jpg';
-      } else if (mime.contains('png')) {
-        ext = 'png';
-      } else if (mime.contains('webp')) {
-        ext = 'webp';
-      } else if (mime.contains('gif')) {
-        ext = 'gif';
-      }
+      if (mime.contains('jpeg')) ext = 'jpg';
+      else if (mime.contains('png')) ext = 'png';
+      else if (mime.contains('webp')) ext = 'webp';
+      else if (mime.contains('gif')) ext = 'gif';
 
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/$ts.$ext';
 
       await Supabase.instance.client.storage.from(_bucket).uploadBinary(
-            objectPath,
-            bytes,
-            fileOptions: FileOptions(upsert: true, contentType: mime),
-          );
+        objectPath,
+        bytes,
+        fileOptions: FileOptions(upsert: true, contentType: mime),
+      );
 
       return Supabase.instance.client.storage.from(_bucket).getPublicUrl(objectPath);
-    } catch (e) {
-      debugPrint("Erreur upload image : $e");
+    } catch (_) {
       return null;
     }
   }
@@ -218,13 +233,57 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     return urls;
   }
 
-  // ---------- Enregistrement ----------
+  // ---------------- Règle: une seule clinique par compte ----------------
+  Future<bool> _dejaUnEtablissement(String userId) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('cliniques')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_deleted', false)
+          .limit(1);
+      return rows is List && rows.isNotEmpty;
+    } catch (_) {
+      // en cas d’erreur, on ne bloque pas (la RLS/contrainte côté DB peut refuser)
+      return false;
+    }
+  }
+
+  // ---------------- Enregistrement ----------------
   Future<void> _save() async {
+    // validations minimales côté client
+    if (nomController.text.trim().isEmpty ||
+        villeController.text.trim().isEmpty ||
+        adresseController.text.trim().isEmpty ||
+        !_isValidPhone(telephoneController.text.trim())) {
+      _toast("Complète les champs requis (nom, ville, adresse, téléphone).");
+      return;
+    }
+
     loading = true;
     setState(() {});
     try {
-      final newUrls = await _uploadImages();
-      final allImages = [...imagesUrls, ...newUrls];
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+
+      // Bloquer la création si déjà une clinique
+      if (widget.clinique == null && userId != null && await _dejaUnEtablissement(userId)) {
+        loading = false;
+        setState(() {});
+        await _ask(
+          title: "Création impossible",
+          content:
+              "Vous avez déjà une clinique enregistrée avec ce compte.\n\n"
+              "Si vous avez d’autres cliniques à ajouter, veuillez contacter le support "
+              "pour activer l’option multi-établissements.",
+          ok: "OK",
+        );
+        return;
+      }
+
+      final newUrls  = await _uploadImages();
+      final allImgs  = [...imagesUrls, ...newUrls];
+      final latitude = double.tryParse(latitudeController.text.trim());
+      final longitude = double.tryParse(longitudeController.text.trim());
 
       final data = {
         'nom': nomController.text.trim(),
@@ -234,17 +293,15 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
         'description': descriptionController.text.trim(),
         'specialites': specialitesController.text.trim(),
         'horaires': horairesController.text.trim(),
-        'latitude': double.tryParse(latitudeController.text.trim()),
-        'longitude': double.tryParse(longitudeController.text.trim()),
-        'images': allImages,
-        'photo_url': allImages.isNotEmpty ? allImages.first : null,
+        'latitude': latitude,
+        'longitude': longitude,
+        'images': allImgs, // ✅ pas de photo_url
       };
 
       final id = widget.clinique?['id'];
       if (id != null) {
         await Supabase.instance.client.from('cliniques').update(data).eq('id', id);
       } else {
-        final userId = Supabase.instance.client.auth.currentUser?.id;
         await Supabase.instance.client.from('cliniques').insert({
           ...data,
           'user_id': userId,
@@ -256,12 +313,9 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
         const SnackBar(content: Text("Clinique enregistrée avec succès !")),
       );
       Navigator.pop(context, {...?widget.clinique, ...data});
-    } catch (e) {
-      debugPrint("Erreur enregistrement : $e");
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erreur lors de l'enregistrement : $e")),
-        );
+        _toast("Erreur lors de l’enregistrement. Réessaie.");
       }
     } finally {
       _local.clear();
@@ -271,37 +325,25 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
   }
 
   Future<void> _delete() async {
-    final confirm = await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text("Supprimer cette clinique ?"),
-            content: const Text("Cette action est irréversible."),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Annuler")),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final confirm = await _ask(
+      title: "Supprimer cette clinique ?",
+      content: "Cette action est irréversible.",
+      ok: "Supprimer",
+    );
     if (!confirm || widget.clinique?['id'] == null) return;
 
     try {
       await Supabase.instance.client.from('cliniques').delete().eq('id', widget.clinique!['id']);
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Clinique supprimée.")),
-        );
+        _toast("Clinique supprimée.");
       }
-    } catch (e) {
-      debugPrint("Erreur de suppression : $e");
+    } catch (_) {
+      _toast("Suppression impossible pour le moment.");
     }
   }
 
-  // ---------- UI ----------
+  // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.clinique != null;
@@ -309,10 +351,8 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          enEdition ? "Modifier la clinique" : "Inscription Clinique",
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: Text(enEdition ? "Modifier la clinique" : "Inscription Clinique",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: santePrimary),
         actions: [
@@ -326,7 +366,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Détecter la position
                 Center(
                   child: ElevatedButton.icon(
                     onPressed: _recupererPosition,
@@ -340,7 +379,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                 ),
                 const SizedBox(height: 12),
 
-                // Photos (miniatures + ajout)
                 const Text("Photos de la clinique :", style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -349,19 +387,18 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                   children: [
                     // existantes
                     ...imagesUrls.asMap().entries.map(
-                          (e) => _Thumb(
-                            child: Image.network(e.value, fit: BoxFit.cover),
-                            onRemove: () => _removeImageOnline(e.key),
-                          ),
-                        ),
-                    // nouvelles (prévisualisations mémoire)
+                      (e) => _Thumb(
+                        child: Image.network(e.value, fit: BoxFit.cover),
+                        onRemove: () => _removeImageOnline(e.key),
+                      ),
+                    ),
+                    // nouvelles
                     ..._local.asMap().entries.map(
-                          (e) => _Thumb(
-                            child: Image.memory(e.value.bytes, fit: BoxFit.cover),
-                            onRemove: () => _removeLocalAt(e.key),
-                          ),
-                        ),
-                    // bouton ajout
+                      (e) => _Thumb(
+                        child: Image.memory(e.value.bytes, fit: BoxFit.cover),
+                        onRemove: () => _removeLocalAt(e.key),
+                      ),
+                    ),
                     _AddThumb(
                       color: santeSecondary,
                       iconColor: santePrimary,
@@ -372,15 +409,15 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                 ),
 
                 const SizedBox(height: 16),
-                _buildTextField(nomController, "Nom de la clinique *", santePrimary),
-                _buildTextField(villeController, "Ville *", santePrimary),
-                _buildTextField(adresseController, "Adresse *", santePrimary),
-                _buildTextField(telephoneController, "Téléphone *", santePrimary),
-                _buildTextField(descriptionController, "Description", santePrimary, maxLines: 3),
-                _buildTextField(specialitesController, "Spécialités", santePrimary),
-                _buildTextField(horairesController, "Horaires d'ouverture", santePrimary),
-                _buildTextField(latitudeController, "Latitude", santePrimary),
-                _buildTextField(longitudeController, "Longitude", santePrimary),
+                _field(nomController, "Nom de la clinique *"),
+                _field(villeController, "Ville *"),
+                _field(adresseController, "Adresse *"),
+                _field(telephoneController, "Téléphone *", keyboardType: TextInputType.phone),
+                _field(descriptionController, "Description", maxLines: 3),
+                _field(specialitesController, "Spécialités"),
+                _field(horairesController, "Horaires d'ouverture"),
+                _field(latitudeController, "Latitude"),
+                _field(longitudeController, "Longitude"),
 
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
@@ -391,8 +428,6 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
                     backgroundColor: santePrimary,
                     foregroundColor: santeOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -400,31 +435,55 @@ class _EditCliniquePageState extends State<EditCliniquePage> {
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    Color color, {
-    int maxLines = 1,
-  }) {
+  Widget _field(TextEditingController c, String label,
+      {int maxLines = 1, TextInputType? keyboardType}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
-        controller: controller,
+        controller: c,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
-          labelStyle: TextStyle(color: color),
-          focusedBorder: OutlineInputBorder(
-            borderSide: BorderSide(color: color, width: 2),
+          labelStyle: const TextStyle(color: santePrimary),
+          focusedBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: santePrimary, width: 2),
           ),
         ),
       ),
     );
   }
+
+  // helpers UI
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<bool> _ask({required String title, required String content, String ok = 'OK'}) async {
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Fermer')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(ok)),
+        ],
+      ),
+    );
+    return res == true;
+  }
+
+  bool _isValidPhone(String s) {
+    final cleaned = s.replaceAll(RegExp(r'[^0-9+]'), '');
+    return RegExp(r'^\+?[0-9]{8,15}$').hasMatch(cleaned);
+  }
 }
 
-// ---------- Helpers UI ----------
+// ---------------- Widgets vignettes ----------------
 
 class _LocalImg {
   final XFile file;

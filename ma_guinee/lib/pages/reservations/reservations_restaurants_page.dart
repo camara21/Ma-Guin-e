@@ -141,6 +141,40 @@ class _ReservationsRestaurantsPageState extends State<ReservationsRestaurantsPag
     return '$dStr • $tStr';
   }
 
+  // ---------- Helpers affichage ----------
+  bool _isCancelled(Map<String, dynamic> r) =>
+      (r['status']?.toString() == 'annule');
+
+  bool _isPast(Map<String, dynamic> r) {
+    // Si on est dans l'onglet "passees", c'est passé.
+    if (_scope == 'passees') return true;
+    if (_scope == 'avenir') return false; // déjà filtré côté SQL
+    try {
+      // Recalcule local (utile si on réutilise le widget sans recharger)
+      final d = (r['res_date'] ?? '').toString();
+      final t = (r['res_time'] ?? '').toString(); // "HH:MM:SS" ou "HH:MM"
+      if (d.isEmpty || t.isEmpty) return false;
+      final parts = t.split(':');
+      final hh = int.tryParse(parts[0]) ?? 0;
+      final mm = int.tryParse(parts[1]) ?? 0;
+
+      final date = DateTime.tryParse(d);
+      if (date == null) return false;
+
+      final dt = DateTime(date.year, date.month, date.day, hh, mm);
+      final cutoff = DateTime.now().subtract(const Duration(hours: 3));
+      return !_isCancelled(r) && dt.isBefore(cutoff);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String? _badgeText(Map<String, dynamic> r) {
+    if (_isCancelled(r)) return 'Annulée';
+    if (_isPast(r)) return 'Passée';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -219,58 +253,87 @@ class _ReservationsRestaurantsPageState extends State<ReservationsRestaurantsPag
                                   final titre = (r['restaurant_nom'] ?? 'Restaurant').toString();
                                   final ville = (r['restaurant_ville'] ?? '').toString();
                                   final dt = _dateTimeLabel(r);
-                                  final cancelled = (r['status']?.toString() == 'annule');
 
-                                  final String? badgeText = cancelled
-                                      ? 'Annulée'
-                                      : (_scope == 'passees' ? 'Passée' : null);
+                                  final cancelled = _isCancelled(r);
+                                  final past = _isPast(r);
+                                  final greyOut = cancelled || past;
 
-                                  return Card(
-                                    child: ListTile(
-                                      leading: const Icon(Icons.restaurant, color: kRestoPrimary),
-                                      title: Text(titre),
-                                      subtitle: Text("${ville.isNotEmpty ? '$ville • ' : ''}$dt"),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (badgeText != null)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: cancelled ? Colors.red.withOpacity(.12) : Colors.black12,
-                                                borderRadius: BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                badgeText,
-                                                style: TextStyle(
-                                                  color: cancelled ? Colors.red.shade700 : Colors.black87,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
+                                  final String? badgeText = _badgeText(r);
+
+                                  // Popup menu: on masque "Annuler" hors onglet 'avenir'
+                                  final bool canCancelHere = (_scope == 'avenir') && !cancelled;
+
+                                  return Opacity(
+                                    opacity: greyOut ? 0.55 : 1.0, // griser passées/annulées
+                                    child: Card(
+                                      child: ListTile(
+                                        leading: Icon(
+                                          Icons.restaurant,
+                                          color: greyOut ? Colors.grey : kRestoPrimary,
+                                        ),
+                                        title: Text(
+                                          titre,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: greyOut ? Colors.grey.shade800 : null,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          "${ville.isNotEmpty ? '$ville • ' : ''}$dt",
+                                          style: TextStyle(
+                                            color: greyOut ? Colors.grey.shade700 : null,
+                                          ),
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (badgeText != null)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: cancelled
+                                                      ? Colors.red.withOpacity(.12)
+                                                      : Colors.black12,
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  badgeText,
+                                                  style: TextStyle(
+                                                    color: cancelled ? Colors.red.shade700 : Colors.black87,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
                                                 ),
                                               ),
+                                            const SizedBox(width: 6),
+                                            PopupMenuButton<String>(
+                                              onSelected: (v) {
+                                                if (v == 'open') _openLieu(r);
+                                                if (v == 'cancel' && canCancelHere) {
+                                                  final id = (r['id'] ?? '').toString();
+                                                  if (id.isNotEmpty) _annuler(id);
+                                                }
+                                              },
+                                              itemBuilder: (_) {
+                                                final items = <PopupMenuEntry<String>>[
+                                                  const PopupMenuItem(
+                                                    value: 'open',
+                                                    child: Text('Voir le restaurant'),
+                                                  ),
+                                                ];
+                                                if (canCancelHere) {
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'cancel',
+                                                      child: Text('Annuler'),
+                                                    ),
+                                                  );
+                                                }
+                                                return items;
+                                              },
                                             ),
-                                          const SizedBox(width: 6),
-                                          PopupMenuButton<String>(
-                                            onSelected: (v) {
-                                              if (v == 'open') _openLieu(r);
-                                              if (v == 'cancel' && !cancelled) {
-                                                final id = (r['id'] ?? '').toString();
-                                                if (id.isNotEmpty) _annuler(id);
-                                              }
-                                            },
-                                            itemBuilder: (_) => [
-                                              const PopupMenuItem(
-                                                value: 'open',
-                                                child: Text('Voir le restaurant'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'cancel',
-                                                enabled: !cancelled,
-                                                child: const Text('Annuler'),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );

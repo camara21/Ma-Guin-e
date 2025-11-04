@@ -123,6 +123,33 @@ class _ReservationsHotelsPageState extends State<ReservationsHotelsPage> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => HotelDetailPage(hotelId: id)));
   }
 
+  // ---------- Helpers affichage ----------
+  bool _isCancelled(Map<String, dynamic> r) =>
+      (r['status']?.toString() == 'annule');
+
+  bool _isPast(Map<String, dynamic> r) {
+    // Si le scope dit déjà "passees", on peut s'y fier, sinon on vérifie en local.
+    if (_scope == 'passees') return true;
+    try {
+      final co = (r['check_out'] ?? '').toString(); // format AAAA-MM-JJ attendu
+      if (co.isEmpty) return false;
+      final parsed = DateTime.tryParse(co);
+      if (parsed == null) return false;
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      final outDate = DateTime(parsed.year, parsed.month, parsed.day);
+      return !_isCancelled(r) && outDate.isBefore(todayDate);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String? _badgeText(Map<String, dynamic> r) {
+    if (_isCancelled(r)) return 'Annulée';
+    if (_isPast(r)) return 'Passée';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -201,59 +228,89 @@ class _ReservationsHotelsPageState extends State<ReservationsHotelsPage> {
                                   final titre = (r['hotel_nom'] ?? 'Hôtel').toString();
                                   final ville = (r['hotel_ville'] ?? '').toString();
                                   final dates =
-                                      "${r['check_in'] ?? ''} → ${r['check_out'] ?? ''} | ${r['arrival_time'] ?? ''}";
-                                  final cancelled = (r['status']?.toString() == 'annule');
+                                      "${r['check_in'] ?? ''} → ${r['check_out'] ?? ''}"
+                                      "${(r['arrival_time'] ?? '').toString().isNotEmpty ? " | ${r['arrival_time']}" : ""}";
 
-                                  final String? badgeText = cancelled
-                                      ? 'Annulée'
-                                      : (_scope == 'passees' ? 'Passée' : null);
+                                  final cancelled = _isCancelled(r);
+                                  final past = _isPast(r);
+                                  final greyOut = cancelled || past;
 
-                                  return Card(
-                                    child: ListTile(
-                                      leading: const Icon(Icons.hotel, color: kHotelsPrimary),
-                                      title: Text(titre),
-                                      subtitle: Text("${ville.isNotEmpty ? '$ville • ' : ''}$dates"),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (badgeText != null)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: cancelled ? Colors.red.withOpacity(.12) : Colors.black12,
-                                                borderRadius: BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                badgeText,
-                                                style: TextStyle(
-                                                  color: cancelled ? Colors.red.shade700 : Colors.black87,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
+                                  final String? badgeText = _badgeText(r);
+
+                                  // Popup menu: on masque "Annuler" hors onglet 'avenir'
+                                  final bool canCancelHere = (_scope == 'avenir') && !cancelled;
+
+                                  return Opacity(
+                                    opacity: greyOut ? 0.55 : 1.0, // griser passées/annulées
+                                    child: Card(
+                                      child: ListTile(
+                                        leading: Icon(
+                                          Icons.hotel,
+                                          color: greyOut ? Colors.grey : kHotelsPrimary,
+                                        ),
+                                        title: Text(
+                                          titre,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: greyOut ? Colors.grey.shade800 : null,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          "${ville.isNotEmpty ? '$ville • ' : ''}$dates",
+                                          style: TextStyle(
+                                            color: greyOut ? Colors.grey.shade700 : null,
+                                          ),
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (badgeText != null)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: cancelled
+                                                      ? Colors.red.withOpacity(.12)
+                                                      : Colors.black12,
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  badgeText,
+                                                  style: TextStyle(
+                                                    color: cancelled ? Colors.red.shade700 : Colors.black87,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
                                                 ),
                                               ),
+                                            const SizedBox(width: 6),
+                                            PopupMenuButton<String>(
+                                              onSelected: (v) {
+                                                if (v == 'open') _openLieu(r);
+                                                if (v == 'cancel' && canCancelHere) {
+                                                  final id = (r['id'] ?? '').toString();
+                                                  if (id.isNotEmpty) _annuler(id);
+                                                }
+                                              },
+                                              itemBuilder: (_) {
+                                                final items = <PopupMenuEntry<String>>[
+                                                  const PopupMenuItem(
+                                                    value: 'open',
+                                                    child: Text('Voir l’hôtel'),
+                                                  ),
+                                                ];
+                                                if (canCancelHere) {
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'cancel',
+                                                      child: Text('Annuler'),
+                                                    ),
+                                                  );
+                                                }
+                                                return items;
+                                              },
                                             ),
-                                          const SizedBox(width: 6),
-                                          PopupMenuButton<String>(
-                                            onSelected: (v) {
-                                              if (v == 'open') _openLieu(r);
-                                              if (v == 'cancel' && !cancelled) {
-                                                final id = (r['id'] ?? '').toString();
-                                                if (id.isNotEmpty) _annuler(id);
-                                              }
-                                            },
-                                            itemBuilder: (_) => [
-                                              const PopupMenuItem(
-                                                value: 'open',
-                                                child: Text('Voir l’hôtel'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'cancel',
-                                                enabled: !cancelled,
-                                                child: const Text('Annuler'),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );

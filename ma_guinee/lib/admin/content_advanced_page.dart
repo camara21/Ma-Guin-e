@@ -7,10 +7,9 @@ import 'package:postgrest/postgrest.dart';
 import '../supabase_client.dart';
 
 class ContentAdvancedPage extends StatefulWidget {
-  final String title; // ex: Annonces, LogementsÃ©Â©Â¢â‚¬Å¡Â¬Â¦
-  final String table; // ex: annonces, logements, lieux, reportsÃ©Â©Â¢â‚¬Å¡Â¬Â¦
-  const ContentAdvancedPage(
-      {super.key, required this.title, required this.table});
+  final String title; // ex : Annonces, Logements…
+  final String table; // ex : annonces, logements, lieux, reports…
+  const ContentAdvancedPage({super.key, required this.title, required this.table});
 
   @override
   State<ContentAdvancedPage> createState() => _ContentAdvancedPageState();
@@ -38,7 +37,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   bool _hasVille = true;
   bool _hasCreated = true;
 
-  // source (vue si dispo sinon table)
+  // source (vue si dispo, sinon table)
   late String _source;
   Set<String> _cols = {};
 
@@ -63,7 +62,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     super.dispose();
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ source = vue si elle existe, sinon table
+  // source = vue si elle existe, sinon table
   Future<void> _initSource() async {
     _source = widget.table;
     try {
@@ -74,7 +73,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ schema
+  // détection du schéma
   Future<void> _detectSchema() async {
     try {
       final res = await SB.i.from(_source).select('*').limit(1);
@@ -95,13 +94,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
       _sort = 'date_ajout';
     } else {
       _hasCreated = false;
-      _sort =
-          _cols.contains('id') ? 'id' : (_cols.isNotEmpty ? _cols.first : 'id');
+      _sort = _cols.contains('id') ? 'id' : (_cols.isNotEmpty ? _cols.first : 'id');
       _asc = false;
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ realtime
+  // abonnement realtime
   void _subscribeRealtime() {
     _chan?.unsubscribe();
     _chan = SB.i
@@ -115,12 +113,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         .subscribe();
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ query builder
+  // query builder
   PostgrestFilterBuilder _buildQuery({required bool forCount}) {
     final builder = SB.i.from(_source).select(forCount ? 'id' : '*');
     PostgrestFilterBuilder q = builder;
 
-    // recherche plein-texte en OR sur les colonnes prÃ©Â©Ã†â€™Â©sentes
+    // recherche plein-texte en OR sur les colonnes présentes
     final query = _searchC.text.trim();
     if (query.isNotEmpty) {
       final s = '%$query%';
@@ -132,7 +130,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         try {
           q = q.or(orParts);
         } catch (_) {
-          // fallback: au pire, on ilike sur la premiÃ©Â©Ã†â€™Â¨re colonne dispo
+          // fallback : au pire, ilike sur la première colonne dispo
           try {
             q = q.ilike(searchable.first, s);
           } catch (_) {}
@@ -140,7 +138,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
       }
       if (_cols.contains('id') && query.length >= 3) {
         try {
-          // Ã©Â©Ã†â€™Â©largit la recherche aux dÃ©Â©Ã†â€™Â©buts d'UUID
+          // élargit la recherche aux débuts d'UUID
           q = q.or('id.ilike.${query.replaceAll('%', '')}%');
         } catch (_) {}
       }
@@ -148,28 +146,23 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
 
     // ville
     final city = _city;
-    if (_hasVille &&
-        city != null &&
-        city.isNotEmpty &&
-        _cols.contains('ville')) {
+    if (_hasVille && city != null && city.isNotEmpty && _cols.contains('ville')) {
       q = q.eq('ville', city);
     }
 
     // dates
     if (_hasCreated && _range != null && _cols.contains(_sort)) {
       q = q.gte(_sort, _range!.start.toIso8601String());
-      q = q.lte(
-          _sort, _range!.end.add(const Duration(days: 1)).toIso8601String());
+      q = q.lte(_sort, _range!.end.add(const Duration(days: 1)).toIso8601String());
     }
 
     // tri
     if (!forCount && _cols.contains(_sort)) {
       try {
-        q = (q as dynamic).order(_sort, ascending: _asc)
-            as PostgrestFilterBuilder;
+        q = (q as dynamic).order(_sort, ascending: _asc) as PostgrestFilterBuilder;
       } catch (_) {
         try {
-          // compat
+          // compat ancienne signature
           // ignore: deprecated_member_use
           q = (q as dynamic).order(_sort, _asc) as PostgrestFilterBuilder;
         } catch (_) {}
@@ -179,7 +172,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     return q;
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ load
+  // chargement
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -202,7 +195,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ mapping table -> RPC
+  // mapping table -> RPC
   String? _rpcForTable() {
     switch (widget.table) {
       case 'logements':
@@ -210,11 +203,11 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
       case 'lieux':
         return 'admin_delete_lieux';
       default:
-        return null; // autres tables: fallback delete normal
+        return null; // autres tables : fallback delete normal
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ suppression via RPC (centralisÃ©Â©Ã†â€™Â©e)
+  // suppression via RPC (centralisée)
   Future<int> _callAdminDelete(List<String> ids) async {
     final fn = _rpcForTable();
     if (fn == null || ids.isEmpty) return 0;
@@ -222,7 +215,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     return (res is int) ? res : 0;
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ suppression DÃ©Â©Ã†â€™â€šÂ¬Â°FINITIVE (RPC pour logements/lieux, fallback sinon)
+  // suppression DÉFINITIVE (RPC pour logements/lieux, fallback sinon)
   Future<void> _deleteOneDefinitive(String id) async {
     setState(() => _loading = true);
     try {
@@ -233,52 +226,42 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         if (deleted > 0) {
           _selected.remove(id);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    '$deleted Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ment supprimÃ©Â©Ã†â€™Â© (admin).')),
+            SnackBar(content: Text('$deleted élément supprimé (admin).')),
           );
           await _load();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content:
-                    Text('Aucune ligne supprimÃ©Â©Ã†â€™Â©e (droits/FK ?).')),
+            const SnackBar(content: Text('Aucune ligne supprimée (droits/FK ?).')),
           );
         }
       } else {
         // fallback pour les autres tables
-        final res =
-            await SB.i.from(widget.table).delete().eq('id', id).select('id');
+        final res = await SB.i.from(widget.table).delete().eq('id', id).select('id');
         final deleted = (res is List) ? res.length : 0;
 
         if (!mounted) return;
         if (deleted > 0) {
           _selected.remove(id);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    '$deleted Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ment supprimÃ©Â©Ã†â€™Â©.')),
+            SnackBar(content: Text('$deleted élément supprimé.')),
           );
           await _load();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Aucune ligne supprimÃ©Â©Ã†â€™Â©e (RLS/FK ?).')),
+            const SnackBar(content: Text('Aucune ligne supprimée (RLS/FK ?).')),
           );
         }
       }
     } on PostgrestException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Suppression impossible: code=${e.code} msg=${e.message}')),
+          SnackBar(content: Text('Suppression impossible : code=${e.code} msg=${e.message}')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Erreur suppression: $e')));
+            .showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -298,16 +281,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         if (deleted > 0) {
           _selected.clear();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    '$deleted Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ments supprimÃ©Â©Ã†â€™Â©s (admin).')),
+            SnackBar(content: Text('$deleted éléments supprimés (admin).')),
           );
           await _load();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content:
-                    Text('Aucune ligne supprimÃ©Â©Ã†â€™Â©e (droits/FK ?).')),
+            const SnackBar(content: Text('Aucune ligne supprimée (droits/FK ?).')),
           );
         }
       } else {
@@ -317,7 +296,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
             .from(widget.table)
             .delete()
             .filter('id', 'in', inList)
-            .select('id'); // renvoie les lignes supprimÃ©Â©Ã†â€™Â©es
+            .select('id'); // renvoie les lignes supprimées
 
         final deleted = (res is List) ? res.length : 0;
 
@@ -325,37 +304,32 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         if (deleted > 0) {
           _selected.clear();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    '$deleted Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ments supprimÃ©Â©Ã†â€™Â©s.')),
+            SnackBar(content: Text('$deleted éléments supprimés.')),
           );
           await _load();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Aucune ligne supprimÃ©Â©Ã†â€™Â©e (RLS/FK ?).')),
+            const SnackBar(content: Text('Aucune ligne supprimée (RLS/FK ?).')),
           );
         }
       }
     } on PostgrestException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Suppression impossible: code=${e.code} msg=${e.message}')),
+          SnackBar(content: Text('Suppression impossible : code=${e.code} msg=${e.message}')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Erreur suppression: $e')));
+            .showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ construit la chaÃ©Â©Ã†â€™Â®ne pour lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢opÃ©Â©Ã†â€™Â©rateur PostgREST in() (fallback)
+  // construit la chaîne pour l'opérateur PostgREST in() (fallback)
   String _buildInListTyped(List<String> ids) {
     if (ids.isEmpty) return '()';
     final allInts = ids.every((s) => int.tryParse(s) != null);
@@ -367,13 +341,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ helpers UI
+  // helpers UI
   Future<void> _pickDateRange() async {
     final now = DateTime.now();
     final initial = _range ??
         DateTimeRange(
-          start: DateTime(now.year, now.month, now.day)
-              .subtract(const Duration(days: 7)),
+          start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 7)),
           end: DateTime(now.year, now.month, now.day),
         );
     final picked = await showDateRangePicker(
@@ -408,7 +381,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ UI
+  // UI
   @override
   Widget build(BuildContext context) {
     final pages = (_total / _pageSize).ceil().clamp(1, 9999);
@@ -420,17 +393,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         actions: [
           if (hasSelection)
             IconButton(
-              tooltip:
-                  'Supprimer dÃ©Â©Ã†â€™Â©finitivement (sÃ©Â©Ã†â€™Â©lection)',
+              tooltip: 'Supprimer définitivement (sélection)',
               icon: const Icon(Icons.delete_forever),
               onPressed: _loading ? null : _onConfirmBulkDelete,
             ),
-          IconButton(
-              onPressed: _loading ? null : _exportCsv,
-              icon: const Icon(Icons.download)),
-          IconButton(
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: _loading ? null : _exportCsv, icon: const Icon(Icons.download)),
+          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: Padding(
@@ -468,8 +436,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
             controller: _searchC,
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
-              hintText:
-                  'RechercherÃ©Â©Â¢â‚¬Å¡Â¬Â¦ (nom/titre/ville/Ã©Â©Â¢â‚¬Å¡Â¬Â¦)',
+              hintText: 'Rechercher… (nom/titre/ville…)',
             ),
             onChanged: (_) => _debouncer.run(() {
               _page = 0;
@@ -491,8 +458,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
                 hint: const Text('Ville'),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('Toutes')),
-                  ...items
-                      .map((v) => DropdownMenuItem(value: v, child: Text(v))),
+                  ...items.map((v) => DropdownMenuItem(value: v, child: Text(v))),
                 ],
                 onChanged: (v) {
                   setState(() {
@@ -508,15 +474,13 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
           OutlinedButton.icon(
             icon: const Icon(Icons.date_range),
             label: Text(
-              _range == null
-                  ? 'Date (toutes)'
-                  : '${_fmtDate(_range!.start)} Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ ${_fmtDate(_range!.end)}',
+              _range == null ? 'Date (toutes)' : '${_fmtDate(_range!.start)} au ${_fmtDate(_range!.end)}',
             ),
             onPressed: _pickDateRange,
           ),
         if (_range != null)
           IconButton(
-            tooltip: 'RÃ©Â©Ã†â€™Â©initialiser dates',
+            tooltip: 'Réinitialiser les dates',
             icon: const Icon(Icons.clear),
             onPressed: () {
               setState(() => _range = null);
@@ -530,22 +494,13 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   Widget _toolbar() {
     return Row(
       children: [
-        Text('$_total Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ments',
-            style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text('$_total éléments', style: const TextStyle(fontWeight: FontWeight.w600)),
         const Spacer(),
         DropdownButton<String>(
           value: _sort,
-          items: <String>[
-            'id',
-            'titre',
-            'nom',
-            'ville',
-            'created_at',
-            'date_ajout',
-            _sort
-          ]
+          items: <String>['id', 'titre', 'nom', 'ville', 'created_at', 'date_ajout', _sort]
               .toSet()
-              .map((c) => DropdownMenuItem(value: c, child: Text('Trier: $c')))
+              .map((c) => DropdownMenuItem(value: c, child: Text('Trier : $c')))
               .toList(),
           onChanged: (v) {
             if (v == null) return;
@@ -581,8 +536,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   }
 
   Widget _dataTable() {
-    if (_rows.isEmpty)
-      return const Center(child: Text('Aucune donnÃ©Â©Ã†â€™Â©e'));
+    if (_rows.isEmpty) return const Center(child: Text('Aucune donnée'));
     final cols = _orderedColumns(_rows.first.keys.toList());
 
     return Card(
@@ -605,8 +559,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(c),
-                      if (_sort == c)
-                        Icon(_asc ? Icons.south : Icons.north, size: 16),
+                      if (_sort == c) Icon(_asc ? Icons.south : Icons.north, size: 16),
                     ],
                   ),
                 ),
@@ -628,11 +581,10 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
                 });
               },
               cells: [
-                for (final c in cols.take(8))
-                  DataCell(SizedBox(width: 220, child: Text('${r[c]}'))),
+                for (final c in cols.take(8)) DataCell(SizedBox(width: 220, child: Text('${r[c]}'))),
                 DataCell(Row(children: [
                   IconButton(
-                    tooltip: 'Supprimer DÃ©Â©Ã†â€™â€šÂ¬Â°FINITIVEMENT',
+                    tooltip: 'Supprimer DÉFINITIVEMENT',
                     icon: const Icon(Icons.delete_forever, color: Colors.red),
                     onPressed: () => _onConfirmDeleteOne(id),
                   ),
@@ -650,7 +602,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
-          tooltip: 'PremiÃ©Â©Ã†â€™Â¨re',
+          tooltip: 'Première',
           onPressed: _page > 0
               ? () {
                   setState(() => _page = 0);
@@ -660,7 +612,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
           icon: const Icon(Icons.first_page),
         ),
         IconButton(
-          tooltip: 'PrÃ©Â©Ã†â€™Â©cÃ©Â©Ã†â€™Â©dente',
+          tooltip: 'Précédente',
           onPressed: _page > 0
               ? () {
                   setState(() => _page--);
@@ -681,7 +633,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
           icon: const Icon(Icons.chevron_right),
         ),
         IconButton(
-          tooltip: 'DerniÃ©Â©Ã†â€™Â¨re',
+          tooltip: 'Dernière',
           onPressed: ((_page + 1) < pages)
               ? () {
                   setState(() => _page = pages - 1);
@@ -692,12 +644,12 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
         ),
         const SizedBox(width: 12),
         if (_selected.isNotEmpty) ...[
-          Text('${_selected.length} sÃ©Â©Ã†â€™Â©l.'),
+          Text('${_selected.length} sél.'),
           const SizedBox(width: 8),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: _onConfirmBulkDelete,
-            child: const Text('Supprimer DÃ©Â©Ã†â€™â€šÂ¬Â°FINITIVEMENT'),
+            child: const Text('Supprimer DÉFINITIVEMENT'),
           ),
         ],
       ],
@@ -705,14 +657,7 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   }
 
   List<String> _orderedColumns(List<String> cols) {
-    final defaultOrder = [
-      'id',
-      'titre',
-      'nom',
-      'ville',
-      'created_at',
-      'date_ajout'
-    ];
+    final defaultOrder = ['id', 'titre', 'nom', 'ville', 'created_at', 'date_ajout'];
     cols.sort((a, b) {
       final ia = defaultOrder.indexOf(a);
       final ib = defaultOrder.indexOf(b);
@@ -727,21 +672,17 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ confirmations
+  // confirmations
   Future<void> _onConfirmDeleteOne(String id) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Suppression DÃ©Â©Ã†â€™â€šÂ¬Â°FINITIVE'),
+        title: const Text('Suppression DÉFINITIVE'),
         content: const Text(
-            'Cette action va supprimer la ligne dans la base. CÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢est irrÃ©Â©Ã†â€™Â©versible. Continuer ?'),
+            'Cette action va supprimer la ligne dans la base. C’est irréversible. Continuer ?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Oui, supprimer')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Oui, supprimer')),
         ],
       ),
     );
@@ -753,23 +694,18 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-            'Suppression DÃ©Â©Ã†â€™â€šÂ¬Â°FINITIVE (${_selected.length} Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ments)'),
-        content: const Text('Action irrÃ©Â©Ã†â€™Â©versible. Continuer ?'),
+        title: Text('Suppression DÉFINITIVE (${_selected.length} éléments)'),
+        content: const Text('Action irréversible. Continuer ?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Oui, supprimer')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Oui, supprimer')),
         ],
       ),
     );
     if (ok == true) await _deleteManyDefinitive();
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ export CSV
+  // export CSV
   Future<void> _exportCsv() async {
     if (_rows.isEmpty) return;
     final cols = _rows.first.keys.toList();
@@ -781,7 +717,8 @@ class _ContentAdvancedPageState extends State<ContentAdvancedPage> {
     await Clipboard.setData(ClipboardData(text: b.toString()));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CSV copiÃ©Â©Ã†â€™Â© (page courante).')));
+      const SnackBar(content: Text('CSV copié (page courante).')),
+    );
   }
 
   String _csvEscape(String v) {

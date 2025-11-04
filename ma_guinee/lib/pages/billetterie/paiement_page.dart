@@ -3,12 +3,15 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:postgrest/postgrest.dart'; // v2: pour PostgrestException
+import 'package:postgrest/postgrest.dart';
 import '../../services/billetterie_service.dart';
 
 // Palette directe (pas de ServiceColors)
 const _kEventPrimary = Color(0xFF7B2CBF);
 const _kOnPrimary = Colors.white;
+
+// 🔒 Interrupteur global pour bloquer les paiements
+const bool kPaymentsTemporarilyDisabled = true;
 
 class PaiementPage extends StatefulWidget {
   /// On arrive ici SANS créer de réservation avant.
@@ -78,6 +81,19 @@ class _PaiementPageState extends State<PaiementPage> {
   Future<void> _payer() async {
     if (_processing) return;
 
+    // Garde-fou supplémentaire (même si le bouton est désactivé)
+    if (kPaymentsTemporarilyDisabled) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "L’achat des billets sera disponible dans les plus brefs délais. Merci de votre patience.",
+          ),
+        ),
+      );
+      return;
+    }
+
     // Validation minimale
     if (_kind == _PayKind.mobile && _phoneCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -99,7 +115,6 @@ class _PaiementPageState extends State<PaiementPage> {
       );
 
       // 3) Créer le PAIEMENT via la RPC "create_paiement_dynamic" (4 params)
-      // ENUM DB pour fournisseur: {cash, om, mtn, wave, carte}
       final String moyenText = (_kind == _PayKind.mobile) ? 'om' : 'carte';
       final String providerRef = _makeProviderRef();
 
@@ -113,9 +128,7 @@ class _PaiementPageState extends State<PaiementPage> {
         },
       );
 
-      // PostgREST peut renvoyer un Map (row) ou une List (setof). On gère les deux.
-      final ok = (res != null) &&
-          !((res is List) && res.isEmpty);
+      final ok = (res != null) && !((res is List) && res.isEmpty);
       if (!ok) {
         throw Exception('Paiement non créé (réponse vide).');
       }
@@ -124,8 +137,7 @@ class _PaiementPageState extends State<PaiementPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Paiement réussi ✅')),
       );
-      Navigator.pop(context, true); // succès → renvoie true à l’appelant
-
+      Navigator.pop(context, true);
     } on PostgrestException catch (e) {
       if (!mounted) return;
       final msg = _friendlyError(e.message ?? e.toString());
@@ -150,13 +162,13 @@ class _PaiementPageState extends State<PaiementPage> {
     if (r.contains('23503')) {
       return 'Réservation introuvable. Réessaie de réserver le billet.';
     }
-    // Plus d’usage de pgcrypto/digest côté DB, on retire ce cas.
     return 'Erreur: $raw';
   }
 
   @override
   Widget build(BuildContext context) {
     final nf = NumberFormat.decimalPattern('fr_FR');
+    final bool disabled = kPaymentsTemporarilyDisabled;
 
     return Scaffold(
       appBar: AppBar(
@@ -218,6 +230,8 @@ class _PaiementPageState extends State<PaiementPage> {
                       ],
                     ),
                     const Divider(height: 20),
+
+                    // Ligne "Frais"
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -226,6 +240,36 @@ class _PaiementPageState extends State<PaiementPage> {
                             style: const TextStyle(fontWeight: FontWeight.w700)),
                       ],
                     ),
+
+                    const SizedBox(height: 8),
+
+                    // 🟠 Message d’info placé à l’endroit des "frais"
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF4E5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFFD699)),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              "L’achat des billets sera disponible dans les plus brefs délais. "
+                              "Merci de votre patience.",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 6),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -280,7 +324,7 @@ class _PaiementPageState extends State<PaiementPage> {
             const SizedBox(height: 12),
 
             // ======================
-            // Formulaire selon méthode
+            // Formulaire selon méthode (désactivé si payments off)
             // ======================
             if (_kind == _PayKind.mobile)
               Card(
@@ -291,6 +335,7 @@ class _PaiementPageState extends State<PaiementPage> {
                   padding: const EdgeInsets.all(16),
                   child: TextFormField(
                     controller: _phoneCtrl,
+                    enabled: !disabled,
                     keyboardType: TextInputType.phone,
                     decoration: InputDecoration(
                       labelText: 'Numéro Mobile Money',
@@ -318,6 +363,7 @@ class _PaiementPageState extends State<PaiementPage> {
                     children: [
                       TextFormField(
                         controller: _cardHolderCtrl,
+                        enabled: !disabled,
                         textCapitalization: TextCapitalization.words,
                         decoration: InputDecoration(
                           labelText: 'Titulaire de la carte',
@@ -334,6 +380,7 @@ class _PaiementPageState extends State<PaiementPage> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _cardNumberCtrl,
+                        enabled: !disabled,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           labelText: 'Numéro de carte',
@@ -353,6 +400,7 @@ class _PaiementPageState extends State<PaiementPage> {
                           Expanded(
                             child: TextFormField(
                               controller: _cardExpiryCtrl,
+                              enabled: !disabled,
                               keyboardType: TextInputType.datetime,
                               decoration: InputDecoration(
                                 labelText: 'MM/AA',
@@ -371,6 +419,7 @@ class _PaiementPageState extends State<PaiementPage> {
                           Expanded(
                             child: TextFormField(
                               controller: _cardCvcCtrl,
+                              enabled: !disabled,
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
                                 labelText: 'CVC',
@@ -395,17 +444,29 @@ class _PaiementPageState extends State<PaiementPage> {
             const Spacer(),
 
             // ======================
-            // Bouton Payer (couleur événement)
+            // Bouton Payer (désactivé + grisé)
             // ======================
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _processing ? null : _payer,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kEventPrimary,
-                  foregroundColor: _kOnPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                onPressed: (disabled || _processing) ? null : _payer,
+                style: ButtonStyle(
+                  padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 14)),
+                  shape: MaterialStateProperty.all(
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  backgroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                    if (states.contains(MaterialState.disabled)) {
+                      return Colors.grey.shade400; // gris quand désactivé
+                    }
+                    return _kEventPrimary;
+                  }),
+                  foregroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                    if (states.contains(MaterialState.disabled)) {
+                      return Colors.white70;
+                    }
+                    return _kOnPrimary;
+                  }),
                 ),
                 child: _processing
                     ? const SizedBox(

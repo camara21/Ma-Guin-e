@@ -20,8 +20,8 @@ class _SplashScreenState extends State<SplashScreen>
   bool _navigated = false;
 
   // Animations
-  late final AnimationController _textSweepCtl; // lettre -> lettre blanc → noir
-  late final AnimationController _glowCtl;      // halo du logo
+  late final AnimationController _barCtl;   // défilement de la barre
+  late final AnimationController _glowCtl;  // halo du logo
   late final Animation<double> _glowScale;
   late final Animation<double> _glowOpacity;
 
@@ -33,7 +33,8 @@ class _SplashScreenState extends State<SplashScreen>
       precacheImage(const AssetImage('assets/logo_guinee.png'), context);
     });
 
-    _textSweepCtl = AnimationController(
+    // ✅ uniquement la barre (plus de texte)
+    _barCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat();
@@ -90,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _t?.cancel();
-    _textSweepCtl.dispose();
+    _barCtl.dispose();
     _glowCtl.dispose();
     super.dispose();
   }
@@ -99,14 +100,9 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final s = MediaQuery.of(context).size;
 
-    // ✅ espaces égaux pour que la barre soit pile au milieu
-    final double midGap = (s.shortestSide * 0.04).clamp(14.0, 24.0);
-
-    // ✅ largeur max du texte pour éviter qu’il dépasse
-    final double maxTextWidth = (s.width * 0.78).clamp(240.0, 520.0);
-
-    // ✅ texte un peu plus petit qu’avant
-    final double textSize = (s.shortestSide * 0.064).clamp(20.0, 30.0);
+    // ✅ Barre raccourcie (30–40% de la largeur selon l’écran)
+    final double barWidth = (s.width * 0.36).clamp(140.0, 220.0);
+    final double barHeight = 5.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0175C2),
@@ -121,141 +117,76 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
 
-          // Contenu central
+          // ===== CONTENU : LOGO FIXE AU CENTRE =====
           Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // LOGO XXL (fixe) + halo blanc animé
-                Builder(
-                  builder: (context) {
-                    final double box = (s.shortestSide * 0.70).clamp(360.0, 560.0);
-                    final double glow = box * 0.90;
-                    final double imgH = box * 0.86;
+            child: Builder(
+              builder: (context) {
+                final double box = (s.shortestSide * 0.70).clamp(360.0, 560.0);
+                final double glow = box * 0.90;
+                final double imgH = box * 0.86;
 
-                    return SizedBox(
-                      height: box,
-                      width: box,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _glowCtl,
-                            builder: (context, _) {
-                              return Transform.scale(
-                                scale: _glowScale.value,
-                                child: Opacity(
-                                  opacity: _glowOpacity.value,
-                                  child: Container(
-                                    width: glow,
-                                    height: glow,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: RadialGradient(
-                                        colors: [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-                                        stops: [0.0, 1.0],
-                                      ),
-                                    ),
+                return SizedBox(
+                  height: box,
+                  width: box,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Halo animé (le logo, lui, reste fixe)
+                      AnimatedBuilder(
+                        animation: _glowCtl,
+                        builder: (context, _) {
+                          return Transform.scale(
+                            scale: _glowScale.value,
+                            child: Opacity(
+                              opacity: _glowOpacity.value,
+                              child: Container(
+                                width: glow,
+                                height: glow,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: RadialGradient(
+                                    colors: [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+                                    stops: [0.0, 1.0],
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                          Image.asset(
-                            'assets/logo_guinee.png',
-                            height: imgH,
-                            filterQuality: FilterQuality.high,
-                          ),
-                        ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-
-                // espace après le logo
-                SizedBox(height: midGap),
-
-                // ✅ BARRE COLORÉE AU MILIEU (entre logo et texte)
-                AnimatedBuilder(
-                  animation: _textSweepCtl,
-                  builder: (context, _) {
-                    final sweep = _textSweepCtl.value; // 0..1
-                    return _SoneyaUnderline(
-                      width: maxTextWidth, // même largeur que le bloc texte
-                      height: 6,
-                      progress: sweep,
-                    );
-                  },
-                ),
-
-                // même espace avant le texte -> barre bien centrée
-                SizedBox(height: midGap),
-
-                // === TEXTE : blanc → noir lettre par lettre (avec largeur max) ===
-                AnimatedBuilder(
-                  animation: _textSweepCtl,
-                  builder: (context, _) {
-                    final progress = Curves.easeInOut.transform(_textSweepCtl.value); // 0..1
-                    return SizedBox(
-                      width: maxTextWidth,
-                      child: _LetterByLetterText(
-                        text: 'Là où tout commence',
-                        fontSize: textSize,
-                        progress: progress,
+                      // ✅ LOGO FIXE
+                      Image.asset(
+                        'assets/logo_guinee.png',
+                        height: imgH,
+                        filterQuality: FilterQuality.high,
                       ),
-                    );
-                  },
-                ),
-              ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ===== BARRE ANIMÉE EN BAS (raccourcie) =====
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 44, // marge depuis le bas
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _barCtl,
+                builder: (context, _) {
+                  return _SoneyaUnderline(
+                    width: barWidth,
+                    height: barHeight,
+                    progress: _barCtl.value, // 0..1
+                  );
+                },
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Texte blanc → noir lettre par lettre (pas de superposition).
-class _LetterByLetterText extends StatelessWidget {
-  final String text;
-  final double fontSize;
-  final double progress; // 0..1
-
-  const _LetterByLetterText({
-    required this.text,
-    required this.fontSize,
-    required this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final chars = text.split('');
-    final total = chars.length;
-    final active = (progress * total).clamp(0, total.toDouble()).floor();
-
-    final styleBase = TextStyle(
-      fontSize: fontSize,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.6,
-      height: 1.1,
-      shadows: const [
-        Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 1)),
-      ],
-    );
-
-    return Text.rich(
-      TextSpan(
-        children: List.generate(total, (i) {
-          final c = chars[i];
-          final txt = c == ' ' ? ' ' : c;
-          return TextSpan(
-            text: txt,
-            style: styleBase.copyWith(color: i < active ? Colors.black : Colors.white),
-          );
-        }),
-      ),
-      textAlign: TextAlign.center,
-      softWrap: true,
     );
   }
 }
@@ -284,7 +215,8 @@ class _SoneyaUnderline extends StatelessWidget {
       Color(0xFF8E24AA),
     ];
 
-    final slide = (progress * 2.0) - 1.0; // -1 → +1
+    // défilement -1 → +1
+    final slide = (progress * 2.0) - 1.0;
 
     return SizedBox(
       width: width,

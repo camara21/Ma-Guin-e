@@ -5,6 +5,20 @@ import '../routes.dart';
 import 'package:flutter/scheduler.dart';
 import 'cgu_page.dart';
 
+/// =======================
+/// RÉGLAGES TRANSPARENCE (ultra premium, “plus bas possible”)
+/// =======================
+const _kHaloOpacity      = 0.10; // lueur néon autour de la barre
+const _kGlassBgOpacity   = 0.03; // fond de la barre (quasi invisible)
+const _kGlassBorderOpac  = 0.08; // bordure “verre” douce
+const _kGlassBlur        = 4.0;  // blur minimal pour laisser passer l’image
+const _kCTAOpacity       = 0.72; // opacité du dégradé du bouton principal
+const _kOutlineFillOpac  = 0.04; // léger voile sous le bouton outline
+const _kScrimTop         = 0.06; // scrim global: top
+const _kScrimMid1        = 0.10; // scrim global: milieu 1
+const _kScrimMid2        = 0.12; // scrim global: milieu 2
+const _kScrimBottom      = 0.10; // scrim global: bas
+
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
   @override
@@ -57,10 +71,14 @@ class _WelcomePageState extends State<WelcomePage> {
           children: [
             // Image
             Positioned.fill(
-              child: Image.asset('assets/nimba.png', fit: BoxFit.cover, alignment: Alignment.center),
+              child: Image.asset(
+                'assets/nimba.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+              ),
             ),
 
-            // Scrim léger pour lisibilité (ne masque pas l’image)
+            // Scrim global ultra léger (pour garder la lisibilité du texte du header)
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -69,17 +87,17 @@ class _WelcomePageState extends State<WelcomePage> {
                     end: Alignment.bottomCenter,
                     stops: const [0.0, 0.55, 0.85, 1.0],
                     colors: [
-                      Colors.black.withOpacity(0.10),
-                      Colors.black.withOpacity(0.16),
-                      Colors.black.withOpacity(0.22),
-                      Colors.black.withOpacity(0.18),
+                      Colors.black.withOpacity(_kScrimTop),
+                      Colors.black.withOpacity(_kScrimMid1),
+                      Colors.black.withOpacity(_kScrimMid2),
+                      Colors.black.withOpacity(_kScrimBottom),
                     ],
                   ),
                 ),
               ),
             ),
 
-            // HEADER défilant
+            // HEADER défilant (inchangé)
             Align(
               alignment: Alignment.topCenter,
               child: Padding(
@@ -88,43 +106,16 @@ class _WelcomePageState extends State<WelcomePage> {
               ),
             ),
 
-            // BOUTONS + CGU en bas
+            // ======= ZONE BAS ULTRA TRANSPARENTE =======
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 90),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _ClassyTransparentButton(
-                      label: 'Connexion',
-                      borderColor: kPrimary,
-                      onTap: () => Navigator.pushNamed(context, AppRoutes.login),
-                    ),
-                    const SizedBox(height: 16),
-                    _ClassyTransparentButton(
-                      label: 'Créer un compte',
-                      borderColor: kPrimary,
-                      onTap: () => Navigator.pushNamed(context, AppRoutes.register),
-                    ),
-                    const SizedBox(height: 14),
-                    Center(
-                      child: Text.rich(
-                        TextSpan(
-                          text: 'Conditions Générales d’Utilisation',
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                            fontWeight: FontWeight.w700,
-                            shadows: [Shadow(blurRadius: 6, color: Colors.black45, offset: Offset(0, 1))],
-                          ),
-                          recognizer: _termsTap,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 34),
+                child: _BottomGlassBar(
+                  primaryColor: kPrimary,
+                  onLogin: () => Navigator.pushNamed(context, AppRoutes.login),
+                  onRegister: () => Navigator.pushNamed(context, AppRoutes.register),
+                  termsRecognizer: _termsTap,
                 ),
               ),
             ),
@@ -194,22 +185,28 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
               Row(
                 children: [
                   Container(
-                    width: 34, height: 34,
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
                       gradient: const LinearGradient(
                         colors: [Color(0xFF113CFC), Color(0xFF2EC4F1)],
-                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
                     ),
                     child: const Icon(Icons.star_rounded, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 10),
-                  const Text('Soneya',
-                      style: TextStyle(
-                        color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800,
-                        shadows: [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
-                      )),
+                  const Text(
+                    'Soneya',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      shadows: [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -235,7 +232,10 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
                         children: [
                           Icon(s.icon, size: 16, color: Colors.white),
                           const SizedBox(width: 6),
-                          Text(s.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                          Text(
+                            s.label,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     );
@@ -256,77 +256,294 @@ class _ServiceChip {
   const _ServiceChip(this.icon, this.label);
 }
 
-// =============== Bouton OUTLINE 100% transparent + texte dégradé logo ===============
+// ==================== BOTTOM BAR ULTRA TRANSPARENTE ====================
 
-class _ClassyTransparentButton extends StatelessWidget {
+class _BottomGlassBar extends StatefulWidget {
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
+  final TapGestureRecognizer termsRecognizer;
+  final Color primaryColor;
+
+  const _BottomGlassBar({
+    required this.onLogin,
+    required this.onRegister,
+    required this.termsRecognizer,
+    required this.primaryColor,
+  });
+
+  @override
+  State<_BottomGlassBar> createState() => _BottomGlassBarState();
+}
+
+class _BottomGlassBarState extends State<_BottomGlassBar> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Couleurs Soneya (avec légère opacité pour premium)
+    final neon = [
+      const Color(0xFF00E5FF).withOpacity(0.80),
+      const Color(0xFF00FFB0).withOpacity(0.80),
+      const Color(0xFF7B61FF).withOpacity(0.80),
+      const Color(0xFFFF6EC7).withOpacity(0.80),
+    ];
+
+    return AnimatedBuilder(
+      animation: _ctl,
+      builder: (_, __) {
+        final t = _ctl.value; // 0..1
+        final slide = (t * 2.0) - 1.0; // -1..+1
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Stack(
+            children: [
+              // halo animé (ultra discret)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: _kHaloOpacity,
+                  child: FractionalTranslation(
+                    translation: Offset(slide, 0),
+                    child: Container(
+                      width: MediaQuery.of(context).size.width * 2,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: neon,
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // contenu "glass" quasi invisible mais présent (premium)
+              BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: _kGlassBlur, sigmaY: _kGlassBlur),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(_kGlassBgOpacity),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(_kGlassBorderOpac)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // CTA principal — dégradé animé très translucide
+                      _AnimatedGradientButton(
+                        label: 'Créer un compte',
+                        onTap: widget.onRegister,
+                        opacity: _kCTAOpacity,
+                      ),
+                      const SizedBox(height: 10),
+                      // CTA secondaire — outline (voile ultra léger)
+                      _OutlineButtonThin(
+                        label: 'Connexion',
+                        borderColor: widget.primaryColor.withOpacity(0.95),
+                        onTap: widget.onLogin,
+                        fillOpacity: _kOutlineFillOpac,
+                      ),
+                      const SizedBox(height: 8),
+                      // CGU
+                      Center(
+                        child: Text.rich(
+                          TextSpan(
+                            text: 'Conditions Générales d’Utilisation',
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              color: Colors.white,
+                              decoration: TextDecoration.underline,
+                              fontWeight: FontWeight.w700,
+                              shadows: [Shadow(blurRadius: 6, color: Colors.black45, offset: Offset(0, 1))],
+                            ),
+                            recognizer: widget.termsRecognizer,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ======= Bouton principal : dégradé animé + légèrement translucide =======
+class _AnimatedGradientButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  final double opacity; // 0..1
+
+  const _AnimatedGradientButton({
+    required this.label,
+    required this.onTap,
+    this.opacity = 1.0,
+  });
+
+  @override
+  State<_AnimatedGradientButton> createState() => _AnimatedGradientButtonState();
+}
+
+class _AnimatedGradientButtonState extends State<_AnimatedGradientButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grad = [
+      const Color(0xFF00E5FF).withOpacity(widget.opacity),
+      const Color(0xFF00FFB0).withOpacity(widget.opacity),
+      const Color(0xFF7B61FF).withOpacity(widget.opacity),
+      const Color(0xFFFF6EC7).withOpacity(widget.opacity),
+    ];
+
+    return AnimatedBuilder(
+      animation: _ctl,
+      builder: (_, __) {
+        final t = _ctl.value; // 0..1
+        final slide = (t * 2.0) - 1.0;
+
+        return SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  colors: grad,
+                  begin: Alignment(-1 + slide, 0),
+                  end: Alignment(1 + slide, 0),
+                ),
+              ),
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // gloss très subtil
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        height: 10,
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                          gradient: LinearGradient(
+                            colors: [Colors.white.withOpacity(.08), Colors.white.withOpacity(0)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Center(
+                      child: Text(
+                        'Créer un compte',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          letterSpacing: 0.8,
+                          shadows: [Shadow(blurRadius: 8, color: Colors.black45, offset: Offset(0, 2))],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ======= Bouton secondaire : outline élégant + voile ultra léger =======
+class _OutlineButtonThin extends StatelessWidget {
   final String label;
   final Color borderColor;
   final VoidCallback onTap;
+  final double fillOpacity;
 
-  const _ClassyTransparentButton({
+  const _OutlineButtonThin({
     required this.label,
     required this.borderColor,
     required this.onTap,
+    this.fillOpacity = 0.0,
   });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
+      height: 50,
       child: Material(
-        color: Colors.transparent, // intérieur totalement transparent
+        color: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-          side: BorderSide(color: borderColor, width: 2.0), // contour classe
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: borderColor, width: 1.4),
         ),
-        elevation: 0,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(28),
-          onTap: onTap,
-          splashColor: borderColor.withOpacity(0.12),
-          highlightColor: borderColor.withOpacity(0.08),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(fillOpacity),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            splashColor: borderColor.withOpacity(0.08),
+            highlightColor: borderColor.withOpacity(0.05),
             child: Center(
-              
-               child: Text(
-  label,
-  style: const TextStyle(
-    color: Colors.white,           // ⇦ texte blanc
-    fontWeight: FontWeight.w900,
-    fontSize: 18,
-    letterSpacing: 0.8,
-    shadows: [Shadow(blurRadius: 8, color: Colors.black45, offset: Offset(0, 2))],
-  ),
-),
-
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16.5,
+                  letterSpacing: 0.6,
+                  shadows: [Shadow(blurRadius: 6, color: Colors.black45, offset: Offset(0, 1))],
+                ),
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Texte en dégradé (shader) — parfait pour “couleur du logo”
-class _GradientText extends StatelessWidget {
-  final String text;
-  final TextStyle style;
-  final List<Color> colors;
-
-  const _GradientText(this.text, {required this.style, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (Rect bounds) => LinearGradient(
-        colors: colors,
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-      ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-      child: Text(
-        text,
-        style: style.copyWith(color: Colors.white), // la couleur est remplacée par le shader
       ),
     );
   }

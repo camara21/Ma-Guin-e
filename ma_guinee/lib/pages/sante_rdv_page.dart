@@ -92,10 +92,11 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
     }
   }
 
-  Future<void> _book(SlotDispo s) async {
+  /// --- NOUVEAU : confirmation + succès ---
+  Future<void> _confirmAndBook(SlotDispo s) async {
     if (_formKey.currentState?.validate() != true) return;
 
-    // Sécurité anti double-réservation pour cette clinique
+    // Sécurités existantes
     if (_hasExistingRdvInClinic) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,9 +110,7 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
       );
       return;
     }
-
-    // Sécurité : créneau verrouillé par la clinique ?
-    if (s is SlotDispo && (s.lockedByClinic)) {
+    if (s.lockedByClinic) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ce créneau a été verrouillé par la clinique.')),
@@ -119,6 +118,82 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
       return;
     }
 
+    final dateStr  = DateFormat('EEEE d MMMM y', 'fr_FR').format(s.startAt);
+    final heureStr = DateFormat('HH:mm', 'fr_FR').format(s.startAt);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmer le rendez-vous'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.cliniqueName, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text('Date : $dateStr'),
+            Text('Heure : $heureStr'),
+            const SizedBox(height: 8),
+            if (_nameCtrl.text.trim().isNotEmpty)
+              Text('Patient : ${_nameCtrl.text.trim()}'),
+            if (_phoneCtrl.text.trim().isNotEmpty)
+              Text('Téléphone : ${_phoneCtrl.text.trim()}'),
+            if (_motifCtrl.text.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Motif : ${_motifCtrl.text.trim()}'),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ok = await _book(s);
+    if (!mounted || !ok) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Rendez-vous confirmé ✅'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Votre rendez-vous à ${widget.cliniqueName} est réservé pour le $dateStr à $heureStr.'),
+            const SizedBox(height: 10),
+            const Text(
+              'Vous pouvez consulter vos rendez-vous dans :\n'
+              'Profil → Mes rendez-vous',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  /// Réservation effective (appel service). Retourne true si OK.
+  Future<bool> _book(SlotDispo s) async {
     try {
       await _svc.prendreRdv(
         cliniqueId: widget.cliniqueId,
@@ -127,16 +202,13 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
         patientNom: _nameCtrl.text.trim(),
         patientTel: _phoneCtrl.text.trim(),
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Votre rendez-vous est confirmé.')),
-      );
-      Navigator.pop(context, true);
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur: $e')),
       );
+      return false;
     }
   }
 
@@ -324,7 +396,7 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
                                           borderRadius: BorderRadius.circular(10),
                                         ),
                                       ),
-                                      onPressed: disabled ? null : () => _book(s),
+                                      onPressed: disabled ? null : () => _confirmAndBook(s),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -351,7 +423,10 @@ class _SanteRdvPageState extends State<SanteRdvPage> {
                                           dayLabel: jour,
                                           slots: slots,
                                           canBook: !_hasExistingRdvInClinic,
-                                          onPick: (s) { Navigator.pop(context); _book(s); },
+                                          onPick: (s) {
+                                            Navigator.pop(context);
+                                            _confirmAndBook(s);
+                                          },
                                         ),
                                       );
                                     },

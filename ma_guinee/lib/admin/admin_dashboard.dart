@@ -1,5 +1,5 @@
 // lib/pages/admin/admin_dashboard.dart
-import 'dart:math' show min, max;
+import 'dart:math' show min, max, pi;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -21,7 +21,7 @@ class AdminDashboard extends StatefulWidget {
   State<AdminDashboard> createState() => _AdminDashboardState();
 }
 
-class _AdminDashboardState extends State<AdminDashboard> {
+class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStateMixin {
   Map<String, dynamic>? metrics;
   bool loading = true;
   String? error;
@@ -42,6 +42,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int usersTotal = 0;
   int usersWithLocation = 0;
 
+  // Genre (garçon/fille/inconnu)
+  int _boys = 0;
+  int _girls = 0;
+  int _unknown = 0;
+
+  // Derniers inscrits
+  List<_UserLite> _lastUsers = [];
+
+  // Realtime
+  RealtimeChannel? _userChannel;
+  final Map<String, RealtimeChannel> _svcChannels = {};
+
   // Carte
   List<_UserLoc> userLocs = [];
   final MapController _mapController = MapController();
@@ -50,6 +62,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   static const _kEventPrimary = Color(0xFF7B2CBF);
   List<_Organizer> _pendingOrgs = [];
   bool _loadingOrgs = true;
+
+  // Animations
+  late final AnimationController _donutCtrl;
+  late final Animation<double> _donutAnim;
+  late final AnimationController _miniCtrl;
+  late final Animation<double> _miniAnim;
 
   final services = <_Service>[
     _Service('Annonces', Icons.campaign, 'annonces'),
@@ -67,7 +85,62 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    _donutCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _donutAnim = CurvedAnimation(parent: _donutCtrl, curve: Curves.easeOutCubic);
+    _miniCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _miniAnim = CurvedAnimation(parent: _miniCtrl, curve: Curves.easeOutCubic);
+
     _boot();
+    _subscribeRealtimeUsers();
+    _subscribeRealtimeServices();
+  }
+
+  @override
+  void dispose() {
+    _donutCtrl.dispose();
+    _miniCtrl.dispose();
+    if (_userChannel != null) SB.i.removeChannel(_userChannel!);
+    for (final ch in _svcChannels.values) {
+      SB.i.removeChannel(ch);
+    }
+    _svcChannels.clear();
+    super.dispose();
+  }
+
+  // ===== Realtime =====
+  void _subscribeRealtimeUsers() {
+    _userChannel = SB.i.channel('public:utilisateurs')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'utilisateurs',
+        callback: (payload) async {
+          await Future.wait([_loadUsersCounters(), _loadGenderStats(), _loadLastUsers()]);
+          if (mounted) {
+            _donutCtrl.forward(from: 0);
+            _miniCtrl.forward(from: 0);
+          }
+        },
+      )
+      ..subscribe();
+  }
+
+  void _subscribeRealtimeServices() {
+    for (final s in services) {
+      _svcChannels[s.table]?.unsubscribe();
+      final ch = SB.i.channel('public:${s.table}')
+        ..onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: s.table,
+          callback: (payload) async {
+            await _loadMetrics();
+            if (mounted) _miniCtrl.forward(from: 0);
+          },
+        )
+        ..subscribe();
+      _svcChannels[s.table] = ch;
+    }
   }
 
   Future<void> _boot() async {
@@ -86,7 +159,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _loadUsersCounters(),
         _loadUserLocations(),
         _loadPendingOrganizers(),
+        _loadGenderStats(),  // via RPC
+        _loadLastUsers(),
       ]);
+      _donutCtrl.forward(from: 0);
+      _miniCtrl.forward(from: 0);
     } catch (e) {
       if (!mounted) return;
       setState(() => error = '$e');
@@ -336,12 +413,64 @@ class _AdminDashboardState extends State<AdminDashboard> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Refus enregistré pour ${org.nomStructure}')),
+
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur refus: $e')),
       );
+    }
+  }
+
+  // ====== Stats Genre via RPC (insensible à la casse) ======
+  Future<void> _loadGenderStats() async {
+    try {
+      final res = await SB.i.rpc('rpc_gender_counts');
+
+      Map<String, dynamic>? row;
+      if (res is Map<String, dynamic>) {
+        row = res;
+      } else if (res is List && res.isNotEmpty && res.first is Map) {
+        row = Map<String, dynamic>.from(res.first as Map);
+      }
+
+      if (!mounted) return;
+      if (row == null) {
+        setState(() {
+          _boys = 0;
+          _girls = 0;
+          _unknown = 0;
+        });
+        return;
+      }
+
+      setState(() {
+        _boys = (row!['boys'] as num?)?.toInt() ?? 0;
+        _girls = (row['girls'] as num?)?.toInt() ?? 0;
+        _unknown = (row['unknown'] as num?)?.toInt() ?? 0;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('Erreur rpc_gender_counts: $e');
+    }
+  }
+
+  // Derniers inscrits
+  Future<void> _loadLastUsers() async {
+    try {
+      final res = await SB.i
+          .from('utilisateurs')
+          .select('id, nom, prenom, telephone, ville, genre, created_at')
+          .order('created_at', ascending: false)
+          .limit(20);
+      final list = (res as List).cast<Map<String, dynamic>>();
+      final mapped = list.map((m) => _UserLite.fromMap(m)).toList();
+      if (!mounted) return;
+      setState(() => _lastUsers = mapped);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _lastUsers = []);
     }
   }
 
@@ -356,7 +485,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _loadUsersCounters(),
       _loadUserLocations(),
       _loadPendingOrganizers(),
+      _loadGenderStats(),
+      _loadLastUsers(),
     ]);
+    if (mounted) {
+      _donutCtrl.forward(from: 0);
+      _miniCtrl.forward(from: 0);
+    }
   }
 
   // === UI ===
@@ -372,6 +507,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
     }
     final active = ((m['active_24h'] as num?) ?? 0).toInt().toString();
+
+    final totalGenre = _boys + _girls + _unknown;
+    final boysPct = _pct(_boys, totalGenre);
+    final girlsPct = _pct(_girls, totalGenre);
+    final unknownPct = _pct(_unknown, totalGenre);
+    final geoPct = _pct(usersWithLocation, usersTotal);
 
     return Scaffold(
       appBar: AppBar(
@@ -406,6 +547,42 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         }
                         return Column(children: cards);
                       }),
+
+                      const SizedBox(height: 16),
+
+                      // Donut Genre + Mini cercles %
+                      LayoutBuilder(builder: (context, c) {
+                        final genderCard = Expanded(child: _genderDonutCard(
+                          total: totalGenre,
+                          boysPct: boysPct,
+                          girlsPct: girlsPct,
+                          unknownPct: unknownPct,
+                          boys: _boys,
+                          girls: _girls,
+                          unknown: _unknown,
+                          anim: _donutAnim,
+                        ));
+                        final miniPercents = Expanded(child: _miniPercentsCard(
+                          geoPct: geoPct,
+                          usersTotal: usersTotal,
+                          usersWithLoc: usersWithLocation,
+                          anim: _miniAnim,
+                        ));
+                        if (c.maxWidth > 900) {
+                          return Row(children: [genderCard, const SizedBox(width: 12), miniPercents]);
+                        }
+                        return Column(children: [genderCard, const SizedBox(height: 12), miniPercents]);
+                      }),
+
+                      const SizedBox(height: 16),
+
+                      // Derniers inscrits
+                      _lastUsersCard(),
+
+                      const SizedBox(height: 16),
+
+                      // Tous les services — activité du jour (%)
+                      _allServicesDonutGrid(m),
 
                       const SizedBox(height: 16),
 
@@ -486,12 +663,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                       const SizedBox(height: 16),
 
-                      // Grille services
+                      // Grille services classique (totaux)
                       _gridServices(context, m),
                     ],
                   ),
                 ),
     );
+  }
+
+  double _pct(int part, int total) {
+    if (total <= 0) return 0;
+    return (part / total) * 100.0;
   }
 
   Widget _kpiCard(String title, String value, IconData icon) {
@@ -510,6 +692,241 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 Text(value, style: const TextStyle(fontSize: 18)),
               ],
             ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ------- Donut Garçons/Filles -------
+  Widget _genderDonutCard({
+    required int total,
+    required double boysPct,
+    required double girlsPct,
+    required double unknownPct,
+    required int boys,
+    required int girls,
+    required int unknown,
+    required Animation<double> anim,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Répartition des inscrits', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 220,
+            child: AnimatedBuilder(
+              animation: anim,
+              builder: (_, __) => CustomPaint(
+                painter: _DonutPainter(
+                  segments: [
+                    _DonutSeg(value: boysPct, color: const Color(0xFF246BFD)),
+                    _DonutSeg(value: girlsPct, color: const Color(0xFFFF4D8D)),
+                    if (unknownPct > 0) _DonutSeg(value: unknownPct, color: const Color(0xFFBDBDBD)),
+                  ],
+                  progress: anim.value,
+                  stroke: 26,
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$total', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+                      const Text('inscrits', style: TextStyle(color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            runSpacing: 8,
+            spacing: 16,
+            children: [
+              _legendDot(color: const Color(0xFF246BFD), label: 'Garçons', value: '$boys (${boysPct.toStringAsFixed(1)}%)'),
+              _legendDot(color: const Color(0xFFFF4D8D), label: 'Filles', value: '$girls (${girlsPct.toStringAsFixed(1)}%)'),
+              if (unknown > 0)
+                _legendDot(color: const Color(0xFFBDBDBD), label: 'Inconnu', value: '$unknown (${unknownPct.toStringAsFixed(1)}%)'),
+            ],
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _legendDot({required Color color, required String label, required String value}) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 6),
+      Text(label),
+      const SizedBox(width: 4),
+      Text(value, style: const TextStyle(color: Colors.black54)),
+    ]);
+  }
+
+  // ------- Mini cercles % réutilisables -------
+  Widget _miniPercentsCard({required double geoPct, required int usersTotal, required int usersWithLoc, required Animation<double> anim}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Statistiques rapides', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniCirclePercent(
+                  label: 'Avec localisation',
+                  value: geoPct,
+                  footer: '$usersWithLoc / $usersTotal',
+                  anim: anim,
+                ),
+              ),
+            ],
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ------- Derniers inscrits -------
+  Widget _lastUsersCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('Derniers inscrits', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            IconButton(onPressed: _loadLastUsers, icon: const Icon(Icons.refresh)),
+          ]),
+          const SizedBox(height: 8),
+          if (_lastUsers.isEmpty)
+            const Text('Aucun inscrit récent.')
+          else
+            Column(
+              children: _lastUsers.map((u) {
+                final g = (u.genre ?? '').toLowerCase();
+                final icon = g.startsWith('m') || g.contains('homme') || g.contains('gar') ? Icons.male : (g.startsWith('f') || g.contains('femme') || g.contains('fill') ? Icons.female : Icons.person_outline);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.black12),
+                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.white,
+                  ),
+                  child: Row(children: [
+                    Icon(icon, color: Colors.black54),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(u.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Row(children: [
+                          if ((u.ville ?? '').isNotEmpty) ...[
+                            const Icon(Icons.place, size: 14, color: Colors.black45),
+                            const SizedBox(width: 2),
+                            Text(u.ville!, style: const TextStyle(color: Colors.black54)),
+                            const SizedBox(width: 10),
+                          ],
+                          if ((u.telephone ?? '').isNotEmpty) ...[
+                            const Icon(Icons.phone, size: 14, color: Colors.black45),
+                            const SizedBox(width: 2),
+                            Text(u.telephone!, style: const TextStyle(color: Colors.black54)),
+                          ],
+                        ]),
+                      ]),
+                    ),
+                    Text(_fmtDateShort(u.createdAt), style: const TextStyle(color: Colors.black54)),
+                  ]),
+                );
+              }).toList(),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  String _fmtDateShort(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$day/$m/$y';
+  }
+
+  // ------- Tous les services — activité du jour (%) -------
+  Widget _allServicesDonutGrid(Map<String, dynamic> metricsMap) {
+    final items = services.map((s) {
+      final obj = (metricsMap[s.table] ?? {}) as Map? ?? {};
+      int total = (obj['total'] as num?)?.toInt() ?? 0;
+      int today = (obj['today'] as num?)?.toInt() ?? 0;
+
+      if (s.table == 'reports') {
+        total = reportsTotal;
+        today = reportsToday;
+      }
+
+      final pctToday = total == 0 ? 0.0 : (today / total) * 100.0;
+
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Icon(s.icon, size: 18),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      s.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: AnimatedBuilder(
+                  animation: _miniAnim,
+                  builder: (_, __) => CustomPaint(
+                    painter: _MiniCirclePainter(percent: (pctToday.clamp(0, 100)) * _miniAnim.value),
+                    child: Center(
+                      child: Text('${pctToday.isNaN ? 0 : pctToday.toStringAsFixed(0)}%',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Aujourd’hui: $today', style: const TextStyle(color: Colors.black54)),
+              Text('Total: $total', style: const TextStyle(color: Colors.black54)),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Tous les services — activité du jour (%)', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 3,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.05,
+            physics: const NeverScrollableScrollPhysics(),
+            shrinkWrap: true,
+            children: items,
           ),
         ]),
       ),
@@ -579,12 +996,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             Text(o.nomStructure, style: const TextStyle(fontWeight: FontWeight.w700)),
                             const SizedBox(height: 2),
                             Text('${o.ville ?? '-'} • ${o.telephone ?? '-'}'),
-                            if (o.emailPro != null && o.emailPro!.isNotEmpty)
-                              Text(o.emailPro!),
-                            if (o.nif != null && o.nif!.isNotEmpty)
-                              Text('NIF: ${o.nif}'),
-                            if (o.rccm != null && o.rccm!.isNotEmpty)
-                              Text('RCCM: ${o.rccm}'),
+                            if (o.emailPro != null && o.emailPro!.isNotEmpty) Text(o.emailPro!),
+                            if (o.nif != null && o.nif!.isNotEmpty) Text('NIF: ${o.nif}'),
+                            if (o.rccm != null && o.rccm!.isNotEmpty) Text('RCCM: ${o.rccm}'),
                             if (o.description != null && o.description!.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(o.description!, maxLines: 3, overflow: TextOverflow.ellipsis),
@@ -1027,7 +1441,7 @@ class _OrganizerReviewDialogState extends State<_OrganizerReviewDialog> {
   }
 }
 
-// ======= Chart =======
+// ======= Charts (ligne, donuts, mini cercles) =======
 class _Point {
   final DateTime d;
   final int v;
@@ -1101,6 +1515,124 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _LineChartPainter old) => old.pts != pts;
 }
 
+class _DonutSeg {
+  final double value; // en %
+  final Color color;
+  _DonutSeg({required this.value, required this.color});
+}
+
+class _DonutPainter extends CustomPainter {
+  final List<_DonutSeg> segments;
+  final double progress; // 0..1
+  final double stroke;
+
+  _DonutPainter({required this.segments, required this.progress, this.stroke = 24});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = (size.shortestSide / 2) - stroke / 2;
+
+    final bg = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = const Color(0xFFEAEAEA)
+      ..strokeCap = StrokeCap.round;
+
+    // Fond
+    canvas.drawCircle(c, r, bg);
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    double start = -pi / 2;
+    for (final s in segments) {
+      if (s.value <= 0) continue;
+      final sweep = (2 * pi) * (s.value / 100.0) * progress;
+      paint.color = s.color;
+      canvas.drawArc(Rect.fromCircle(center: c, radius: r), start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter old) =>
+      old.segments != segments || old.progress != progress || old.stroke != stroke;
+}
+
+class _MiniCirclePercent extends StatelessWidget {
+  final String label;
+  final double value; // 0..100
+  final String footer;
+  final Animation<double> anim;
+
+  const _MiniCirclePercent({
+    required this.label,
+    required this.value,
+    required this.footer,
+    required this.anim,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value.clamp(0, 100);
+    return Column(
+      children: [
+        SizedBox(
+          height: 120,
+          child: AnimatedBuilder(
+            animation: anim,
+            builder: (_, __) => CustomPaint(
+              painter: _MiniCirclePainter(percent: v * anim.value),
+              child: Center(
+                child: Text('${v.toStringAsFixed(0)}%', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(footer, style: const TextStyle(color: Colors.black54)),
+      ],
+    );
+  }
+}
+
+class _MiniCirclePainter extends CustomPainter {
+  final double percent; // 0..100
+  _MiniCirclePainter({required this.percent});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = 12.0;
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = (size.shortestSide / 2) - stroke / 2;
+
+    final bg = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = const Color(0xFFEAEAEA)
+      ..strokeCap = StrokeCap.round;
+
+    final fg = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = const Color(0xFF22C55E) // vert
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(c, r, bg);
+
+    final sweep = 2 * pi * (percent / 100.0);
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r), -pi / 2, sweep, false, fg);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniCirclePainter old) => old.percent != percent;
+}
+
 // ======= Autres modèles =======
 class _TopCity {
   final String ville;
@@ -1129,6 +1661,45 @@ class _UserLoc {
   final double lon;
   final String ville;
   _UserLoc(this.id, this.lat, this.lon, this.ville);
+}
+
+class _UserLite {
+  final String id;
+  final String? nom;
+  final String? prenom;
+  final String? telephone;
+  final String? ville;
+  final String? genre;
+  final DateTime createdAt;
+
+  _UserLite({
+    required this.id,
+    required this.nom,
+    required this.prenom,
+    required this.telephone,
+    required this.ville,
+    required this.genre,
+    required this.createdAt,
+  });
+
+  String get fullName {
+    final n = (nom ?? '').trim();
+    final p = (prenom ?? '').trim();
+    if (n.isEmpty && p.isEmpty) return '—';
+    if (n.isEmpty) return p;
+    if (p.isEmpty) return n;
+    return '$p $n';
+  }
+
+  factory _UserLite.fromMap(Map<String, dynamic> m) => _UserLite(
+        id: (m['id'] ?? '').toString(),
+        nom: m['nom'] as String?,
+        prenom: m['prenom'] as String?,
+        telephone: m['telephone'] as String?,
+        ville: m['ville'] as String?,
+        genre: m['genre'] as String?,
+        createdAt: DateTime.tryParse((m['created_at'] ?? '').toString()) ?? DateTime.now(),
+      );
 }
 
 class _Service {

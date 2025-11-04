@@ -1,26 +1,33 @@
 // lib/pages/restaurant_reservation_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // inputFormatters + contextMenuBuilder
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ insertion DB
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RestaurantReservationPage extends StatefulWidget {
-  final String restaurantId;           // ✅ FK -> public.restaurants.id
+  final String restaurantId;
   final String restoName;
-  final String? phone;                 // affiché, pas prérempli
-  final String? address;               // optionnel
-  final String? coverImage;            // optionnel (URL)
+  final String? phone;     // affiché seulement en bannière
+  final String? address;
+  final String? coverImage;
   final Color primaryColor;
+
+  // 🔹 Nouveau: paramètres de redirection après succès
+  final String? detailRouteName;   // Nom de la route vers la page détail (ex: '/restaurant/detail')
+  final Object? detailRouteArgs;   // Arguments optionnels à transmettre
 
   const RestaurantReservationPage({
     super.key,
-    required this.restaurantId,        // ✅ nouveau requis
+    required this.restaurantId,
     required this.restoName,
     this.phone,
     this.address,
     this.coverImage,
     this.primaryColor = const Color(0xFFE76F51),
+    this.detailRouteName,
+    this.detailRouteArgs,
   });
 
   @override
@@ -36,8 +43,8 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
   int _adults = 2;
   int _children = 0;
 
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController(); // tel CLIENT (jamais prérempli)
+  final _nameCtrl  = TextEditingController();
+  final _phoneCtrl = TextEditingController(); // chiffres uniquement
   final _notesCtrl = TextEditingController();
 
   String _seating = 'Peu importe';
@@ -45,7 +52,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
   String _occasion = 'Aucune';
   bool _accept = true;
 
-  bool _loading = false; // ✅ état envoi
+  bool _loading = false;
 
   @override
   void initState() {
@@ -68,18 +75,48 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     return DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(dt);
   }
 
-  String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
   String _hhmm(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  DateTime _combine(DateTime d, TimeOfDay t) =>
+      DateTime(d.year, d.month, d.day, t.hour, t.minute);
 
   Future<void> _call(String? number) async {
     final raw = (number ?? '').trim();
-    final num = _digitsOnly(raw);
-    if (num.isEmpty) return;
-    final uri = Uri.parse('tel:$num');
+    if (raw.isEmpty) return;
+    final uri = Uri.parse('tel:$raw');
     await launchUrl(uri);
   }
 
+  // -------- Fenêtre de validation --------
+  Future<bool> _showReviewAndConfirm() async {
+    final dt = _combine(_date, _time);
+    final txt = StringBuffer()
+      ..writeln('Veuillez confirmer votre réservation :\n')
+      ..writeln('Restaurant : ${widget.restoName}')
+      ..writeln('Date & heure : ${DateFormat('EEEE d MMMM y, HH:mm', 'fr_FR').format(dt)}')
+      ..writeln('Convives : $_adults adulte(s)${_children > 0 ? " + $_children enfant(s)" : ""}')
+      ..writeln('Placement : $_seating')
+      ..writeln('Occasion : $_occasion');
+    if (_notesCtrl.text.trim().isNotEmpty) {
+      txt.writeln('Notes : ${_notesCtrl.text.trim()}');
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmer la réservation'),
+        content: Text(txt.toString()),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirmer')),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  // -------- Feuille de succès (sans carte téléphone) --------
   Future<void> _showSuccessSheet(Map<String, dynamic> row) async {
     final dt = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
     final resume = StringBuffer()
@@ -91,10 +128,8 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
       ..writeln('Occasion : $_occasion')
       ..write(_notesCtrl.text.isNotEmpty ? '\nNotes : ${_notesCtrl.text}' : '');
 
-    final phone = (widget.phone ?? '').trim();
     final scheme = Theme.of(context).colorScheme;
 
-    // ignore: use_build_context_synchronously
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -113,9 +148,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                 children: [
                   Icon(Icons.check_circle_rounded, color: widget.primaryColor),
                   const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text("Votre demande a été enregistrée et est confirmée."),
-                  ),
+                  const Expanded(child: Text("Votre demande a été enregistrée et est confirmée.")),
                 ],
               ),
               const SizedBox(height: 16),
@@ -129,15 +162,30 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                 child: Text(resume.toString(), style: Theme.of(context).textTheme.bodySmall),
               ),
               const SizedBox(height: 12),
-              if (phone.isNotEmpty)
-                _CallCard(
-                  phoneNumber: phone,
-                  onCall: () => _call(phone),
-                  primaryColor: widget.primaryColor,
-                ),
+              const Text("Vous pouvez consulter vos réservations dans :\nProfil → Mes réservations"),
               const SizedBox(height: 8),
               FilledButton.tonalIcon(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  // 1) fermer la bottom sheet
+                  Navigator.pop(context);
+
+                  // 2) rediriger vers la page détail si fournie
+                  if (mounted && widget.detailRouteName != null) {
+                    Navigator.of(context).pushReplacementNamed(
+                      widget.detailRouteName!,
+                      // Si aucun args fourni par le parent, on passe un map utile par défaut
+                      arguments: widget.detailRouteArgs ?? {
+                        'restaurantId': widget.restaurantId,
+                        'reservation': row,
+                      },
+                    );
+                  } else {
+                    // Fallback: revenir à l'écran précédent si pas de route fournie
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                  }
+                },
                 icon: const Icon(Icons.check_circle_outline),
                 label: const Text("OK"),
               ),
@@ -149,17 +197,75 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     );
   }
 
+  // -------- Règles métier locales --------
+  Future<String?> _validateBusinessRulesLocally() async {
+    final supa   = Supabase.instance.client;
+    final uid    = supa.auth.currentUser?.id;
+    final dayStr = DateFormat('yyyy-MM-dd').format(_date);
+    final phone  = _phoneCtrl.text.trim();
+
+    var base = supa.from('reservations_restaurants').select().eq('res_date', dayStr);
+    // base = base.neq('status', 'annule'); // décommente si la colonne existe
+
+    final List rows = uid != null
+        ? await base.or('user_id.eq.$uid,client_phone.eq.$phone')
+        : await base.eq('client_phone', phone);
+
+    final List<Map<String, dynamic>> items =
+        rows.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+    final requested = _combine(_date, _time);
+
+    final sameDayAll = items.map((r) {
+      final t = (r['res_time'] as String?) ?? '00:00';
+      final parts = t.split(':');
+      final hh = int.tryParse(parts[0]) ?? 0;
+      final mm = int.tryParse(parts[1]) ?? 0;
+      return {
+        'dt': DateTime(_date.year, _date.month, _date.day, hh, mm),
+        'restaurant_id': r['restaurant_id']?.toString() ?? '',
+      };
+    }).toList();
+
+    if (sameDayAll.length >= 3) {
+      return "Limite atteinte : vous avez déjà 3 réservations pour cette journée.";
+    }
+
+    final sameResto = sameDayAll.where((e) => e['restaurant_id'] == widget.restaurantId).toList();
+    if (sameResto.length >= 2) {
+      return "Vous avez déjà 2 réservations dans cet établissement pour cette journée.";
+    }
+
+    for (final e in sameDayAll) {
+      final dt = e['dt'] as DateTime;
+      if (dt.hour == requested.hour && dt.minute == requested.minute) {
+        return "Vous avez déjà une réservation à cette heure.";
+      }
+      if (e['restaurant_id'] == widget.restaurantId) {
+        final diff = (dt.difference(requested).inMinutes).abs();
+        if (diff < 120) {
+          return "L'écart entre deux réservations dans le même établissement doit être d'au moins 2 heures.";
+        }
+      }
+    }
+
+    return null;
+  }
+
   Future<void> _submitReservation() async {
     setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
-      final uid = supa.auth.currentUser?.id;
+      final uid  = supa.auth.currentUser?.id;
+
+      // Envoi DB : chiffres uniquement
+      final sanitizedPhone = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
 
       final payload = {
-        'restaurant_id': widget.restaurantId,                 // ✅ FK
-        'user_id': uid,                                       // peut être null si tu autorises anonyme
+        'restaurant_id': widget.restaurantId,
+        'user_id': uid,
         'client_nom': _nameCtrl.text.trim(),
-        'client_phone': _phoneCtrl.text.trim(),
+        'client_phone': sanitizedPhone,
         'res_date': DateFormat('yyyy-MM-dd').format(_date),
         'res_time': _hhmm(_time),
         'adults': _adults,
@@ -168,7 +274,6 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
         'occasion': _occasion,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'consent_contact': _accept,
-        // 'status': 'confirme',   // inutile: défaut DB
       };
 
       final inserted = await supa
@@ -196,7 +301,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
     }
   }
 
-  void _onReservePressed() {
+  Future<void> _onReservePressed() async {
     if (!_accept) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Veuillez accepter les conditions de contact."),
@@ -204,13 +309,23 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
       return;
     }
     if (_formKey.currentState?.validate() != true) return;
-    _submitReservation(); // ✅ insert DB + feuille succès
+
+    final err = await _validateBusinessRulesLocally();
+    if (err != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+
+    final confirmed = await _showReviewAndConfirm();
+    if (!confirmed) return;
+
+    await _submitReservation();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -269,7 +384,6 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ======= Compteurs empilés (Adultes / Enfants) =======
                     _Section(
                       title: "Combien de personnes ?",
                       primaryColor: widget.primaryColor,
@@ -291,7 +405,6 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                         ],
                       ),
                     ),
-                    // ======================================================
 
                     const SizedBox(height: 12),
                     _Section(
@@ -308,18 +421,41 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                             validator: (v) => (v == null || v.trim().length < 2) ? "Votre nom" : null,
                           ),
                           const SizedBox(height: 10),
+
+                          // ===== Téléphone : chiffres uniquement + pas de "Coller" =====
                           TextFormField(
                             controller: _phoneCtrl,
-                            keyboardType: TextInputType.phone,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              // autorise seulement 0-9 (filtre aussi lors du collage)
+                              FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
+                              LengthLimitingTextInputFormatter(15), // optionnel : 15 chiffres max
+                            ],
+                            // supprime "Coller"/"Paste" du menu contextuel (compatible toutes versions)
+                            contextMenuBuilder: (BuildContext context, EditableTextState editableTextState) {
+                              final filtered = editableTextState.contextMenuButtonItems
+                                  .where((item) => !item.type.toString().toLowerCase().contains('paste'))
+                                  .toList();
+                              return AdaptiveTextSelectionToolbar.buttonItems(
+                                anchors: editableTextState.contextMenuAnchors,
+                                buttonItems: filtered,
+                              );
+                            },
                             decoration: const InputDecoration(
-                              labelText: "Téléphone",
+                              labelText: "Téléphone (chiffres uniquement)",
                               prefixIcon: Icon(Icons.phone_rounded),
                             ),
-                            validator: (v) => (v == null || v.trim().length < 6) ? "Votre numéro" : null,
+                            validator: (v) {
+                              final s = (v ?? '').trim();
+                              return RegExp(r'^\d{6,15}$').hasMatch(s)
+                                  ? null
+                                  : "Numéro invalide (6 à 15 chiffres, sans espace)";
+                            },
                           ),
                         ],
                       ),
                     ),
+
                     const SizedBox(height: 12),
                     _Section(
                       title: "Préférences",
@@ -366,6 +502,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
                         ],
                       ),
                     ),
+
                     const SizedBox(height: 12),
                     _Section(
                       title: "Confirmation",
@@ -429,8 +566,8 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
-                ),
+              primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
+            ),
           ),
           child: child!,
         );
@@ -449,8 +586,8 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
         final mq = MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true);
         final themed = Theme.of(context).copyWith(
           colorScheme: Theme.of(context).colorScheme.copyWith(
-                primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
-              ),
+            primary: widget.primaryColor, secondary: widget.primaryColor, onPrimary: Colors.white,
+          ),
         );
         return MediaQuery(data: mq, child: Theme(data: themed, child: child!));
       },
@@ -459,7 +596,7 @@ class _RestaurantReservationPageState extends State<RestaurantReservationPage> {
   }
 }
 
-// ======== Widgets réutilisables ========
+// ===== Widgets réutilisables =====
 
 class _Section extends StatelessWidget {
   final String title;
@@ -578,7 +715,6 @@ class _TileButton extends StatelessWidget {
   }
 }
 
-// ===== CounterCard version responsive =====
 class _CounterCard extends StatelessWidget {
   final String title;
   final int value;
@@ -632,44 +768,6 @@ class _CounterCard extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CallCard extends StatelessWidget {
-  final String phoneNumber;
-  final VoidCallback onCall;
-  final Color primaryColor;
-  const _CallCard({required this.phoneNumber, required this.onCall, required this.primaryColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: scheme.surfaceVariant.withOpacity(.35),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text("Téléphone"),
-              const SizedBox(height: 6),
-              SelectableText(phoneNumber, style: Theme.of(context).textTheme.titleLarge),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: onCall,
-            icon: const Icon(Icons.phone_rounded),
-            label: const Text("Appeler"),
-            style: FilledButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white),
           ),
         ],
       ),

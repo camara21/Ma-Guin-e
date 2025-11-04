@@ -94,7 +94,7 @@ class CulteDetailPage extends StatelessWidget {
             : 'Soutenir ce lieu';
 
     final String texte = isMosquee
-        ? "« Fi sabilillah » — pour la cause d’Allah. Même un petit geste aide à payer l’eau, l’électricité et l’entretien afin que la mosquée reste ouverte et accueillante."
+        ? "« في سبيل الله — Fi sabilillah. Que la mosquée demeure accueillante, et que chaque don aide à la garder lumineuse et bien entretenue."
         : isEglise
             ? "Un geste d’amour pour l’église : aidez aux charges, à l’accueil des fidèles et aux actions solidaires. Chaque don compte."
             : "Aidez ce lieu à continuer de servir la communauté : entretien, charges, accueil… Même une petite contribution a un grand impact.";

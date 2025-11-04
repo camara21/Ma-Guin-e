@@ -80,7 +80,7 @@ class _ReservationsTourismePageState extends State<ReservationsTourismePage> {
             .or('visit_date.gt.$cutDateStr,and(visit_date.eq.$cutDateStr,arrival_time.gte.$cutTimeStr)');
       }
 
-      final bool desc = (_scope == 'passees'); // Passées : les plus récentes d’abord
+      final bool desc = (_scope == 'passees'); // Passées : plus récentes d’abord
       final rows = await q
           .order('visit_date', ascending: !desc)
           .order('arrival_time', ascending: !desc);
@@ -136,6 +136,36 @@ class _ReservationsTourismePageState extends State<ReservationsTourismePage> {
       'ville': r['lieu_ville'],
     };
     Navigator.push(context, MaterialPageRoute(builder: (_) => TourismeDetailPage(lieu: lieu)));
+  }
+
+  // ---------- Helpers affichage ----------
+  bool _isCancelled(Map<String, dynamic> r) =>
+      (r['status']?.toString() == 'annule');
+
+  bool _isPast(Map<String, dynamic> r) {
+    if (_scope == 'passees') return true;       // déjà filtré SQL
+    if (_scope == 'avenir') return false;       // déjà filtré SQL
+    try {
+      final vd = (r['visit_date'] ?? '').toString();
+      final at = (r['arrival_time'] ?? '').toString(); // "HH:MM:SS" ou "HH:MM"
+      if (vd.isEmpty || at.isEmpty) return false;
+      final parts = at.split(':');
+      final hh = int.tryParse(parts[0]) ?? 0;
+      final mm = int.tryParse(parts[1]) ?? 0;
+      final date = DateTime.tryParse(vd);
+      if (date == null) return false;
+      final dt = DateTime(date.year, date.month, date.day, hh, mm);
+      final cutoff = DateTime.now().subtract(const Duration(hours: 4));
+      return !_isCancelled(r) && dt.isBefore(cutoff);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String? _badgeText(Map<String, dynamic> r) {
+    if (_isCancelled(r)) return 'Annulée';
+    if (_isPast(r)) return 'Passée';
+    return null;
   }
 
   @override
@@ -216,58 +246,88 @@ class _ReservationsTourismePageState extends State<ReservationsTourismePage> {
                                   final titre = (r['lieu_nom'] ?? 'Lieu').toString();
                                   final ville = (r['lieu_ville'] ?? '').toString();
                                   final dt = "${r['visit_date'] ?? ''} • ${r['arrival_time'] ?? ''}";
-                                  final cancelled = (r['status']?.toString() == 'annule');
 
-                                  final String? badgeText = cancelled
-                                      ? 'Annulée'
-                                      : (_scope == 'passees' ? 'Passée' : null);
+                                  final cancelled = _isCancelled(r);
+                                  final past = _isPast(r);
+                                  final greyOut = cancelled || past;
 
-                                  return Card(
-                                    child: ListTile(
-                                      leading: const Icon(Icons.place, color: kTourismePrimary),
-                                      title: Text(titre),
-                                      subtitle: Text("${ville.isNotEmpty ? '$ville • ' : ''}$dt"),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (badgeText != null)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: cancelled ? Colors.red.withOpacity(.12) : Colors.black12,
-                                                borderRadius: BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                badgeText,
-                                                style: TextStyle(
-                                                  color: cancelled ? Colors.red.shade700 : Colors.black87,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
+                                  final String? badgeText = _badgeText(r);
+
+                                  // Menu: masquer "Annuler" hors onglet 'avenir'
+                                  final bool canCancelHere = (_scope == 'avenir') && !cancelled;
+
+                                  return Opacity(
+                                    opacity: greyOut ? 0.55 : 1.0, // griser passées/annulées
+                                    child: Card(
+                                      child: ListTile(
+                                        onTap: () => _openLieu(r),
+                                        leading: Icon(
+                                          Icons.place,
+                                          color: greyOut ? Colors.grey : kTourismePrimary,
+                                        ),
+                                        title: Text(
+                                          titre,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: greyOut ? Colors.grey.shade800 : null,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          "${ville.isNotEmpty ? '$ville • ' : ''}$dt",
+                                          style: TextStyle(
+                                            color: greyOut ? Colors.grey.shade700 : null,
+                                          ),
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (badgeText != null)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: cancelled
+                                                      ? Colors.red.withOpacity(.12)
+                                                      : Colors.black12,
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  badgeText,
+                                                  style: TextStyle(
+                                                    color: cancelled ? Colors.red.shade700 : Colors.black87,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
                                                 ),
                                               ),
+                                            const SizedBox(width: 6),
+                                            PopupMenuButton<String>(
+                                              onSelected: (v) {
+                                                if (v == 'open') _openLieu(r);
+                                                if (v == 'cancel' && canCancelHere) {
+                                                  final id = (r['id'] ?? '').toString();
+                                                  if (id.isNotEmpty) _annuler(id);
+                                                }
+                                              },
+                                              itemBuilder: (_) {
+                                                final items = <PopupMenuEntry<String>>[
+                                                  const PopupMenuItem(
+                                                    value: 'open',
+                                                    child: Text('Voir le lieu'),
+                                                  ),
+                                                ];
+                                                if (canCancelHere) {
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'cancel',
+                                                      child: Text('Annuler'),
+                                                    ),
+                                                  );
+                                                }
+                                                return items;
+                                              },
                                             ),
-                                          const SizedBox(width: 6),
-                                          PopupMenuButton<String>(
-                                            onSelected: (v) {
-                                              if (v == 'open') _openLieu(r);
-                                              if (v == 'cancel' && !cancelled) {
-                                                final id = (r['id'] ?? '').toString();
-                                                if (id.isNotEmpty) _annuler(id);
-                                              }
-                                            },
-                                            itemBuilder: (_) => [
-                                              const PopupMenuItem(
-                                                value: 'open',
-                                                child: Text('Voir le lieu'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'cancel',
-                                                enabled: !cancelled,
-                                                child: const Text('Annuler'),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );

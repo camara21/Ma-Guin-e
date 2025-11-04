@@ -97,6 +97,22 @@ class _MesRdvPageState extends State<MesRdvPage> {
     }
   }
 
+  // --- Helpers d'affichage pour le statut ---
+  bool _isCancelledStatut(String statut) =>
+      statut == 'annule' || statut == 'annule_clinique';
+
+  bool _isPastRdv(Rdv r) =>
+      !_isCancelledStatut(r.statut) &&
+      r.startAt.add(const Duration(hours: 5)).isBefore(DateTime.now());
+
+  /// Texte affiché dans le chip
+  String _displayStatus(Rdv r) {
+    if (_isCancelledStatut(r.statut)) return 'annulé';
+    if (_isPastRdv(r)) return 'passé';
+    if (r.statut == 'en_attente') return 'en attente';
+    return 'confirmé';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,51 +184,67 @@ class _MesRdvPageState extends State<MesRdvPage> {
                             final r = _rdv[i];
                             final start = DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(r.startAt);
                             final end = DateFormat('HH:mm', 'fr_FR').format(r.endAt);
-                            final statut = r.statut;
-                            final motif = r.motif?.trim();
 
-                            final cancelled = (statut == 'annule' || statut == 'annule_clinique');
-                            final cancellable = (statut == 'confirme' || statut == 'en_attente');
+                            final cancelled = _isCancelledStatut(r.statut);
+                            final past = _isPastRdv(r);
+                            final greyOut = cancelled || past;
 
-                            return Card(
-                              elevation: 1,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ListTile(
-                                leading: const Icon(Icons.event_available, color: kHealthGreen),
-                                title: Text(
-                                  '$start → $end',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                            // 🔹 On ne montre JAMAIS "Annuler" dans les onglets Passés/Annulés.
+                            // 🔹 Dans "À venir" seulement si le RDV est encore annulable.
+                            final bool annulableDansAvenir =
+                                (_scope == 'avenir') &&
+                                !greyOut &&
+                                (r.statut == 'confirme' || r.statut == 'en_attente');
+
+                            return Opacity(
+                              opacity: greyOut ? 0.55 : 1.0, // griser les passés/annulés
+                              child: Card(
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(children: [_statusChip(statut)]),
-                                      if (motif != null && motif.isNotEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 4),
-                                          child: Text(
-                                            'Motif : $motif',
-                                            style: const TextStyle(fontSize: 12),
+                                child: ListTile(
+                                  leading: Icon(
+                                    Icons.event_available,
+                                    color: greyOut ? Colors.grey : kHealthGreen,
+                                  ),
+                                  title: Text(
+                                    '$start → $end',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: greyOut ? Colors.grey.shade700 : null,
+                                    ),
+                                  ),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(children: [_statusChip(_displayStatus(r))]),
+                                        if ((r.motif?.trim().isNotEmpty ?? false))
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              'Motif : ${r.motif!.trim()}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: greyOut ? Colors.grey.shade700 : null,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                trailing: TextButton.icon(
-                                  onPressed: cancelled
-                                      ? null // désactivé si déjà annulé
-                                      : (cancellable ? () => _cancel(r.id) : null),
-                                  icon: const Icon(Icons.cancel_outlined),
-                                  label: const Text('Annuler'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: cancelled
-                                        ? Colors.grey
-                                        : Colors.red.shade700,
-                                  ),
+                                  trailing: annulableDansAvenir
+                                      ? TextButton.icon(
+                                          onPressed: () => _cancel(r.id),
+                                          icon: const Icon(Icons.cancel_outlined),
+                                          label: const Text('Annuler'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red.shade700,
+                                          ),
+                                        )
+                                      : null, // 👈 rien du tout dans Passés/Annulés (et si non annulable)
                                 ),
                               ),
                             );
@@ -225,20 +257,31 @@ class _MesRdvPageState extends State<MesRdvPage> {
     );
   }
 
-  Widget _statusChip(String statut) {
+  Widget _statusChip(String displayStatut) {
+    // Couleurs selon le libellé d'affichage
     Color bg, border, txt;
-    if (statut == 'confirme') {
-      bg = kHealthGreen.withOpacity(.12);
-      border = kHealthGreen.withOpacity(.3);
-      txt = kHealthGreen;
-    } else if (statut == 'annule' || statut == 'annule_clinique') {
-      bg = Colors.red.withOpacity(.10);
-      border = Colors.red.withOpacity(.25);
-      txt = Colors.red.shade700;
-    } else {
-      bg = kHealthYellow.withOpacity(.18);
-      border = kHealthYellow.withOpacity(.35);
-      txt = const Color(0xFF7A6A00);
+    switch (displayStatut) {
+      case 'confirmé':
+        bg = kHealthGreen.withOpacity(.12);
+        border = kHealthGreen.withOpacity(.3);
+        txt = kHealthGreen;
+        break;
+      case 'annulé':
+        bg = Colors.red.withOpacity(.10);
+        border = Colors.red.withOpacity(.25);
+        txt = Colors.red.shade700;
+        break;
+      case 'en attente':
+        bg = kHealthYellow.withOpacity(.18);
+        border = kHealthYellow.withOpacity(.35);
+        txt = const Color(0xFF7A6A00);
+        break;
+      case 'passé': // style "passé"
+      default:
+        bg = Colors.grey.withOpacity(.15);
+        border = Colors.grey.withOpacity(.35);
+        txt = Colors.grey.shade800;
+        break;
     }
 
     return Container(
@@ -249,7 +292,7 @@ class _MesRdvPageState extends State<MesRdvPage> {
         border: Border.all(color: border),
       ),
       child: Text(
-        statut,
+        displayStatut,
         style: TextStyle(
           color: txt,
           fontWeight: FontWeight.w600,

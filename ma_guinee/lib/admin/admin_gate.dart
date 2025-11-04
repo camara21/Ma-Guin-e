@@ -4,12 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes.dart';
 
-/// BarriÃ©Â©Ã†â€™Â¨re d'accÃ©Â©Ã†â€™Â¨s pour les pages Admin Ã©Â©Â¢â‚¬Å¡Â¬â€šÂ¬Â anti-flash:
-/// - Pendant le chargement: pas de navigation, simple loader.
-/// - Si non connectÃ©Â©Ã†â€™Â©: Ã©Â©Ã†â€™Â©cran avec bouton "Se connecter" (aucune redirection auto).
-/// - Si connectÃ©Â©Ã†â€™Â©:
-///     - rÃ©Â©Ã†â€™Â´le admin/owner Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ rend `child`
-///     - sinon Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ Ã©Â©Ã†â€™Â©cran "AccÃ©Â©Ã†â€™Â¨s refusÃ©Â©Ã†â€™Â©" (option bouton accueil).
+
 class AdminGate extends StatefulWidget {
   final Widget child;
   const AdminGate({super.key, required this.child});
@@ -21,7 +16,7 @@ class AdminGate extends StatefulWidget {
 class _AdminGateState extends State<AdminGate> {
   static const _allowedRoles = {'admin', 'owner'};
   late Future<_GateResult> _future;
-  bool _navigating = false; // anti double-tap/navigation
+  bool _navigating = false; // évite les doubles clics/navigation en doublon
 
   @override
   void initState() {
@@ -47,7 +42,7 @@ class _AdminGateState extends State<AdminGate> {
       }
       return const _GateResult.notAdmin();
     } catch (_) {
-      // En cas d'erreur rÃ©Â©Ã†â€™Â©seau/SQL, on ne redirige pas: on montre "AccÃ©Â©Ã†â€™Â¨s refusÃ©Â©Ã†â€™Â©".
+      // En cas d’erreur réseau/SQL, on ne redirige pas : on montre « Accès refusé ».
       return const _GateResult.notAdmin();
     }
   }
@@ -75,7 +70,7 @@ class _AdminGateState extends State<AdminGate> {
     return FutureBuilder<_GateResult>(
       future: _future,
       builder: (context, snap) {
-        // CHARGEMENT Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ aucun push, Ã©Â©Ã†â€™Â©vite tout flash
+        // CHARGEMENT — aucun push ; évite tout « flash »
         if (snap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
@@ -85,20 +80,20 @@ class _AdminGateState extends State<AdminGate> {
         if (snap.hasError) {
           return Scaffold(
             appBar: AppBar(
-                title: const Text('VÃ©Â©Ã†â€™Â©rification administrateur')),
+                title: const Text('Vérification administrateur')),
             body: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                      'Erreur pendant la vÃ©Â©Ã†â€™Â©rification des permissions.'),
+                      'Erreur pendant la vérification des permissions.'),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: () => _safeSetState(() {
                       _navigating = false;
                       _future = _resolveGate();
                     }),
-                    child: const Text('RÃ©Â©Ã†â€™Â©essayer'),
+                    child: const Text('Réessayer'),
                   ),
                 ],
               ),
@@ -109,7 +104,7 @@ class _AdminGateState extends State<AdminGate> {
         final res = snap.data ?? const _GateResult.notAdmin();
 
         if (res.isNotLogged) {
-          // Pas connectÃ©Â©Ã†â€™Â© Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ pas de push auto
+          // Pas connecté — pas de redirection automatique
           return Scaffold(
             appBar: AppBar(title: const Text('Connexion requise')),
             body: Center(
@@ -117,11 +112,11 @@ class _AdminGateState extends State<AdminGate> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                      'Veuillez vous connecter pour accÃ©Â©Ã†â€™Â©der Ã©Â©Ã†â€™  lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢admin.'),
+                      'Veuillez vous connecter pour accéder à l’admin.'),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: () =>
-                        _goLogin(context), // Ã©Â©Â¢â€šÂ¬ Â replacement
+                        _goLogin(context), // navigation par remplacement
                     child: const Text('Se connecter'),
                   ),
                 ],
@@ -131,24 +126,24 @@ class _AdminGateState extends State<AdminGate> {
         }
 
         if (res.isAdmin) {
-          // Admin confirmÃ©Â©Ã†â€™Â© Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ on rend la page enfant, aucune navigation
+          // Admin confirmé — on rend la page enfant sans navigation
           return widget.child;
         }
 
-        // Non admin Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ pas de redirection automatique (anti-flash).
+        // Non admin — pas de redirection automatique (anti-flash).
         return Scaffold(
-          appBar: AppBar(title: const Text('AccÃ©Â©Ã†â€™Â¨s refusÃ©Â©Ã†â€™Â©')),
+          appBar: AppBar(title: const Text('Accès refusé')),
           body: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                    'Cette section est rÃ©Â©Ã†â€™Â©servÃ©Â©Ã†â€™Â©e aux administrateurs.'),
+                    'Cette section est réservée aux administrateurs.'),
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: () => _goHome(context),
                   child: const Text(
-                      'Aller Ã©Â©Ã†â€™  lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢accueil'),
+                      'Aller à l’accueil'),
                 ),
               ],
             ),

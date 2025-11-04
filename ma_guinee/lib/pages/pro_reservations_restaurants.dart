@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData; // ✅ copier numéro
 
 class ProReservationsRestaurantsPage extends StatefulWidget {
   const ProReservationsRestaurantsPage({super.key});
@@ -23,13 +24,43 @@ class _ProReservationsRestaurantsPageState
 
   // ui filters
   String _q = '';
-  String _status = 'actives'; // actives | annulees | toutes
+  String _status = 'avenir'; // ✅ avenir | passees | annulees
   DateTimeRange? _range;
 
   @override
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  DateTime _rowDateTime(Map<String, dynamic> r) {
+    // res_date: 'YYYY-MM-DD' | res_time: 'HH:mm:ss' (ou HH:mm)
+    final dateStr = (r['res_date'] ?? '').toString();
+    final timeStr = (r['res_time'] ?? '00:00:00').toString();
+
+    DateTime base;
+    try {
+      base = DateTime.parse(dateStr);
+    } catch (_) {
+      base = DateTime.now();
+    }
+
+    int h = 0, m = 0, s = 0;
+    final parts = timeStr.split(':');
+    if (parts.isNotEmpty) h = int.tryParse(parts[0]) ?? 0;
+    if (parts.length > 1) m = int.tryParse(parts[1]) ?? 0;
+    if (parts.length > 2) s = int.tryParse(parts[2]) ?? 0;
+
+    return DateTime(base.year, base.month, base.day, h, m, s);
+  }
+
+  bool _isCancelled(Map<String, dynamic> r) =>
+      (r['status'] ?? '').toString() == 'annule';
+
+  bool _isPast(Map<String, dynamic> r) {
+    final now = DateTime.now();
+    // Pour un resto : passé si l'heure de réservation est <= maintenant
+    return !_rowDateTime(r).isAfter(now);
   }
 
   Future<void> _loadAll() async {
@@ -50,40 +81,54 @@ class _ProReservationsRestaurantsPageState
             )
           ''');
 
-      // Filtre date (sur res_date)
-      if (_range != null) {
-        query = query
-            .gte('res_date', DateFormat('yyyy-MM-dd').format(_range!.start))
-            .lte('res_date', DateFormat('yyyy-MM-dd').format(_range!.end));
-      }
-
-      // Filtre statut
-      if (_status == 'actives') {
-        query = query.neq('status', 'annule');
-      } else if (_status == 'annulees') {
-        query = query.eq('status', 'annule');
-      }
-
-      // Tri & exécution
+      // Récupération brute (on filtrera/ordonnera côté client car on combine date+time)
       final rows = await query
           .order('res_date', ascending: true)
           .order('res_time', ascending: true);
 
-      final list = List<Map<String, dynamic>>.from(rows as List);
+      var list = List<Map<String, dynamic>>.from(rows as List);
 
       // Recherche locale (nom / téléphone client)
       final q = _q.trim().toLowerCase();
-      final filtered = q.isEmpty
-          ? list
-          : list.where((r) {
-              final n = (r['client_nom'] ?? '').toString().toLowerCase();
-              final p = (r['client_phone'] ?? '').toString().toLowerCase();
-              return n.contains(q) || p.contains(q);
-            }).toList();
+      if (q.isNotEmpty) {
+        list = list.where((r) {
+          final n = (r['client_nom'] ?? '').toString().toLowerCase();
+          final p = (r['client_phone'] ?? '').toString().toLowerCase();
+          return n.contains(q) || p.contains(q);
+        }).toList();
+      }
+
+      // Filtre date range (sur DateTime combiné)
+      if (_range != null) {
+        list = list.where((r) {
+          final dt = _rowDateTime(r);
+          final start = DateTime(_range!.start.year, _range!.start.month, _range!.start.day, 0, 0, 0);
+          final end = DateTime(_range!.end.year, _range!.end.month, _range!.end.day, 23, 59, 59);
+          return dt.isAfter(start.subtract(const Duration(seconds: 1))) &&
+              dt.isBefore(end.add(const Duration(seconds: 1)));
+        }).toList();
+      }
+
+      // Filtres "Avenir / Passées / Annulées" + tris
+      final now = DateTime.now();
+      if (_status == 'avenir') {
+        list = list
+            .where((r) => !_isCancelled(r) && _rowDateTime(r).isAfter(now))
+            .toList()
+          ..sort((a, b) => _rowDateTime(a).compareTo(_rowDateTime(b))); // ↑
+      } else if (_status == 'passees') {
+        list = list
+            .where((r) => !_isCancelled(r) && !_rowDateTime(r).isAfter(now))
+            .toList()
+          ..sort((a, b) => _rowDateTime(b).compareTo(_rowDateTime(a))); // ↓
+      } else if (_status == 'annulees') {
+        list = list.where(_isCancelled).toList()
+          ..sort((a, b) => _rowDateTime(b).compareTo(_rowDateTime(a))); // ↓
+      }
 
       if (!mounted) return;
       setState(() {
-        _reservations = filtered;
+        _reservations = list;
         _loading = false;
       });
     } catch (e) {
@@ -104,13 +149,11 @@ class _ProReservationsRestaurantsPageState
       initialDateRange: _range ??
           DateTimeRange(
             start: DateTime(now.year, now.month, now.day),
-            end: DateTime(now.year, now.month, now.day)
-                .add(const Duration(days: 30)),
+            end: DateTime(now.year, now.month, now.day).add(const Duration(days: 30)),
           ),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme:
-              Theme.of(ctx).colorScheme.copyWith(primary: const Color(0xFFE76F51)),
+          colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: const Color(0xFFE76F51)),
         ),
         child: child!,
       ),
@@ -126,11 +169,68 @@ class _ProReservationsRestaurantsPageState
     await _loadAll();
   }
 
-  Future<void> _callClient(String phone) async {
+  Future<void> _launchCall(String phone) async {
     final cleaned = phone.replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleaned.isEmpty) return;
     final uri = Uri(scheme: 'tel', path: cleaned);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _showContactDialog(String clientName, String phone) async {
+    final number = phone.trim();
+    if (number.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Numéro indisponible pour ce client.')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Contacter le client'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(clientName, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            SelectableText(number, style: const TextStyle(fontSize: 18)),
+            const SizedBox(height: 10),
+            Text(
+              'Vous pouvez copier le numéro pour appeler depuis un autre téléphone.',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.outline),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: number));
+              if (mounted) {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Numéro copié.')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copier'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _launchCall(number);
+            },
+            icon: const Icon(Icons.phone),
+            label: const Text('Appeler maintenant'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _cancelReservation(String id) async {
@@ -140,10 +240,7 @@ class _ProReservationsRestaurantsPageState
         title: const Text('Annuler la réservation ?'),
         content: const Text('Cette action marque la réservation comme “annulée”.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Fermer'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Fermer')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -155,9 +252,7 @@ class _ProReservationsRestaurantsPageState
     if (ok != true) return;
 
     try {
-      await _sb
-          .from('reservations_restaurants')
-          .update({'status': 'annule'}).eq('id', id);
+      await _sb.from('reservations_restaurants').update({'status': 'annule'}).eq('id', id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Réservation annulée.')),
@@ -217,9 +312,9 @@ class _ProReservationsRestaurantsPageState
                   children: [
                     SegmentedButton<String>(
                       segments: const [
-                        ButtonSegment(value: 'actives', label: Text('Actives')),
-                        ButtonSegment(value: 'annulees', label: Text('Annulées')),
-                        ButtonSegment(value: 'toutes', label: Text('Toutes')),
+                        ButtonSegment(value: 'avenir', label: Text('À venir')),   // ✅
+                        ButtonSegment(value: 'passees', label: Text('Passées')),   // ✅
+                        ButtonSegment(value: 'annulees', label: Text('Annulées')), // ✅
                       ],
                       selected: {_status},
                       onSelectionChanged: (s) async {
@@ -270,13 +365,22 @@ class _ProReservationsRestaurantsPageState
                               padding: const EdgeInsets.all(12),
                               itemBuilder: (_, i) {
                                 final r = _reservations[i];
+                                final resto = Map<String, dynamic>.from(r['restaurants'] ?? {});
+                                final cancelled = _isCancelled(r);
+                                final isPast = _isPast(r);
 
-                                // données du resto via la jointure
-                                final resto =
-                                    Map<String, dynamic>.from(r['restaurants'] ?? {});
-
-                                final status = (r['status'] ?? '').toString();
-                                final cancelled = status == 'annule';
+                                // Chip (texte + couleurs)
+                                final String chipText = cancelled
+                                    ? 'Annulée'
+                                    : (isPast ? 'Passée' : 'Confirmée');
+                                final Color chipFg = cancelled
+                                    ? Colors.red
+                                    : (isPast ? Colors.grey.shade700 : const Color(0xFFE67E22));
+                                final Color chipBg = cancelled
+                                    ? Colors.red.withOpacity(.12)
+                                    : (isPast
+                                        ? Colors.grey.withOpacity(.15)
+                                        : const Color(0xFFF4A261).withOpacity(.18));
 
                                 return Card(
                                   elevation: 0,
@@ -301,23 +405,16 @@ class _ProReservationsRestaurantsPageState
                                               ),
                                             ),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8, vertical: 4),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: cancelled
-                                                    ? Colors.red.withOpacity(.12)
-                                                    : const Color(0xFFF4A261)
-                                                        .withOpacity(.18),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
+                                                color: chipBg,
+                                                borderRadius: BorderRadius.circular(999),
                                               ),
                                               child: Text(
-                                                cancelled ? 'Annulée' : 'Confirmée',
+                                                chipText,
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w600,
-                                                  color: cancelled
-                                                      ? Colors.red
-                                                      : const Color(0xFFE67E22),
+                                                  color: chipFg,
                                                 ),
                                               ),
                                             )
@@ -328,26 +425,17 @@ class _ProReservationsRestaurantsPageState
                                             padding: const EdgeInsets.only(top: 2),
                                             child: Text(
                                               (resto['ville']).toString(),
-                                              style:
-                                                  TextStyle(color: scheme.outline),
+                                              style: TextStyle(color: scheme.outline),
                                             ),
                                           ),
                                         const SizedBox(height: 8),
-                                        Text(
-                                          _dateLabel(r),
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w600),
-                                        ),
+                                        Text(_dateLabel(r), style: const TextStyle(fontWeight: FontWeight.w600)),
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
                                             const Icon(Icons.people_alt, size: 18),
                                             const SizedBox(width: 6),
-                                            Text(
-                                              'Adultes ${r['adults']} • '
-                                              'Enfants ${r['children']} • '
-                                              '${r['seating_pref']}',
-                                            ),
+                                            Text('Adultes ${r['adults']} • Enfants ${r['children']} • ${r['seating_pref']}'),
                                           ],
                                         ),
                                         const SizedBox(height: 6),
@@ -363,10 +451,7 @@ class _ProReservationsRestaurantsPageState
                                             padding: const EdgeInsets.only(top: 8),
                                             child: Text(
                                               (r['notes'] ?? '').toString(),
-                                              style: TextStyle(
-                                                color: scheme.onSurface
-                                                    .withOpacity(.75),
-                                              ),
+                                              style: TextStyle(color: scheme.onSurface.withOpacity(.75)),
                                             ),
                                           ),
                                         const SizedBox(height: 10),
@@ -376,27 +461,22 @@ class _ProReservationsRestaurantsPageState
                                           children: [
                                             Expanded(
                                               child: OutlinedButton.icon(
-                                                onPressed: () => _callClient(
+                                                onPressed: () => _showContactDialog(
+                                                  (r['client_nom'] ?? 'Client').toString(),
                                                   (r['client_phone'] ?? '').toString(),
                                                 ),
                                                 icon: const Icon(Icons.phone),
-                                                label: Text(
-                                                  (r['client_nom'] ?? 'Client')
-                                                      .toString(),
-                                                ),
+                                                label: Text((r['client_nom'] ?? 'Client').toString()),
                                               ),
                                             ),
                                             const SizedBox(width: 10),
-                                            FilledButton.icon(
-                                              onPressed: cancelled
-                                                  ? null
-                                                  : () => _cancelReservation(
-                                                      (r['id'] ?? '').toString()),
-                                              style: FilledButton.styleFrom(
-                                                  backgroundColor: Colors.red),
-                                              icon: const Icon(Icons.cancel),
-                                              label: const Text('Annuler'),
-                                            ),
+                                            if (!cancelled && !isPast) // ✅ masqué si passée OU annulée
+                                              FilledButton.icon(
+                                                onPressed: () => _cancelReservation((r['id'] ?? '').toString()),
+                                                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                                icon: const Icon(Icons.cancel),
+                                                label: const Text('Annuler'),
+                                              ),
                                           ],
                                         ),
                                       ],

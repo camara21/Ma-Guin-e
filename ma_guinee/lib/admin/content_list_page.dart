@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:postgrest/postgrest.dart';
 import '../supabase_client.dart';
 
 class ContentListPage extends StatefulWidget {
-  final String serviceName; // Titre affichÃ©Â©Ã†â€™Â©
-  final String table; // ex: 'logements', 'lieux', 'annonces'...
-  const ContentListPage(
-      {super.key, required this.serviceName, required this.table});
+  final String serviceName; // Titre affiché
+  final String table; // ex : 'logements', 'lieux', 'annonces'...
+  const ContentListPage({super.key, required this.serviceName, required this.table});
 
   @override
   State<ContentListPage> createState() => _ContentListPageState();
@@ -18,8 +18,7 @@ class _ContentListPageState extends State<ContentListPage> {
   String? error;
   List<Map<String, dynamic>> rows = [];
 
-  String get viewName =>
-      'v_${widget.table}_public'; // Vue publique filtrÃ©Â©Ã†â€™Â©e
+  String get viewName => 'v_${widget.table}_public'; // Vue publique filtrée
 
   @override
   void initState() {
@@ -58,10 +57,11 @@ class _ContentListPageState extends State<ContentListPage> {
     } catch (e) {
       error = '$e';
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           loading = false;
         });
+      }
     }
   }
 
@@ -75,29 +75,30 @@ class _ContentListPageState extends State<ContentListPage> {
     };
     if (rpc == null) return;
     try {
-      await SB.i.rpc(rpc,
-          params: {'_table': widget.table, '_id': id, '_reason': reason});
+      await SB.i.rpc(
+        rpc,
+        params: {'_table': widget.table, '_id': id, '_reason': reason},
+      );
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Action "$action" effectuÃ©Â©Ã†â€™Â©e.')));
+        SnackBar(content: Text('Action "$action" effectuée.')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final title =
-        widget.serviceName.isNotEmpty ? widget.serviceName : widget.table;
+    final title = widget.serviceName.isNotEmpty ? widget.serviceName : widget.table;
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
-        ],
+        actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
       ),
       body: Padding(
         padding: const EdgeInsets.all(12),
@@ -109,8 +110,7 @@ class _ContentListPageState extends State<ContentListPage> {
                   controller: searchC,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search),
-                    hintText:
-                        'Rechercher (titre / nom / description)Ã©Â©Â¢â‚¬Å¡Â¬Â¦',
+                    hintText: 'Rechercher (titre / nom / description)…',
                   ),
                   onSubmitted: (_) => _load(),
                 ),
@@ -123,7 +123,7 @@ class _ContentListPageState extends State<ContentListPage> {
               child: loading
                   ? const Center(child: CircularProgressIndicator())
                   : error != null
-                      ? Center(child: Text('Erreur: $error'))
+                      ? Center(child: Text('Erreur : $error'))
                       : _table(),
             ),
           ],
@@ -133,8 +133,7 @@ class _ContentListPageState extends State<ContentListPage> {
   }
 
   Widget _table() {
-    if (rows.isEmpty)
-      return const Center(child: Text('Aucune donnÃ©Â©Ã†â€™Â©e.'));
+    if (rows.isEmpty) return const Center(child: Text('Aucune donnée.'));
     final cols = _orderedColumns(rows.first.keys.toList());
 
     return Card(
@@ -157,7 +156,7 @@ class _ContentListPageState extends State<ContentListPage> {
                   onPressed: () => _act('hide', id, reason: 'admin UI'),
                 ),
                 IconButton(
-                  tooltip: 'RÃ©Â©Ã†â€™Â©afficher',
+                  tooltip: 'Réafficher',
                   icon: const Icon(Icons.visibility),
                   onPressed: () => _act('unhide', id, reason: 'admin UI'),
                 ),

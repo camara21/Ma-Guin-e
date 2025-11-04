@@ -1,4 +1,3 @@
-// lib/pages/register_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:country_picker/country_picker.dart';
@@ -24,10 +23,20 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  // ✅ Pays par défaut : Guinée Conakry
+  final _countryController =
+      TextEditingController(text: '🇬🇳 Guinea Conakry (+224)');
+
   DateTime? _selectedDate;
   String? _selectedGenre;
-  Country? _selectedCountry;
+  Country? _selectedCountry; // peut rester null → défaut Guinée
   bool _loading = false;
+
+  // Helpers pour gérer le défaut proprement
+  String get _dialCode => _selectedCountry?.phoneCode ?? '224';
+  String get _flag => _selectedCountry?.flagEmoji ?? '🇬🇳';
+  String get _countryNameForDb =>
+      _selectedCountry?.name ?? 'Guinea Conakry'; // ce qui part en DB
 
   @override
   void initState() {
@@ -70,18 +79,22 @@ class _RegisterPageState extends State<RegisterPage> {
     if (picked != null) setState(() => _selectedDate = picked);
   }
 
-  Future<void> _pickCountry() async {
+  void _pickCountry() {
     showCountryPicker(
       context: context,
       showPhoneCode: true,
-      onSelect: (c) => setState(() => _selectedCountry = c),
+      onSelect: (c) {
+        setState(() {
+          _selectedCountry = c;
+          _countryController.text =
+              '${c.flagEmoji} ${c.name} (+${c.phoneCode})'; // ✅ visible en permanence
+        });
+      },
     );
   }
 
   Future<void> _soumettreInscription() async {
-    if (!_formKey.currentState!.validate() ||
-        _selectedDate == null ||
-        _selectedCountry == null) {
+    if (!_formKey.currentState!.validate() || _selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Veuillez remplir tous les champs obligatoires.'),
@@ -110,7 +123,7 @@ class _RegisterPageState extends State<RegisterPage> {
         'prenom': _prenomController.text.trim(),
         'nom': _nomController.text.trim(),
         'email': email,
-        'pays': _selectedCountry!.name,
+        'pays': _countryNameForDb, // ✅ Guinée par défaut si aucun choix
         'telephone': _telephoneController.text.trim(),
         'genre': _selectedGenre,
         'date_naissance': _selectedDate!.toIso8601String(),
@@ -161,6 +174,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _telephoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _countryController.dispose();
     super.dispose();
   }
 
@@ -216,22 +230,55 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 12),
 
-              // Pays (champ readOnly arrondi)
+              // ✅ Pays (toujours visible via controller)
               TextFormField(
+                controller: _countryController,
                 readOnly: true,
                 onTap: _pickCountry,
                 decoration: _dec('Pays').copyWith(
-                  hintText: _selectedCountry != null
-                      ? '${_selectedCountry!.flagEmoji} ${_selectedCountry!.name} (+${_selectedCountry!.phoneCode})'
-                      : 'Sélectionner un pays',
-                  suffixIcon: const Icon(Icons.public),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.public),
+                    onPressed: _pickCountry,
+                    tooltip: 'Changer de pays',
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
 
+              // ✅ Téléphone avec drapeau + indicatif toujours visibles
               TextFormField(
                 controller: _telephoneController,
-                decoration: _dec('Téléphone'),
+                decoration: _dec('Téléphone').copyWith(
+                  prefixIconConstraints:
+                      const BoxConstraints(minWidth: 0, minHeight: 0),
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_flag, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 6),
+                        Text(
+                          '+$_dialCode',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 15),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 1,
+                          height: 22,
+                          color: Colors.black12,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.public),
+                    onPressed: _pickCountry, // raccourci pour rechoisir
+                    tooltip: 'Changer de pays',
+                  ),
+                ),
                 keyboardType: TextInputType.phone,
                 validator: (v) =>
                     (v == null || v.isEmpty) ? 'Téléphone requis' : null,
