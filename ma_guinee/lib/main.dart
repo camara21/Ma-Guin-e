@@ -39,15 +39,24 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 Future<void> _initLocalNotification() async {
+  // ⚙️ Initialisation adaptée à flutter_local_notifications ^17.x
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const settings = InitializationSettings(
-    android: android,
-    iOS: DarwinInitializationSettings(),
+  const iOS = DarwinInitializationSettings(
+    // On laisse les permissions à FirebaseMessaging.requestPermission()
+    requestAlertPermission: false,
+    requestBadgePermission: false,
+    requestSoundPermission: false,
   );
-  await flutterLocalNotificationsPlugin.initialize(settings);
+  const settings = InitializationSettings(android: android, iOS: iOS);
+
+  await flutterLocalNotificationsPlugin.initialize(
+    settings,
+    // On ne change pas la navigation au tap pour éviter de modifier la logique existante
+  );
 }
 
 Future<void> _createAndroidNotificationChannel() async {
+  // ✅ Crée le channel "messages_channel" (ne fait rien si déjà créé)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'messages_channel',
     'Messages',
@@ -62,6 +71,7 @@ Future<void> _createAndroidNotificationChannel() async {
 
 void _showNotification(String? title, String? body) {
   flutterLocalNotificationsPlugin.show(
+    // Id unique
     DateTime.now().millisecondsSinceEpoch ~/ 1000,
     title ?? 'Notification',
     body ?? '',
@@ -73,7 +83,11 @@ void _showNotification(String? title, String? body) {
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
       ),
-      iOS: DarwinNotificationDetails(),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
     ),
   );
 }
@@ -81,7 +95,11 @@ void _showNotification(String? title, String? body) {
 // ——— FCM background ———
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // 🔒 Requis en arrière-plan avec firebase_core ^3.x
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Si c'est une data-only, on affiche nous-mêmes.
+  // Si c'est une "notification" FCM, Android/iOS la gèrent nativement.
   _showNotification(message.notification?.title, message.notification?.body);
 }
 
@@ -174,9 +192,12 @@ void _unsubscribeAdminKick() {
 }
 
 // ——— Helpers ———
-Future<void> enablePushNotifications() async {
+// 🔁 PATCH: retourne le token et log en release (print) sans casser le flux existant
+Future<String?> enablePushNotifications() async {
   try {
     final messaging = FirebaseMessaging.instance;
+
+    // ✅ Permissions via FCM (iOS 12+/macOS & Android 13+ si manifest ok)
     final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
@@ -185,18 +206,23 @@ Future<void> enablePushNotifications() async {
     );
     if (settings.authorizationStatus != AuthorizationStatus.authorized &&
         settings.authorizationStatus != AuthorizationStatus.provisional) {
-      if (!kReleaseMode) debugPrint('Notifications non autorisées');
-      return;
+      print('🔔 Notifications refusées');
+      return null;
     }
+
+    // ✅ Token (web utilise VAPID si fourni via --dart-define)
     final token = kIsWeb
         ? await messaging.getToken(
             vapidKey:
                 const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
           )
         : await messaging.getToken();
-    if (!kReleaseMode) debugPrint('FCM token: $token');
+
+    print('🎯 FCM token: $token'); // visible aussi en release
+    return token;
   } catch (e, st) {
-    if (!kReleaseMode) debugPrint('Erreur enablePushNotifications: $e\n$st');
+    print('❌ enablePushNotifications: $e\n$st');
+    return null;
   }
 }
 
@@ -229,8 +255,7 @@ Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
 bool _isRecoveryUrl(Uri uri) {
   final hasCode = uri.queryParameters['code'] != null;
   final fragPath = uri.fragment.split('?').first; // ex: "/reset_password"
-  final hasTypeRecovery =
-      (uri.queryParameters['type'] ?? '') == 'recovery';
+  final hasTypeRecovery = (uri.queryParameters['type'] ?? '') == 'recovery';
   return (hasCode && fragPath.contains('reset_password')) || hasTypeRecovery;
 }
 
@@ -243,11 +268,14 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   if (!kIsWeb) {
+    // ✅ Requis pour FCM data-only en background avec firebase_messaging ^15.x
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
   await _initLocalNotification();
   await _createAndroidNotificationChannel();
+
+  // iOS : afficher les notifs système en foreground si message "notification"
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,
@@ -264,13 +292,14 @@ Future<void> main() async {
       defaultValue:
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5a2JjZ3Fna2RzZ3Vpcmp2d3hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwMTEsImV4cCI6MjA2ODM1OTAxMX0.R-iSxRy-vFvmmE80EdI2AlZCKqgADvLd9_luvrLQL-E',
     ),
-  );
+  ); // ✅
 
   // ✅ Active le guard AVANT runApp si l’URL est un lien de recovery
   if (kIsWeb && _isRecoveryUrl(Uri.base)) {
     RecoveryGuard.activate();
   }
 
+  // Foreground FCM → on affiche via LNP pour unifier Android/iOS/web
   FirebaseMessaging.onMessage.listen((m) {
     _showNotification(m.notification?.title, m.notification?.body);
   });
@@ -283,6 +312,13 @@ Future<void> main() async {
     _subscribeUserNotifications(user.id);
     _subscribeAdminKick(user.id);
     unawaited(_startHeartbeat());
+
+    // ✅ Ajout : enregistre l’appareil et récupère le token (Android/iOS/Web)
+    final token = await enablePushNotifications();
+    // TODO (optionnel): upsert token -> table user_tokens avec user_id + platform + token
+    if (token != null && !kReleaseMode) {
+      debugPrint('Token enregistré: $token');
+    }
   }
 
   runApp(
@@ -325,6 +361,13 @@ Future<void> main() async {
       await _startHeartbeat();
 
       await userProvider.chargerUtilisateurConnecte();
+
+      // ✅ Ajout : enregistre l’appareil et récupère le token après connexion
+      final token = await enablePushNotifications();
+      // TODO (optionnel): upsert token côté Supabase
+      if (token != null && !kReleaseMode) {
+        debugPrint('Token enregistré (post-login): $token');
+      }
 
       if (!RecoveryGuard.isActive) {
         await _goHomeBasedOnRole(userProvider);

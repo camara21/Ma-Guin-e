@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.ma_guinee"
+    namespace = "com.soneya.app"                // ✅ nouveau namespace
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.ma_guinee"
+        applicationId = "com.soneya.app"        // ✅ nouvel applicationId (doit matcher Firebase)
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -29,6 +29,8 @@ android {
 
     buildTypes {
         release {
+            // ⚠️ Provisoirement signé avec la clé debug.
+            // Quand tu prépares Play Store, remplace par ta release keystore.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -38,4 +40,4 @@ flutter {
     source = "../.."
 }
 
-// 🚫 NE PAS METTRE apply plugin: ... ni apply<com.google.gms.googleservices.GoogleServicesPlugin>() 🚫
+

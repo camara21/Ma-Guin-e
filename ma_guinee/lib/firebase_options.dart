@@ -5,11 +5,9 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
-///
 /// Example:
 /// ```dart
 /// import 'firebase_options.dart';
-/// // ...
 /// await Firebase.initializeApp(
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
@@ -64,7 +62,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '208848172830',
     projectId: 'camara-2001',
     storageBucket: 'camara-2001.firebasestorage.app',
-    iosBundleId: 'com.example.maGuinee',
+    iosBundleId: 'com.soneya.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +71,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '208848172830',
     projectId: 'camara-2001',
     storageBucket: 'camara-2001.firebasestorage.app',
-    iosBundleId: 'com.example.maGuinee',
+    iosBundleId: 'com.soneya.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:208848172830:android:746739a14db72e5a0bbb0f",
+        "mobilesdk_app_id": "1:208848172830:android:2bd3c0c204ae857e0bbb0f",
         "android_client_info": {
-          "package_name": "com.example.ma_guinee"
+          "package_name": "com.soneya.app"
         }
       },
       "oauth_client": [],

@@ -2,10 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- 📦 Informations générales de l’application -->
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Ma Guinee</string>
+	<string>Soneya</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +14,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>ma_guinee</string>
+	<string>Soneya</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +30,7 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 
-	<!-- Orientations -->
+	<!-- 📱 Orientations prises en charge -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -49,39 +50,45 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
-	<!-- 🔑 Google Maps iOS -->
-	<key>GMSApiKey</key>
-	<string>VOTRE_CLE_API_IOS</string>
-
 	<!-- 📍 Localisation (avant-plan + arrière-plan) -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cette app utilise votre position pour afficher des services proches et votre localisation sur la carte.</string>
+	<string>Nous utilisons votre position pour afficher les services et lieux à proximité.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Votre position peut être utilisée en arrière-plan pour améliorer le suivi si vous activez cette option.</string>
-	<!-- Compatibilité iOS plus anciens -->
+	<string>Votre position peut être utilisée même en arrière-plan pour améliorer la précision du service.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Votre position est utilisée pour la géolocalisation précise même lorsque l’app est en arrière-plan.</string>
+	<string>Votre position est utilisée pour la géolocalisation précise, y compris lorsque l’app est en arrière-plan.</string>
 
-	<!-- (OPTIONNEL) Active le mode arrière-plan pour la localisation si nécessaire -->
+	<!-- ⚙️ Modes de fond (permet la réception des push notifications) -->
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>remote-notification</string>
 		<string>location</string>
 	</array>
 
 	<!-- 📷 Caméra -->
 	<key>NSCameraUsageDescription</key>
-	<string>Cette application utilise la caméra pour capturer vos documents et photos.</string>
+	<string>La caméra est utilisée pour scanner des QR codes et prendre des photos.</string>
 
-	<!-- 🖼️ Bibliothèque Photos (lecture + ajout) -->
+	<!-- 🖼️ Bibliothèque Photos -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>L’app a besoin d’accéder à vos photos pour importer des documents et images depuis votre bibliothèque.</string>
+	<string>L’app a besoin d’accéder à vos photos pour importer des documents ou images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>L’app a besoin d’ajouter des images dans votre bibliothèque lorsque vous enregistrez un document généré.</string>
+	<string>L’app peut enregistrer des fichiers (images ou PDF) dans votre photothèque.</string>
 
-	<!-- 🎙️ Micro (OPTIONNEL, utile uniquement si vous activez la vidéo avec audio) -->
-	<!--
+	<!-- 🎙️ Micro (optionnel, utile pour enregistrement vidéo/audio) -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Le micro est utilisé pour enregistrer l’audio lors des captures vidéo.</string>
-	-->
+	<string>Le micro est utilisé lors des enregistrements vidéo si nécessaire.</string>
+
+	<!-- 🔔 Notifications Push (Firebase Cloud Messaging) -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+
+	<!-- ✅ Support du système de scène (iOS 13+) -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 </dict>
 </plist>

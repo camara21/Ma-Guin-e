@@ -4,7 +4,7 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Plateforme moderne multi-services pour la Guinée.">
   <meta name="theme-color" content="#06C167">
@@ -19,17 +19,58 @@
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>ma_guinee</title>
+
+  <!-- Manifest (pense à ajouter gcm_sender_id: 103953800507 dedans) -->
   <link rel="manifest" href="manifest.json">
 
   <!-- Firebase Web SDK (compat) nécessaires pour FCM + SW -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 
-  <!-- Google Maps JavaScript API (pour google_maps_flutter_web) -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=VOTRE_CLE_API_WEB"></script>
+  <!-- Google Maps JavaScript API (si tu l'utilises) -->
+  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=VOTRE_CLE_API_WEB"></script> -->
 </head>
 <body>
   <!-- Flutter bootstrap -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <!-- ⚙️ Init Firebase + enregistrement du Service Worker FCM -->
+  <script>
+    // Même config que dans firebase_options.dart
+    const firebaseConfig = {
+      apiKey: "AIzaSyCGdReLQ995_MhCH7AjUqapfMw4kPADhWQ",
+      authDomain: "camara-2001.firebaseapp.com",
+      projectId: "camara-2001",
+      storageBucket: "camara-2001.firebasestorage.app",
+      messagingSenderId: "208848172830",
+      appId: "1:208848172830:web:6576776512939cbf0bbb0f",
+      measurementId: "G-H8SBFGS73C"
+    };
+
+    // Init Firebase
+    firebase.initializeApp(firebaseConfig);
+
+    // Enregistrer le service worker FCM à la racine
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          console.log('[FCM] SW registered:', reg.scope);
+
+          // (Optionnel) Lier ce SW à Firebase Messaging côté web
+          try {
+            const messaging = firebase.messaging();
+            if (messaging && messaging.useServiceWorker) {
+              messaging.useServiceWorker(reg);
+            }
+          } catch (e) {
+            console.warn('[FCM] messaging SW binding skipped:', e);
+          }
+        } catch (err) {
+          console.error('[FCM] SW registration failed:', err);
+        }
+      });
+    }
+  </script>
 </body>
 </html>

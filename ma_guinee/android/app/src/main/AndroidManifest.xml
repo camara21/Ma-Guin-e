@@ -1,63 +1,83 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.ma_guinee">
+    package="com.soneya.app">
 
-    <!-- 🌐 Réseau -->
+    <!-- 🌐 Internet & état du réseau -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Optionnel mais utile pour certains checks réseau -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- 📍 Localisation (si tu affiches la position sur la carte, etc.) -->
+    <!-- 📍 Localisation (géolocalisation & carte) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- ❗️N’active l’arrière-plan que si tu en as VRAIMENT besoin (tracking même écran éteint) -->
+    <!-- Pour un futur suivi continu (désactivé par défaut) -->
     <!-- <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" /> -->
 
-    <!-- 📷 Caméra (OBLIGATOIRE pour ouvrir l’appareil photo) -->
-    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 🔔 Notifications (Firebase Cloud Messaging + locales) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- 🔧 Déclare la caméra comme “facultative” pour ne pas exclure des appareils sans caméra -->
+    <!-- 📷 Caméra -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />
 
     <application
-        android:label="ma_guinee"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:label="Soneya"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
 
-        <!-- 🔑 Clé Google Maps -->
+        <!-- 🔔 Canal et icône par défaut pour Firebase Cloud Messaging -->
         <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="VOTRE_CLE_API_ICI" />
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages_channel" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
 
+        <!-- 🎨 Thème Flutter -->
+        <meta-data
+            android:name="io.flutter.embedding.android.NormalTheme"
+            android:resource="@style/NormalTheme" />
+
+        <!-- 🕓 Gestion complète des notifications programmées -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="true" />
+
+        <!-- 🚀 Activité principale Flutter -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-
-            <meta-data
-                android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme" />
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Ne pas supprimer : utilisé par Flutter -->
+        <!-- Utilisé par Flutter -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
-    <!-- Visibilité de packages pour certaines intents (tel que fourni) -->
+    <!-- 🔍 Visibilité de certaines intentions externes -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />

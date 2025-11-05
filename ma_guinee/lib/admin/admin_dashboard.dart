@@ -3,6 +3,8 @@ import 'dart:math' show min, max, pi;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'admin_push_center_page.dart';
+
 
 // Carte
 import 'package:flutter_map/flutter_map.dart';
@@ -518,6 +520,16 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
       appBar: AppBar(
         title: const Text("Centre d'administration"),
         actions: [
+          IconButton(
+  tooltip: 'Centre de notifications',
+  onPressed: () {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminPushCenterPage()),
+    );
+  },
+  icon: const Icon(Icons.notifications_active_outlined),
+),
+
           IconButton(onPressed: _refreshAll, icon: const Icon(Icons.refresh)),
           IconButton(
             tooltip: 'Déconnexion',

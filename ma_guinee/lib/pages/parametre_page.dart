@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/utilisateur_model.dart';
 import '../providers/user_provider.dart';
-import '../routes.dart'; // ✅ pour AppRoutes
+import '../routes.dart';
 import 'modifier_profil_page.dart';
 
 class ParametrePage extends StatefulWidget {
@@ -20,7 +20,7 @@ class ParametrePage extends StatefulWidget {
   State<ParametrePage> createState() => _ParametrePageState();
 }
 
-class _ParametrePageState extends State<ParametrePage> {
+class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserver {
   bool _notifEnabled = false;
   bool _busy = false;
 
@@ -30,7 +30,30 @@ class _ParametrePageState extends State<ParametrePage> {
   @override
   void initState() {
     super.initState();
-    _loadNotifPref();
+    WidgetsBinding.instance.addObserver(this);
+    _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Si l'utilisateur revient de paramètres système, on resynchronise.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncWithSystemPermission();
+    }
+  }
+
+  Future<void> _bootstrap() async {
+    // 1) Charger la préférence locale (au cas où)
+    await _loadNotifPref();
+    // 2) Mais la vérité vient du système : on synchronise pour que le switch
+    //    reflète exactement l'autorisation OS + état FCM.
+    await _syncWithSystemPermission();
   }
 
   Future<void> _loadNotifPref() async {
@@ -45,6 +68,29 @@ class _ParametrePageState extends State<ParametrePage> {
     await prefs.setBool('notif_enabled', value);
   }
 
+  /// Lit l’état système (autorisation OS) et aligne le switch + FCM.
+  Future<void> _syncWithSystemPermission() async {
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      final systemAllowed = settings.authorizationStatus == AuthorizationStatus.authorized
+          || settings.authorizationStatus == AuthorizationStatus.provisional;
+
+      // Si le système autorise, on s'assure que FCM est prêt; sinon on coupe.
+      if (systemAllowed) {
+        await FirebaseMessaging.instance.setAutoInitEnabled(true);
+        // On ne force pas de getToken ici pour éviter de réafficher une popup.
+        setState(() => _notifEnabled = true);
+        await _saveNotifPref(true);
+      } else {
+        await _disablePush(); // coupe token + auto-init si besoin
+        setState(() => _notifEnabled = false);
+        await _saveNotifPref(false);
+      }
+    } catch (_) {
+      // en cas d'erreur, on ne casse rien
+    }
+  }
+
   Future<void> _onToggleNotifications(bool value) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -53,115 +99,108 @@ class _ParametrePageState extends State<ParametrePage> {
       if (value) {
         final ok = await _enablePush();
         if (!ok) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Permission refusée ou échec d'activation."),
-              ),
-            );
-          }
+          // Autorisation refusée → rester décoché
           setState(() => _notifEnabled = false);
           await _saveNotifPref(false);
           return;
         }
         setState(() => _notifEnabled = true);
         await _saveNotifPref(true);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Notifications activées.')),
-          );
-        }
       } else {
         await _disablePush();
         setState(() => _notifEnabled = false);
         await _saveNotifPref(false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Notifications désactivées.')),
-          );
-        }
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
-      }
-      setState(() => _notifEnabled = !_notifEnabled);
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// Active les notifications après geste utilisateur
+  // ---------- Helpers Supabase (optionnels) ----------
+  Future<void> _upsertUserToken(String token) async {
+    try {
+      final sb = Supabase.instance.client;
+      await sb.from('user_tokens').upsert({
+        'user_id': widget.user.id,
+        'token': token,
+        'platform': kIsWeb ? 'web' : 'mobile',
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id,token');
+    } catch (_) {}
+  }
+
+  Future<void> _deleteUserTokens() async {
+    try {
+      final sb = Supabase.instance.client;
+      await sb.from('user_tokens').delete().eq('user_id', widget.user.id);
+    } catch (_) {}
+  }
+
+  /// Active les notifications après geste utilisateur (switch ON)
   Future<bool> _enablePush() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
-      // Demande d'autorisation (nécessite le geste utilisateur : le switch)
-      final settings = await messaging.requestPermission(
-        alert: true,
-        sound: true,
-        badge: true,
-        provisional: false,
-      );
+      // Vérifier l'état actuel avant de demander à nouveau
+      NotificationSettings settings = await messaging.getNotificationSettings();
+
       if (settings.authorizationStatus != AuthorizationStatus.authorized &&
           settings.authorizationStatus != AuthorizationStatus.provisional) {
-        return false;
+        // Demande d'autorisation si non encore accordée
+        settings = await messaging.requestPermission(
+          alert: true,
+          sound: true,
+          badge: true,
+          provisional: false,
+        );
       }
 
-      // S'assurer que l'auto-init est actif
+      final allowed = settings.authorizationStatus == AuthorizationStatus.authorized
+          || settings.authorizationStatus == AuthorizationStatus.provisional;
+
+      if (!allowed) return false;
+
+      // Activer l'auto-init pour générer/régénérer un token si besoin
       await messaging.setAutoInitEnabled(true);
 
-      // Récupération du token
-      String? token;
-      if (kIsWeb) {
-        token = await messaging.getToken(vapidKey: _vapidKey);
-      } else {
-        token = await messaging.getToken();
-      }
+      // Récupérer le token (web: VAPID)
+      final String? token = kIsWeb
+          ? await messaging.getToken(vapidKey: _vapidKey)
+          : await messaging.getToken();
+
       if (token == null) return false;
 
-      // iOS natif : afficher les notifications au premier plan
-      await FirebaseMessaging.instance
-          .setForegroundNotificationPresentationOptions(
+      // iOS: autoriser l'affichage au premier plan
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,
         sound: true,
       );
 
-      // (Optionnel) Enregistrer le token côté serveur / Supabase
-      // await Supabase.instance.client.from('user_tokens').upsert({
-      //   'user_id': widget.user.id,
-      //   'token': token,
-      //   'platform': kIsWeb ? 'web' : 'mobile',
-      // });
+      // Enregistrer côté serveur (facultatif)
+      await _upsertUserToken(token);
 
+      // Pas de SnackBars : on reste silencieux comme demandé
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  /// Désactive les notifications (supprime le token)
+  /// Désactive les notifications (switch OFF)
   Future<void> _disablePush() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
-      // (Optionnel) supprimer le token côté serveur d'abord
-      // await Supabase.instance.client
-      //   .from('user_tokens')
-      //   .delete()
-      //   .eq('user_id', widget.user.id);
+      // Nettoyage serveur (optionnel)
+      await _deleteUserTokens();
 
       // Supprimer le token local
       await messaging.deleteToken();
 
-      // Éteindre l’auto-init pour éviter une recréation du token
+      // Couper l'auto-init pour éviter recréation
       await messaging.setAutoInitEnabled(false);
-    } catch (_) {
-      // Ignorer
-    }
+    } catch (_) {}
   }
 
   @override
@@ -177,25 +216,35 @@ class _ParametrePageState extends State<ParametrePage> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
+        actions: [
+          // Bouton discret pour resynchroniser manuellement si besoin
+          IconButton(
+            tooltip: 'Resynchroniser',
+            onPressed: isLoading ? null : _syncWithSystemPermission,
+            icon: const Icon(Icons.sync),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
         children: [
           Card(
             elevation: 0.5,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Column(
               children: [
                 // --- Toggle Notifications push ---
                 SwitchListTile.adaptive(
-                  secondary: const Icon(Icons.notifications_active,
-                      color: Colors.teal),
+                  secondary:
+                      const Icon(Icons.notifications_active, color: Colors.teal),
                   title: const Text('Notifications push'),
+                  // Sous-titre simple, sans messages de "prêt"
                   subtitle: Text(
-                    _notifEnabled
-                        ? 'Recevoir les notifications'
-                        : 'Notifications désactivées',
+                    isLoading
+                        ? 'Activation en cours…'
+                        : _notifEnabled
+                            ? 'Notifications activées'
+                            : 'Notifications désactivées',
                   ),
                   value: _notifEnabled,
                   onChanged: isLoading ? null : _onToggleNotifications,
@@ -221,7 +270,6 @@ class _ParametrePageState extends State<ParametrePage> {
                 ),
                 const Divider(height: 0),
 
-                // ✅ Ouvre la page dédiée "Mot de passe oublié ?"
                 ListTile(
                   leading: const Icon(Icons.lock_reset, color: Colors.orange),
                   title: const Text('Mot de passe oublié ?'),
@@ -229,10 +277,7 @@ class _ParametrePageState extends State<ParametrePage> {
                     Navigator.pushNamed(
                       context,
                       AppRoutes.forgotPassword,
-                      arguments: {
-                        // Pré-remplir l’e-mail sur la page (optionnel)
-                        'prefillEmail': widget.user.email,
-                      },
+                      arguments: {'prefillEmail': widget.user.email},
                     );
                   },
                 ),
@@ -279,20 +324,13 @@ class _ParametrePageState extends State<ParametrePage> {
 
                         await Supabase.instance.client.auth.signOut();
                         if (!mounted) return;
-                        Navigator.of(context)
-                            .popUntil((route) => route.isFirst);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Compte supprimé avec succès.'),
-                          ),
-                        );
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                        // Pas de SnackBar — on reste discret comme demandé
                       } catch (e) {
                         if (!mounted) return;
+                        // On peut garder un feedback d'erreur minimal si tu préfères le silence total, supprime aussi ceci
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content:
-                                Text('Erreur lors de la suppression : $e'),
-                          ),
+                          SnackBar(content: Text('Erreur: $e')),
                         );
                       }
                     }
