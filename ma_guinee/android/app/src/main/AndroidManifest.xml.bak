@@ -1,23 +1,26 @@
-﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.soneya.app">
 
-    <!--  Internet & état du réseau -->
+    <!-- 🌐 Internet & état du réseau -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!--  Localisation -->
+    <!-- 📍 Localisation (géolocalisation & carte) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" /> -->
 
-    <!--  Notifications -->
+    <!-- 🔔 Notifications (Firebase Cloud Messaging + locales) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!--  Caméra -->
+    <!-- 📷 Caméra -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
 
     <application
         android:name="${applicationName}"
@@ -25,6 +28,7 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false">
 
+        <!-- 🔔 Canal et icône par défaut pour Firebase Cloud Messaging -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="messages_channel" />
@@ -32,10 +36,12 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
 
+        <!-- 🎨 Thème Flutter -->
         <meta-data
             android:name="io.flutter.embedding.android.NormalTheme"
             android:resource="@style/NormalTheme" />
 
+        <!-- 🕓 Notifications programmées -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="true">
@@ -49,6 +55,7 @@
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false" />
 
+        <!-- 🚀 Activité principale Flutter -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -63,9 +70,13 @@
             </intent-filter>
         </activity>
 
-        <meta-data android:name="flutterEmbedding" android:value="2" />
+        <!-- Utilisé par Flutter -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
     </application>
 
+    <!-- 🔍 Visibilité de certaines intentions externes -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
@@ -73,4 +84,3 @@
         </intent>
     </queries>
 </manifest>
-

@@ -1,20 +1,18 @@
-﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- ðŸŒ Internet pour hot reload, API locales, Supabase -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 🌐 Réseau (profiling, API, Supabase) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- ðŸ“ GÃ©olocalisation (tests de carte, position, tracking) -->
+    <!-- 📍 Géolocalisation (pour mesure de performance ou tests terrain) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- ðŸ“· CamÃ©ra pour scanner ou upload dâ€™image -->
+    <!-- 📷 Caméra (scanner, test de performances d’upload) -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- ðŸ”” Notifications en mode debug -->
+    <!-- 🔔 Notifications actives en profil -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>
-
-
