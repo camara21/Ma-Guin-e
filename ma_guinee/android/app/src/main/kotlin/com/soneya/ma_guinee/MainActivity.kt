@@ -1,4 +1,4 @@
-package com.example.ma_guinee
+package com.soneya.ma_guinee
 
 import io.flutter.embedding.android.FlutterActivity
 
