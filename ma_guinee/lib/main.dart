@@ -222,43 +222,6 @@ bool _isRecoveryUrl(Uri uri) {
   return (hasCode && fragPath.contains('reset_password')) || hasTypeRecovery;
 }
 
-/// ——— Observer pour déclencher la demande de notifications **sur Home** ———
-/// CHANGEMENT: nouvel observer qui lance initAndRegister uniquement
-/// quand on arrive sur mainNav (ou adminCenter), une seule fois.
-class _HomePermissionObserver extends NavigatorObserver {
-  bool _done = false;
-
-  void _maybeAsk(Route<dynamic>? route) {
-    if (_done) return;
-    final name = route?.settings.name;
-    if (name == AppRoutes.mainNav || name == AppRoutes.adminCenter) {
-      _done = true;
-      // On laisse la page s'afficher, puis on demande la permission
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(PushService.instance.initAndRegister()); // CHANGEMENT
-      });
-    }
-  }
-
-  @override
-  void didPush(Route route, Route? previousRoute) {
-    _maybeAsk(route);
-    super.didPush(route, previousRoute);
-  }
-
-  @override
-  void didReplace({Route? newRoute, Route? oldRoute}) {
-    _maybeAsk(newRoute);
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-  }
-
-  @override
-  void didPop(Route route, Route? previousRoute) {
-    _maybeAsk(previousRoute);
-    super.didPop(route, previousRoute);
-  }
-}
-
 // ——— main ———
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -283,7 +246,7 @@ Future<void> main() async {
     ),
   );
 
-  // ⚠️ On ne bloque plus l'UI avec des awaits supplémentaires ici.
+  // ⚠️ CHANGEMENT: on ne bloque plus l'UI avec des awaits supplémentaires ici.
 
   // Prépare les providers sans attendre des charges réseau
   final userProvider = UserProvider();
@@ -299,7 +262,7 @@ Future<void> main() async {
     ),
   );
 
-  // Post-frame: inits lentes **sans bloquer le splash**
+  // Post-frame: on fait les inits lentes **sans bloquer le splash**
   WidgetsBinding.instance.addPostFrameCallback((_) async {
     try {
       // Recovery Guard (web)
@@ -308,8 +271,9 @@ Future<void> main() async {
       }
 
       // Notifications locales + channel + foreground iOS
-      await _initLocalNotification();                 // CHANGEMENT: inchangé mais déjà post-frame
-      await _createAndroidNotificationChannel();      // CHANGEMENT
+      // (non bloquants pour l'affichage initial)
+      await _initLocalNotification();                 // CHANGEMENT: déplacé après runApp
+      await _createAndroidNotificationChannel();      // CHANGEMENT: déplacé après runApp
       await FirebaseMessaging.instance
           .setForegroundNotificationPresentationOptions(
         alert: true,
@@ -318,7 +282,7 @@ Future<void> main() async {
       );
 
       // Charge l'utilisateur connecté (réseau)
-      await userProvider.chargerUtilisateurConnecte();
+      await userProvider.chargerUtilisateurConnecte(); // CHANGEMENT: déplacé après runApp
 
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
@@ -326,8 +290,9 @@ Future<void> main() async {
         _subscribeAdminKick(user.id);
         unawaited(_startHeartbeat());
 
-        // ❌ SUPPRIMÉ ICI : ne demande plus la permission avant Home
-        // unawaited(PushService.instance.initAndRegister()); // CHANGEMENT: retiré
+        // Laisse le service gérer l’enregistrement token + affichage foreground
+        // CHANGEMENT: non-bloquant
+        unawaited(PushService.instance.initAndRegister());
       }
 
       // Redirection initiale si PAS en recovery
@@ -335,7 +300,7 @@ Future<void> main() async {
         await _goHomeBasedOnRole(userProvider);
       }
 
-      // Auth state
+      // Auth state (inchangé, mais démarré après l’affichage initial)
       Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
         final session = event.session;
 
@@ -355,8 +320,9 @@ Future<void> main() async {
 
           await userProvider.chargerUtilisateurConnecte();
 
-          // ❌ SUPPRIMÉ ICI AUSSI : la demande se fera sur Home via l'observer
-          // unawaited(PushService.instance.initAndRegister()); // CHANGEMENT: retiré
+          // Service push après connexion (token + foreground)
+          // CHANGEMENT: non-bloquant
+          unawaited(PushService.instance.initAndRegister());
 
           if (!RecoveryGuard.isActive) {
             await _goHomeBasedOnRole(userProvider);
@@ -386,8 +352,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-      // CHANGEMENT: on branche l'observer pour déclencher la permission sur Home
-      navigatorObservers: const [_HomePermissionObserver()], // CHANGEMENT ✅
       onGenerateInitialRoutes: (String _) {
         if (kIsWeb && _isRecoveryUrl(Uri.base)) {
           return [
