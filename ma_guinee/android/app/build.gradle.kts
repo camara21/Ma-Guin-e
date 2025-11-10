@@ -3,6 +3,8 @@ plugins {
     id("kotlin-android")
     // Le plugin Flutter doit venir après Android & Kotlin
     id("dev.flutter.flutter-gradle-plugin")
+    // ✅ requis pour Firebase (google-services.json)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -27,6 +29,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // (Optionnel mais accélère sur ton Samsung ARM64)
+        // ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -41,9 +46,9 @@ flutter {
     source = "../.."
 }
 
-// Dépendance desugaring (>= 2.1.4 requis)
 dependencies {
+    // Desugaring >= 2.1.4 exigé par flutter_local_notifications
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    // Si ton Gradle n’a pas l'accessor ci-dessus, utilise cette forme :
+    // Si l'accessor n'est pas reconnu, utilise la forme:
     // add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.1.5")
 }

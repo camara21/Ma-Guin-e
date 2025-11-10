@@ -1,4 +1,4 @@
-// lib/services/push_service.dart (fallback sans device_info_plus)
+// lib/services/push_service.dart (avec RPC enable_push_token)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/widgets.dart' show WidgetsBinding;
@@ -12,8 +12,8 @@ class PushService {
   PushService._();
   static final instance = PushService._();
 
-  final _sb = Supabase.instance.client;
-  final _fm = FirebaseMessaging.instance;
+  final _sb  = Supabase.instance.client;
+  final _fm  = FirebaseMessaging.instance;
   final _fln = FlutterLocalNotificationsPlugin();
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -45,11 +45,10 @@ class PushService {
     }
     if (token == null || token.isEmpty) return;
 
-    // Métadonnées minimalistes (cross-platform sans device_info_plus)
+    // Métadonnées minimales
     final platform = _platformString(); // android / ios / web / other
     String model = 'unknown';
     if (kIsWeb) {
-      // Petit hint côté Web : essaie de récupérer l’UA exposée par Flutter Web
       try {
         // ignore: undefined_prefixed_name
         final ua = const String.fromEnvironment('FLUTTER_WEB_USER_AGENT');
@@ -57,12 +56,12 @@ class PushService {
       } catch (_) {}
     }
 
-    final pkg = await PackageInfo.fromPlatform();
+    final pkg    = await PackageInfo.fromPlatform();
     final userId = _sb.auth.currentUser?.id;
     if (userId == null) return;
     final locale = WidgetsBinding.instance.platformDispatcher.locale.toString();
 
-    // Upsert
+    // 1) Upsert métadonnées pour ce token
     await _sb.from('push_devices').upsert({
       'user_id'     : userId,
       'token'       : token,
@@ -71,19 +70,32 @@ class PushService {
       'app_version' : pkg.version,
       'enabled'     : true,
       'locale'      : locale,
-    }, onConflict: 'token');
+    }, onConflict: 'user_id,token');
 
-    // Refresh token
-    _fm.onTokenRefresh.listen((t) async {
-      await _sb.from('push_devices').upsert({
-        'user_id'  : userId,
-        'token'    : t,
-        'platform' : platform,
-        'enabled'  : true,
-      }, onConflict: 'token');
+    // 2) Enforce "un seul token actif" via RPC
+    await _sb.rpc('enable_push_token', params: {
+      'p_user': userId,
+      'p_token': token,
     });
 
-    // Affichage local (foreground)
+    // Refresh token → upsert + RPC
+    _fm.onTokenRefresh.listen((t) async {
+      try {
+        await _sb.from('push_devices').upsert({
+          'user_id'  : userId,
+          'token'    : t,
+          'platform' : platform,
+          'enabled'  : true,
+        }, onConflict: 'user_id,token');
+
+        await _sb.rpc('enable_push_token', params: {
+          'p_user': userId,
+          'p_token': t,
+        });
+      } catch (_) {}
+    });
+
+    // Affichage local en foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage m) async {
       final n = m.notification;
       if (n == null) return;
@@ -108,7 +120,7 @@ class PushService {
 
   Future<void> disableForThisDevice() async {
     final userId = _sb.auth.currentUser?.id;
-    final token = await _fm.getToken();
+    final token  = await _fm.getToken();
     if (userId == null || token == null) return;
     await _sb.from('push_devices')
         .update({'enabled': false})
@@ -118,7 +130,7 @@ class PushService {
 
   Future<void> signOutCleanup() async {
     final userId = _sb.auth.currentUser?.id;
-    final token = await _fm.getToken();
+    final token  = await _fm.getToken();
     if (userId == null || token == null) return;
     await _sb.from('push_devices')
         .delete()
@@ -136,8 +148,8 @@ class PushService {
     const init = InitializationSettings(android: initAndroid, iOS: initIOS);
     await _fln.initialize(init);
 
-    final androidImpl = _fln.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl =
+        _fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.createNotificationChannel(_channel);
   }
 

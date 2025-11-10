@@ -1,5 +1,6 @@
 // lib/pages/home_page.dart
-// (fichier complet – différences principales : _openNotifications force un recalcul au retour)
+// (fichier complet – FCM géré par PushService)
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/user_provider.dart';
 import 'cgu_bottom_sheet.dart';
 import '../services/message_service.dart';
+import '../services/push_service.dart'; // ⬅️ appel centralisé FCM
 import '../routes.dart';
 
 // Jobs
@@ -44,9 +46,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     _verifierCGU();
     _ecouterNotificationsAdminOnly();
     _chargerMessagesNonLus();
+
+    // ⬇️ Enregistrement push centralisé (permissions + token + upsert + refresh)
+    PushService.instance.initAndRegister();
   }
 
   @override
@@ -61,6 +67,7 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  // ====== CGU / Notifications locales ======
   Future<void> _verifierCGU() async {
     final utilisateur = context.read<UserProvider>().utilisateur;
     if (utilisateur != null && utilisateur.cguAccepte != true) {
@@ -132,7 +139,7 @@ class _HomePageState extends State<HomePage> {
     final w = MediaBox.of(context).size.width;
     if (w < 360) return 44;
     return 51;
-  }
+    }
 
   Widget _iconCard(Widget child) {
     final w = MediaBox.of(context).size.width;
