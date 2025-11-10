@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -14,15 +14,18 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'firebase_options.dart';
-import 'routes.dart'; // contient RecoveryGuard + AppRoutes
+import 'routes.dart'; // RecoveryGuard + AppRoutes
 
-// ✅ nécessaires pour onGenerateInitialRoutes
+// ✅ Service push centralisé (affichage FCM en foreground)
+import 'services/push_service.dart';
+
+// nécessaires pour onGenerateInitialRoutes
 import 'pages/splash_screen.dart';
 import 'pages/auth/reset_password_flow.dart';
 
-import 'providers/user_provider.dart';
 import 'providers/favoris_provider.dart';
 import 'providers/prestataires_provider.dart';
+import 'providers/user_provider.dart';
 import 'theme/app_theme.dart';
 
 // ——— Navigation globale ———
@@ -34,29 +37,22 @@ void _pushUnique(String routeName) {
   navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
-// ——— Notifications locales ———
+// ——— Notifications locales (utilisées pour background/data-only + Realtime) ———
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 Future<void> _initLocalNotification() async {
-  // ⚙️ Initialisation adaptée à flutter_local_notifications ^17.x
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const iOS = DarwinInitializationSettings(
-    // On laisse les permissions à FirebaseMessaging.requestPermission()
     requestAlertPermission: false,
     requestBadgePermission: false,
     requestSoundPermission: false,
   );
   const settings = InitializationSettings(android: android, iOS: iOS);
-
-  await flutterLocalNotificationsPlugin.initialize(
-    settings,
-    // On ne change pas la navigation au tap pour éviter de modifier la logique existante
-  );
+  await flutterLocalNotificationsPlugin.initialize(settings);
 }
 
 Future<void> _createAndroidNotificationChannel() async {
-  // ✅ Crée le channel "messages_channel" (ne fait rien si déjà créé)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'messages_channel',
     'Messages',
@@ -71,7 +67,6 @@ Future<void> _createAndroidNotificationChannel() async {
 
 void _showNotification(String? title, String? body) {
   flutterLocalNotificationsPlugin.show(
-    // Id unique
     DateTime.now().millisecondsSinceEpoch ~/ 1000,
     title ?? 'Notification',
     body ?? '',
@@ -95,12 +90,15 @@ void _showNotification(String? title, String? body) {
 // ——— FCM background ———
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // 🔒 Requis en arrière-plan avec firebase_core ^3.x
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Si c'est une data-only, on affiche nous-mêmes.
-  // Si c'est une "notification" FCM, Android/iOS la gèrent nativement.
-  _showNotification(message.notification?.title, message.notification?.body);
+  // ✅ Afficher uniquement si "data-only"
+  if (message.notification == null) {
+    _showNotification(
+      message.data['title'] as String?,
+      message.data['body'] as String?,
+    );
+  }
 }
 
 // ——— Realtime globals ———
@@ -128,7 +126,7 @@ Future<void> _stopHeartbeat() async {
   _heartbeatTimer = null;
 }
 
-// ——— Realtime : notifications utilisateur ———
+// ——— Realtime : notifications utilisateur (table notifications) ———
 void _subscribeUserNotifications(String userId) {
   _notifChan?.unsubscribe();
   _notifChan = Supabase.instance.client
@@ -192,40 +190,6 @@ void _unsubscribeAdminKick() {
 }
 
 // ——— Helpers ———
-// 🔁 PATCH: retourne le token et log en release (print) sans casser le flux existant
-Future<String?> enablePushNotifications() async {
-  try {
-    final messaging = FirebaseMessaging.instance;
-
-    // ✅ Permissions via FCM (iOS 12+/macOS & Android 13+ si manifest ok)
-    final settings = await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-    if (settings.authorizationStatus != AuthorizationStatus.authorized &&
-        settings.authorizationStatus != AuthorizationStatus.provisional) {
-      print('🔔 Notifications refusées');
-      return null;
-    }
-
-    // ✅ Token (web utilise VAPID si fourni via --dart-define)
-    final token = kIsWeb
-        ? await messaging.getToken(
-            vapidKey:
-                const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: ''),
-          )
-        : await messaging.getToken();
-
-    print('🎯 FCM token: $token'); // visible aussi en release
-    return token;
-  } catch (e, st) {
-    print('❌ enablePushNotifications: $e\n$st');
-    return null;
-  }
-}
-
 Future<bool> isCurrentUserAdmin() async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null) return false;
@@ -245,18 +209,54 @@ Future<bool> isCurrentUserAdmin() async {
 // ——— Redirection centralisée selon le rôle ———
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
-  final dest = (role == 'admin' || role == 'owner')
-      ? AppRoutes.adminCenter
-      : AppRoutes.mainNav;
+  final dest =
+      (role == 'admin' || role == 'owner') ? AppRoutes.adminCenter : AppRoutes.mainNav;
   _pushUnique(dest);
 }
 
-/// ——— Détecte si l’URL de démarrage est un lien de recovery Supabase ———
+/// Détecte si l’URL de démarrage est un lien de recovery Supabase
 bool _isRecoveryUrl(Uri uri) {
   final hasCode = uri.queryParameters['code'] != null;
   final fragPath = uri.fragment.split('?').first; // ex: "/reset_password"
   final hasTypeRecovery = (uri.queryParameters['type'] ?? '') == 'recovery';
   return (hasCode && fragPath.contains('reset_password')) || hasTypeRecovery;
+}
+
+/// ——— Observer pour déclencher la demande de notifications **sur Home** ———
+/// CHANGEMENT: nouvel observer qui lance initAndRegister uniquement
+/// quand on arrive sur mainNav (ou adminCenter), une seule fois.
+class _HomePermissionObserver extends NavigatorObserver {
+  bool _done = false;
+
+  void _maybeAsk(Route<dynamic>? route) {
+    if (_done) return;
+    final name = route?.settings.name;
+    if (name == AppRoutes.mainNav || name == AppRoutes.adminCenter) {
+      _done = true;
+      // On laisse la page s'afficher, puis on demande la permission
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(PushService.instance.initAndRegister()); // CHANGEMENT
+      });
+    }
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    _maybeAsk(route);
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) {
+    _maybeAsk(newRoute);
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+
+  @override
+  void didPop(Route route, Route? previousRoute) {
+    _maybeAsk(previousRoute);
+    super.didPop(route, previousRoute);
+  }
 }
 
 // ——— main ———
@@ -268,19 +268,8 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   if (!kIsWeb) {
-    // ✅ Requis pour FCM data-only en background avec firebase_messaging ^15.x
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
-
-  await _initLocalNotification();
-  await _createAndroidNotificationChannel();
-
-  // iOS : afficher les notifs système en foreground si message "notification"
-  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
 
   await Supabase.initialize(
     url: const String.fromEnvironment(
@@ -292,34 +281,12 @@ Future<void> main() async {
       defaultValue:
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5a2JjZ3Fna2RzZ3Vpcmp2d3hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwMTEsImV4cCI6MjA2ODM1OTAxMX0.R-iSxRy-vFvmmE80EdI2AlZCKqgADvLd9_luvrLQL-E',
     ),
-  ); // ✅
+  );
 
-  // ✅ Active le guard AVANT runApp si l’URL est un lien de recovery
-  if (kIsWeb && _isRecoveryUrl(Uri.base)) {
-    RecoveryGuard.activate();
-  }
+  // ⚠️ On ne bloque plus l'UI avec des awaits supplémentaires ici.
 
-  // Foreground FCM → on affiche via LNP pour unifier Android/iOS/web
-  FirebaseMessaging.onMessage.listen((m) {
-    _showNotification(m.notification?.title, m.notification?.body);
-  });
-
+  // Prépare les providers sans attendre des charges réseau
   final userProvider = UserProvider();
-  await userProvider.chargerUtilisateurConnecte();
-
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user != null) {
-    _subscribeUserNotifications(user.id);
-    _subscribeAdminKick(user.id);
-    unawaited(_startHeartbeat());
-
-    // ✅ Ajout : enregistre l’appareil et récupère le token (Android/iOS/Web)
-    final token = await enablePushNotifications();
-    // TODO (optionnel): upsert token -> table user_tokens avec user_id + platform + token
-    if (token != null && !kReleaseMode) {
-      debugPrint('Token enregistré: $token');
-    }
-  }
 
   runApp(
     MultiProvider(
@@ -332,54 +299,80 @@ Future<void> main() async {
     ),
   );
 
-  // Redirection initiale si PAS en recovery (sinon on laisse Reset/Splash gérer)
-  scheduleMicrotask(() {
-    if (!RecoveryGuard.isActive) {
-      _goHomeBasedOnRole(userProvider);
-    }
-  });
-
-  // Auth state
-  Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
-    final session = event.session;
-
-    // ✅ Quand Supabase signale le flow de recovery, ne PUSHE rien ici
-    if (event.event == AuthChangeEvent.passwordRecovery) {
-      RecoveryGuard.activate();
-      return;
-    }
-
-    // Pendant le recovery, ignorer toute connexion automatique
-    if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
-      return;
-    }
-
-    if (session?.user != null) {
-      final uid = session!.user.id;
-      _subscribeUserNotifications(uid);
-      _subscribeAdminKick(uid);
-      await _startHeartbeat();
-
-      await userProvider.chargerUtilisateurConnecte();
-
-      // ✅ Ajout : enregistre l’appareil et récupère le token après connexion
-      final token = await enablePushNotifications();
-      // TODO (optionnel): upsert token côté Supabase
-      if (token != null && !kReleaseMode) {
-        debugPrint('Token enregistré (post-login): $token');
+  // Post-frame: inits lentes **sans bloquer le splash**
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    try {
+      // Recovery Guard (web)
+      if (kIsWeb && _isRecoveryUrl(Uri.base)) {
+        RecoveryGuard.activate();
       }
 
+      // Notifications locales + channel + foreground iOS
+      await _initLocalNotification();                 // CHANGEMENT: inchangé mais déjà post-frame
+      await _createAndroidNotificationChannel();      // CHANGEMENT
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      // Charge l'utilisateur connecté (réseau)
+      await userProvider.chargerUtilisateurConnecte();
+
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        _subscribeUserNotifications(user.id);
+        _subscribeAdminKick(user.id);
+        unawaited(_startHeartbeat());
+
+        // ❌ SUPPRIMÉ ICI : ne demande plus la permission avant Home
+        // unawaited(PushService.instance.initAndRegister()); // CHANGEMENT: retiré
+      }
+
+      // Redirection initiale si PAS en recovery
       if (!RecoveryGuard.isActive) {
         await _goHomeBasedOnRole(userProvider);
       }
-    } else {
-      _unsubscribeUserNotifications();
-      _unsubscribeAdminKick();
-      await _stopHeartbeat();
 
-      if (!RecoveryGuard.isActive) {
-        _pushUnique(AppRoutes.welcome);
-      }
+      // Auth state
+      Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
+        final session = event.session;
+
+        if (event.event == AuthChangeEvent.passwordRecovery) {
+          RecoveryGuard.activate();
+          return;
+        }
+        if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
+          return;
+        }
+
+        if (session?.user != null) {
+          final uid = session!.user.id;
+          _subscribeUserNotifications(uid);
+          _subscribeAdminKick(uid);
+          await _startHeartbeat();
+
+          await userProvider.chargerUtilisateurConnecte();
+
+          // ❌ SUPPRIMÉ ICI AUSSI : la demande se fera sur Home via l'observer
+          // unawaited(PushService.instance.initAndRegister()); // CHANGEMENT: retiré
+
+          if (!RecoveryGuard.isActive) {
+            await _goHomeBasedOnRole(userProvider);
+          }
+        } else {
+          _unsubscribeUserNotifications();
+          _unsubscribeAdminKick();
+          await _stopHeartbeat();
+
+          if (!RecoveryGuard.isActive) {
+            _pushUnique(AppRoutes.welcome);
+          }
+        }
+      });
+    } catch (_) {
+      // on ignore: on préfère démarrer l'app même si une init échoue
     }
   });
 }
@@ -393,11 +386,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-
-      // ❌ PAS d'initialRoute — on pilote la 1re page ici :
+      // CHANGEMENT: on branche l'observer pour déclencher la permission sur Home
+      navigatorObservers: const [_HomePermissionObserver()], // CHANGEMENT ✅
       onGenerateInitialRoutes: (String _) {
         if (kIsWeb && _isRecoveryUrl(Uri.base)) {
-          // Lien de réinitialisation → ouvrir directement la page Reset
           return [
             MaterialPageRoute(
               settings: const RouteSettings(name: AppRoutes.resetPassword),
@@ -405,7 +397,6 @@ class MyApp extends StatelessWidget {
             ),
           ];
         }
-        // Sinon démarrer par Splash
         return [
           MaterialPageRoute(
             settings: const RouteSettings(name: AppRoutes.splash),
@@ -413,14 +404,10 @@ class MyApp extends StatelessWidget {
           ),
         ];
       },
-
-      // Router app standard
       onGenerateRoute: AppRoutes.generateRoute,
-
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
-
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -428,13 +415,9 @@ class MyApp extends StatelessWidget {
       ],
       supportedLocales: const [Locale('fr'), Locale('en')],
       locale: const Locale('fr'),
-
       builder: (context, child) {
         final style = AppTheme.light.textTheme.bodyMedium!;
-        return DefaultTextStyle.merge(
-          style: style,
-          child: child ?? const SizedBox.shrink(),
-        );
+        return DefaultTextStyle.merge(style: style, child: child ?? const SizedBox.shrink());
       },
     );
   }

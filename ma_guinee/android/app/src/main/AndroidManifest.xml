@@ -1,16 +1,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
 
-    <!-- ✅ Permissions notifications + wake lock (Android 13+ exige POST_NOTIFICATIONS) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- (Optionnel si tu utilises un service foreground p.ex. geolocator) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
 
     <application
         android:name="${applicationName}"
-        android:label="ma_guinee"
+        android:label="Soneya"
         android:icon="@mipmap/ic_launcher">
 
         <activity
@@ -23,7 +30,6 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Thème temporaire pendant le boot Flutter -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
@@ -34,24 +40,15 @@
             </intent-filter>
         </activity>
 
-        <!-- ✅ Canal Android par défaut pour FCM + icône de notif -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="messages_channel" />
-        <!-- (Optionnel) icône petite et monochrome si tu en as une -->
-        <!--
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_stat_notify" />
-        -->
 
-        <!-- Ne pas supprimer : nécessaire à Flutter -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
-    <!-- Visibilité package (utilisé par le plugin ProcessText de Flutter) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
