@@ -35,7 +35,7 @@ dependencies:
   # Notifications (push + locales)
   firebase_core: ^4.2.1
   firebase_messaging: ^16.0.4
-  flutter_local_notifications: ^19.5.0   # ✅ MAJ pour compatibilité
+  flutter_local_notifications: ^19.5.0
   timezone: ^0.10.1
 
   # Infos appareil / app
@@ -91,6 +91,25 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1   # ✅ ajout pour générer les icônes
+
+# ====== Génération automatique des icônes (fond bleu) ======
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  # Ton logo 1024x1024 (avec fond bleu déjà appliqué)
+  image_path: assets/icons/soneya-1024.png
+  remove_alpha_ios: true
+
+  # Android 8+ (Adaptive) : on force aussi le fond bleu
+  adaptive_icon_background: "#1175F7"
+  # (si tu veux, tu peux plus tard fournir un foreground dédié 432x432)
+
+  # Android 12 (icône dans les bulles) : même fond bleu
+  android_12:
+    image: assets/icons/soneya-1024.png
+    icon_background_color: "#1175F7"
 
 flutter:
   uses-material-design: true
@@ -102,5 +121,13 @@ flutter:
     - assets/carte_guinee.png
     - assets/jobs/hero.png
     - assets/jobs/card_cover.png
-    - assets/fonts/Inter_24pt-Regular.ttf
-    - assets/fonts/Inter_24pt-Bold.ttf
+    - assets/icons/soneya-1024.png   # ✅ déclare ton icône
+
+    # (tes polices ne sont pas des assets, elles vont dans "fonts" ci-dessous)
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter_24pt-Regular.ttf
+        - asset: assets/fonts/Inter_24pt-Bold.ttf
+          weight: 700
