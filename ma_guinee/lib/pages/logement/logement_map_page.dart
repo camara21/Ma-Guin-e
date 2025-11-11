@@ -1,8 +1,10 @@
+// lib/pages/logement/logement_map_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
@@ -453,6 +455,32 @@ class _LogementMapPageState extends State<LogementMapPage> {
     );
   }
 
+  // === Image adaptative (évite le "pixel" partout) ===
+  Widget _adaptiveNetImage(String url, double w, double h,
+      {BorderRadius? radius}) {
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cw = (w * dpr).round();
+    final ch = (h * dpr).round();
+    final img = CachedNetworkImage(
+      imageUrl: url,
+      memCacheWidth: cw,
+      memCacheHeight: ch,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholder: (_, __) => Container(color: Colors.grey.shade200),
+      errorWidget: (_, __, ___) => Container(
+        color: Colors.grey.shade200,
+        alignment: Alignment.center,
+        child: const Icon(Icons.image_not_supported, color: Colors.grey),
+      ),
+    );
+    return radius != null
+        ? ClipRRect(borderRadius: radius, child: img)
+        : img;
+  }
+
   List<Marker> _buildMarkers() {
     final out = <Marker>[];
     for (final b in _items) {
@@ -495,7 +523,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
                             color: Colors.black38,
                           ),
                         )
-                      : Image.network(photo, fit: BoxFit.cover),
+                      : _adaptiveNetImage(photo, 60, 60),
                 ),
                 Positioned(
                   bottom: -6,
@@ -560,99 +588,107 @@ class _LogementMapPageState extends State<LogementMapPage> {
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 92,
-                    height: 92,
-                    child: (b.photos.isEmpty)
-                        ? Container(
-                            color: _chipBg,
-                            child: const Icon(
-                              Icons.image,
-                              color: Colors.black26,
-                              size: 32,
-                            ),
-                          )
-                        : Image.network(b.photos.first, fit: BoxFit.cover),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        b.titre,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
+          child: LayoutBuilder(
+            builder: (ctx, cons) {
+              // vignettes : 92x92 → image adaptée DPI
+              const thumb = 92.0;
+              final photo = (b.photos.isNotEmpty) ? b.photos.first : null;
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: SizedBox(
+                        width: thumb,
+                        height: thumb,
+                        child: (photo == null)
+                            ? Container(
+                                color: _chipBg,
+                                child: const Icon(
+                                  Icons.image,
+                                  color: Colors.black26,
+                                  size: 32,
+                                ),
+                              )
+                            : _adaptiveNetImage(photo, thumb, thumb),
                       ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: -6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _miniChip(
-                              b.mode == LogementMode.achat ? 'Achat' : 'Location'),
-                          _miniChip(_labelCat(b.categorie)),
-                          if (b.chambres != null) _miniChip('${b.chambres} ch'),
-                          if (b.superficieM2 != null)
-                            _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                          Text(
+                            b.titre,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: -6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              _miniChip(
+                                  b.mode == LogementMode.achat ? 'Achat' : 'Location'),
+                              _miniChip(_labelCat(b.categorie)),
+                              if (b.chambres != null) _miniChip('${b.chambres} ch'),
+                              if (b.superficieM2 != null)
+                                _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            [b.ville, b.commune].whereType<String>().join(' • '),
+                            style: const TextStyle(color: Colors.black54, fontSize: 12),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        [b.ville, b.commune].whereType<String>().join(' • '),
-                        style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    ),
+                  ]),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Text(
+                      price,
+                      style: TextStyle(
+                        color: _accent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
                       ),
-                    ],
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 10),
-              Row(children: [
-                Text(
-                  price,
-                  style: TextStyle(
-                    color: _accent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Fermer'),
-                ),
-                const SizedBox(width: 6),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _accent,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(
-                      context,
-                      AppRoutes.logementDetail,
-                      arguments: b.id,
-                    );
-                  },
-                  icon: const Icon(Icons.chevron_right),
-                  label: const Text('Voir la fiche'),
-                ),
-              ]),
-            ],
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Fermer'),
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.logementDetail,
+                          arguments: b.id,
+                        );
+                      },
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('Voir la fiche'),
+                    ),
+                  ]),
+                ],
+              );
+            },
           ),
         ),
       ),
