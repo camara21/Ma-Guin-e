@@ -1,11 +1,10 @@
 // lib/pages/resto_detail_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'restaurant_reservation_page.dart';
@@ -41,14 +40,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   double _noteMoyenne = 0.0;
   bool _dejaNote = false;
 
-  // Cache profils
+  // Profils cache
   final Map<String, Map<String, dynamic>> _userCache = {};
 
   // Saisie avis
   int _noteUtilisateur = 0;
   final _avisController = TextEditingController();
 
-  // Galerie
+  // Galerie (style Divertissement)
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
@@ -73,21 +72,18 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     super.dispose();
   }
 
+  // ---------------- Images helpers ----------------
   List<String> _imagesFrom(dynamic raw) {
-    if (raw is List) return raw.map((e) => e.toString()).toList();
-    if (raw is String && raw.trim().isNotEmpty) return [raw];
-    return const [];
+    if (raw is List && raw.isNotEmpty) {
+      return raw.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).toList();
+    }
+    final p = (raw ?? '').toString().trim();
+    return p.isNotEmpty ? [p] : [];
   }
-
-  String _thumbUrl(String url) => url;
-  String _fullUrl(String url) => url;
 
   // ------- RESTO -------
   Future<void> _loadResto() async {
-    setState(() {
-      loading = true;
-      _error = null;
-    });
+    setState(() { loading = true; _error = null; });
     try {
       final data = await _sb
           .from('restaurants')
@@ -95,17 +91,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           .eq('id', _id)
           .maybeSingle();
 
-      if (!mounted) return; // ✅ évite setState après dispose
+      if (!mounted) return;
       setState(() {
         resto = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        loading = false;
-        _error = 'Erreur de chargement: $e';
-      });
+      setState(() { loading = false; _error = 'Erreur de chargement: $e'; });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
     }
   }
@@ -142,22 +135,16 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
         for (final p in List<Map<String, dynamic>>.from(profiles)) {
           final id = (p['id'] ?? '').toString();
-          fetched[id] = {
-            'nom': p['nom'],
-            'prenom': p['prenom'],
-            'photo_url': p['photo_url'],
-          };
+          fetched[id] = {'nom': p['nom'], 'prenom': p['prenom'], 'photo_url': p['photo_url']};
         }
       }
 
-      if (!mounted) return; // ✅
+      if (!mounted) return;
       setState(() {
         _avis = list;
         _noteMoyenne = moyenne;
         _dejaNote = deja;
-        _userCache
-          ..clear()
-          ..addAll(fetched);
+        _userCache..clear()..addAll(fetched);
       });
     } catch (e) {
       if (!mounted) return;
@@ -199,11 +186,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         onConflict: 'restaurant_id,auteur_id',
       );
 
-      setState(() {
-        _noteUtilisateur = 0;
-        _avisController.clear();
-        _dejaNote = true;
-      });
+      setState(() { _noteUtilisateur = 0; _avisController.clear(); _dejaNote = true; });
       FocusScope.of(context).unfocus();
       await _loadAvisBloc();
 
@@ -230,11 +213,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => RestaurantReservationPage(
-          restaurantId: _id,                     // ✅ on passe l’ID pour l’insertion
+          restaurantId: _id,
           restoName: nom.isEmpty ? 'Restaurant' : nom,
           phone: telRaw.isEmpty ? null : telRaw,
           address: address.isEmpty ? null : address,
-          coverImage: images.isNotEmpty ? _fullUrl(images.first) : null,
+          coverImage: images.isNotEmpty ? images.first : null,
           primaryColor: _restoPrimary,
         ),
       ),
@@ -286,59 +269,16 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     );
   }
 
-  void _openFullScreenGallery(List<String> images, int initialIndex) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.95),
-      builder: (_) {
-        final controller = PageController(initialPage: initialIndex);
-        int current = initialIndex;
-        return StatefulBuilder(builder: (context, setS) {
-          return Stack(
-            children: [
-              PhotoViewGallery.builder(
-                scrollPhysics: const BouncingScrollPhysics(),
-                itemCount: images.length,
-                pageController: controller,
-                builder: (context, index) {
-                  return PhotoViewGalleryPageOptions(
-                    imageProvider: CachedNetworkImageProvider(_fullUrl(images[index])),
-                    minScale: PhotoViewComputedScale.contained,
-                    maxScale: PhotoViewComputedScale.covered * 3,
-                    heroAttributes: PhotoViewHeroAttributes(tag: 'resto_$index'),
-                  );
-                },
-                onPageChanged: (i) => setS(() => current = i),
-                backgroundDecoration: const BoxDecoration(color: Colors.black),
-              ),
-              Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text('${current + 1}/${images.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 14)),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 24,
-                right: 8,
-                child: IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ),
-            ],
-          );
-        });
-      },
+  // ----- Plein écran (fond noir, aucune teinte) -----
+  void _openFullScreenGallery(List<String> images, int initialIndex, String heroPrefix) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FullscreenGalleryPage(
+          images: images,
+          initialIndex: initialIndex,
+          heroPrefix: heroPrefix,
+        ),
+      ),
     );
   }
 
@@ -366,6 +306,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       end: Alignment.centerRight,
     );
 
+    // Fallback si pas d’image
+    const fallback = 'https://via.placeholder.com/1200x800.png?text=Restaurant';
+    final heroPrefix = 'resto_${resto!['id'] ?? nom}';
+
     return Scaffold(
       backgroundColor: _neutralBg,
       appBar: AppBar(
@@ -391,34 +335,55 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Galerie
-            if (images.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  children: [
-                    SizedBox(
-                      height: 230,
-                      width: double.infinity,
-                      child: PageView.builder(
-                        controller: _pageController,
-                        itemCount: images.length,
-                        onPageChanged: (i) => setState(() => _currentIndex = i),
-                        itemBuilder: (context, index) => GestureDetector(
-                          onTap: () => _openFullScreenGallery(images, index),
+            // ------- Galerie (CachedNetworkImage, pas de voile) -------
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 230,
+                    width: double.infinity,
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: images.isEmpty ? 1 : images.length,
+                      onPageChanged: (i) => setState(() => _currentIndex = i),
+                      itemBuilder: (context, index) {
+                        final url = images.isEmpty ? fallback : images[index];
+                        return GestureDetector(
+                          onTap: images.isEmpty
+                              ? null
+                              : () => _openFullScreenGallery(images, index, heroPrefix),
                           child: Hero(
-                            tag: 'resto_$index',
-                            child: CachedNetworkImage(
-                              imageUrl: _fullUrl(images[index]),
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              placeholder: (_, __) => Container(color: Colors.grey[200]),
-                              errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported)),
+                            tag: '${heroPrefix}_$index',
+                            child: LayoutBuilder(
+                              builder: (context, cons) {
+                                final w = cons.maxWidth;
+                                const h = 230.0;
+                                return CachedNetworkImage(
+                                  imageUrl: url,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  memCacheWidth: w.isFinite ? (w * 2).round() : null,
+                                  memCacheHeight: (h * 2).round(),
+                                  fadeInDuration: const Duration(milliseconds: 150),
+                                  placeholder: (_, __) => Container(color: Colors.grey[200]),
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: Colors.grey[200],
+                                    alignment: Alignment.center,
+                                    child: const Icon(Icons.image, color: Colors.grey, size: 36),
+                                  ),
+                                  // ✅ aucune teinte/filtre
+                                  color: null,
+                                  colorBlendMode: null,
+                                );
+                              },
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
+                  ),
+                  if (images.length > 1)
                     Positioned(
                       right: 8,
                       top: 8,
@@ -432,50 +397,48 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                             style: const TextStyle(color: Colors.white, fontSize: 12)),
                       ),
                     ),
-                  ],
+                ],
+              ),
+            ),
+            if (images.length > 1) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 68,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final isActive = index == _currentIndex;
+                    final url = images[index];
+                    return GestureDetector(
+                      onTap: () {
+                        _pageController.animateToPage(index,
+                            duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+                        setState(() => _currentIndex = index);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 90,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: isActive ? _restoPrimary : Colors.transparent, width: 2),
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: Colors.grey[200]),
+                          errorWidget: (_, __, ___) =>
+                              const Center(child: Icon(Icons.image, color: Colors.grey)),
+                          color: null,
+                          colorBlendMode: null,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-              const SizedBox(height: 10),
-              if (images.length > 1)
-                SizedBox(
-                  height: 68,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: images.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final isActive = index == _currentIndex;
-                      return GestureDetector(
-                        onTap: () {
-                          _pageController.animateToPage(
-                            index,
-                            duration: const Duration(milliseconds: 280),
-                            curve: Curves.easeOut,
-                          );
-                          setState(() => _currentIndex = index);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 90,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isActive ? _restoPrimary : Colors.transparent,
-                              width: 2,
-                            ),
-                          ),
-                          clipBehavior: Clip.hardEdge,
-                          child: CachedNetworkImage(
-                            imageUrl: _thumbUrl(images[index]),
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => Container(color: Colors.grey[200]),
-                            errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
             ],
 
             const SizedBox(height: 14),
@@ -551,7 +514,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
+                  borderSide: BorderSide(color: Colors.grey),
                 ),
               ),
             ),
@@ -639,7 +602,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundImage: (photo.isNotEmpty) ? CachedNetworkImageProvider(photo) : null,
+                      backgroundImage: (photo.isNotEmpty) ? NetworkImage(photo) : null,
                       child: photo.isEmpty ? const Icon(Icons.person) : null,
                     ),
                     title: Text(fullName),
@@ -712,6 +675,84 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/* =======================
+   Plein écran (fond noir, zoom)
+   ======================= */
+
+class _FullscreenGalleryPage extends StatefulWidget {
+  final List<String> images;
+  final int initialIndex;
+  final String heroPrefix;
+
+  const _FullscreenGalleryPage({
+    required this.images,
+    required this.initialIndex,
+    required this.heroPrefix,
+  });
+
+  @override
+  State<_FullscreenGalleryPage> createState() => _FullscreenGalleryPageState();
+}
+
+class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
+  late final PageController _ctrl;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+    _ctrl = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.images.length;
+
+    return Scaffold(
+      backgroundColor: Colors.black, // ✅ noir opaque — aucune teinte rouge
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        title: Text('${_index + 1}/$total', style: const TextStyle(color: Colors.white)),
+      ),
+      body: PageView.builder(
+        controller: _ctrl,
+        onPageChanged: (i) => setState(() => _index = i),
+        itemCount: widget.images.length,
+        itemBuilder: (_, i) {
+          final url = widget.images[i];
+          return Center(
+            child: Hero(
+              tag: '${widget.heroPrefix}_$i',
+              child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 4.0,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white70,
+                    size: 64,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

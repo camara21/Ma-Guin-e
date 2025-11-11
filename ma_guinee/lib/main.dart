@@ -37,6 +37,14 @@ void _pushUnique(String routeName) {
   navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
+// ——— Demande de notifications une seule fois après connexion ———
+bool _askedPushOnce = false;
+void _askPushOnce() {
+  if (_askedPushOnce) return;
+  _askedPushOnce = true;
+  unawaited(PushService.instance.initAndRegister());
+}
+
 // ——— Notifications locales (utilisées pour background/data-only + Realtime) ———
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -272,8 +280,8 @@ Future<void> main() async {
 
       // Notifications locales + channel + foreground iOS
       // (non bloquants pour l'affichage initial)
-      await _initLocalNotification();                 // CHANGEMENT: déplacé après runApp
-      await _createAndroidNotificationChannel();      // CHANGEMENT: déplacé après runApp
+      await _initLocalNotification();                 // déplacé après runApp
+      await _createAndroidNotificationChannel();      // déplacé après runApp
       await FirebaseMessaging.instance
           .setForegroundNotificationPresentationOptions(
         alert: true,
@@ -282,7 +290,7 @@ Future<void> main() async {
       );
 
       // Charge l'utilisateur connecté (réseau)
-      await userProvider.chargerUtilisateurConnecte(); // CHANGEMENT: déplacé après runApp
+      await userProvider.chargerUtilisateurConnecte(); // déplacé après runApp
 
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
@@ -290,9 +298,8 @@ Future<void> main() async {
         _subscribeAdminKick(user.id);
         unawaited(_startHeartbeat());
 
-        // Laisse le service gérer l’enregistrement token + affichage foreground
-        // CHANGEMENT: non-bloquant
-        unawaited(PushService.instance.initAndRegister());
+        // ✅ Demande/registration push une seule fois après connexion
+        _askPushOnce();
       }
 
       // Redirection initiale si PAS en recovery
@@ -320,9 +327,8 @@ Future<void> main() async {
 
           await userProvider.chargerUtilisateurConnecte();
 
-          // Service push après connexion (token + foreground)
-          // CHANGEMENT: non-bloquant
-          unawaited(PushService.instance.initAndRegister());
+          // ✅ Redemande ici uniquement si pas déjà fait (ex: login depuis Welcome)
+          _askPushOnce();
 
           if (!RecoveryGuard.isActive) {
             await _goHomeBasedOnRole(userProvider);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+
 import 'divertissement_detail_page.dart';
 
 class DivertissementPage extends StatefulWidget {
@@ -20,15 +21,15 @@ class _DivertissementPageState extends State<DivertissementPage> {
   List<Map<String, dynamic>> _filteredLieux = [];
   bool _loading = true;
 
-  // Recherche (petit debounce pour éviter de reconstruire trop souvent)
+  // Recherche (petit debounce)
   String searchQuery = '';
   Timer? _debounce;
 
-  // Localisation (non bloquante)
+  // Localisation
   Position? _position;
   String? _villeGPS;
 
-  // Couleur (même teinte que le détail)
+  // Couleur
   static const primaryColor = Colors.deepPurple;
 
   @override
@@ -43,7 +44,29 @@ class _DivertissementPageState extends State<DivertissementPage> {
     super.dispose();
   }
 
-  // ---------------- Localisation (non-bloquante) ----------------
+  // ====== Distance précise (même principe que Santé: Haversine) ======
+  double? _distanceMeters(
+      double? lat1, double? lon1, double? lat2, double? lon2) {
+    if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
+
+    // radians
+    final double phi1 = lat1! * pi / 180.0;
+    final double phi2 = lat2! * pi / 180.0;
+    final double lam1 = lon1! * pi / 180.0;
+    final double lam2 = lon2! * pi / 180.0;
+
+    final double dPhi = phi2 - phi1;
+    final double dLam = lam2 - lam1;
+
+    final double a = sin(dPhi / 2) * sin(dPhi / 2) +
+        cos(phi1) * cos(phi2) * sin(dLam / 2) * sin(dLam / 2);
+
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return 6371000.0 * c; // mètres
+  }
+  // -------------------------------------------------------------------
+
+  // Localisation (non bloquante)
   Future<void> _getLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
@@ -57,16 +80,13 @@ class _DivertissementPageState extends State<DivertissementPage> {
         return;
       }
 
-      // Position connue la plus récente (instantanée)
+      // Last known = instantané
       final last = await Geolocator.getLastKnownPosition();
-      if (last != null) {
-        _position = last;
-      }
+      if (last != null) _position = last;
 
-      // Récupération actuelle en arrière-plan, puis recalcul distances/tri
-      Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      ).then((pos) async {
+      // Position actuelle en arrière-plan
+      Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium)
+          .then((pos) async {
         _position = pos;
         try {
           final placemarks =
@@ -81,34 +101,12 @@ class _DivertissementPageState extends State<DivertissementPage> {
             _villeGPS = city?.toLowerCase().trim();
           }
         } catch (_) {}
-        _recomputeDistancesAndSort();
+        _recomputeDistancesAndSort(); // maj tri dès qu’on a la position fraîche
       }).catchError((_) {});
     } catch (e) {
       debugPrint('Erreur localisation divertissement: $e');
     }
   }
-
-  double? _distanceMeters(
-    double? lat1,
-    double? lon1,
-    double? lat2,
-    double? lon2,
-  ) {
-    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
-      return null;
-    }
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * (pi / 180);
-    final dLon = (lon2 - lon1) * (pi / 180);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * (pi / 180)) *
-            cos(lat2 * (pi / 180)) *
-            sin(dLon / 2) *
-            sin(dLon / 2);
-    final c = 2 * atan2(sqrt(1 - a), sqrt(a));
-    return R * c;
-  }
-  // --------------------------------------------------------------
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
@@ -116,20 +114,16 @@ class _DivertissementPageState extends State<DivertissementPage> {
       // localisation en parallèle (non bloquante)
       unawaited(_getLocation());
 
-      // ⬇️ Récupère les lieux + la liste des avis (étoiles) imbriquée
-      final response = await Supabase.instance.client
-          .from('lieux')
-          .select('''
-            id, nom, ville, type, categorie, description,
-            images, latitude, longitude, adresse, created_at,
-            avis_lieux(etoiles)
-          ''')
-          .eq('type', 'divertissement')
-          .order('nom', ascending: true);
+      // Lieux + avis imbriqués (pour moyenne)
+      final response = await Supabase.instance.client.from('lieux').select('''
+        id, nom, ville, type, categorie, description,
+        images, latitude, longitude, adresse, created_at,
+        avis_lieux(etoiles)
+      ''').eq('type', 'divertissement').order('nom', ascending: true);
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // Calcule moyenne & nb_avis à partir de avis_lieux
+      // moyenne & nb_avis
       for (final l in list) {
         final List avis = (l['avis_lieux'] as List?) ?? const [];
         int sum = 0;
@@ -143,7 +137,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
 
       _allLieux = list;
 
-      // Si on a déjà une position (last known), on peut déjà afficher la distance
+      // Si on a déjà une position (last known), affiche tout de suite les distances
       _recomputeDistancesAndSort();
 
       _filterLieux(searchQuery);
@@ -158,50 +152,58 @@ class _DivertissementPageState extends State<DivertissementPage> {
   }
 
   void _recomputeDistancesAndSort() {
-    if (_allLieux.isEmpty || _position == null) {
-      setState(() {}); // force un rebuild si besoin
+    if (_allLieux.isEmpty) {
+      setState(() {}); // force rebuild si besoin
       return;
     }
 
-    for (final l in _allLieux) {
-      final lat = (l['latitude'] as num?)?.toDouble();
-      final lon = (l['longitude'] as num?)?.toDouble();
-      l['_distance'] = _distanceMeters(
-        _position!.latitude,
-        _position!.longitude,
-        lat,
-        lon,
-      );
+    // Ajoute/MAJ distance si position connue
+    if (_position != null) {
+      for (final l in _allLieux) {
+        final lat = (l['latitude'] as num?)?.toDouble();
+        final lon = (l['longitude'] as num?)?.toDouble();
+        l['_distance'] = _distanceMeters(
+          _position!.latitude,
+          _position!.longitude,
+          lat,
+          lon,
+        );
+      }
     }
 
-    // Tri: même ville -> distance -> nom
-    final list = _allLieux;
-    if ((_villeGPS ?? '').isNotEmpty) {
-      list.sort((a, b) {
+    // Tri: même ville -> distance -> nom (sinon: distance -> nom)
+    int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
+        (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+
+    if ((_villeGPS ?? '').isNotEmpty && _position != null) {
+      _allLieux.sort((a, b) {
         final aSame =
             (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
         final bSame =
             (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
         if (aSame != bSame) return aSame ? -1 : 1;
+
         final ad = (a['_distance'] as double?);
         final bd = (b['_distance'] as double?);
         if (ad != null && bd != null) return ad.compareTo(bd);
         if (ad != null) return -1;
         if (bd != null) return 1;
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        return byName(a, b);
+      });
+    } else if (_position != null) {
+      _allLieux.sort((a, b) {
+        final ad = (a['_distance'] as double?);
+        final bd = (b['_distance'] as double?);
+        if (ad != null && bd != null) return ad.compareTo(bd);
+        if (ad != null) return -1;
+        if (bd != null) return 1;
+        return byName(a, b);
       });
     } else {
-      list.sort((a, b) {
-        final ad = (a['_distance'] as double?);
-        final bd = (b['_distance'] as double?);
-        if (ad != null && bd != null) return ad.compareTo(bd);
-        if (ad != null) return -1;
-        if (bd != null) return 1;
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
-      });
+      _allLieux.sort(byName);
     }
 
-    // Rafraîchit la vue + la liste filtrée courante
+    // Rafraîchit la vue + garde le filtre courant
     _filterLieux(searchQuery, doSetState: true);
   }
 
@@ -234,42 +236,46 @@ class _DivertissementPageState extends State<DivertissementPage> {
     return const [];
   }
 
-  Widget _stars(double? avg) {
-    final n = ((avg ?? 0).round()).clamp(0, 5);
-    return Row(
-      children: List.generate(
-        5,
-        (i) => Icon(
-          i < n ? Icons.star : Icons.star_border,
-          size: 14,
-          color: primaryColor,
-        ),
-      ),
-    );
-  }
-
-  // ---------------- Skeletons (rendu instantané perçu) ---------------
+  // ---------------- Skeletons ----------------
   Widget _skeletonGrid(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final crossCount = screenW < 600
+        ? max(2, (screenW / 200).floor())
+        : max(3, (screenW / 240).floor());
+    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
+    final itemW = (screenW - totalHGap) / crossCount;
+    final itemH = itemW * (11 / 16) + 112.0;
+    final ratio = itemW / itemH;
+
     return GridView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 220,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossCount,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
-        childAspectRatio: 0.78,
+        childAspectRatio: ratio,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       itemCount: 8,
       itemBuilder: (_, __) => _SkeletonCard(),
     );
   }
-  // -------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    // On limite légèrement le textScaleFactor pour garder un rendu propre
+    // limite légère du textScale
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
+
+    // grille responsive (mêmes paramètres loading/data)
+    final screenW = media.size.width;
+    final crossCount = screenW < 600
+        ? max(2, (screenW / 200).floor())
+        : max(3, (screenW / 240).floor());
+    final totalHGap = (crossCount - 1) * 8.0 + 16.0; // gaps + padding
+    final itemW = (screenW - totalHGap) / crossCount;
+    final itemH = itemW * (11 / 16) + 112.0;
+    final ratio = itemW / itemH;
 
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
@@ -293,12 +299,12 @@ class _DivertissementPageState extends State<DivertissementPage> {
         ),
         body: Column(
           children: [
-            // Bandeau d'intro
+            // Bandeau
             Container(
               width: double.infinity,
               height: 72,
-              margin:
-                  const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 8),
+              margin: const EdgeInsets.only(
+                  left: 12, right: 12, top: 12, bottom: 8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 gradient: const LinearGradient(
@@ -363,15 +369,15 @@ class _DivertissementPageState extends State<DivertissementPage> {
                             child: GridView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
                               gridDelegate:
-                                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: 220, // responsive auto
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossCount,
                                 mainAxisSpacing: 8,
                                 crossAxisSpacing: 8,
-                                childAspectRatio: 0.78,
+                                childAspectRatio: ratio,
                               ),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 8),
-                              cacheExtent: 900, // précharge les tuiles voisines
+                              cacheExtent: 900,
                               itemCount: _filteredLieux.length,
                               itemBuilder: (context, index) {
                                 final lieu = _filteredLieux[index];
@@ -406,7 +412,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
   }
 }
 
-// ======================== Cartes serrées ===========================
+// ======================== Carte adaptative ===========================
 class _LieuCardTight extends StatelessWidget {
   final Map<String, dynamic> lieu;
   final String imageUrl;
@@ -426,8 +432,7 @@ class _LieuCardTight extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // On calcule une taille d’image réaliste pour réduire le poids téléchargé
-    return GestureDetector(
+    return InkWell(
       onTap: () {
         Navigator.push(
           context,
@@ -437,44 +442,38 @@ class _LieuCardTight extends StatelessWidget {
         );
       },
       child: Card(
-        margin: EdgeInsets.zero, // 👉 cartes bien serrées
+        margin: EdgeInsets.zero, // serré
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         elevation: 1.5,
-        clipBehavior: Clip.hardEdge,
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image + badge ville (avec tailles de cache calculées)
-            LayoutBuilder(builder: (context, constraints) {
-              // Dimensions approximatives affichées
-              final w = constraints.maxWidth;
-              final h = w * (11 / 16);
-
-              return AspectRatio(
-                aspectRatio: 16 / 11,
-                child: Stack(
+            // IMAGE
+            Expanded(
+              child: LayoutBuilder(builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final h = w * (11 / 16);
+                return Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Positioned.fill(
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        // Ces 2 lignes réduisent le poids des images téléchargées
-                        cacheWidth: w.isFinite ? (w * 2).round() : null,
-                        cacheHeight: h.isFinite ? (h * 2).round() : null,
-                        // Placeholder léger
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return Container(
-                            color: Colors.grey.shade200,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.image, size: 36),
-                          );
-                        },
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade300,
+                    Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      cacheWidth: w.isFinite ? (w * 2).round() : null,
+                      cacheHeight: h.isFinite ? (h * 2).round() : null,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          color: Colors.grey.shade200,
                           alignment: Alignment.center,
-                          child: const Icon(Icons.broken_image, size: 40),
-                        ),
+                          child: const Icon(Icons.image, size: 36),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey.shade300,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image, size: 40),
                       ),
                     ),
                     if ((lieu['ville'] ?? '').toString().isNotEmpty)
@@ -495,22 +494,24 @@ class _LieuCardTight extends StatelessWidget {
                                   size: 14, color: Colors.white),
                               const SizedBox(width: 4),
                               Text(
-                                lieu['ville'].toString(),
+                                (lieu['ville'] ?? '').toString(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
                         ),
                       ),
                   ],
-                ),
-              );
-            }),
+                );
+              }),
+            ),
 
-            // Texte + note
+            // TEXTE
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Column(
@@ -528,7 +529,7 @@ class _LieuCardTight extends StatelessWidget {
                   const SizedBox(height: 3),
                   Row(
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
                           (lieu['ville'] ?? '').toString(),
                           maxLines: 1,
@@ -539,17 +540,18 @@ class _LieuCardTight extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (lieu['_distance'] != null)
-                        const Text('  •  ',
-                            style: TextStyle(color: Colors.grey, fontSize: 13)),
-                      if (lieu['_distance'] != null)
+                      if (lieu['_distance'] != null) ...[
+                        const SizedBox(width: 6),
                         Text(
                           '${(lieu['_distance'] / 1000).toStringAsFixed(1)} km',
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
                           style: const TextStyle(
                             color: Colors.grey,
                             fontSize: 13,
                           ),
                         ),
+                      ],
                     ],
                   ),
                   if (tag.isNotEmpty)
@@ -567,23 +569,29 @@ class _LieuCardTight extends StatelessWidget {
                       ),
                     ),
                   Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 2,
                       children: [
                         _Stars(avg: avg),
-                        const SizedBox(width: 6),
                         Text(
-                          avg == null ? 'Aucune note' : '${avg!.toStringAsFixed(2)} / 5',
+                          avg == null
+                              ? 'Aucune note'
+                              : '${avg!.toStringAsFixed(2)} / 5',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 6),
                         Text(
                           '($nbAvis avis)',
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -606,6 +614,7 @@ class _Stars extends StatelessWidget {
   Widget build(BuildContext context) {
     final n = ((avg ?? 0).round()).clamp(0, 5);
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: List.generate(
         5,
         (i) => Icon(

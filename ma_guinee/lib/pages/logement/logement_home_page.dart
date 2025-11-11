@@ -1,5 +1,6 @@
 // lib/pages/logement/logement_home_page.dart
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -49,8 +50,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
   final PageController _heroCtrl = PageController();
   int _heroIndex = 0;
   Timer? _heroTimer;
-  int?
-      _pendingHeroIndex; // si on veut changer de page avant l’attache
+  int? _pendingHeroIndex; // si on veut changer de page avant l’attache
 
   static const List<String> _heroImages = [
     'https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=1600&auto=format&fit=crop',
@@ -60,7 +60,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   // Palette
   static const _primary = Color(0xFF0D3B66);
-  static const _primaryDark = Color(0xFF0A2C4C);
   static const _accent = Color(0xFFE0006D);
   static const _ctaGreen = Color(0xFF0E9F6E);
   static const _neutralBg = Color(0xFFF5F7FB);
@@ -73,7 +72,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
     _attachInfiniteScroll();
     _reloadAll();
 
-    // Démarre le timer, mais anime seulement si le controller est attaché
+    // Auto-slide du hero en sécurité (si controller attaché)
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final next = (_heroIndex + 1) % _heroImages.length;
@@ -81,17 +80,14 @@ class _LogementHomePageState extends State<LogementHomePage> {
     });
   }
 
-  // Applique une navigation sûre au carrousel
   void _animateHeroTo(int index) {
     if (_heroCtrl.hasClients) {
-      // si attaché : anime
       _heroCtrl.animateToPage(
         index,
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOut,
       );
     } else {
-      // sinon, mémorise et appliquera après attache
       _pendingHeroIndex = index;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -257,82 +253,87 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.of(context).size.width > 600 ? 20.0 : 12.0;
+    // clamp léger du textScale
+    final media = MediaQuery.of(context);
+    final mf = media.textScaleFactor.clamp(1.0, 1.15);
 
-    return Scaffold(
-      backgroundColor: _isDark ? const Color(0xFF0F172A) : _neutralBg,
-      appBar: AppBar(
-        backgroundColor: _primary,
-        elevation: 0,
-        title: const Text("Logements en Guinée",
-            style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          Builder(
-            builder: (ctx) => IconButton(
-              tooltip: "Menu",
-              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-              icon: const Icon(Icons.menu, color: Colors.white),
+    final padding = media.size.width > 600 ? 20.0 : 12.0;
+
+    return MediaQuery(
+      data: media.copyWith(textScaleFactor: mf.toDouble()),
+      child: Scaffold(
+        backgroundColor: _isDark ? const Color(0xFF0F172A) : _neutralBg,
+        appBar: AppBar(
+          backgroundColor: _primary,
+          elevation: 0,
+          title: const Text("Logements en Guinée",
+              style: TextStyle(color: Colors.white)),
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            Builder(
+              builder: (ctx) => IconButton(
+                tooltip: "Menu",
+                onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+                icon: const Icon(Icons.menu, color: Colors.white),
+              ),
             ),
-          ),
-        ],
-      ),
-      endDrawer: _buildEndDrawer(),
-      body: RefreshIndicator(
-        onRefresh: _reloadAll,
-        child: ListView(
-          controller: _scrollCtrl,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.all(padding),
-          children: [
-            _heroBanner(),
-            const SizedBox(height: 16),
-            _modeSwitch(),
-            const SizedBox(height: 10),
-            _categoriesGrid(),
-            const SizedBox(height: 16),
-            _quickActions(),
-            const SizedBox(height: 22),
-            if (_loading)
-              const Center(
-                  child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: CircularProgressIndicator(),
-              ))
-            else if (_error != null)
-              _errorBox(_error!)
-            else ...[
-              _sectionTitle("Tous les biens"),
-              const SizedBox(height: 12),
-              _gridFeed(_feed),
-              const SizedBox(height: 12),
-              _loadingMore
-                  ? const Center(
-                      child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: CircularProgressIndicator(),
-                    ))
-                  : (!_hasMore
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text(
-                                "— Fin de la liste —",
-                                style: TextStyle(color: Colors.black45)),
-                          ),
-                        )
-                      : const SizedBox.shrink()),
-              const SizedBox(height: 80),
-            ],
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _ctaGreen,
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
-            .then((_) => _reloadAll()),
-        icon: const Icon(Icons.add_home_work_outlined),
-        label: const Text("Publier un bien"),
+        endDrawer: _buildEndDrawer(),
+        body: RefreshIndicator(
+          onRefresh: _reloadAll,
+          child: ListView(
+            controller: _scrollCtrl,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.all(padding),
+            children: [
+              _heroBanner(),
+              const SizedBox(height: 16),
+              _modeSwitch(),
+              const SizedBox(height: 10),
+              _categoriesBar(), // ← remplace l’ancien GridView.count
+              const SizedBox(height: 16),
+              _quickActions(),
+              const SizedBox(height: 22),
+
+              // ====== FEED ======
+              if (_loading)
+                _skeletonGrid(context)
+              else if (_error != null)
+                _errorBox(_error!)
+              else ...[
+                _sectionTitle("Tous les biens"),
+                const SizedBox(height: 12),
+                _gridFeed(_feed),
+                const SizedBox(height: 12),
+                _loadingMore
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    : (!_hasMore
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text("— Fin de la liste —",
+                                  style: TextStyle(color: Colors.black45)),
+                            ),
+                          )
+                        : const SizedBox.shrink()),
+                const SizedBox(height: 80),
+              ],
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: _ctaGreen,
+          onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
+              .then((_) => _reloadAll()),
+          icon: const Icon(Icons.add_home_work_outlined),
+          label: const Text("Publier un bien"),
+        ),
       ),
     );
   }
@@ -447,31 +448,42 @@ class _LogementHomePageState extends State<LogementHomePage> {
           BoxShadow(
               color: Colors.black26.withOpacity(0.10),
               blurRadius: 18,
-              offset: Offset(0, 7))
+              offset: const Offset(0, 7))
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
+          // >>> image avec fade haute qualité
           PageView.builder(
-            controller:
-                _heroCtrl, // même contrôleur
+            controller: _heroCtrl,
             itemCount: _heroImages.length,
             onPageChanged: (i) => setState(() => _heroIndex = i),
-            itemBuilder: (_, i) => Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(_heroImages[i], fit: BoxFit.cover),
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xAA0D3B66), Color(0x660A2C4C)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+            itemBuilder: (_, i) => LayoutBuilder(
+              builder: (context, c) {
+                final w = c.maxWidth;
+                final h = c.maxHeight;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _FadeInNetworkImage(
+                      url: _heroImages[i],
+                      cacheWidth: w.isFinite ? (w * 2).round() : null,
+                      cacheHeight: h.isFinite ? (h * 2).round() : null,
+                      cover: true,
                     ),
-                  ),
-                ),
-              ],
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xAA0D3B66), Color(0x660A2C4C)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           const Positioned(
@@ -529,8 +541,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
           Navigator.pushNamed(context, AppRoutes.logementList, arguments: args);
         },
         decoration: InputDecoration(
-          hintText:
-              "Rechercher : ville, quartier, mot-clé…",
+          hintText: "Rechercher : ville, quartier, mot-clé…",
           prefixIcon: const Icon(Icons.search),
           filled: true,
           fillColor: Colors.white,
@@ -582,39 +593,47 @@ class _LogementHomePageState extends State<LogementHomePage> {
     );
   }
 
-  Widget _categoriesGrid() {
-    final cats = [
-      {"icon": Icons.grid_view, "label": "Tous", "id": "tous"},
-      {"icon": Icons.home, "label": "Maison", "id": "maison"},
-      {"icon": Icons.apartment, "label": "Appartement", "id": "appartement"},
-      {"icon": Icons.meeting_room, "label": "Studio", "id": "studio"},
-      {"icon": Icons.park, "label": "Terrain", "id": "terrain"},
+  /// 🔁 Nouvelle barre catégories (sans GridView pour éviter tout overflow)
+  Widget _categoriesBar() {
+    final cats = const [
+      (Icons.grid_view, 'Tous', 'tous'),
+      (Icons.home, 'Maison', 'maison'),
+      (Icons.apartment, 'Appartement', 'appartement'),
+      (Icons.meeting_room, 'Studio', 'studio'),
+      (Icons.park, 'Terrain', 'terrain'),
     ];
-    return GridView.count(
-      crossAxisCount: 5,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: cats.map((c) {
-        final selected = _categorie == c["id"];
-        return GestureDetector(
-          onTap: () {
-            setState(() => _categorie = c["id"] as String);
-            _reloadAll();
-          },
-          child: Column(
-            children: [
-              CircleAvatar(
-                radius: 27,
-                backgroundColor: selected ? _accent : Colors.white,
-                child: Icon(c["icon"] as IconData,
-                    size: 26, color: selected ? Colors.white : _primary),
-              ),
-              const SizedBox(height: 6),
-              Text(c["label"] as String, style: const TextStyle(fontSize: 12)),
-            ],
+
+    return Row(
+      children: List.generate(cats.length, (i) {
+        final (icon, label, id) = cats[i];
+        final selected = _categorie == id;
+        return Expanded(
+          child: InkWell(
+            onTap: () {
+              setState(() => _categorie = id);
+              _reloadAll();
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: selected ? _accent : Colors.white,
+                  child: Icon(icon,
+                      size: 22, color: selected ? Colors.white : _primary),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
           ),
         );
-      }).toList(),
+      }),
     );
   }
 
@@ -666,96 +685,58 @@ class _LogementHomePageState extends State<LogementHomePage> {
     );
   }
 
-  // ---------- GRILLE 2 COLONNES (flux) ----------
+  // ---------- Skeleton grid (instantané) ----------
+  Widget _skeletonGrid(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final crossCount = screenW < 600
+        ? max(2, (screenW / 200).floor())
+        : max(3, (screenW / 240).floor());
+    final totalHGap = (crossCount - 1) * 8.0;
+    final itemW = (screenW - totalHGap - 24 /* padding list */) / crossCount;
+    final itemH = itemW * (11 / 16) + 120.0;
+    final ratio = itemW / itemH;
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossCount,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: ratio,
+      ),
+      itemCount: 6,
+      itemBuilder: (_, __) => const _SkeletonBienCard(),
+    );
+  }
+
+  // ---------- GRILLE responsive (espaces serrés) ----------
   Widget _gridFeed(List<LogementModel> items) {
     if (items.isEmpty) {
       return _emptyCard("Aucun bien pour ces filtres");
     }
+
+    final screenW = MediaQuery.of(context).size.width;
+    final crossCount = screenW < 600
+        ? max(2, (screenW / 200).floor())
+        : max(3, (screenW / 240).floor());
+    final totalHGap = (crossCount - 1) * 8.0;
+    final itemW = (screenW - totalHGap - 24 /*padding list*/) / crossCount;
+    final itemH = itemW * (11 / 16) + 120.0;
+    final ratio = itemW / itemH;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.78,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossCount,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: ratio,
       ),
+      cacheExtent: 1000,
       itemCount: items.length,
-      itemBuilder: (_, i) => _bienTile(items[i]),
-    );
-  }
-
-  Widget _bienTile(LogementModel b) {
-    final image = (b.photos.isNotEmpty) ? b.photos.first : null;
-    final mode = b.mode == LogementMode.achat ? 'Achat' : 'Location';
-    final cat = _labelCat(b.categorie);
-    final price = (b.prixGnf != null)
-        ? _formatPrice(b.prixGnf!, b.mode)
-        : 'Prix à discuter';
-
-    return GestureDetector(
-      onTap: () {
-        if (b.id.isEmpty) return;
-        Navigator.pushNamed(context, AppRoutes.logementDetail, arguments: b.id);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 6))
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 120,
-              width: double.infinity,
-              color: Colors.grey.shade200,
-              child: (image == null || image.isEmpty)
-                  ? const Icon(Icons.image, size: 46, color: Colors.black26)
-                  : Image.network(image, fit: BoxFit.cover),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(b.titre,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    _chip(mode),
-                    const SizedBox(width: 6),
-                    _chip(cat)
-                  ]),
-                  const SizedBox(height: 6),
-                  Text(price,
-                      style: const TextStyle(
-                          color: _accent, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text(
-                    [
-                      if (b.ville != null) b.ville!,
-                      if (b.commune != null) b.commune!
-                    ].join(' • '),
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      itemBuilder: (_, i) => _BienCardTight(bien: items[i]),
     );
   }
 
@@ -767,59 +748,6 @@ class _LogementHomePageState extends State<LogementHomePage> {
             color: Colors.white, borderRadius: BorderRadius.circular(14)),
         child: Text(msg, style: const TextStyle(color: Colors.black54)),
       );
-
-  String _labelCat(LogementCategorie c) {
-    switch (c) {
-      case LogementCategorie.maison:
-        return 'Maison';
-      case LogementCategorie.appartement:
-        return 'Appartement';
-      case LogementCategorie.studio:
-        return 'Studio';
-      case LogementCategorie.terrain:
-        return 'Terrain';
-      case LogementCategorie.autres:
-        return 'Autres';
-    }
-  }
-
-  LogementCategorie _catFromDb(String v) {
-    switch (v) {
-      case 'maison':
-        return LogementCategorie.maison;
-      case 'appartement':
-        return LogementCategorie.appartement;
-      case 'studio':
-        return LogementCategorie.studio;
-      case 'terrain':
-        return LogementCategorie.terrain;
-      default:
-        return LogementCategorie.autres;
-    }
-  }
-
-  Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-            color: _neutralBg, borderRadius: BorderRadius.circular(8)),
-        child: Text(text, style: const TextStyle(fontSize: 12)),
-      );
-
-  Widget _chipSmall(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-            color: _neutralBg, borderRadius: BorderRadius.circular(6)),
-        child: Text(text, style: const TextStyle(fontSize: 11)),
-      );
-
-  String _formatPrice(num value, LogementMode mode) {
-    if (value >= 1000000) {
-      final m = (value / 1000000).toStringAsFixed(1).replaceAll('.0', '');
-      return mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
-    }
-    final s = value.toStringAsFixed(0);
-    return mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
-  }
 
   Widget _errorBox(String msg) => Container(
         margin: const EdgeInsets.only(top: 14),
@@ -834,10 +762,281 @@ class _LogementHomePageState extends State<LogementHomePage> {
             const Icon(Icons.error_outline, color: Colors.red),
             const SizedBox(width: 8),
             Expanded(child: Text(msg)),
-            TextButton(
-                onPressed: _reloadAll,
-                child: const Text('Réessayer')),
+            TextButton(onPressed: _reloadAll, child: const Text('Réessayer')),
           ],
         ),
       );
+}
+
+// ======================== Carte logement adaptative ===========================
+class _BienCardTight extends StatelessWidget {
+  final LogementModel bien;
+  const _BienCardTight({required this.bien});
+
+  static const _accent = Color(0xFFE0006D);
+  static const _primary = Color(0xFF0D3B66);
+  static const _neutralBg = Color(0xFFF5F7FB);
+
+  @override
+  Widget build(BuildContext context) {
+    final image = (bien.photos.isNotEmpty) ? bien.photos.first : null;
+    final mode = bien.mode == LogementMode.achat ? 'Achat' : 'Location';
+    final cat = _labelCat(bien.categorie);
+    final price = (bien.prixGnf != null)
+        ? _formatPrice(bien.prixGnf!, bien.mode)
+        : 'Prix à discuter';
+    final loc = [
+      if (bien.ville != null) bien.ville!,
+      if (bien.commune != null) bien.commune!
+    ].join(' • ');
+
+    return InkWell(
+      onTap: () {
+        if (bien.id.isEmpty) return;
+        Navigator.pushNamed(context, AppRoutes.logementDetail,
+            arguments: bien.id);
+      },
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 1.5,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image flexible 16:11 avec cacheWidth/Height (haute qualité)
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  final w = c.maxWidth;
+                  final h = w * (11 / 16);
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (image == null || image.isEmpty)
+                        Container(
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.image,
+                              size: 46, color: Colors.black26),
+                        )
+                      else
+                        _FadeInNetworkImage(
+                          url: image,
+                          cacheWidth: w.isFinite ? (w * 2).round() : null,
+                          cacheHeight: h.isFinite ? (h * 2).round() : null,
+                          cover: true,
+                        ),
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.45),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            mode,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
+            // Zone texte compacte et sans overflow
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    bien.titre,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      _chip(mode),
+                      _chip(cat),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    price,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: _accent, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    loc,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _labelCat(LogementCategorie c) {
+    switch (c) {
+      case LogementCategorie.maison:
+        return 'Maison';
+      case LogementCategorie.appartement:
+        return 'Appartement';
+      case LogementCategorie.studio:
+        return 'Studio';
+      case LogementCategorie.terrain:
+        return 'Terrain';
+      case LogementCategorie.autres:
+        return 'Autres';
+    }
+  }
+
+  static String _formatPrice(num value, LogementMode mode) {
+    if (value >= 1000000) {
+      final m = (value / 1000000)
+          .toStringAsFixed(1)
+          .replaceAll('.0', '')
+          .replaceAll(',', '.');
+      return mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
+    }
+    final s = value.toStringAsFixed(0);
+    return mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
+  }
+
+  static Widget _chip(String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+            color: _neutralBg, borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: const TextStyle(fontSize: 12)),
+      );
+}
+
+// ------------------ Skeleton Card --------------------
+class _SkeletonBienCard extends StatelessWidget {
+  const _SkeletonBienCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 1.5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+              aspectRatio: 16 / 11,
+              child: Container(color: Colors.grey.shade200)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(height: 14, width: 150, color: Colors.grey.shade200),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Container(
+                        height: 18, width: 60, color: Colors.grey.shade200),
+                    const SizedBox(width: 6),
+                    Container(
+                        height: 18, width: 70, color: Colors.grey.shade200),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(height: 14, width: 90, color: Colors.grey.shade200),
+                const SizedBox(height: 6),
+                Container(height: 12, width: 120, color: Colors.grey.shade200),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ----------------- Image réseau avec fade-in (haute qualité) -----------------
+class _FadeInNetworkImage extends StatefulWidget {
+  final String url;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final bool cover;
+
+  const _FadeInNetworkImage({
+    required this.url,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.cover = false,
+  });
+
+  @override
+  State<_FadeInNetworkImage> createState() => _FadeInNetworkImageState();
+}
+
+class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 220));
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.value = 0;
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.network(
+      widget.url,
+      fit: widget.cover ? BoxFit.cover : BoxFit.contain,
+      cacheWidth: widget.cacheWidth,
+      cacheHeight: widget.cacheHeight,
+      filterQuality: FilterQuality.high,
+      // load avec mini-spinner, puis fondu
+      loadingBuilder: (ctx, child, ev) {
+        if (ev == null) {
+          _ctrl.forward();
+          return FadeTransition(opacity: _fade, child: child);
+        }
+        return Container(
+          color: Colors.grey.shade200,
+          alignment: Alignment.center,
+          child: const SizedBox(
+            height: 18,
+            width: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+      errorBuilder: (_, __, ___) =>
+          const Center(child: Icon(Icons.broken_image, size: 40)),
+    );
+  }
 }
