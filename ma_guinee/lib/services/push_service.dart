@@ -1,6 +1,7 @@
-// lib/services/push_service.dart (avec RPC enable_push_token)
+// lib/services/push_service.dart
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/widgets.dart' show WidgetsBinding;
 
 import 'package:package_info_plus/package_info_plus.dart';
@@ -12,8 +13,8 @@ class PushService {
   PushService._();
   static final instance = PushService._();
 
-  final _sb  = Supabase.instance.client;
-  final _fm  = FirebaseMessaging.instance;
+  final _sb = Supabase.instance.client;
+  final _fm = FirebaseMessaging.instance;
   final _fln = FlutterLocalNotificationsPlugin();
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -23,29 +24,53 @@ class PushService {
     importance: Importance.high,
   );
 
+  bool _started = false; // ✅ une seule init
+  StreamSubscription<String>? _tokenSub; // ✅ pour nettoyer au signout
+
   Future<void> initAndRegister() async {
+    // 0) Sécurité : uniquement si connecté
+    final userId = _sb.auth.currentUser?.id;
+    if (userId == null) return;
+
+    // 1) Ne pas lancer 2x
+    if (_started) return;
+    _started = true;
+
     await _initLocalNotifications();
 
-    // Permissions
+    // 2) Demander la permission *après* login (ici) et seulement ici
     final settings = await _fm.requestPermission(
-      alert: true, badge: true, sound: true, provisional: false,
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
     );
-    await _fm.setForegroundNotificationPresentationOptions(
-      alert: true, badge: true, sound: true,
-    );
-    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
 
-    // Token
+    // iOS: autoriser l’affichage en foreground (n’affiche rien sans notif explicite)
+    await _fm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Si l’utilisateur refuse → on arrête proprement
+    if (settings.authorizationStatus == AuthorizationStatus.denied ||
+        settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      return;
+    }
+
+    // 3) Récupérer le token
     String? token;
     if (kIsWeb) {
-      final vapid = const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: '');
+      final vapid =
+          const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: '');
       token = await _fm.getToken(vapidKey: vapid.isEmpty ? null : vapid);
     } else {
       token = await _fm.getToken();
     }
     if (token == null || token.isEmpty) return;
 
-    // Métadonnées minimales
+    // 4) Upsert métadonnées
     final platform = _platformString(); // android / ios / web / other
     String model = 'unknown';
     if (kIsWeb) {
@@ -55,48 +80,48 @@ class PushService {
         if (ua.isNotEmpty) model = ua;
       } catch (_) {}
     }
-
-    final pkg    = await PackageInfo.fromPlatform();
-    final userId = _sb.auth.currentUser?.id;
-    if (userId == null) return;
+    final pkg = await PackageInfo.fromPlatform();
     final locale = WidgetsBinding.instance.platformDispatcher.locale.toString();
 
-    // 1) Upsert métadonnées pour ce token
     await _sb.from('push_devices').upsert({
-      'user_id'     : userId,
-      'token'       : token,
-      'platform'    : platform,
-      'model'       : model,
-      'app_version' : pkg.version,
-      'enabled'     : true,
-      'locale'      : locale,
+      'user_id': userId,
+      'token': token,
+      'platform': platform,
+      'model': model,
+      'app_version': pkg.version,
+      'enabled': true,
+      'locale': locale,
     }, onConflict: 'user_id,token');
 
-    // 2) Enforce "un seul token actif" via RPC
+    // 5) RPC: activer ce token et désactiver les autres de l’utilisateur
     await _sb.rpc('enable_push_token', params: {
       'p_user': userId,
       'p_token': token,
     });
 
-    // Refresh token → upsert + RPC
-    _fm.onTokenRefresh.listen((t) async {
+    // 6) Renouvellement de token (attaché à l’utilisateur courant)
+    _tokenSub?.cancel();
+    _tokenSub = _fm.onTokenRefresh.listen((t) async {
       try {
+        final uid = _sb.auth.currentUser?.id;
+        if (uid == null) return; // si déconnecté pendant le refresh
         await _sb.from('push_devices').upsert({
-          'user_id'  : userId,
-          'token'    : t,
-          'platform' : platform,
-          'enabled'  : true,
+          'user_id': uid,
+          'token': t,
+          'platform': platform,
+          'enabled': true,
         }, onConflict: 'user_id,token');
 
         await _sb.rpc('enable_push_token', params: {
-          'p_user': userId,
+          'p_user': uid,
           'p_token': t,
         });
       } catch (_) {}
     });
 
-    // Affichage local en foreground
+    // 7) Affichage local en foreground — seulement si permission accordée
     FirebaseMessaging.onMessage.listen((RemoteMessage m) async {
+      if (!await _hasNotifPermission()) return; // ✅ garde anti-popup
       final n = m.notification;
       if (n == null) return;
       await _fln.show(
@@ -105,13 +130,19 @@ class PushService {
         n.body ?? '',
         NotificationDetails(
           android: AndroidNotificationDetails(
-            _channel.id, _channel.name,
+            _channel.id,
+            _channel.name,
             channelDescription: _channel.description,
             importance: Importance.high,
             priority: Priority.high,
-            icon: n.android?.smallIcon,
+            // on force l’icône app si null
+            icon: n.android?.smallIcon ?? '@mipmap/ic_launcher',
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
         payload: m.data.isEmpty ? null : m.data.toString(),
       );
@@ -120,19 +151,26 @@ class PushService {
 
   Future<void> disableForThisDevice() async {
     final userId = _sb.auth.currentUser?.id;
-    final token  = await _fm.getToken();
+    final token = await _fm.getToken();
     if (userId == null || token == null) return;
-    await _sb.from('push_devices')
+    await _sb
+        .from('push_devices')
         .update({'enabled': false})
         .eq('user_id', userId)
         .eq('token', token);
   }
 
   Future<void> signOutCleanup() async {
+    // Nettoyage DB pour ce device + écouteurs
+    _tokenSub?.cancel();
+    _tokenSub = null;
+    _started = false;
+
     final userId = _sb.auth.currentUser?.id;
-    final token  = await _fm.getToken();
+    final token = await _fm.getToken();
     if (userId == null || token == null) return;
-    await _sb.from('push_devices')
+    await _sb
+        .from('push_devices')
         .delete()
         .eq('user_id', userId)
         .eq('token', token);
@@ -148,17 +186,27 @@ class PushService {
     const init = InitializationSettings(android: initAndroid, iOS: initIOS);
     await _fln.initialize(init);
 
-    final androidImpl =
-        _fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl = _fln.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.createNotificationChannel(_channel);
+    // ⚠️ on ne demande pas la permission Android 13+ ici : on la déclenche via FCM requestPermission après login
+  }
+
+  Future<bool> _hasNotifPermission() async {
+    final s = await _fm.getNotificationSettings();
+    return s.authorizationStatus == AuthorizationStatus.authorized ||
+        s.authorizationStatus == AuthorizationStatus.provisional;
   }
 
   String _platformString() {
     if (kIsWeb) return 'web';
     switch (defaultTargetPlatform) {
-      case TargetPlatform.android: return 'android';
-      case TargetPlatform.iOS:     return 'ios';
-      default:                     return 'other';
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.iOS:
+        return 'ios';
+      default:
+        return 'other';
     }
   }
 }
