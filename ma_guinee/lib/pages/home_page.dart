@@ -15,21 +15,24 @@ import '../routes.dart';
 // Jobs
 import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
+// ✅ Ajout : import relatif vers la shell Wontanara (ne rien changer ailleurs)
+import 'wontanara/shell_wontanara.dart';
+
 /// --- Palette locale (indépendante) ---
-const _kMainPrimary         = Color(0xFF0077B6);
-const _kMainSecondary       = Color(0xFF00B4D8);
-const _kSantePrimary        = Color(0xFF009460);
-const _kRestoPrimary        = Color(0xFFE76F51);
-const _kTourismePrimary     = Color(0xFFDAA520);
-const _kHotelsPrimary       = Color(0xFF264653);
-const _kEventPrimary        = Color(0xFF7B2CBF);
-const _kEventSecondary      = Color(0xFFB5179E);
+const _kMainPrimary = Color(0xFF0077B6);
+const _kMainSecondary = Color(0xFF00B4D8);
+const _kSantePrimary = Color(0xFF009460);
+const _kRestoPrimary = Color(0xFFE76F51);
+const _kTourismePrimary = Color(0xFFDAA520);
+const _kHotelsPrimary = Color(0xFF264653);
+const _kEventPrimary = Color(0xFF7B2CBF);
+const _kEventSecondary = Color(0xFFB5179E);
 const _kPrestatairesPrimary = Color(0xFF0F766E);
-const _kAnnoncesPrimary     = Color(0xFFDC2626);
-const _kNotifPrimary        = Color(0xFFB91C1C);
-const _kMapPrimary          = Color(0xFF2B6CB0);
-const _kAidePrimary         = Color(0xFF475569);
-const _kCommercePrimary     = Color(0xFF6B21A8);
+const _kAnnoncesPrimary = Color(0xFFDC2626);
+const _kNotifPrimary = Color(0xFFB91C1C);
+const _kMapPrimary = Color(0xFF2B6CB0);
+const _kAidePrimary = Color(0xFF475569);
+const _kCommercePrimary = Color(0xFF6B21A8);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -139,7 +142,7 @@ class _HomePageState extends State<HomePage> {
     final w = MediaBox.of(context).size.width;
     if (w < 360) return 44;
     return 51;
-    }
+  }
 
   Widget _iconCard(Widget child) {
     final w = MediaBox.of(context).size.width;
@@ -209,7 +212,10 @@ class _HomePageState extends State<HomePage> {
         clipBehavior: Clip.none,
         children: [
           Icon(Icons.work_outline, color: color, size: size),
-          Positioned(right: 6, bottom: 6, child: _smallBadge(color, Icons.description)),
+          Positioned(
+              right: 6,
+              bottom: 6,
+              child: _smallBadge(color, Icons.description)),
         ],
       ),
     );
@@ -223,7 +229,10 @@ class _HomePageState extends State<HomePage> {
         clipBehavior: Clip.none,
         children: [
           Icon(Icons.apartment_rounded, color: primary, size: size),
-          Positioned(right: 6, bottom: 6, child: _smallBadge(primary, Icons.location_on_rounded)),
+          Positioned(
+              right: 6,
+              bottom: 6,
+              child: _smallBadge(primary, Icons.location_on_rounded)),
         ],
       ),
     );
@@ -240,11 +249,14 @@ class _HomePageState extends State<HomePage> {
               size: size,
               structure: _kAidePrimary,
               gradientLeft: Color(0xFFDC2626),
-              gradientMid:  Color(0xFFDAA520),
+              gradientMid: Color(0xFFDAA520),
               gradientRight: Color(0xFF009460),
             ),
           ),
-          Positioned(right: 6, bottom: 6, child: _smallBadge(_kAidePrimary, Icons.description_rounded)),
+          Positioned(
+              right: 6,
+              bottom: 6,
+              child: _smallBadge(_kAidePrimary, Icons.description_rounded)),
         ],
       ),
     );
@@ -311,7 +323,8 @@ class _HomePageState extends State<HomePage> {
                     right: 10,
                     child: Container(
                       padding: const EdgeInsets.all(5),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                      constraints:
+                          const BoxConstraints(minWidth: 20, minHeight: 20),
                       decoration: const BoxDecoration(
                         color: Colors.red,
                         shape: BoxShape.circle,
@@ -383,7 +396,10 @@ class _HomePageState extends State<HomePage> {
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         shadows: [
-                          Shadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))
+                          Shadow(
+                              color: Colors.black26,
+                              blurRadius: 6,
+                              offset: Offset(0, 2))
                         ],
                       ),
                     ),
@@ -398,7 +414,10 @@ class _HomePageState extends State<HomePage> {
                         color: Colors.white,
                         fontWeight: FontWeight.w400,
                         shadows: [
-                          Shadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 1))
+                          Shadow(
+                              color: Colors.black12,
+                              blurRadius: 6,
+                              offset: Offset(0, 1))
                         ],
                       ),
                     ),
@@ -469,7 +488,8 @@ class _HomePageState extends State<HomePage> {
                     context: context,
                   ),
                   label: "Divertissement",
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.divertissement),
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.divertissement),
                 ),
                 _ServiceTile(
                   icon: _iconWithBadge(
@@ -522,9 +542,20 @@ class _HomePageState extends State<HomePage> {
                     context: context,
                   ),
                   label: "Billetterie",
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.billetterie),
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.billetterie),
                 ),
               ],
+            ),
+
+            // ✅ Ajout discret : CTA Wontanara plein largeur sous la grille (sans toucher à la grille)
+            SizedBox(height: spacing),
+            _WontanaraFullWidthTile(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ShellWontanara()),
+                );
+              },
             ),
           ],
         ),
@@ -679,5 +710,104 @@ class _InstitutionGradientBasePainter extends CustomPainter {
         gradientLeft != old.gradientLeft ||
         gradientMid != old.gradientMid ||
         gradientRight != old.gradientRight;
+  }
+}
+
+/// =======================
+///  CTA Wontanara (plein largeur, sous la grille)
+/// =======================
+class _WontanaraFullWidthTile extends StatelessWidget {
+  final VoidCallback onTap;
+  const _WontanaraFullWidthTile({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaBox.of(context).size.width;
+    // même “hauteur visuelle” qu’une tuile icône (84/92)
+    final double tileHeight = w < 360 ? 84.0 : 92.0;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: tileHeight,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Colors.black.withOpacity(0.04),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            // 🔹 Carré icône Wontanara (vert pétrole + pictogramme blanc)
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E5A51), // vert pétrole Wontanara
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.people_alt_rounded,
+                color: Colors.white, // icône blanche
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 14),
+
+            // 🔹 Juste le texte "Wontanara" bien stylé
+            Expanded(
+              child: ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [
+                    Color(0xFF0E5A51),
+                    Color(0xFF0077B6),
+                  ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ).createShader(
+                  Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+                ),
+                child: const Text(
+                  "Wontanara",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: Colors.white, // important pour le ShaderMask
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Chevron discret
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F4F6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
