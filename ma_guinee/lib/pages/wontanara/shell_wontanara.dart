@@ -7,7 +7,6 @@ import 'pages/page_flux.dart';
 import 'pages/page_carte.dart';
 import 'pages/page_services.dart';
 import 'pages/page_collecte.dart';
-import 'pages/page_votes.dart';
 import 'pages/page_profil.dart';
 
 class ShellWontanara extends StatefulWidget {
@@ -26,7 +25,6 @@ class _ShellWontanaraState extends State<ShellWontanara> {
     PageCarte(), // Carte communautaire
     PageServices(), // Entraide & micro-services
     PageCollecte(), // Collecte / abonnements
-    PageVotes(), // Votes & gouvernance
     PageProfil(), // Profil & rôle
   ];
 
@@ -70,10 +68,6 @@ class _ShellWontanaraState extends State<ShellWontanara> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.recycling_rounded),
                 label: 'Collecte',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.how_to_vote_rounded),
-                label: 'Gouvernance',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.person_rounded),

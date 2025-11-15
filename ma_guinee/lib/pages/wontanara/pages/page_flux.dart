@@ -1,11 +1,17 @@
 // lib/wontanara/pages/page_flux.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'page_publication_form.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 
 const _teal = Color(0xFF0E5A51);
 const _tealDark = Color(0xFF0B4740);
 
 enum ActualiteFilter { all, infos, alertes, collecte, votes, verifiee }
+
+enum PublicationType { infos, alerte }
 
 class PageFlux extends StatefulWidget {
   const PageFlux({super.key});
@@ -17,12 +23,11 @@ class PageFlux extends StatefulWidget {
 class _PageFluxState extends State<PageFlux> {
   ActualiteFilter _filter = ActualiteFilter.all;
 
-  // 🔹 Données mockées (on branchera Supabase plus tard)
   final List<_Publication> _allPublications = [
     _Publication(
       id: '1',
-      auteurNom: 'Info_locale',
-      auteurInitiales: 'IL',
+      auteurNom: 'Info_quartier',
+      auteurInitiales: 'IQ',
       titre: 'Coupure d’eau programmée demain matin',
       sousTitre: 'Quartier Kipé',
       timeAgo: 'il y a 18 min',
@@ -52,13 +57,22 @@ class _PageFluxState extends State<PageFlux> {
   ];
 
   void _openProfile(_Publication pub) {
-    // TODO: ouvrir le profil réel Supabase
-    debugPrint('Ouvrir profil de ${pub.auteurNom}');
+    debugPrint('Profil de ${pub.auteurNom}');
   }
 
-  void _sharePublication(_Publication pub) {
-    // TODO: partage système
-    debugPrint('Partager publication ${pub.id}');
+  Future<void> _sharePublication(_Publication pub) async {
+    final text = pub.titre.isNotEmpty
+        ? '${pub.titre}\n${pub.sousTitre} • ${pub.timeAgo}'
+        : '${pub.sousTitre} • ${pub.timeAgo}';
+
+    await Share.share(
+      text,
+      subject: 'Actualité Wontanara',
+    );
+
+    setState(() {
+      pub.shares++;
+    });
   }
 
   void _showPostMenu(_Publication pub) {
@@ -89,8 +103,7 @@ class _PageFluxState extends State<PageFlux> {
                 subtitle: const Text('Ne respecte pas la charte Soneya'),
                 onTap: () {
                   Navigator.pop(context);
-                  // TODO: envoyer le signalement côté Supabase
-                  debugPrint('Signalement de la publication ${pub.id}');
+                  debugPrint('Signalement publication ${pub.id}');
                 },
               ),
               const SizedBox(height: 8),
@@ -134,10 +147,10 @@ class _PageFluxState extends State<PageFlux> {
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     child: Row(
                       children: [
-                        Expanded(
+                        const Expanded(
                           child: Text(
                             'Commentaires',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
@@ -151,7 +164,6 @@ class _PageFluxState extends State<PageFlux> {
                     ),
                   ),
                   const Divider(height: 1),
-                  // 🔹 Liste de commentaires mockée
                   Expanded(
                     child: ListView.builder(
                       controller: scrollController,
@@ -186,14 +198,12 @@ class _PageFluxState extends State<PageFlux> {
                     ),
                   ),
                   const Divider(height: 1),
-                  // 🔹 Zone de saisie
                   Padding(
                     padding: EdgeInsets.only(
                       left: 12,
                       right: 12,
                       top: 6,
-                      bottom: MediaQuery.of(context).viewInsets.bottom +
-                          8, // clavier
+                      bottom: MediaQuery.of(context).viewInsets.bottom + 8,
                     ),
                     child: Row(
                       children: [
@@ -227,9 +237,7 @@ class _PageFluxState extends State<PageFlux> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.send_rounded, color: _teal),
-                          onPressed: () {
-                            // TODO: envoyer le commentaire
-                          },
+                          onPressed: () {},
                         ),
                       ],
                     ),
@@ -282,39 +290,37 @@ class _PageFluxState extends State<PageFlux> {
             },
           ),
           const SizedBox(width: 4),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const PagePublicationForm(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text(
-                'Publier',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _tealDark, width: 1),
-                foregroundColor: _tealDark,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: const StadiumBorder(),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PagePublierActualite(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.add_rounded, size: 20, color: _tealDark),
+            label: const Text(
+              'Publier',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: _tealDark,
               ),
             ),
+            style: TextButton.styleFrom(
+              foregroundColor: _tealDark,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       backgroundColor: const Color(0xFFF5F5F7),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
-          // Bandeau original "temps réel"
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -331,7 +337,7 @@ class _PageFluxState extends State<PageFlux> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Suivez en temps réel ce qui se passe dans votre quartier.',
+                    'Suivez en temps réel ce qui se passe en Guinée.',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -341,46 +347,6 @@ class _PageFluxState extends State<PageFlux> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-
-          const _SectionTitle('Filtres rapides'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FilterChipLabel(
-                'Tout',
-                selected: _filter == ActualiteFilter.all,
-                onTap: () => setState(() => _filter = ActualiteFilter.all),
-              ),
-              _FilterChipLabel(
-                'Infos locales',
-                selected: _filter == ActualiteFilter.infos,
-                onTap: () => setState(() => _filter = ActualiteFilter.infos),
-              ),
-              _FilterChipLabel(
-                'Alertes',
-                selected: _filter == ActualiteFilter.alertes,
-                onTap: () => setState(() => _filter = ActualiteFilter.alertes),
-              ),
-              _FilterChipLabel(
-                'Collecte',
-                selected: _filter == ActualiteFilter.collecte,
-                onTap: () => setState(() => _filter = ActualiteFilter.collecte),
-              ),
-              _FilterChipLabel(
-                'Votes',
-                selected: _filter == ActualiteFilter.votes,
-                onTap: () => setState(() => _filter = ActualiteFilter.votes),
-              ),
-              _FilterChipLabel(
-                'Actu vérifiée',
-                selected: _filter == ActualiteFilter.verifiee,
-                onTap: () => setState(() => _filter = ActualiteFilter.verifiee),
-              ),
-            ],
           ),
           const SizedBox(height: 24),
           const _SectionTitle('Près de vous'),
@@ -394,12 +360,9 @@ class _PageFluxState extends State<PageFlux> {
     );
   }
 
-  // ===== Carte de publication =====
   Widget _buildPublicationCard(BuildContext context, _Publication pub) {
     return InkWell(
-      onTap: () {
-        // TODO: Détail de la publication
-      },
+      onTap: () {},
       borderRadius: BorderRadius.circular(18),
       child: Container(
         decoration: _cardBox.copyWith(
@@ -408,7 +371,6 @@ class _PageFluxState extends State<PageFlux> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ---------- Header : auteur + temps ----------
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
               child: Row(
@@ -465,8 +427,6 @@ class _PageFluxState extends State<PageFlux> {
                 ],
               ),
             ),
-
-            // ---------- Titre ----------
             if (pub.titre.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -479,10 +439,7 @@ class _PageFluxState extends State<PageFlux> {
                   ),
                 ),
               ),
-
             const SizedBox(height: 8),
-
-            // ---------- Photos swipables + boutons à droite (style TikTok) ----------
             if (pub.photosCount > 0)
               Padding(
                 padding: EdgeInsets.zero,
@@ -503,10 +460,7 @@ class _PageFluxState extends State<PageFlux> {
                   onShare: () => _sharePublication(pub),
                 ),
               ),
-
             const SizedBox(height: 8),
-
-            // ---------- Compteurs ----------
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(
@@ -542,7 +496,7 @@ class _PageFluxState extends State<PageFlux> {
   }
 }
 
-// ====== Models + widgets ======
+/* ========= MODELS & WIDGETS ========= */
 
 class _Publication {
   final String id;
@@ -605,48 +559,106 @@ final _cardBox = BoxDecoration(
   border: Border.all(color: Colors.black12, width: 0.4),
 );
 
-class _FilterChipLabel extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
+class RoundedField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final int maxLines;
+  final String? Function(String?)? validator;
+  final Widget? suffixIcon;
 
-  const _FilterChipLabel(
-    this.label, {
-    this.selected = false,
-    this.onTap,
+  const RoundedField({
+    super.key,
+    required this.controller,
+    required this.hintText,
+    this.maxLines = 1,
+    this.validator,
+    this.suffixIcon,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? _teal.withOpacity(.08) : Colors.grey[100];
-    final border = selected ? _teal.withOpacity(.50) : Colors.grey[300];
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      validator: validator,
+      decoration: InputDecoration(
+        hintText: hintText,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _tealDark, width: 1.3),
+        ),
+        suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}
+
+class TypeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const TypeChip({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = selected ? const Color(0xFFE6F4F0) : const Color(0xFFF3F4F6);
+    final border = selected ? _tealDark : const Color(0xFFE5E7EB);
+    final txtColor = selected ? _tealDark : const Color(0xFF111827);
 
     return InkWell(
-      onTap: onTap,
       borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: border!),
+          border: Border.all(color: border),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            color: selected ? _tealDark : Colors.black87,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: txtColor),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: txtColor,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ===== Bande de photos swipable + boutons TikTok =====
+/* === Swipe photos + actions TikTok === */
+
 class _SwipePhotos extends StatefulWidget {
-  final int count; // 1 → n
+  final int count;
   final VoidCallback onLike;
   final VoidCallback onComment;
   final VoidCallback onShare;
@@ -674,6 +686,55 @@ class _SwipePhotosState extends State<_SwipePhotos> {
     super.dispose();
   }
 
+  void _openFullscreen() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.9),
+      builder: (_) {
+        final fullController = PageController(initialPage: _index);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).pop(),
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: fullController,
+                itemCount: widget.count,
+                itemBuilder: (_, i) {
+                  return Center(
+                    child: AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: Container(
+                        color: Colors.grey[900],
+                        child: const Icon(
+                          Icons.image_rounded,
+                          size: 120,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
@@ -682,54 +743,53 @@ class _SwipePhotosState extends State<_SwipePhotos> {
         borderRadius: BorderRadius.circular(18),
         child: Stack(
           children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: widget.count,
-              onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (_, i) {
-                return Container(
-                  color: Colors.grey[200],
-                  child: const Center(
-                    child: Icon(
-                      Icons.image_rounded,
-                      size: 60,
-                      color: _tealDark,
+            GestureDetector(
+              onTap: _openFullscreen,
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: widget.count,
+                onPageChanged: (i) => setState(() => _index = i),
+                itemBuilder: (_, i) {
+                  return Container(
+                    color: Colors.grey[200],
+                    child: const Center(
+                      child: Icon(
+                        Icons.image_rounded,
+                        size: 60,
+                        color: _tealDark,
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
             if (widget.count > 1)
               Positioned(
                 bottom: 10,
-                left: 0,
-                right: 0,
+                left: 12,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
                     widget.count,
                     (i) => AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: _index == i ? 16 : 7,
-                      height: 7,
+                      margin: const EdgeInsets.only(right: 4),
+                      width: 14,
+                      height: 14,
                       decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
                         color: _index == i
                             ? Colors.white
-                            : Colors.white.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(10),
+                            : Colors.white.withOpacity(0.5),
                       ),
                     ),
                   ),
                 ),
               ),
-            // 🔹 Colonne d’actions à droite (style TikTok)
             Positioned(
               right: 10,
-              top: 0,
-              bottom: 0,
+              bottom: 16,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   _RoundIconButton(
                     icon: widget.isLiked
@@ -745,7 +805,7 @@ class _SwipePhotosState extends State<_SwipePhotos> {
                   ),
                   const SizedBox(height: 14),
                   _RoundIconButton(
-                    icon: Icons.share_outlined,
+                    icon: Icons.reply_rounded,
                     onTap: widget.onShare,
                   ),
                 ],
@@ -774,6 +834,18 @@ class _RoundIconButton extends StatelessWidget {
     final bg = active ? _teal : Colors.white.withOpacity(0.95);
     final iconColor = active ? Colors.white : _tealDark;
 
+    Widget iconWidget = Icon(icon, size: 20, color: iconColor);
+
+    if (icon == Icons.reply_rounded) {
+      iconWidget = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..scale(-1.0, 1.0)
+          ..rotateZ(0.7),
+        child: Icon(icon, size: 20, color: iconColor),
+      );
+    }
+
     return InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
@@ -791,13 +863,14 @@ class _RoundIconButton extends StatelessWidget {
             )
           ],
         ),
-        child: Icon(icon, size: 20, color: iconColor),
+        child: iconWidget,
       ),
     );
   }
 }
 
-// ===== Delegate de recherche =====
+/* === Recherche === */
+
 class _PublicationSearchDelegate extends SearchDelegate<_Publication?> {
   final List<_Publication> publications;
 
@@ -889,6 +962,447 @@ class _PublicationSearchDelegate extends SearchDelegate<_Publication?> {
           ),
         );
       },
+    );
+  }
+}
+
+/* === Page Publier avec PHOTOS === */
+
+class PagePublierActualite extends StatefulWidget {
+  const PagePublierActualite({super.key});
+
+  @override
+  State<PagePublierActualite> createState() => _PagePublierActualiteState();
+}
+
+class _PagePublierActualiteState extends State<PagePublierActualite> {
+  final _formKey = GlobalKey<FormState>();
+
+  PublicationType _type = PublicationType.infos;
+  final TextEditingController _titleCtrl = TextEditingController();
+  final TextEditingController _descCtrl = TextEditingController();
+  final TextEditingController _zoneCtrl = TextEditingController();
+
+  bool _sending = false;
+  double? _lat;
+  double? _lng;
+
+  final ImagePicker _picker = ImagePicker();
+  final List<XFile> _images = [];
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _zoneCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImages() async {
+    final picked = await _picker.pickMultiImage();
+    if (picked.isEmpty) return;
+    setState(() {
+      _images.addAll(picked);
+    });
+  }
+
+  Future<void> _pickLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Active la localisation sur ton téléphone.'),
+        ),
+      );
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Autorise la localisation pour signaler une alerte.'),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('La localisation est bloquée dans les paramètres système.'),
+        ),
+      );
+      return;
+    }
+
+    final pos = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    setState(() {
+      _lat = pos.latitude;
+      _lng = pos.longitude;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_type == PublicationType.alerte && (_lat == null || _lng == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pour une alerte, utilise le bouton localisation.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _sending = true);
+
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _type == PublicationType.alerte
+                ? 'Alerte envoyée à votre quartier.'
+                : 'Info publiée.',
+          ),
+        ),
+      );
+
+      Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Widget _buildPhotosPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Photos',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: _tealDark,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 82,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              GestureDetector(
+                onTap: _pickImages,
+                child: Container(
+                  width: 80,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFD1D5DB)),
+                    color: const Color(0xFFF3F4F6),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.photo_camera_outlined, color: _tealDark),
+                      SizedBox(height: 4),
+                      Text(
+                        'Ajouter',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              for (final img in _images)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.file(
+                          File(img.path),
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _images.remove(img));
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAlerte = _type == PublicationType.alerte;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Publier',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      backgroundColor: const Color(0xFFF5F5F7),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: _tealDark,
+                            child: Text(
+                              'MC',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Publier une actualité dans mon quartier',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Type de publication',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _tealDark,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          TypeChip(
+                            label: 'Infos',
+                            icon: Icons.info_outline,
+                            selected: _type == PublicationType.infos,
+                            onTap: () =>
+                                setState(() => _type = PublicationType.infos),
+                          ),
+                          TypeChip(
+                            label: 'Alerte',
+                            icon: Icons.warning_amber_rounded,
+                            selected: _type == PublicationType.alerte,
+                            onTap: () =>
+                                setState(() => _type = PublicationType.alerte),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      const Text(
+                        'Contenu',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _tealDark,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      RoundedField(
+                        controller: _titleCtrl,
+                        hintText: 'Titre',
+                        maxLines: 1,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Le titre est obligatoire';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      RoundedField(
+                        controller: _descCtrl,
+                        hintText: 'Description',
+                        maxLines: 4,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Merci de décrire l’actualité';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      _buildPhotosPicker(),
+                      const SizedBox(height: 22),
+                      if (isAlerte) ...[
+                        const Text(
+                          'Zone',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _tealDark,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        RoundedField(
+                          controller: _zoneCtrl,
+                          hintText: 'Région / Préfecture / Quartier',
+                          maxLines: 1,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) {
+                              return 'La zone est obligatoire pour une alerte';
+                            }
+                            return null;
+                          },
+                          suffixIcon: const Icon(
+                            Icons.location_on_outlined,
+                            color: _tealDark,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _pickLocation,
+                                icon: const Icon(Icons.my_location_rounded),
+                                label: const Text('Utiliser ma localisation'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _tealDark,
+                                  side: const BorderSide(color: _tealDark),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (_lat != null && _lng != null)
+                          Text(
+                            'Position enregistrée (${_lat!.toStringAsFixed(4)}, ${_lng!.toStringAsFixed(4)})',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF6B7280),
+                            ),
+                          )
+                        else
+                          const Text(
+                            'Pour une alerte, enregistre ta position pour l’afficher sur la carte.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _sending ? null : _submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _tealDark,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: _sending
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Publier',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

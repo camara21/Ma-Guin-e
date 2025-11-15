@@ -9,6 +9,18 @@ import 'package:ma_guinee/providers/user_provider.dart';
 class PageProfil extends StatelessWidget {
   const PageProfil({super.key});
 
+  void _showComingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "La mise en place de ce service est encore en cours.\n"
+          "Vous serez informé dès son lancement dans Wontanara. "
+          "Merci pour votre confiance et à très bientôt 💚",
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final supaUser = Supabase.instance.client.auth.currentUser;
@@ -125,33 +137,6 @@ class PageProfil extends StatelessWidget {
 
           const SizedBox(height: 20),
 
-          // -------- RÔLE & PERMISSIONS --------
-          const _SectionTitle('Rôle & permissions'),
-          const SizedBox(height: 8),
-          Container(
-            decoration: _cardBox,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Rôle : $role',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text('• Peut publier infos / alertes'),
-                const Text('• Peut créer des demandes d’aide'),
-                const Text('• Peut signaler déchets'),
-                const Text('• Peut participer aux votes'),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
           // -------- RÉPUTATION & BADGES --------
           const _SectionTitle('Réputation & badges'),
           const SizedBox(height: 8),
@@ -194,10 +179,6 @@ class PageProfil extends StatelessWidget {
                       label: 'Aides données',
                     ),
                     _BadgeChip(
-                      icon: Ionicons.ribbon_outline,
-                      label: 'Citoyen actif',
-                    ),
-                    _BadgeChip(
                       icon: Ionicons.leaf_outline,
                       label: 'Eco-responsable',
                     ),
@@ -232,12 +213,7 @@ class PageProfil extends StatelessWidget {
               ),
               trailing: const Icon(Ionicons.chevron_forward),
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const PageAbonnementWontanara(),
-                  ),
-                );
+                _showComingSoon(context);
               },
             ),
           ),
@@ -267,6 +243,9 @@ class PageProfil extends StatelessWidget {
                 ),
                 trailing: const Icon(Ionicons.chevron_forward),
                 onTap: () {
+                  // Pour l’instant, on peut soit laisser comme avant,
+                  // soit aussi afficher le message "bientôt dispo".
+                  // Je garde la navigation réelle si tu veux tester la page.
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -306,17 +285,10 @@ class PageProfil extends StatelessWidget {
               ),
               trailing: const Icon(Ionicons.chevron_forward),
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const PageEntrepriseRecyclage(),
-                  ),
-                );
+                _showComingSoon(context);
               },
             ),
           ),
-
-          // 🔕 PAS DE SECTION "Compte" ici : gérée par le profil général Soneya
         ],
       ),
     );

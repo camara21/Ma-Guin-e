@@ -15,8 +15,11 @@ import '../routes.dart';
 // Jobs
 import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
-// ✅ Ajout : import relatif vers la shell Wontanara (ne rien changer ailleurs)
+// ✅ Shell Wontanara
 import 'wontanara/shell_wontanara.dart';
+
+// ✅ ANP a son propre bloc
+import '../anp/anp_home_page.dart';
 
 /// --- Palette locale (indépendante) ---
 const _kMainPrimary = Color(0xFF0077B6);
@@ -33,6 +36,9 @@ const _kNotifPrimary = Color(0xFFB91C1C);
 const _kMapPrimary = Color(0xFF2B6CB0);
 const _kAidePrimary = Color(0xFF475569);
 const _kCommercePrimary = Color(0xFF6B21A8);
+
+// ✅ Couleur spéciale ANP
+const _kAnpPrimary = Color(0xFF2563EB);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -213,9 +219,10 @@ class _HomePageState extends State<HomePage> {
         children: [
           Icon(Icons.work_outline, color: color, size: size),
           Positioned(
-              right: 6,
-              bottom: 6,
-              child: _smallBadge(color, Icons.description)),
+            right: 6,
+            bottom: 6,
+            child: _smallBadge(color, Icons.description),
+          ),
         ],
       ),
     );
@@ -230,9 +237,10 @@ class _HomePageState extends State<HomePage> {
         children: [
           Icon(Icons.apartment_rounded, color: primary, size: size),
           Positioned(
-              right: 6,
-              bottom: 6,
-              child: _smallBadge(primary, Icons.location_on_rounded)),
+            right: 6,
+            bottom: 6,
+            child: _smallBadge(primary, Icons.location_on_rounded),
+          ),
         ],
       ),
     );
@@ -248,15 +256,77 @@ class _HomePageState extends State<HomePage> {
             child: _InstitutionGradientBaseIcon(
               size: size,
               structure: _kAidePrimary,
-              gradientLeft: Color(0xFFDC2626),
-              gradientMid: Color(0xFFDAA520),
-              gradientRight: Color(0xFF009460),
+              gradientLeft: const Color(0xFFDC2626),
+              gradientMid: const Color(0xFFDAA520),
+              gradientRight: const Color(0xFF009460),
             ),
           ),
           Positioned(
-              right: 6,
-              bottom: 6,
-              child: _smallBadge(_kAidePrimary, Icons.description_rounded)),
+            right: 6,
+            bottom: 6,
+            child: _smallBadge(_kAidePrimary, Icons.description_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ✅ Icône ANP très moderne
+  Widget _anpIcon(BuildContext context) {
+    final size = _adaptiveIconSize(context);
+
+    return _iconCard(
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF0F172A),
+                    _kAnpPrimary,
+                    Color(0xFF38BDF8),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kAnpPrimary.withOpacity(0.35),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: const [
+                  Icon(
+                    Icons.shield_rounded,
+                    color: Colors.white70,
+                    size: 32,
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    child: Icon(
+                      Icons.wifi_tethering_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 6,
+            bottom: 6,
+            child: _smallBadge(_kAnpPrimary, Icons.location_on_rounded),
+          ),
         ],
       ),
     );
@@ -323,8 +393,10 @@ class _HomePageState extends State<HomePage> {
                     right: 10,
                     child: Container(
                       padding: const EdgeInsets.all(5),
-                      constraints:
-                          const BoxConstraints(minWidth: 20, minHeight: 20),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
                       decoration: const BoxDecoration(
                         color: Colors.red,
                         shape: BoxShape.circle,
@@ -397,9 +469,10 @@ class _HomePageState extends State<HomePage> {
                         color: Colors.white,
                         shadows: [
                           Shadow(
-                              color: Colors.black26,
-                              blurRadius: 6,
-                              offset: Offset(0, 2))
+                            color: Colors.black26,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          )
                         ],
                       ),
                     ),
@@ -415,9 +488,10 @@ class _HomePageState extends State<HomePage> {
                         fontWeight: FontWeight.w400,
                         shadows: [
                           Shadow(
-                              color: Colors.black12,
-                              blurRadius: 6,
-                              offset: Offset(0, 1))
+                            color: Colors.black12,
+                            blurRadius: 6,
+                            offset: Offset(0, 1),
+                          )
                         ],
                       ),
                     ),
@@ -435,6 +509,16 @@ class _HomePageState extends State<HomePage> {
               mainAxisSpacing: spacing,
               physics: const NeverScrollableScrollPhysics(),
               children: [
+                // ✅ ANP : redirection directe vers AnpHomePage
+                _ServiceTile(
+                  icon: _anpIcon(context),
+                  label: "ANP",
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AnpHomePage(),
+                    ),
+                  ),
+                ),
                 _ServiceTile(
                   icon: _iconWithBadge(
                     main: Icons.campaign,
@@ -531,7 +615,9 @@ class _HomePageState extends State<HomePage> {
                   label: "Wali fen",
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const JobHomePage()),
+                    MaterialPageRoute(
+                      builder: (_) => const JobHomePage(),
+                    ),
                   ),
                 ),
                 _ServiceTile(
@@ -545,17 +631,25 @@ class _HomePageState extends State<HomePage> {
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.billetterie),
                 ),
-              ],
-            ),
 
-            // ✅ Ajout discret : CTA Wontanara plein largeur sous la grille (sans toucher à la grille)
-            SizedBox(height: spacing),
-            _WontanaraFullWidthTile(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ShellWontanara()),
-                );
-              },
+                // ✅ Wontanara tout en bas de la grille, icon changé
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.location_city_rounded, // nouveau pictogramme
+                    color: const Color(0xFF0E5A51), // vert pétrole Wontanara
+                    badge: Icons.groups_2_rounded, // badge "communauté"
+                    context: context,
+                  ),
+                  label: "Wontanara",
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ShellWontanara(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),
@@ -693,11 +787,11 @@ class _InstitutionGradientBasePainter extends CustomPainter {
       Radius.circular(h * 0.06),
     );
 
-    final shader = LinearGradient(
+    final shader = const LinearGradient(
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
-      colors: [gradientLeft, gradientMid, gradientRight],
-      stops: const [0.0, 0.5, 1.0],
+      colors: [Color(0xFFDC2626), Color(0xFFDAA520), Color(0xFF009460)],
+      stops: [0.0, 0.5, 1.0],
     ).createShader(baseRect.outerRect);
 
     final basePaint = Paint()..shader = shader;
@@ -710,104 +804,5 @@ class _InstitutionGradientBasePainter extends CustomPainter {
         gradientLeft != old.gradientLeft ||
         gradientMid != old.gradientMid ||
         gradientRight != old.gradientRight;
-  }
-}
-
-/// =======================
-///  CTA Wontanara (plein largeur, sous la grille)
-/// =======================
-class _WontanaraFullWidthTile extends StatelessWidget {
-  final VoidCallback onTap;
-  const _WontanaraFullWidthTile({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final w = MediaBox.of(context).size.width;
-    // même “hauteur visuelle” qu’une tuile icône (84/92)
-    final double tileHeight = w < 360 ? 84.0 : 92.0;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        height: tileHeight,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Colors.black.withOpacity(0.04),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            // 🔹 Carré icône Wontanara (vert pétrole + pictogramme blanc)
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0E5A51), // vert pétrole Wontanara
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.people_alt_rounded,
-                color: Colors.white, // icône blanche
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // 🔹 Juste le texte "Wontanara" bien stylé
-            Expanded(
-              child: ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [
-                    Color(0xFF0E5A51),
-                    Color(0xFF0077B6),
-                  ],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ).createShader(
-                  Rect.fromLTWH(0, 0, bounds.width, bounds.height),
-                ),
-                child: const Text(
-                  "Wontanara",
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                    color: Colors.white, // important pour le ShaderMask
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Chevron discret
-            Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF3F4F6),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.black54,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

@@ -1,32 +1,24 @@
-// lib/pages/wontanara/pages/page_chat.dart
-
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 
 import '../api_wontanara.dart';
 import '../models.dart';
-import '../constantes.dart';
 import '../realtime_wontanara.dart';
 
-/// Chat générique Wontanara :
+/// Chat Wontanara pour l'ENTRAIDE uniquement (éphémère).
 ///
-/// - Si [topicId] est null  -> chat de quartier (ZONE_ID_DEMO ou future zone réelle)
-/// - Si [topicId] est non null -> chat éphémère (ex: lié à une demande d’aide)
-///
-/// Dans le backend, tu peux utiliser ce topic comme tu veux :
-/// soit comme zone_id, soit comme room_id, soit comme "topic" générique.
+/// - [topicId] est OBLIGATOIRE : identifiant de la demande d'aide / room.
+/// - Chaque room correspond à une demande d’entraide, un fil de discussion éphémère.
 class PageChat extends StatefulWidget {
   const PageChat({
     super.key,
-    this.topicId,
+    required this.topicId,
     this.title,
   });
 
-  /// Identifiant du "topic" de discussion :
-  ///   - zone_id pour le chat de quartier
-  ///   - id de la demande / room pour un chat éphémère
-  final String? topicId;
+  /// Identifiant de la demande d’entraide / room.
+  final String topicId;
 
   /// Titre affiché dans l’AppBar
   final String? title;
@@ -39,6 +31,8 @@ class _PageChatState extends State<PageChat> {
   final TextEditingController _ctrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
+  late final String _topicId;
+
   List<Message> _messages = [];
   RealtimeChannel? _channel;
 
@@ -46,12 +40,10 @@ class _PageChatState extends State<PageChat> {
   bool _sending = false;
   String? _error;
 
-  /// Topic utilisé pour les appels API (zone OU room)
-  String get _topicId => widget.topicId ?? ZONE_ID_DEMO;
-
   @override
   void initState() {
     super.initState();
+    _topicId = widget.topicId; // éphémère entraide uniquement
     _initChat();
   }
 
@@ -67,7 +59,7 @@ class _PageChatState extends State<PageChat> {
         _error = null;
       });
 
-      // 👉 Tu peux changer la logique côté API pour filtrer sur room_id
+      // Backend : interpréter _topicId comme room_id / demande_entraide_id
       final res = await ApiChat.listerMessages(_topicId);
 
       setState(() {
@@ -91,7 +83,7 @@ class _PageChatState extends State<PageChat> {
   Future<void> _listenRealtime() async {
     try {
       _channel = await RealtimeWontanara.abonnMessagesZone(
-        _topicId, // 👉 à adapter côté helper si tu veux filtrer sur room_id
+        _topicId, // côté helper, filtrer sur ce room/entraid_id
         (row) {
           final m = Message.fromMap(row);
           if (!mounted) return;
@@ -132,8 +124,7 @@ class _PageChatState extends State<PageChat> {
     setState(() => _sending = true);
 
     try {
-      // 👉 Le realtime ajoutera le message (évite les doublons).
-      //    Côté API, interprète _topicId comme zone_id OU room_id.
+      // Le realtime ajoutera le message (évite les doublons).
       await ApiChat.envoyerMessageZone(_topicId, txt);
     } catch (e) {
       if (!mounted) return;
@@ -157,8 +148,7 @@ class _PageChatState extends State<PageChat> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.title ??
-        (widget.topicId == null ? 'Chat de quartier' : 'Chat éphémère');
+    final title = widget.title ?? 'Chat entraide éphémère';
 
     return Scaffold(
       appBar: AppBar(
@@ -204,7 +194,7 @@ class _PageChatState extends State<PageChat> {
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Text(
-            "Aucun message pour l’instant.\nSoyez le premier à dire bonjour 👋",
+            "Aucun message pour l’instant.\nExpliquez votre besoin pour obtenir de l’aide 👋",
             textAlign: TextAlign.center,
           ),
         ),
@@ -238,7 +228,7 @@ class _PageChatState extends State<PageChat> {
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _sendMessage(),
                 decoration: const InputDecoration(
-                  hintText: 'Votre message…',
+                  hintText: 'Décrivez votre besoin d’aide…',
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(

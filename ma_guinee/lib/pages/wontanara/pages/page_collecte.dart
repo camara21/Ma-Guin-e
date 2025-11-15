@@ -1,5 +1,3 @@
-// lib/pages/wontanara/pages/page_collecte.dart
-
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 
@@ -77,18 +75,27 @@ class _PageCollecteState extends State<PageCollecte> {
     }
   }
 
-  void _gererAbonnement() {
-    // TODO: ouvrir une page pour gérer l’abonnement (changer formule, résilier…)
+  // 🔔 Message commun "bientôt disponible"
+  void _showBientotDisponibleSnack() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Gestion d’abonnement à venir.")),
+      const SnackBar(
+        content: Text(
+          "Le service de collecte n’est pas encore disponible.\n"
+          "Vous serez informé dès sa mise en service dans Wontanara. "
+          "Merci pour votre patience et à très bientôt 💚",
+        ),
+      ),
     );
   }
 
+  void _gererAbonnement() {
+    // On garde le bouton mais on explique que ce n’est pas encore dispo
+    _showBientotDisponibleSnack();
+  }
+
   void _sAbonner(_OffreCollecte offre) {
-    // TODO: créer une demande d’abonnement pour cette offre
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Demande d’abonnement envoyée à ${offre.nom}.")),
-    );
+    // On garde le bouton mais on explique que ce n’est pas encore dispo
+    _showBientotDisponibleSnack();
   }
 
   @override
@@ -119,7 +126,7 @@ class _PageCollecteState extends State<PageCollecte> {
                 decoration: _cardBox,
                 child: const Text(
                   'Vous n’avez pas encore d’abonnement actif.\n'
-                  'Choisissez une offre de collecte pour que des équipes '
+                  'Bientôt, vous pourrez choisir une offre de collecte pour que des équipes '
                   'viennent régulièrement récupérer vos déchets.',
                   style: TextStyle(color: Colors.grey),
                 ),
@@ -327,15 +334,6 @@ class _AbonnementCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            abonnement.prixMensuel,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: ThemeWontanara.vertPetrole,
-            ),
-          ),
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -409,14 +407,7 @@ class _OffreCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  offre.prix,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: ThemeWontanara.vertPetrole,
-                  ),
-                ),
+                // Prix retiré de l’UI pour l’instant
               ],
             ),
           ),
