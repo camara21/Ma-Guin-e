@@ -8,7 +8,7 @@ import '../models/utilisateur_model.dart';
 import '../providers/user_provider.dart';
 
 import 'service_localisation_anp.dart';
-import 'page_creation_anp_confirmation.dart'; // 👈 Étape 2
+import 'page_creation_anp_confirmation.dart'; // Étape 2
 
 class PageCreationAnpLocalisation extends StatefulWidget {
   const PageCreationAnpLocalisation({super.key});
@@ -23,12 +23,17 @@ class _PageCreationAnpLocalisationState
   // Service de localisation ANP
   final ServiceLocalisationAnp _serviceLocalisation = ServiceLocalisationAnp();
 
-  Position? _position; // 👉 position qui sera envoyée à la suite (ANP)
-  LatLng? _pointSelectionne; // 👉 point choisi à la main sur la carte
+  Position? _position; // position qui sera envoyée à la suite (ANP)
+  LatLng? _pointSelectionne; // point choisi à la main sur la carte
 
   bool _chargement = false;
   String? _erreur;
   bool _estHorsGuinee = false;
+
+  // Précision GPS
+  double? _precisionMetres;
+  bool _precisionSuffisante = false;
+  String? _messagePrecision;
 
   // Profil utilisateur
   final TextEditingController _prenomController = TextEditingController();
@@ -54,7 +59,6 @@ class _PageCreationAnpLocalisationState
         _prenomController.text = user.prenom ?? '';
         _nomController.text = user.nom ?? '';
         _emailController.text = user.email ?? '';
-        // ⚠️ adapte ce champ si ton modèle a un autre nom (telephone, phoneNumber, etc.)
         _telephoneController.text = user.telephone ?? '';
       }
       _infosChargeesDepuisProfil = true;
@@ -70,16 +74,44 @@ class _PageCreationAnpLocalisationState
     super.dispose();
   }
 
+  // Interprétation de la précision GPS
+  void _evaluerPrecision(Position pos) {
+    final acc = pos.accuracy; // en mètres
+    _precisionMetres = acc;
+
+    if (acc <= 20) {
+      _messagePrecision =
+          "Localisation très précise (≈ ${acc.toStringAsFixed(0)} m).";
+      _precisionSuffisante = true;
+    } else if (acc <= 50) {
+      _messagePrecision =
+          "Localisation correcte (≈ ${acc.toStringAsFixed(0)} m). "
+          "Vous pouvez affiner en déplaçant le point rouge sur la carte.";
+      _precisionSuffisante = true;
+    } else {
+      _messagePrecision =
+          "Localisation approximative (≈ ${acc.toStringAsFixed(0)} m). "
+          "Si possible, placez-vous à l’extérieur ou près d’une fenêtre, "
+          "puis relancez la localisation.";
+      _precisionSuffisante = false;
+    }
+  }
+
   Future<void> _utiliserPositionActuelle() async {
     setState(() {
       _chargement = true;
       _erreur = null;
       _estHorsGuinee = false;
+      _precisionMetres = null;
+      _messagePrecision = null;
+      _precisionSuffisante = false;
     });
 
     try {
       final pos = await _serviceLocalisation.recupererPositionActuelle();
       final enGuinee = _serviceLocalisation.estEnGuinee(pos);
+
+      _evaluerPrecision(pos);
 
       setState(() {
         _position = pos;
@@ -92,7 +124,10 @@ class _PageCreationAnpLocalisationState
       });
     } catch (_) {
       setState(() {
-        _erreur = "Une erreur est survenue lors de la localisation.";
+        _erreur =
+            "Impossible de récupérer votre position.\n\n"
+            "Vérifiez que la localisation est activée, que Soneya a l’autorisation "
+            "d’utiliser le GPS et que vous disposez d’une connexion Internet.";
       });
     } finally {
       if (mounted) {
@@ -104,13 +139,17 @@ class _PageCreationAnpLocalisationState
   }
 
   Future<void> _validerEtContinuer() async {
-    if (_position == null || !_infosConfirmees) return;
+    if (_position == null || !_infosConfirmees || !_precisionSuffisante) {
+      return;
+    }
 
-    // 👉 On enchaîne directement avec l’Étape 2 (Confirmation + création ANP)
+    // Étape 2 : Confirmation + création ANP
     final codeAnp = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => PageCreationAnpConfirmation(
           position: _position!,
+          // 👉 pour tes tests en France : autorise hors Guinée si on a détecté
+          autoriserHorsGuineePourTests: _estHorsGuinee,
         ),
       ),
     );
@@ -118,7 +157,6 @@ class _PageCreationAnpLocalisationState
     if (!mounted) return;
 
     if (codeAnp != null) {
-      // On renvoie le code ANP à l’écran qui a ouvert la localisation (la carte ANP)
       Navigator.of(context).pop<String>(codeAnp);
     }
   }
@@ -160,17 +198,19 @@ class _PageCreationAnpLocalisationState
   }
 
   bool get _peutContinuer =>
-      _position != null && !_chargement && _infosConfirmees;
+      _position != null &&
+      !_chargement &&
+      _infosConfirmees &&
+      _precisionSuffisante;
 
-  /// 👉 Quand l’utilisateur tape sur la carte pour choisir la position exacte
+  /// Quand l’utilisateur tape sur la carte pour choisir la position exacte
   void _onMapTap(TapPosition tapPosition, LatLng latLng) {
     if (_position == null) return;
 
     setState(() {
       _pointSelectionne = latLng;
 
-      // On reconstruit un Position avec les nouvelles coordonnées,
-      // pour garder la compatibilité avec le reste (ANP, estEnGuinee, etc.).
+      // On garde les autres champs du Position, mais on remplace latitude/longitude.
       _position = Position(
         latitude: latLng.latitude,
         longitude: latLng.longitude,
@@ -185,6 +225,9 @@ class _PageCreationAnpLocalisationState
         floor: _position!.floor,
         isMocked: _position!.isMocked,
       );
+
+      // Comme tu ajustes manuellement, on considère la précision comme suffisante.
+      _precisionSuffisante = true;
     });
   }
 
@@ -354,7 +397,7 @@ class _PageCreationAnpLocalisationState
                     const SizedBox(height: 8),
                     const Text(
                       "Votre Adresse Numérique Personnelle (ANP) est basée sur votre "
-                      "position réelle. Utilisez la localisation de votre téléphone "
+                      "position exacte. Utilisez d’abord la localisation de votre téléphone, "
                       "puis ajustez le point rouge sur la carte si nécessaire.",
                       style: TextStyle(
                         fontSize: 15,
@@ -384,7 +427,7 @@ class _PageCreationAnpLocalisationState
                           ),
                         ),
                         label: _chargement
-                            ? const Text("Localisation en cours...")
+                            ? const Text("Localisation en cours…")
                             : const Text("Utiliser ma position actuelle"),
                       ),
                     ),
@@ -409,6 +452,14 @@ class _PageCreationAnpLocalisationState
                           ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Si le problème persiste, redémarrez la localisation ou votre téléphone.",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.black45,
+                        ),
+                      ),
                       const SizedBox(height: 16),
                     ],
 
@@ -428,7 +479,7 @@ class _PageCreationAnpLocalisationState
                           child: const Text(
                             "Vous ne vous trouvez pas en Guinée.\n"
                             "Ce service n’est pas disponible à l’international pour le moment.\n"
-                            "Pour vos tests, la création reste possible, mais en production "
+                            "Pour les tests, la création reste possible, mais en production "
                             "vous devrez vous trouver sur le territoire guinéen.",
                             style: TextStyle(
                               color: Colors.orange,
@@ -446,7 +497,7 @@ class _PageCreationAnpLocalisationState
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        "Touchez la carte pour placer le point rouge exactement à l’endroit de votre ANP.",
+                        "Touchez la carte pour placer le point rouge exactement à l’endroit de votre ANP (porte, portail, entrée du bâtiment…).",
                         style: TextStyle(
                           color: Colors.black45,
                           fontSize: 11,
@@ -454,7 +505,7 @@ class _PageCreationAnpLocalisationState
                       ),
                       const SizedBox(height: 8),
 
-                      // 💡 VRAIE CARTE avec marker + sélection manuelle
+                      // Carte avec marker + sélection manuelle
                       Container(
                         height: 200,
                         width: double.infinity,
@@ -476,7 +527,7 @@ class _PageCreationAnpLocalisationState
                               initialZoom: 16,
                               minZoom: 3,
                               maxZoom: 19,
-                              onTap: _onMapTap, // 👈 sélection à la main
+                              onTap: _onMapTap,
                             ),
                             children: [
                               TileLayer(
@@ -513,6 +564,31 @@ class _PageCreationAnpLocalisationState
                           fontSize: 13,
                         ),
                       ),
+                      if (_precisionMetres != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _messagePrecision ?? '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _precisionSuffisante
+                                ? Colors.green[700]
+                                : Colors.orange[700],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      if (!_precisionSuffisante && _precisionMetres != null) ...[
+                        const SizedBox(height: 4),
+                        const Text(
+                          "La localisation est trop approximative pour créer une ANP. "
+                          "Merci de relancer la localisation ou d’ajuster le point sur la carte.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       const Text(
                         "(La position provient du GPS puis de votre ajustement sur la carte.)",

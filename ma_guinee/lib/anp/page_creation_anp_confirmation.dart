@@ -43,7 +43,7 @@ class _PageCreationAnpConfirmationState
     });
 
     try {
-      // 🔗 Appel direct au service ANP (création / mise à jour en base)
+      // Appel direct au service ANP (création / mise à jour en base)
       final code = await _serviceAnp.creerOuMettreAJourAnp(
         position: widget.position,
         autoriserHorsGuineePourTests: widget.autoriserHorsGuineePourTests,
@@ -60,7 +60,9 @@ class _PageCreationAnpConfirmationState
     } catch (_) {
       setState(() {
         _erreur =
-            "Une erreur est survenue lors de la création de votre ANP. Réessayez.";
+            "Une erreur technique est survenue lors de la création de votre ANP.\n\n"
+            "Vérifiez votre connexion Internet et réessayez. "
+            "Si le problème persiste, réessayez plus tard.";
       });
     } finally {
       if (mounted) {
@@ -237,7 +239,7 @@ class _PageCreationAnpConfirmationState
                     ),
                   ),
                   child: Text(
-                    _chargement ? "Création de votre ANP..." : "Finaliser",
+                    _chargement ? "Création de votre ANP…" : "Finaliser",
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
