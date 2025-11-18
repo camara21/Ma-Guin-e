@@ -59,8 +59,11 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
   LatLng _mapCenter = LatLng(9.6412, -13.5784);
   double _mapZoom = 6;
 
-  // 👉 CONTROLEUR DE CARTE POUR POUVOIR LA BOUGER / ZOOMER
+  // 👉 CONTROLEUR DE CARTE
   final MapController _mapController = MapController();
+
+  // 👉 Mode carte : true = satellite, false = standard
+  bool _modeSatellite = true;
 
   @override
   void initState() {
@@ -134,7 +137,7 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
         _mapZoom = 16;
       });
 
-      // 👉 on centre / zoome la carte sur la position GPS
+      // 👉 on centre / zoome la carte sur la position GPS (ça c'est normal)
       _mapController.move(point, 16);
     } catch (e) {
       setState(() {
@@ -149,12 +152,11 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
     }
   }
 
-  /// Quand on tape sur la carte, on déplace le marqueur sur la position exacte
+  /// Quand on tape sur la carte, on déplace seulement le marqueur
+  /// 👉 la carte NE BOUGE PLUS (pas de _mapController.move ici)
   void _onMapTap(TapPosition tapPos, LatLng latLng) {
     setState(() {
       _selectedPoint = latLng;
-      _mapCenter = latLng;
-      _mapZoom = 16;
 
       // On met aussi à jour la Position qui sera envoyée au backend
       _position = Position(
@@ -170,9 +172,6 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
         headingAccuracy: _position?.headingAccuracy ?? 0,
       );
     });
-
-    // 👉 on centre / zoome la carte sur le point cliqué
-    _mapController.move(latLng, 16);
   }
 
   // ============================
@@ -282,6 +281,67 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
   // ============================
   //   UI
   // ============================
+
+  Widget _buildToggleCarteSatellite() {
+    final bool sat = _modeSatellite;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Bouton CARTE
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = false);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Carte",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _couleurTexte : _bleuPrincipal,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Bouton SATELLITE
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = true);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Satellite",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _bleuPrincipal : _couleurTexte,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -504,6 +564,11 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
                 ),
 
                 const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildToggleCarteSatellite(),
+                ),
+                const SizedBox(height: 6),
                 const Text(
                   "Après la localisation, déplacez le point rouge sur la position exacte de votre site.",
                   style: TextStyle(
@@ -524,14 +589,26 @@ class _PageCreationAnpEntrepriseState extends State<PageCreationAnpEntreprise> {
                       options: MapOptions(
                         initialCenter: _selectedPoint ?? _mapCenter,
                         initialZoom: _selectedPoint != null ? 16 : _mapZoom,
+                        minZoom: 3,
+                        maxZoom: 18,
                         onTap: _onMapTap,
                       ),
                       children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.soneya.ma_guinee',
-                        ),
+                        if (_modeSatellite)
+                          TileLayer(
+                            urlTemplate:
+                                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                            userAgentPackageName: 'com.soneya.ma_guinee',
+                            maxNativeZoom: 18,
+                          )
+                        else
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            subdomains: const ['a', 'b', 'c'],
+                            userAgentPackageName: 'com.soneya.ma_guinee',
+                            maxNativeZoom: 19,
+                          ),
                         if (_selectedPoint != null)
                           MarkerLayer(
                             markers: [

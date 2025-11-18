@@ -44,6 +44,9 @@ class _PageCreationAnpLocalisationState
   bool _infosConfirmees = false;
   String? _erreurInfos;
 
+  // Mode d’affichage : true = satellite, false = carte classique
+  bool _modeSatellite = true;
+
   static const Color _bleuPrincipal = Color(0xFF0066FF);
   static const Color _bleuClair = Color(0xFFEAF3FF);
   static const Color _couleurTexte = Color(0xFF0D1724);
@@ -124,8 +127,7 @@ class _PageCreationAnpLocalisationState
       });
     } catch (_) {
       setState(() {
-        _erreur =
-            "Impossible de récupérer votre position.\n\n"
+        _erreur = "Impossible de récupérer votre position.\n\n"
             "Vérifiez que la localisation est activée, que Soneya a l’autorisation "
             "d’utiliser le GPS et que vous disposez d’une connexion Internet.";
       });
@@ -143,12 +145,11 @@ class _PageCreationAnpLocalisationState
       return;
     }
 
-    // Étape 2 : Confirmation + création ANP
+    // Étape 2 : Confirmation + création / mise à jour ANP
     final codeAnp = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => PageCreationAnpConfirmation(
           position: _position!,
-          // 👉 pour tes tests en France : autorise hors Guinée si on a détecté
           autoriserHorsGuineePourTests: _estHorsGuinee,
         ),
       ),
@@ -173,7 +174,7 @@ class _PageCreationAnpLocalisationState
       _infosConfirmees = false;
       _erreurInfos =
           "Merci de mettre à jour votre nom, e-mail ou numéro de téléphone "
-          "dans votre profil Soneya avant de créer votre ANP.";
+          "dans votre profil Soneya avant d’enregistrer votre ANP.";
     });
 
     showDialog(
@@ -184,7 +185,7 @@ class _PageCreationAnpLocalisationState
           content: const Text(
             "Ces informations proviennent de votre profil Soneya.\n\n"
             "Pour les modifier, retournez sur votre profil, mettez-les à jour "
-            "puis revenez sur la création d’ANP.",
+            "puis revenez sur la page ANP.",
           ),
           actions: [
             TextButton(
@@ -203,14 +204,13 @@ class _PageCreationAnpLocalisationState
       _infosConfirmees &&
       _precisionSuffisante;
 
-  /// Quand l’utilisateur tape sur la carte pour choisir la position exacte
-  void _onMapTap(TapPosition tapPosition, LatLng latLng) {
+  /// Mise à jour du point sélectionné (utilisé par la carte normale et la plein écran)
+  void _mettreAJourPoint(LatLng latLng) {
     if (_position == null) return;
 
     setState(() {
       _pointSelectionne = latLng;
 
-      // On garde les autres champs du Position, mais on remplace latitude/longitude.
       _position = Position(
         latitude: latLng.latitude,
         longitude: latLng.longitude,
@@ -226,9 +226,103 @@ class _PageCreationAnpLocalisationState
         isMocked: _position!.isMocked,
       );
 
-      // Comme tu ajustes manuellement, on considère la précision comme suffisante.
+      // Dès qu’on ajuste à la main, on considère la précision comme OK
       _precisionSuffisante = true;
     });
+  }
+
+  /// Quand l’utilisateur tape sur la carte pour choisir la position exacte
+  void _onMapTap(TapPosition tapPosition, LatLng latLng) {
+    _mettreAJourPoint(latLng);
+    // ❗ On ne bouge PAS la carte ici, seulement le marqueur
+  }
+
+  /// Ouvre une carte satellite / classique en plein écran pour ajuster précisément le point
+  Future<void> _ouvrirCartePleine() async {
+    if (_position == null && _pointSelectionne == null) return;
+
+    final lat = _pointSelectionne?.latitude ?? _position!.latitude;
+    final lng = _pointSelectionne?.longitude ?? _position!.longitude;
+
+    final LatLng pointInitial = LatLng(lat, lng);
+
+    final _ResultCartePleine? resultat =
+        await Navigator.of(context).push<_ResultCartePleine>(
+      MaterialPageRoute(
+        builder: (_) => _PageAnpCartePleine(
+          pointInitial: pointInitial,
+          modeSatelliteInitial: _modeSatellite,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+
+    if (resultat != null) {
+      _mettreAJourPoint(resultat.point);
+      setState(() {
+        _modeSatellite = resultat.modeSatellite;
+      });
+    }
+  }
+
+  Widget _buildToggleCarteSatellite() {
+    final bool sat = _modeSatellite;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Bouton CARTE
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = false);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Carte",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _couleurTexte : _bleuPrincipal,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Bouton SATELLITE
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = true);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Satellite",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _bleuPrincipal : _couleurTexte,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -243,7 +337,7 @@ class _PageCreationAnpLocalisationState
         elevation: 0,
         foregroundColor: _couleurTexte,
         title: const Text(
-          "Créer mon ANP – Localisation",
+          "Mon ANP – Localisation",
           style: TextStyle(
             color: _couleurTexte,
             fontWeight: FontWeight.w600,
@@ -272,7 +366,7 @@ class _PageCreationAnpLocalisationState
                     const SizedBox(height: 8),
                     const Text(
                       "Nous utilisons les informations de votre profil Soneya. "
-                      "Confirmez qu’elles sont correctes avant de créer votre ANP.",
+                      "Confirmez qu’elles sont correctes avant d’enregistrer votre ANP.",
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.black54,
@@ -387,7 +481,7 @@ class _PageCreationAnpLocalisationState
 
                     // ────────────── Localisation ──────────────
                     const Text(
-                      "Étape 1 sur 2 : Localisation",
+                      "Étape 1 sur 2 : Localisation précise",
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -398,7 +492,7 @@ class _PageCreationAnpLocalisationState
                     const Text(
                       "Votre Adresse Numérique Personnelle (ANP) est basée sur votre "
                       "position exacte. Utilisez d’abord la localisation de votre téléphone, "
-                      "puis ajustez le point rouge sur la carte si nécessaire.",
+                      "puis ajustez le point rouge sur la carte (classique ou satellite) si nécessaire.",
                       style: TextStyle(
                         fontSize: 15,
                         color: Colors.black54,
@@ -479,7 +573,7 @@ class _PageCreationAnpLocalisationState
                           child: const Text(
                             "Vous ne vous trouvez pas en Guinée.\n"
                             "Ce service n’est pas disponible à l’international pour le moment.\n"
-                            "Pour les tests, la création reste possible, mais en production "
+                            "Pour les tests, l’enregistrement reste possible, mais en production "
                             "vous devrez vous trouver sur le territoire guinéen.",
                             style: TextStyle(
                               color: Colors.orange,
@@ -488,12 +582,18 @@ class _PageCreationAnpLocalisationState
                             ),
                           ),
                         ),
-                      const Text(
-                        "Aperçu de votre position",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: _couleurTexte,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Aperçu de votre position",
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: _couleurTexte,
+                            ),
+                          ),
+                          _buildToggleCarteSatellite(),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -507,7 +607,7 @@ class _PageCreationAnpLocalisationState
 
                       // Carte avec marker + sélection manuelle
                       Container(
-                        height: 200,
+                        height: 220,
                         width: double.infinity,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
@@ -524,18 +624,27 @@ class _PageCreationAnpLocalisationState
                           child: FlutterMap(
                             options: MapOptions(
                               initialCenter: LatLng(lat, lng),
-                              initialZoom: 16,
+                              initialZoom: 17,
                               minZoom: 3,
-                              maxZoom: 19,
+                              maxZoom: 18, // évite l’écran gris
                               onTap: _onMapTap,
                             ),
                             children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                subdomains: const ['a', 'b', 'c'],
-                                userAgentPackageName: 'ma.guinee.anp',
-                              ),
+                              if (_modeSatellite)
+                                TileLayer(
+                                  urlTemplate:
+                                      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                                  userAgentPackageName: 'ma.guinee.anp',
+                                  maxNativeZoom: 18,
+                                )
+                              else
+                                TileLayer(
+                                  urlTemplate:
+                                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  subdomains: const ['a', 'b', 'c'],
+                                  userAgentPackageName: 'ma.guinee.anp',
+                                  maxNativeZoom: 19,
+                                ),
                               MarkerLayer(
                                 markers: [
                                   Marker(
@@ -544,8 +653,8 @@ class _PageCreationAnpLocalisationState
                                     height: 40,
                                     child: const Icon(
                                       Icons.location_on,
-                                      color: _bleuPrincipal,
-                                      size: 36,
+                                      color: Colors.red, // point rouge
+                                      size: 40,
                                     ),
                                   ),
                                 ],
@@ -554,6 +663,17 @@ class _PageCreationAnpLocalisationState
                           ),
                         ),
                       ),
+
+                      // Bouton pour passer en plein écran
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _ouvrirCartePleine,
+                          icon: const Icon(Icons.fullscreen),
+                          label: const Text("Ajuster sur grande carte"),
+                        ),
+                      ),
+
                       const SizedBox(height: 8),
                       Text(
                         "Lat : ${lat.toStringAsFixed(5)}   "
@@ -577,10 +697,11 @@ class _PageCreationAnpLocalisationState
                           ),
                         ),
                       ],
-                      if (!_precisionSuffisante && _precisionMetres != null) ...[
+                      if (!_precisionSuffisante &&
+                          _precisionMetres != null) ...[
                         const SizedBox(height: 4),
                         const Text(
-                          "La localisation est trop approximative pour créer une ANP. "
+                          "La localisation est trop approximative pour enregistrer votre ANP. "
                           "Merci de relancer la localisation ou d’ajuster le point sur la carte.",
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -630,6 +751,205 @@ class _PageCreationAnpLocalisationState
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// petit objet pour renvoyer point + mode carte/satellite
+class _ResultCartePleine {
+  final LatLng point;
+  final bool modeSatellite;
+  _ResultCartePleine(this.point, this.modeSatellite);
+}
+
+/// Page interne pour l’ajustement en plein écran
+class _PageAnpCartePleine extends StatefulWidget {
+  final LatLng pointInitial;
+  final bool modeSatelliteInitial;
+
+  const _PageAnpCartePleine({
+    super.key,
+    required this.pointInitial,
+    required this.modeSatelliteInitial,
+  });
+
+  @override
+  State<_PageAnpCartePleine> createState() => _PageAnpCartePleineState();
+}
+
+class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
+  static const Color _bleuPrincipal = Color(0xFF0066FF);
+
+  late LatLng _point;
+  final MapController _mapController = MapController();
+  late bool _modeSatellite;
+
+  @override
+  void initState() {
+    super.initState();
+    _point = widget.pointInitial;
+    _modeSatellite = widget.modeSatelliteInitial;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mapController.move(_point, 17);
+    });
+  }
+
+  void _onTap(TapPosition tapPosition, LatLng latLng) {
+    setState(() {
+      _point = latLng;
+      // ❗ ICI ON NE BOUGE PLUS LA CARTE :
+      // on ne fait plus _mapController.move(latLng, 17);
+    });
+  }
+
+  void _valider() {
+    Navigator.of(context).pop<_ResultCartePleine>(
+      _ResultCartePleine(_point, _modeSatellite),
+    );
+  }
+
+  Widget _buildToggleCarteSatellite() {
+    final bool sat = _modeSatellite;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = false);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Carte",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? Colors.black87 : _bleuPrincipal,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = true);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Satellite",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _bleuPrincipal : Colors.black87,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Ajuster ma position ANP"),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: _buildToggleCarteSatellite(),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text(
+              "Touchez la carte pour placer le point rouge exactement "
+              "sur votre porte, portail ou entrée de bâtiment.",
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+          Expanded(
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _point,
+                initialZoom: 17,
+                minZoom: 3,
+                maxZoom: 18, // on reste dans une zone nette
+                onTap: _onTap,
+              ),
+              children: [
+                if (_modeSatellite)
+                  TileLayer(
+                    urlTemplate:
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    userAgentPackageName: 'ma.guinee.anp',
+                    maxNativeZoom: 18,
+                  )
+                else
+                  TileLayer(
+                    urlTemplate:
+                        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    subdomains: const ['a', 'b', 'c'],
+                    userAgentPackageName: 'ma.guinee.anp',
+                    maxNativeZoom: 19,
+                  ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _point,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_on,
+                        color: Colors.red,
+                        size: 42,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _valider,
+                  child: const Text(
+                    "Valider cette position",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

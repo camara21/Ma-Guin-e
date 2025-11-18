@@ -186,8 +186,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
     final remDist = _remainingDistanceMeters;
     if (remDist == null) return _routeDurationSec;
 
-    final ratio = (remDist / _routePolylineDistanceMeters!)
-        .clamp(0.0, 1.0);
+    final ratio = (remDist / _routePolylineDistanceMeters!).clamp(0.0, 1.0);
 
     return _routeDurationSec! * ratio;
   }
@@ -607,8 +606,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
             sum += d;
           }
 
-          final double? durationSec =
-              (route0['duration'] as num?)?.toDouble();
+          final double? durationSec = (route0['duration'] as num?)?.toDouble();
           final double? distanceMeters =
               (route0['distance'] as num?)?.toDouble();
 
@@ -632,10 +630,8 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 final type = (maneuver['type'] as String?) ?? '';
                 final modifier = (maneuver['modifier'] as String?) ?? '';
                 final name = (step['name'] as String?) ?? '';
-                final distance =
-                    (step['distance'] as num?)?.toDouble() ?? 0.0;
-                final duration =
-                    (step['duration'] as num?)?.toDouble() ?? 0.0;
+                final distance = (step['distance'] as num?)?.toDouble() ?? 0.0;
+                final duration = (step['duration'] as num?)?.toDouble() ?? 0.0;
                 final instr = _formatInstruction(type, modifier, name);
 
                 if (stepPoint != null) {
@@ -830,9 +826,8 @@ class _AnpHomePageState extends State<AnpHomePage> {
                         _mapController.move(s.location, 18);
                         setState(() {
                           _currentStepIndex = index;
-                          _routeBearingDeg =
-                              _computeBearing(_routeStart ?? s.location,
-                                  s.location);
+                          _routeBearingDeg = _computeBearing(
+                              _routeStart ?? s.location, s.location);
                         });
                       },
                     );
@@ -960,8 +955,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
         _searchedAnpPoint = point;
         _lastSearchedCode = found!['code']?.toString() ?? code;
         _lastSearchedLabel = label;
-        _lastSearchedNiceName =
-            niceName.isNotEmpty ? niceName : label;
+        _lastSearchedNiceName = niceName.isNotEmpty ? niceName : label;
         _internalNavActive = false;
 
         if (_position != null) {
@@ -1468,8 +1462,8 @@ class _AnpHomePageState extends State<AnpHomePage> {
                             point: _searchedAnpPoint!,
                             width: 46,
                             height: 46,
-                            child:
-                                _DestinationMarker(isEntreprise: _lastIsEntreprise),
+                            child: _DestinationMarker(
+                                isEntreprise: _lastIsEntreprise),
                           ),
                         ],
                       ),

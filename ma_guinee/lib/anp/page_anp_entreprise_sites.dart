@@ -39,6 +39,9 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
   LatLng _mapCenter = LatLng(9.6412, -13.5784); // Conakry par défaut
   double _mapZoom = 6;
 
+  // Mode de carte (true = satellite, false = classique)
+  bool _modeSatellite = true;
+
   @override
   void initState() {
     super.initState();
@@ -154,7 +157,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
   }
 
   // ==========================
-  //  QR CODE ENTREPRISE
+  //  QR CODE ENTREPRISE + ANP
   // ==========================
   void _voirQrEntreprise() {
     if (_entreprise == null) return;
@@ -163,15 +166,64 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
     final email = (_entreprise!['contact_email'] as String? ?? '').trim();
     final tel = (_entreprise!['contact_telephone'] as String? ?? '').trim();
 
-    final data = [
-      if (nom.isNotEmpty) 'Entreprise: $nom',
-      if (email.isNotEmpty) 'Email: $email',
-      if (tel.isNotEmpty) 'Téléphone: $tel',
-    ].join('\n');
+    // Texte du QR : entreprise + TOUS les sites ANP avec code
+    final buffer = StringBuffer();
 
+    if (nom.isNotEmpty) buffer.writeln('Entreprise: $nom');
+    if (email.isNotEmpty) buffer.writeln('Email: $email');
+    if (tel.isNotEmpty) buffer.writeln('Téléphone: $tel');
+
+    final sitesAvecCode = _sites.where((s) {
+      final c = (s['code'] as String?) ?? '';
+      return c.trim().isNotEmpty;
+    }).toList();
+
+    String? codePrincipalAffiche;
+
+    if (sitesAvecCode.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('--- Adresses ANP ---');
+    }
+
+    // On inclut TOUTES les adresses qui ont un code ANP
+    for (final s in sitesAvecCode) {
+      final nomSite = (s['nom_site'] as String?) ?? 'Site';
+      final typeSite = (s['type_site'] as String?) ?? '';
+      final code = ((s['code'] as String?) ?? '').trim();
+      final lat = (s['latitude'] as num).toDouble();
+      final lng = (s['longitude'] as num).toDouble();
+      final estPrincipal = (s['est_principal'] as bool?) ?? false;
+
+      if (codePrincipalAffiche == null && code.isNotEmpty && estPrincipal) {
+        codePrincipalAffiche = code;
+      }
+
+      buffer.writeln('');
+      buffer.writeln(
+          'Site: $nomSite${typeSite.isNotEmpty ? " ($typeSite)" : ""}');
+      buffer.writeln('ANP: $code');
+      buffer.writeln('Lat: $lat  Lng: $lng');
+      if (estPrincipal) buffer.writeln('(Principal)');
+    }
+
+    // Si aucun principal trouvé, on prend le 1er code juste pour l’affichage sous le QR
+    codePrincipalAffiche ??= sitesAvecCode.isNotEmpty
+        ? ((sitesAvecCode.first['code'] as String?) ?? '').trim()
+        : null;
+
+    final data = buffer.toString().trim();
     if (data.isEmpty) return;
 
     final qrKey = GlobalKey();
+
+    final initiales = nom.isNotEmpty
+        ? nom
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .take(2)
+            .map((p) => p.characters.first.toUpperCase())
+            .join()
+        : 'ANP';
 
     showDialog(
       context: context,
@@ -217,7 +269,8 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                   name: 'anp_entreprise_qr.png',
                 ),
               ],
-              text: "Voici le QR code de mon entreprise : $nom",
+              text:
+                  "QR ANP Entreprise : scannez pour obtenir toutes les adresses ANP de $nom.",
             );
           } catch (_) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -227,15 +280,6 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
             );
           }
         }
-
-        final initiales = nom.isNotEmpty
-            ? nom
-                .split(' ')
-                .where((p) => p.isNotEmpty)
-                .take(2)
-                .map((p) => p.characters.first.toUpperCase())
-                .join()
-            : 'ANP';
 
         return Dialog(
           shape:
@@ -346,45 +390,51 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              if (email.isNotEmpty || tel.isNotEmpty)
-                                Column(
-                                  children: [
-                                    if (email.isNotEmpty)
-                                      Text(
-                                        email,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: _textColor,
-                                        ),
-                                      ),
-                                    if (tel.isNotEmpty)
-                                      const SizedBox(height: 2),
-                                    if (tel.isNotEmpty)
-                                      Text(
-                                        tel,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: _textColor,
-                                        ),
-                                      ),
-                                  ],
+                              if (codePrincipalAffiche != null)
+                                Text(
+                                  "Code ANP principal : $codePrincipalAffiche",
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: _textColor,
+                                  ),
                                 ),
+                              if (email.isNotEmpty || tel.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                if (email.isNotEmpty)
+                                  Text(
+                                    email,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _textColor,
+                                    ),
+                                  ),
+                                if (tel.isNotEmpty)
+                                  Text(
+                                    tel,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _textColor,
+                                    ),
+                                  ),
+                              ],
+                              const SizedBox(height: 4),
+                              const Text(
+                                "Scannez pour retrouver toutes les adresses ANP de l’entreprise.",
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.black54,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  "Partagez ce QR pour envoyer facilement les coordonnées de votre entreprise.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -424,6 +474,70 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
     );
   }
 
+  // ==========================
+  //   TOGGLE CARTE / SATELLITE
+  // ==========================
+  Widget _buildToggleCarteSatellite() {
+    final bool sat = _modeSatellite;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = false);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Carte",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _textColor : _primaryBlue,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () {
+              setState(() => _modeSatellite = true);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sat ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Satellite",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sat ? _primaryBlue : _textColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================
+  //   BUILD
+  // ==========================
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -512,7 +626,6 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
             const SizedBox(height: 16),
           ],
           const Spacer(),
-          // Le gros bouton reste le FAB bleu en bas de l’écran
         ],
       ),
     );
@@ -522,14 +635,12 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
   //  CAS : ENTREPRISE EXISTE
   // ==========================
   Widget _buildAvecEntreprise(ThemeData theme) {
-    // 👉 Si aucun site n’a de code ANP, on n'affiche plus la "section ANP entreprise"
+    // 👉 Si aucun site n’a de code ANP, on n'affiche plus la carte + liste
     final bool hasAnyCode = _sites.any(
       (s) => ((s['code'] as String?) ?? '').trim().isNotEmpty,
     );
 
     if (!hasAnyCode) {
-      // On ne montre pas la carte + liste d’adresses ANP,
-      // mais on laisse la possibilité de générer un QR entreprise.
       return RefreshIndicator(
         onRefresh: _loadEntrepriseEtSites,
         child: SingleChildScrollView(
@@ -538,7 +649,8 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 8),
+              _buildEntrepriseHeader(theme),
+              const SizedBox(height: 16),
               const Text(
                 "Vous avez enregistré une entreprise, mais aucune adresse ANP n’a encore de code.",
                 style: TextStyle(
@@ -560,7 +672,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                label: const Text("QR code de l’entreprise"),
+                label: const Text("QR code ANP Entreprise"),
               ),
               const SizedBox(height: 16),
               Container(
@@ -602,7 +714,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
       );
     }
 
-    // 👉 Ici, il y a au moins un code ANP : on affiche tout (entreprise + carte + sites)
+    // 👉 Ici, il y a au moins un code ANP : on affiche tout
     return RefreshIndicator(
       onRefresh: _loadEntrepriseEtSites,
       child: SingleChildScrollView(
@@ -610,9 +722,25 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
         child: Column(
           children: [
-            // --------- CARTE ENTREPRISE ---------
+            // --------- HEADER ENTREPRISE ---------
             _buildEntrepriseHeader(theme),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+
+            // --------- TITRE + TOGGLE ---------
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Carte des adresses",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: _textColor,
+                  ),
+                ),
+                _buildToggleCarteSatellite(),
+              ],
+            ),
+            const SizedBox(height: 8),
 
             // --------- CARTE + MARKERS ---------
             SizedBox(
@@ -624,13 +752,25 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                   options: MapOptions(
                     initialCenter: _mapCenter,
                     initialZoom: _mapZoom,
+                    minZoom: 3,
+                    maxZoom: 19,
                   ),
                   children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.soneya.ma_guinee',
-                    ),
+                    if (_modeSatellite)
+                      TileLayer(
+                        urlTemplate:
+                            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        userAgentPackageName: 'com.soneya.ma_guinee',
+                        maxNativeZoom: 18,
+                      )
+                    else
+                      TileLayer(
+                        urlTemplate:
+                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c'],
+                        userAgentPackageName: 'com.soneya.ma_guinee',
+                        maxNativeZoom: 19,
+                      ),
                     if (_sites.isNotEmpty)
                       MarkerLayer(
                         markers: _sites.map((site) {
@@ -829,6 +969,13 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300),
         color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -854,7 +1001,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                       onPressed: _voirQrEntreprise,
                       icon: const Icon(Icons.qr_code_2),
                       color: _primaryBlue,
-                      tooltip: "QR entreprise",
+                      tooltip: "QR ANP Entreprise",
                     ),
                   ],
                 ),

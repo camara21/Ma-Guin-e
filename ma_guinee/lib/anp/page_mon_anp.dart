@@ -483,7 +483,7 @@ class _PageMonAnpState extends State<PageMonAnp> {
         : null;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -622,13 +622,44 @@ class _PageMonAnpState extends State<PageMonAnp> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    "Mon Adresse Numérique",
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: _couleurTexte,
-                                    ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        "Mon Adresse Numérique",
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                          color: _couleurTexte,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: _bleuClair,
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                        ),
+                                        child: const Row(
+                                          children: [
+                                            Icon(Icons.satellite_alt,
+                                                size: 14,
+                                                color: _bleuPrincipal),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              "Vue satellite",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: _bleuPrincipal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 12),
                                   Text(
@@ -662,10 +693,10 @@ class _PageMonAnpState extends State<PageMonAnp> {
                                   ),
                                   const SizedBox(height: 20),
 
-                                  // 🌍 VRAIE CARTE SI COORDONNÉES DISPONIBLES
+                                  // 🌍 VRAIE CARTE SATELLITE SI COORDONNÉES DISPONIBLES
                                   if (lat != null && lng != null)
                                     Container(
-                                      height: 160,
+                                      height: 170,
                                       width: double.infinity,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(20),
@@ -683,17 +714,18 @@ class _PageMonAnpState extends State<PageMonAnp> {
                                         child: FlutterMap(
                                           options: MapOptions(
                                             initialCenter: LatLng(lat, lng),
-                                            initialZoom: 17,
+                                            initialZoom: 18,
                                             minZoom: 3,
-                                            maxZoom: 19,
+                                            maxZoom: 18, // évite l’écran gris
                                           ),
                                           children: [
+                                            // 🛰 Vue satellite (ArcGIS World Imagery)
                                             TileLayer(
                                               urlTemplate:
-                                                  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                              subdomains: const ['a', 'b', 'c'],
+                                                  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                                               userAgentPackageName:
                                                   'ma.guinee.anp',
+                                              maxNativeZoom: 18,
                                             ),
                                             MarkerLayer(
                                               markers: [
@@ -704,7 +736,7 @@ class _PageMonAnpState extends State<PageMonAnp> {
                                                   child: const Icon(
                                                     Icons.location_on,
                                                     color: _bleuPrincipal,
-                                                    size: 38,
+                                                    size: 40,
                                                   ),
                                                 ),
                                               ],

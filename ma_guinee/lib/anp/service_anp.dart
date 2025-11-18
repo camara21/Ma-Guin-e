@@ -15,21 +15,10 @@ class ExceptionAnp implements Exception {
 }
 
 /// Service ANP pour les PERSONNES (1 ANP par utilisateur)
-///
-/// - Vérifie que l’utilisateur est connecté
-/// - (⚠️ contrainte Guinée désactivée pour l’instant si tu veux)
-/// - Génère un code ANP unique (au niveau de la table anp_adresses)
-/// - Crée ou met à jour la ligne dans `public.anp_adresses`
-///
-/// Les triggers côté base s’occupent de :
-///   - remplir `geom`
-///   - mettre à jour `updated_at`
-///   - ajouter une ligne dans `anp_adresses_historique`
 class ServiceAnp {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Approximation de la zone géographique de la Guinée
-  /// (conservé si tu veux la réactiver).
   bool _estDansZoneGuinee(Position pos) {
     const double minLat = 7.0;
     const double maxLat = 13.0;
@@ -42,11 +31,7 @@ class ServiceAnp {
         pos.longitude <= maxLng;
   }
 
-  /// Génère un code ANP du type :
-  ///   GN-27-48-PN-XH
-  ///
-  /// → 2 premiers blocs = CHIFFRES
-  /// → 2 derniers blocs = LETTRES
+  /// Génère un code ANP du type GN-27-48-PN-XH
   String _genererCodeAnp() {
     const prefixe = "GN";
     const chiffres = "23456789"; // pas de 0 ni 1 pour éviter confusion
@@ -96,12 +81,9 @@ class ServiceAnp {
   }
 
   /// Crée ou met à jour l’ANP de l’utilisateur connecté.
-  ///
-  /// [position] : position GPS actuelle du téléphone.
-  /// [autoriserHorsGuineePourTests] : conservé si tu veux réactiver plus tard.
   Future<String> creerOuMettreAJourAnp({
     required Position position,
-    bool autoriserHorsGuineePourTests = true, // ✅ contrainte désactivée
+    bool autoriserHorsGuineePourTests = true, // pour tes tests en France
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) {
@@ -110,43 +92,50 @@ class ServiceAnp {
       );
     }
 
-    // 🛑 Ancienne contrainte Guinée (désactivée pour l’instant)
-    // final estEnGuinee = _estDansZoneGuinee(position);
-    // if (!estEnGuinee && !autoriserHorsGuineePourTests) {
-    //   throw ExceptionAnp(
-    //     "Vous ne vous trouvez pas en Guinée.\n"
-    //     "La création d’une ANP est réservée aux utilisateurs situés "
-    //     "sur le territoire guinéen.",
-    //   );
-    // }
-
     final userId = user.id;
 
-    // 1. Vérifier s’il existe déjà une ANP pour cet utilisateur
-    final Map<String, dynamic>? existant = await _supabase
-        .from('anp_adresses')
-        .select()
-        .eq('user_id', userId)
-        .maybeSingle();
+    try {
+      // 1. Vérifier s’il existe déjà une ANP pour cet utilisateur
+      final Map<String, dynamic>? existant = await _supabase
+          .from('anp_adresses')
+          .select('id, code')
+          .eq('user_id', userId)
+          .maybeSingle();
 
-    String code;
+      String code;
 
-    if (existant != null && existant['code'] is String) {
-      // ANP existe déjà → on garde le même code, on met à jour la position
-      code = existant['code'] as String;
-    } else {
-      // Pas d’ANP → on génère un NOUVEAU code UNIQUE
-      code = await _genererCodeAnpUnique();
+      if (existant != null && existant['code'] is String) {
+        // ANP existe déjà → on garde le même code, on met à jour la position
+        code = existant['code'] as String;
+      } else {
+        // Pas d’ANP → on génère un NOUVEAU code UNIQUE
+        code = await _genererCodeAnpUnique();
+      }
+
+      // 2. Upsert en base (une ligne par user_id)
+      final row = await _supabase
+          .from('anp_adresses')
+          .upsert(
+            {
+              'user_id': userId,
+              'code': code,
+              'latitude': position.latitude,
+              'longitude': position.longitude,
+            },
+            onConflict: 'user_id', // 🔑 très important : on se base sur user_id
+          )
+          .select('code')
+          .single();
+
+      return row['code'] as String;
+    } on PostgrestException catch (e) {
+      // Si ça plante côté RLS ou contrainte, on remonte un message clair
+      throw ExceptionAnp(
+        "Erreur lors de l’enregistrement de votre ANP : ${e.message}",
+      );
+    } catch (_) {
+      // Laisse la page gérer l’erreur technique générique
+      rethrow;
     }
-
-    // 2. Upsert en base (une ligne par user_id)
-    await _supabase.from('anp_adresses').upsert({
-      'user_id': userId,
-      'code': code,
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-    });
-
-    return code;
   }
 }

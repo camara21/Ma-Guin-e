@@ -60,7 +60,7 @@ class _PageCreationAnpConfirmationState
     } catch (_) {
       setState(() {
         _erreur =
-            "Une erreur technique est survenue lors de la création de votre ANP.\n\n"
+            "Une erreur technique est survenue lors de l’enregistrement de votre ANP.\n\n"
             "Vérifiez votre connexion Internet et réessayez. "
             "Si le problème persiste, réessayez plus tard.";
       });
@@ -84,7 +84,7 @@ class _PageCreationAnpConfirmationState
         elevation: 0,
         foregroundColor: _couleurTexte,
         title: const Text(
-          "Créer mon ANP – Confirmation",
+          "Mon ANP – Confirmation",
           style: TextStyle(
             color: _couleurTexte,
             fontWeight: FontWeight.w600,
@@ -107,7 +107,7 @@ class _PageCreationAnpConfirmationState
               ),
               const SizedBox(height: 12),
               const Text(
-                "Avant de finaliser votre Adresse Numérique Personnelle (ANP), "
+                "Avant d’enregistrer ou de mettre à jour votre Adresse Numérique Personnelle (ANP), "
                 "merci de lire et d’accepter les règles suivantes :",
                 style: TextStyle(
                   fontSize: 15,
@@ -193,7 +193,7 @@ class _PageCreationAnpConfirmationState
                   const SizedBox(width: 4),
                   const Expanded(
                     child: Text(
-                      "J’accepte et je souhaite créer mon Adresse Numérique Personnelle (ANP) "
+                      "J’accepte et je souhaite enregistrer (ou mettre à jour) mon Adresse Numérique Personnelle (ANP) "
                       "avec ces règles.",
                       style: TextStyle(
                         fontSize: 14,
@@ -239,7 +239,9 @@ class _PageCreationAnpConfirmationState
                     ),
                   ),
                   child: Text(
-                    _chargement ? "Création de votre ANP…" : "Finaliser",
+                    _chargement
+                        ? "Enregistrement de votre ANP…"
+                        : "Enregistrer mon ANP",
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
