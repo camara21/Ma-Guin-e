@@ -58,35 +58,48 @@ class _AnpHomePageState extends State<AnpHomePage> {
 
   final List<_RecentRoute> _recentRoutes = [];
 
+  // ---------- HISTORIQUE (PERSISTANT) ----------
+
   Future<void> _saveRecentRoutes() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final list = _recentRoutes.map((r) {
-      return jsonEncode({
-        "code": r.code,
-        "label": r.label,
-      });
-    }).toList();
-
-    await prefs.setStringList('recent_routes', list);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _recentRoutes
+          .map((r) => jsonEncode({"code": r.code, "label": r.label}))
+          .toList();
+      await prefs.setStringList('recent_routes', list);
+    } catch (_) {
+      // on évite de crasher si jamais SharedPreferences plante
+    }
   }
 
   Future<void> _loadRecentRoutes() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('recent_routes') ?? [];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('recent_routes') ?? [];
 
-    final routes = list.map((e) {
-      final data = jsonDecode(e);
-      return _RecentRoute(
-        code: data["code"],
-        label: data["label"],
-      );
-    }).toList();
+      final routes = <_RecentRoute>[];
+      for (final e in list) {
+        try {
+          final data = jsonDecode(e);
+          final code = data["code"]?.toString();
+          final label = data["label"]?.toString();
+          if (code != null && label != null) {
+            routes.add(_RecentRoute(code: code, label: label));
+          }
+        } catch (_) {
+          // on ignore les entrées invalides
+        }
+      }
 
-    setState(() {
-      _recentRoutes.clear();
-      _recentRoutes.addAll(routes);
-    });
+      if (!mounted) return;
+      setState(() {
+        _recentRoutes
+          ..clear()
+          ..addAll(routes);
+      });
+    } catch (_) {
+      // rien de grave si la lecture échoue
+    }
   }
 
   bool get _hasAnp => _anpCode != null && _anpCode!.isNotEmpty;
@@ -97,7 +110,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
     _searchController.text = '';
     _chargerAnp();
     _chargerMaisonTravail();
-    _loadRecentRoutes();
+    _loadRecentRoutes(); // 🔵 charge l'historique au démarrage
   }
 
   @override
@@ -522,6 +535,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
         return;
       }
 
+      // 🔵 On met à jour l'état de la dernière destination trouvée
       setState(() {
         _searchedPoint = pt!;
         _lastSearchedCode = found != null ? found['code']?.toString() : null;
@@ -532,15 +546,23 @@ class _AnpHomePageState extends State<AnpHomePage> {
         _lastIsAddress = isAdresse;
       });
 
-      if (_lastSearchedCode != null && _lastSearchedLabel != null) {
-        final route =
-            _RecentRoute(code: _lastSearchedCode!, label: _lastSearchedLabel!);
-        setState(() {
-          _recentRoutes.removeWhere((r) => r.code == route.code);
-          _recentRoutes.insert(0, route);
-          if (_recentRoutes.length > 5) _recentRoutes.removeLast();
-        });
-      }
+      // 🔵 Construction de l'entrée historique (même pour adresse libre)
+      final historyCode =
+          _lastSearchedCode ?? value; // pour Nominatim, on garde le texte saisi
+      final historyLabel = _lastSearchedNiceName ?? _lastSearchedLabel ?? label;
+
+      // 🔵 Mise à jour de la liste + sauvegarde
+      setState(() {
+        _recentRoutes.removeWhere((r) => r.code == historyCode);
+        _recentRoutes.insert(
+          0,
+          _RecentRoute(code: historyCode, label: historyLabel),
+        );
+        if (_recentRoutes.length > 5) {
+          _recentRoutes.removeRange(5, _recentRoutes.length);
+        }
+      });
+      await _saveRecentRoutes();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1227,14 +1249,13 @@ class _AnpHomePageState extends State<AnpHomePage> {
     );
   }
 }
-
 // ---------------------- SEARCH SHEET -------------------------
 
 class _AnpSearchSheet extends StatefulWidget {
   final String initialText;
   final String? homeAnpCode;
   final String? workAnpCode;
-  final String? userAnpCode; // ← AJOUT ICI
+  final String? userAnpCode; // ← ANP de l'utilisateur si pas de "Maison"
   final List<_RecentRoute> recentRoutes;
   final ValueChanged<String> onSelectInput;
 
@@ -1242,7 +1263,7 @@ class _AnpSearchSheet extends StatefulWidget {
     required this.initialText,
     required this.homeAnpCode,
     required this.workAnpCode,
-    required this.userAnpCode, // ← AJOUT ICI
+    required this.userAnpCode,
     required this.recentRoutes,
     required this.onSelectInput,
   });
