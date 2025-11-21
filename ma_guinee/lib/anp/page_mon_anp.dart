@@ -40,6 +40,11 @@ class _PageMonAnpState extends State<PageMonAnp> {
   static const Color _bleuClair = Color(0xFFEAF3FF);
   static const Color _couleurTexte = Color(0xFF0D1724);
 
+  // Palette pour un rendu plus moderne
+  static const Color _fondPrincipal = Color(0xFFF2F4F8);
+  static const Color _carteFond = Colors.white;
+  static const Color _accentSoft = Color(0xFFEDF2FF);
+
   @override
   void initState() {
     super.initState();
@@ -456,7 +461,7 @@ class _PageMonAnpState extends State<PageMonAnp> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Votre ANP a été enregistrée avec succès."),
+          content: Text("Votre nouvelle adresse a bien été enregistrée."),
         ),
       );
     }
@@ -483,17 +488,31 @@ class _PageMonAnpState extends State<PageMonAnp> {
         : null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: _fondPrincipal,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: _couleurTexte,
-        title: const Text(
-          "Mon ANP",
-          style: TextStyle(
-            color: _couleurTexte,
-            fontWeight: FontWeight.w600,
-          ),
+        centerTitle: true,
+        title: Column(
+          children: const [
+            Text(
+              "Mon ANP",
+              style: TextStyle(
+                color: _couleurTexte,
+                fontWeight: FontWeight.w700,
+                fontSize: 20,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              "Adresse Numérique Personnelle",
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 11,
+              ),
+            )
+          ],
         ),
       ),
       body: SafeArea(
@@ -513,310 +532,419 @@ class _PageMonAnpState extends State<PageMonAnp> {
                       ),
                     )
                   : anp == null
-                      // ─── CAS 1 : pas encore d’ANP ───
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Mon Adresse Numérique",
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: _couleurTexte,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              "Vous n’avez pas encore d’Adresse Numérique Personnelle (ANP).\n\n"
-                              "Créez votre ANP pour obtenir un code unique en Guinée. "
-                              "Ce code vous permettra d’inviter facilement des personnes "
-                              "chez vous et d’être trouvé sur la carte.",
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: Colors.black54,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: _bleuClair,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                "L’ANP est basée sur la localisation réelle de votre téléphone. "
-                                "Vous devrez activer le GPS pour créer votre adresse.",
-                                style: TextStyle(
-                                  color: _couleurTexte,
-                                  fontSize: 14,
-                                  height: 1.3,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: _creerMonAnpIci,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _bleuPrincipal,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                ),
-                                child: const Text(
-                                  "Créer mon ANP",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      // ─── CAS 2 : ANP existante ───
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Mon Adresse Numérique",
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: _couleurTexte,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              "Votre ANP est unique et personnelle. "
-                              "Partagez-la pour inviter quelqu’un chez vous.",
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: Colors.black54,
-                                height: 1.3,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
+                      ? _buildSansAnp()
+                      : _buildAvecAnp(code, lat, lng),
+        ),
+      ),
+    );
+  }
 
-                            // Carte principale ANP
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(24),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.06),
-                                    blurRadius: 18,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        "Mon Adresse Numérique",
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w600,
-                                          color: _couleurTexte,
+  // ------------------ UI : PAS ENCORE D'ANP ------------------
+
+  Widget _buildSansAnp() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Mon Adresse Numérique",
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: _couleurTexte,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Vous n’avez pas encore d’Adresse Numérique Personnelle (ANP).\n\n"
+          "Créez votre ANP pour obtenir un code unique en Guinée et être trouvé facilement.",
+          style: TextStyle(
+            fontSize: 15,
+            color: Colors.black54,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFFE3EEFF),
+                Color(0xFFD0E4FF),
+              ],
+            ),
+          ),
+          child: Row(
+            children: const [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.white,
+                child: Icon(
+                  Icons.location_searching,
+                  color: _bleuPrincipal,
+                  size: 20,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "L’ANP est basée sur la localisation de votre téléphone. "
+                  "Vous devrez activer le GPS pour créer votre adresse.",
+                  style: TextStyle(
+                    color: _couleurTexte,
+                    fontSize: 14,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Spacer(),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _creerMonAnpIci,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _bleuPrincipal,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(26),
+              ),
+              elevation: 6,
+              shadowColor: _bleuPrincipal.withOpacity(0.3),
+            ),
+            child: const Text(
+              "Créer mon ANP",
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ------------------ UI : ANP EXISTANTE ------------------
+
+  Widget _buildAvecAnp(String? code, double? lat, double? lng) {
+    final anp = _anp!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Mon Adresse Numérique",
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: _couleurTexte,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Votre ANP est unique et personnelle. Partagez-la pour inviter quelqu’un chez vous.",
+          style: TextStyle(
+            fontSize: 15,
+            color: Colors.black54,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Carte principale ANP (card premium)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: _carteFond,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header carte
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _accentSoft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.house_rounded,
+                      color: _bleuPrincipal,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    "Adresse principale",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: _couleurTexte,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _bleuClair,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.satellite_alt,
+                            size: 14, color: _bleuPrincipal),
+                        SizedBox(width: 4),
+                        Text(
+                          "Vue satellite",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _bleuPrincipal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // Code ANP (responsive, ne déborde jamais)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        code ?? "—",
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.0,
+                          color: _bleuPrincipal,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _accentSoft,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      "ANP active",
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _bleuPrincipal,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Boutons Copier / Partager / QR
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _BoutonActionAnp(
+                    libelle: "Copier",
+                    onTap: _copierCode,
+                  ),
+                  _BoutonActionAnp(
+                    libelle: "Partager",
+                    onTap: _partagerCode,
+                  ),
+                  _BoutonActionAnp(
+                    libelle: "Voir le code QR",
+                    onTap: _voirQrCode,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // 🌍 Carte stylée
+              if (lat != null && lng != null)
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(lat, lng),
+                            initialZoom: 18,
+                            minZoom: 3,
+                            maxZoom: 18, // évite l’écran gris
+                          ),
+                          children: [
+                            // 🛰 Vue satellite (ArcGIS World Imagery)
+                            TileLayer(
+                              urlTemplate:
+                                  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                              userAgentPackageName: 'ma.guinee.anp',
+                              maxNativeZoom: 18,
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: LatLng(lat, lng),
+                                  width: 60,
+                                  height: 60,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.25),
+                                          blurRadius: 14,
+                                          offset: const Offset(0, 6),
                                         ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _bleuClair,
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                        ),
-                                        child: const Row(
-                                          children: [
-                                            Icon(Icons.satellite_alt,
-                                                size: 14,
-                                                color: _bleuPrincipal),
-                                            SizedBox(width: 4),
-                                            Text(
-                                              "Vue satellite",
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: _bleuPrincipal,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    code ?? "—",
-                                    style: const TextStyle(
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.bold,
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.location_on,
                                       color: _bleuPrincipal,
+                                      size: 36,
                                     ),
-                                  ),
-                                  const SizedBox(height: 16),
-
-                                  // Boutons Copier / Partager / QR
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      _BoutonActionAnp(
-                                        libelle: "Copier",
-                                        onTap: _copierCode,
-                                      ),
-                                      _BoutonActionAnp(
-                                        libelle: "Partager",
-                                        onTap: _partagerCode,
-                                      ),
-                                      _BoutonActionAnp(
-                                        libelle: "Voir le code QR",
-                                        onTap: _voirQrCode,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 20),
-
-                                  // 🌍 VRAIE CARTE SATELLITE SI COORDONNÉES DISPONIBLES
-                                  if (lat != null && lng != null)
-                                    Container(
-                                      height: 170,
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.08),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: FlutterMap(
-                                          options: MapOptions(
-                                            initialCenter: LatLng(lat, lng),
-                                            initialZoom: 18,
-                                            minZoom: 3,
-                                            maxZoom: 18, // évite l’écran gris
-                                          ),
-                                          children: [
-                                            // 🛰 Vue satellite (ArcGIS World Imagery)
-                                            TileLayer(
-                                              urlTemplate:
-                                                  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                                              userAgentPackageName:
-                                                  'ma.guinee.anp',
-                                              maxNativeZoom: 18,
-                                            ),
-                                            MarkerLayer(
-                                              markers: [
-                                                Marker(
-                                                  point: LatLng(lat, lng),
-                                                  width: 40,
-                                                  height: 40,
-                                                  child: const Icon(
-                                                    Icons.location_on,
-                                                    color: _bleuPrincipal,
-                                                    size: 40,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    // fallback si pas de lat/lng
-                                    Container(
-                                      height: 150,
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: _bleuClair,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: const [
-                                          Icon(
-                                            Icons.location_on,
-                                            color: _bleuPrincipal,
-                                            size: 40,
-                                          ),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            "Aperçu de votre emplacement",
-                                            style: TextStyle(
-                                              color: _couleurTexte,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  const SizedBox(height: 12),
-
-                                  if (_formatDateMaj(anp) != null)
-                                    Text(
-                                      _formatDateMaj(anp)!,
-                                      style: const TextStyle(
-                                        color: Colors.black54,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-
-                            const Spacer(),
-
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: _mettreAJourEmplacement,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _bleuPrincipal,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24),
                                   ),
                                 ),
-                                child: const Text(
-                                  "Mettre à jour mon emplacement",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
+                              ],
                             ),
                           ],
                         ),
+                        // petit gradient en bas pour lisibilité
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Container(
+                            height: 40,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withOpacity(0.35),
+                                  Colors.black.withOpacity(0.0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                // fallback si pas de lat/lng
+                Container(
+                  height: 160,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: _bleuClair,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(
+                        Icons.location_off,
+                        color: _bleuPrincipal,
+                        size: 40,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        "Aucune localisation disponible pour cette ANP",
+                        style: TextStyle(
+                          color: _couleurTexte,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+
+              if (_formatDateMaj(anp) != null)
+                Text(
+                  _formatDateMaj(anp)!,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 13,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
+
+        const Spacer(),
+
+        // 👉 Bouton principal : J’ai déménagé
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _mettreAJourEmplacement,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _bleuPrincipal,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(26),
+              ),
+              elevation: 6,
+              shadowColor: _bleuPrincipal.withOpacity(0.3),
+            ),
+            child: const Text(
+              "J’ai déménagé",
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -835,20 +963,20 @@ class _BoutonActionAnp extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: Colors.black.withOpacity(0.05),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
                 offset: const Offset(0, 3),
               ),
             ],
@@ -858,7 +986,7 @@ class _BoutonActionAnp extends StatelessWidget {
             libelle,
             style: const TextStyle(
               fontSize: 13,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
               color: Color(0xFF0D1724),
             ),
           ),

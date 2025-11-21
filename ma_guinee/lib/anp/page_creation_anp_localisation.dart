@@ -1,3 +1,7 @@
+// lib/anp/page_creation_anp_localisation.dart
+
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -23,7 +27,7 @@ class _PageCreationAnpLocalisationState
   // Service de localisation ANP
   final ServiceLocalisationAnp _serviceLocalisation = ServiceLocalisationAnp();
 
-  Position? _position; // position qui sera envoyée à la suite (ANP)
+  Position? _position; // position fusionnée qui sera envoyée à la suite (ANP)
   LatLng? _pointSelectionne; // point choisi à la main sur la carte
 
   bool _chargement = false;
@@ -47,9 +51,13 @@ class _PageCreationAnpLocalisationState
   // Mode d’affichage : true = satellite, false = carte classique
   bool _modeSatellite = true;
 
+  // Palette ANP (même que la page Mon ANP)
   static const Color _bleuPrincipal = Color(0xFF0066FF);
   static const Color _bleuClair = Color(0xFFEAF3FF);
   static const Color _couleurTexte = Color(0xFF0D1724);
+  static const Color _fondPrincipal = Color(0xFFF2F4F8);
+  static const Color _accentSoft = Color(0xFFEDF2FF);
+  static const Color _carteFond = Colors.white;
 
   @override
   void didChangeDependencies() {
@@ -77,25 +85,72 @@ class _PageCreationAnpLocalisationState
     super.dispose();
   }
 
+  // ─────────────────────────────
+  //  FUSION DE MESURES (pseudo "trilatération")
+  // ─────────────────────────────
+
+  /// On effectue plusieurs mesures GPS très précises,
+  /// puis on fusionne pour stabiliser la position finale.
+  Future<Position> _acquerirPositionFusionnee() async {
+    const int nombreMesures = 3;
+    final List<Position> mesures = [];
+
+    for (int i = 0; i < nombreMesures; i++) {
+      final p = await _serviceLocalisation.recupererPositionActuelle();
+      mesures.add(p);
+
+      // petite pause entre deux mesures pour laisser le GPS se recalibrer
+      if (i < nombreMesures - 1) {
+        await Future.delayed(const Duration(milliseconds: 350));
+      }
+    }
+
+    if (mesures.length == 1) return mesures.first;
+
+    final double avgLat =
+        mesures.map((m) => m.latitude).reduce((a, b) => a + b) / mesures.length;
+    final double avgLng =
+        mesures.map((m) => m.longitude).reduce((a, b) => a + b) /
+            mesures.length;
+    final double avgAlt =
+        mesures.map((m) => m.altitude).reduce((a, b) => a + b) / mesures.length;
+    final double bestAcc =
+        mesures.map((m) => m.accuracy).reduce(math.min); // meilleure précision
+
+    final base = mesures.first;
+
+    return Position(
+      latitude: avgLat,
+      longitude: avgLng,
+      timestamp: DateTime.now(),
+      accuracy: bestAcc,
+      altitude: avgAlt,
+      altitudeAccuracy: base.altitudeAccuracy,
+      heading: base.heading,
+      headingAccuracy: base.headingAccuracy,
+      speed: base.speed,
+      speedAccuracy: base.speedAccuracy,
+      floor: base.floor,
+      isMocked: base.isMocked,
+    );
+  }
+
   // Interprétation de la précision GPS
   void _evaluerPrecision(Position pos) {
     final acc = pos.accuracy; // en mètres
     _precisionMetres = acc;
 
-    if (acc <= 20) {
+    if (acc <= 10) {
       _messagePrecision =
-          "Localisation très précise (≈ ${acc.toStringAsFixed(0)} m).";
+          "Précision fine (≈ ${acc.toStringAsFixed(0)} m). Parfait pour votre ANP.";
       _precisionSuffisante = true;
-    } else if (acc <= 50) {
+    } else if (acc <= 25) {
       _messagePrecision =
-          "Localisation correcte (≈ ${acc.toStringAsFixed(0)} m). "
-          "Vous pouvez affiner en déplaçant le point rouge sur la carte.";
+          "Précision correcte (≈ ${acc.toStringAsFixed(0)} m). Ajustez le point si besoin.";
       _precisionSuffisante = true;
     } else {
       _messagePrecision =
-          "Localisation approximative (≈ ${acc.toStringAsFixed(0)} m). "
-          "Si possible, placez-vous à l’extérieur ou près d’une fenêtre, "
-          "puis relancez la localisation.";
+          "Précision faible (≈ ${acc.toStringAsFixed(0)} m). Réessayez si possible près d’une fenêtre ou à l’extérieur.";
       _precisionSuffisante = false;
     }
   }
@@ -111,14 +166,16 @@ class _PageCreationAnpLocalisationState
     });
 
     try {
-      final pos = await _serviceLocalisation.recupererPositionActuelle();
-      final enGuinee = _serviceLocalisation.estEnGuinee(pos);
+      // 🔵 Multi-mesures fusionnées (pseudo trilatération)
+      final posFusionnee = await _acquerirPositionFusionnee();
+      final enGuinee = _serviceLocalisation.estEnGuinee(posFusionnee);
 
-      _evaluerPrecision(pos);
+      _evaluerPrecision(posFusionnee);
 
       setState(() {
-        _position = pos;
-        _pointSelectionne = LatLng(pos.latitude, pos.longitude);
+        _position = posFusionnee;
+        _pointSelectionne =
+            LatLng(posFusionnee.latitude, posFusionnee.longitude);
         _estHorsGuinee = !enGuinee;
       });
     } on ExceptionLocalisationAnp catch (e) {
@@ -128,8 +185,7 @@ class _PageCreationAnpLocalisationState
     } catch (_) {
       setState(() {
         _erreur = "Impossible de récupérer votre position.\n\n"
-            "Vérifiez que la localisation est activée, que Soneya a l’autorisation "
-            "d’utiliser le GPS et que vous disposez d’une connexion Internet.";
+            "Vérifiez la localisation, les autorisations GPS et votre connexion Internet.";
       });
     } finally {
       if (mounted) {
@@ -173,8 +229,7 @@ class _PageCreationAnpLocalisationState
     setState(() {
       _infosConfirmees = false;
       _erreurInfos =
-          "Merci de mettre à jour votre nom, e-mail ou numéro de téléphone "
-          "dans votre profil Soneya avant d’enregistrer votre ANP.";
+          "Mettez à jour votre nom, e-mail ou téléphone dans votre profil Soneya, puis revenez ici.";
     });
 
     showDialog(
@@ -183,9 +238,8 @@ class _PageCreationAnpLocalisationState
         return AlertDialog(
           title: const Text("Mettre à jour vos informations"),
           content: const Text(
-            "Ces informations proviennent de votre profil Soneya.\n\n"
-            "Pour les modifier, retournez sur votre profil, mettez-les à jour "
-            "puis revenez sur la page ANP.",
+            "Ces données proviennent de votre profil Soneya.\n\n"
+            "Modifiez-les depuis votre profil, puis revenez sur la page ANP.",
           ),
           actions: [
             TextButton(
@@ -234,7 +288,6 @@ class _PageCreationAnpLocalisationState
   /// Quand l’utilisateur tape sur la carte pour choisir la position exacte
   void _onMapTap(TapPosition tapPosition, LatLng latLng) {
     _mettreAJourPoint(latLng);
-    // ❗ On ne bouge PAS la carte ici, seulement le marqueur
   }
 
   /// Ouvre une carte satellite / classique en plein écran pour ajuster précisément le point
@@ -325,23 +378,47 @@ class _PageCreationAnpLocalisationState
     );
   }
 
+  // ─────────────────────────────
+  //  UI
+  // ─────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final lat = _pointSelectionne?.latitude ?? _position?.latitude;
     final lng = _pointSelectionne?.longitude ?? _position?.longitude;
+    final size = MediaQuery.of(context).size;
+    final double carteHeight = size.height * 0.30;
+    final double carteMin = 200;
+    final double carteMax = 280;
+    final double carteFinalHeight =
+        math.max(carteMin, math.min(carteMax, carteHeight));
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _fondPrincipal,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: _couleurTexte,
-        title: const Text(
-          "Mon ANP – Localisation",
-          style: TextStyle(
-            color: _couleurTexte,
-            fontWeight: FontWeight.w600,
-          ),
+        centerTitle: true,
+        title: Column(
+          children: const [
+            Text(
+              "Mon ANP – Localisation",
+              style: TextStyle(
+                color: _couleurTexte,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            SizedBox(height: 3),
+            Text(
+              "Étape 1 / 2 • Position exacte",
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
       body: SafeArea(
@@ -354,208 +431,355 @@ class _PageCreationAnpLocalisationState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ────────────── Infos utilisateur ──────────────
-                    const Text(
-                      "Vos informations",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: _couleurTexte,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Nous utilisons les informations de votre profil Soneya. "
-                      "Confirmez qu’elles sont correctes avant d’enregistrer votre ANP.",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.black54,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _prenomController,
-                            readOnly: true,
-                            decoration: const InputDecoration(
-                              labelText: "Prénom",
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _nomController,
-                            readOnly: true,
-                            decoration: const InputDecoration(
-                              labelText: "Nom",
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _emailController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: "E-mail",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _telephoneController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: "Numéro de téléphone",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
+                    // ────────────── Carte profil compacte ──────────────
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 12,
-                      ),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF3F4F6),
-                        borderRadius: BorderRadius.circular(12),
+                        color: _carteFond,
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Expanded(
-                            child: Text(
-                              "Ces informations sont-elles correctes ?",
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: _couleurTexte,
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: _accentSoft,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(
+                                  Icons.person_pin_circle,
+                                  color: _bleuPrincipal,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  "Profil ANP",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: _couleurTexte,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _bleuClair,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  "Depuis votre profil",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _bleuPrincipal,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _prenomController,
+                                  readOnly: true,
+                                  decoration: const InputDecoration(
+                                    labelText: "Prénom",
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: Color(0xFFF5F7FA),
+                                    border: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: Colors.transparent,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: _nomController,
+                                  readOnly: true,
+                                  decoration: const InputDecoration(
+                                    labelText: "Nom",
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: Color(0xFFF5F7FA),
+                                    border: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: Colors.transparent,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _emailController,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: "E-mail",
+                              isDense: true,
+                              filled: true,
+                              fillColor: Color(0xFFF5F7FA),
+                              border: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Colors.transparent),
                               ),
                             ),
                           ),
-                          TextButton(
-                            onPressed: _confirmerInfos,
-                            child: Text(
-                              "Oui",
-                              style: TextStyle(
-                                color: _infosConfirmees
-                                    ? _bleuPrincipal
-                                    : _couleurTexte,
-                                fontWeight: FontWeight.w600,
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _telephoneController,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: "Téléphone",
+                              isDense: true,
+                              filled: true,
+                              fillColor: Color(0xFFF5F7FA),
+                              border: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Colors.transparent),
                               ),
                             ),
                           ),
-                          TextButton(
-                            onPressed: _infosIncorrectes,
-                            child: const Text(
-                              "Non",
-                              style: TextStyle(
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    "Ces informations sont-elles correctes ?",
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: _couleurTexte,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _confirmerInfos,
+                                  child: Text(
+                                    "Oui",
+                                    style: TextStyle(
+                                      color: _infosConfirmees
+                                          ? _bleuPrincipal
+                                          : _couleurTexte,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _infosIncorrectes,
+                                  child: const Text(
+                                    "Non",
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_erreurInfos != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _erreurInfos!,
+                              style: const TextStyle(
                                 color: Colors.redAccent,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
 
-                    if (_erreurInfos != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _erreurInfos!,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-
                     const SizedBox(height: 24),
 
-                    // ────────────── Localisation ──────────────
-                    const Text(
-                      "Étape 1 sur 2 : Localisation précise",
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: _couleurTexte,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Votre Adresse Numérique Personnelle (ANP) est basée sur votre "
-                      "position exacte. Utilisez d’abord la localisation de votre téléphone, "
-                      "puis ajustez le point rouge sur la carte (classique ou satellite) si nécessaire.",
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.black54,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Bouton "Utiliser ma position actuelle"
-                    SizedBox(
+                    // ────────────── Bloc localisation & bouton GPS ──────────────
+                    Container(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.my_location),
-                        onPressed:
-                            _chargement ? null : _utiliserPositionActuelle,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _bleuClair,
-                          foregroundColor: _couleurTexte,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 12,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _carteFond,
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: _bleuClair,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(
+                                  Icons.my_location,
+                                  color: _bleuPrincipal,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  "Localiser votre ANP",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: _couleurTexte,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _accentSoft,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  "Étape 1/2",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: _bleuPrincipal,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        label: _chargement
-                            ? const Text("Localisation en cours…")
-                            : const Text("Utiliser ma position actuelle"),
+                          const SizedBox(height: 10),
+                          const Text(
+                            "On récupère votre position, puis vous ajustez le point sur la carte.",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              icon: _chargement
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.gps_fixed),
+                              onPressed: _chargement
+                                  ? null
+                                  : _utiliserPositionActuelle,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _bleuPrincipal,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                              label: Text(
+                                _chargement
+                                    ? "Analyse de la position…"
+                                    : "Détecter ma position exacte",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_erreur != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _erreur!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (_precisionMetres != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  _precisionSuffisante
+                                      ? Icons.verified
+                                      : Icons.warning_amber_rounded,
+                                  size: 18,
+                                  color: _precisionSuffisante
+                                      ? Colors.green[700]
+                                      : Colors.orange[700],
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _messagePrecision ?? '',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _precisionSuffisante
+                                          ? Colors.green[700]
+                                          : Colors.orange[700],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
 
-                    if (_erreur != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 10,
-                          horizontal: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.06),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _erreur!,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Si le problème persiste, redémarrez la localisation ou votre téléphone.",
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.black45,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
+                    const SizedBox(height: 20),
 
                     if (_position != null && lat != null && lng != null) ...[
                       if (_estHorsGuinee)
@@ -568,25 +792,24 @@ class _PageCreationAnpLocalisationState
                           ),
                           decoration: BoxDecoration(
                             color: Colors.orange.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                           child: const Text(
-                            "Vous ne vous trouvez pas en Guinée.\n"
-                            "Ce service n’est pas disponible à l’international pour le moment.\n"
-                            "Pour les tests, l’enregistrement reste possible, mais en production "
-                            "vous devrez vous trouver sur le territoire guinéen.",
+                            "Vous semblez en dehors de la Guinée. En tests, l’ANP peut être enregistrée, "
+                            "mais en production il faudra être sur le territoire guinéen.",
                             style: TextStyle(
                               color: Colors.orange,
-                              fontSize: 13,
+                              fontSize: 12,
                               height: 1.3,
                             ),
                           ),
                         ),
+
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            "Aperçu de votre position",
+                            "Ajuster le point ANP",
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: _couleurTexte,
@@ -597,7 +820,7 @@ class _PageCreationAnpLocalisationState
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        "Touchez la carte pour placer le point rouge exactement à l’endroit de votre ANP (porte, portail, entrée du bâtiment…).",
+                        "Touchez la carte pour placer le point sur votre porte ou portail.",
                         style: TextStyle(
                           color: Colors.black45,
                           fontSize: 11,
@@ -607,7 +830,7 @@ class _PageCreationAnpLocalisationState
 
                       // Carte avec marker + sélection manuelle
                       Container(
-                        height: 220,
+                        height: carteFinalHeight,
                         width: double.infinity,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
@@ -624,9 +847,9 @@ class _PageCreationAnpLocalisationState
                           child: FlutterMap(
                             options: MapOptions(
                               initialCenter: LatLng(lat, lng),
-                              initialZoom: 17,
+                              initialZoom: 18,
                               minZoom: 3,
-                              maxZoom: 18, // évite l’écran gris
+                              maxZoom: 19,
                               onTap: _onMapTap,
                             ),
                             children: [
@@ -649,12 +872,26 @@ class _PageCreationAnpLocalisationState
                                 markers: [
                                   Marker(
                                     point: LatLng(lat, lng),
-                                    width: 40,
-                                    height: 40,
-                                    child: const Icon(
-                                      Icons.location_on,
-                                      color: Colors.red, // point rouge
-                                      size: 40,
+                                    width: 52,
+                                    height: 52,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.25),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 6),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.location_on,
+                                        color: Colors.red,
+                                        size: 36,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -674,45 +911,19 @@ class _PageCreationAnpLocalisationState
                         ),
                       ),
 
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
-                        "Lat : ${lat.toStringAsFixed(5)}   "
-                        "Lng : ${lng.toStringAsFixed(5)}",
+                        "Lat : ${lat.toStringAsFixed(5)}   •   Lng : ${lng.toStringAsFixed(5)}",
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: _couleurTexte,
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
                       ),
-                      if (_precisionMetres != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          _messagePrecision ?? '',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _precisionSuffisante
-                                ? Colors.green[700]
-                                : Colors.orange[700],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                      if (!_precisionSuffisante &&
-                          _precisionMetres != null) ...[
-                        const SizedBox(height: 4),
-                        const Text(
-                          "La localisation est trop approximative pour enregistrer votre ANP. "
-                          "Merci de relancer la localisation ou d’ajuster le point sur la carte.",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 4),
                       const Text(
-                        "(La position provient du GPS puis de votre ajustement sur la carte.)",
+                        "La position combine le GPS + vos ajustements sur la carte.",
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.black45,
                           fontSize: 11,
@@ -732,7 +943,9 @@ class _PageCreationAnpLocalisationState
                 child: ElevatedButton(
                   onPressed: _peutContinuer ? _validerEtContinuer : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _bleuPrincipal,
+                    backgroundColor: _peutContinuer
+                        ? _bleuPrincipal
+                        : _bleuPrincipal.withOpacity(0.4),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -742,7 +955,7 @@ class _PageCreationAnpLocalisationState
                   child: const Text(
                     "Continuer",
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
                   ),
@@ -756,7 +969,10 @@ class _PageCreationAnpLocalisationState
   }
 }
 
-// petit objet pour renvoyer point + mode carte/satellite
+// ─────────────────────────────
+//  Objet de retour pour la carte plein écran
+// ─────────────────────────────
+
 class _ResultCartePleine {
   final LatLng point;
   final bool modeSatellite;
@@ -779,7 +995,10 @@ class _PageAnpCartePleine extends StatefulWidget {
 }
 
 class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
+  // Palette locale (mêmes couleurs que la page principale)
   static const Color _bleuPrincipal = Color(0xFF0066FF);
+  static const Color _fondPrincipal = Color(0xFFF2F4F8);
+  static const Color _couleurTexte = Color(0xFF0D1724);
 
   late LatLng _point;
   final MapController _mapController = MapController();
@@ -792,15 +1011,14 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
     _modeSatellite = widget.modeSatelliteInitial;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _mapController.move(_point, 17);
+      _mapController.move(_point, 18);
     });
   }
 
   void _onTap(TapPosition tapPosition, LatLng latLng) {
     setState(() {
       _point = latLng;
-      // ❗ ICI ON NE BOUGE PLUS LA CARTE :
-      // on ne fait plus _mapController.move(latLng, 17);
+      // On ne déplace pas la caméra, on ne fait que déplacer le marqueur
     });
   }
 
@@ -871,8 +1089,17 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _fondPrincipal,
       appBar: AppBar(
-        title: const Text("Ajuster ma position ANP"),
+        backgroundColor: Colors.white,
+        foregroundColor: _couleurTexte,
+        title: const Text(
+          "Ajuster ma position ANP",
+          style: TextStyle(
+            color: _couleurTexte,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -885,9 +1112,8 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
           const Padding(
             padding: EdgeInsets.all(12),
             child: Text(
-              "Touchez la carte pour placer le point rouge exactement "
-              "sur votre porte, portail ou entrée de bâtiment.",
-              style: TextStyle(fontSize: 14),
+              "Touchez la carte pour placer le point sur votre porte ou votre portail.",
+              style: TextStyle(fontSize: 13, color: Colors.black87),
             ),
           ),
           Expanded(
@@ -895,9 +1121,9 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: _point,
-                initialZoom: 17,
+                initialZoom: 18,
                 minZoom: 3,
-                maxZoom: 18, // on reste dans une zone nette
+                maxZoom: 19,
                 onTap: _onTap,
               ),
               children: [
@@ -920,12 +1146,25 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
                   markers: [
                     Marker(
                       point: _point,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.red,
-                        size: 42,
+                      width: 52,
+                      height: 52,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.25),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.red,
+                          size: 38,
+                        ),
                       ),
                     ),
                   ],
@@ -941,9 +1180,17 @@ class _PageAnpCartePleineState extends State<_PageAnpCartePleine> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _valider,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _bleuPrincipal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                  ),
                   child: const Text(
                     "Valider cette position",
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
               ),

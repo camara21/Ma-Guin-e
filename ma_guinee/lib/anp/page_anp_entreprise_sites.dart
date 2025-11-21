@@ -31,9 +31,12 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
   Map<String, dynamic>? _entreprise;
   List<Map<String, dynamic>> _sites = [];
 
-  // Palette ANP
-  static const Color _primaryBlue = Color(0xFF0066FF);
-  static const Color _textColor = Color(0xFF0D1724);
+  // Palette ANP (alignée sur les autres pages ANP)
+  static const Color _bleuPrincipal = Color(0xFF0066FF);
+  static const Color _bleuClair = Color(0xFFEAF3FF);
+  static const Color _couleurTexte = Color(0xFF0D1724);
+  static const Color _fondPrincipal = Color(0xFFF2F4F8);
+  static const Color _accentSoft = Color(0xFFEDF2FF);
 
   // Carte
   LatLng _mapCenter = LatLng(9.6412, -13.5784); // Conakry par défaut
@@ -84,7 +87,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
             .order('est_principal', ascending: false)
             .order('created_at');
 
-        List<Map<String, dynamic>> sitesList =
+        final List<Map<String, dynamic>> sitesList =
             (sites as List).cast<Map<String, dynamic>>();
 
         // Si on a au moins un site, on centre la carte dessus
@@ -200,7 +203,8 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
 
       buffer.writeln('');
       buffer.writeln(
-          'Site: $nomSite${typeSite.isNotEmpty ? " ($typeSite)" : ""}');
+        'Site: $nomSite${typeSite.isNotEmpty ? " ($typeSite)" : ""}',
+      );
       buffer.writeln('ANP: $code');
       buffer.writeln('Lat: $lat  Lng: $lng');
       if (estPrincipal) buffer.writeln('(Principal)');
@@ -221,7 +225,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
             .split(' ')
             .where((p) => p.isNotEmpty)
             .take(2)
-            .map((p) => p.characters.first.toUpperCase())
+            .map((p) => p.substring(0, 1).toUpperCase())
             .join()
         : 'ANP';
 
@@ -298,7 +302,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          _primaryBlue,
+                          _bleuPrincipal,
                           Color(0xFF00B4FF),
                         ],
                       ),
@@ -324,7 +328,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 18,
-                                    color: _textColor,
+                                    color: _couleurTexte,
                                   ),
                                 ),
                               ),
@@ -382,11 +386,11 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                 gapless: true,
                                 eyeStyle: const QrEyeStyle(
                                   eyeShape: QrEyeShape.circle,
-                                  color: _primaryBlue,
+                                  color: _bleuPrincipal,
                                 ),
                                 dataModuleStyle: const QrDataModuleStyle(
                                   dataModuleShape: QrDataModuleShape.circle,
-                                  color: _textColor,
+                                  color: _couleurTexte,
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -397,7 +401,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 14,
-                                    color: _textColor,
+                                    color: _couleurTexte,
                                   ),
                                 ),
                               if (email.isNotEmpty || tel.isNotEmpty) ...[
@@ -408,7 +412,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
                                       fontSize: 12,
-                                      color: _textColor,
+                                      color: _couleurTexte,
                                     ),
                                   ),
                                 if (tel.isNotEmpty)
@@ -417,7 +421,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
                                       fontSize: 12,
-                                      color: _textColor,
+                                      color: _couleurTexte,
                                     ),
                                   ),
                               ],
@@ -449,7 +453,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                       onPressed: _shareQr,
                       icon: const Icon(Icons.ios_share, size: 18),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryBlue,
+                        backgroundColor: _bleuPrincipal,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -504,7 +508,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: sat ? _textColor : _primaryBlue,
+                  color: sat ? _couleurTexte : _bleuPrincipal,
                 ),
               ),
             ),
@@ -525,7 +529,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: sat ? _primaryBlue : _textColor,
+                  color: sat ? _bleuPrincipal : _couleurTexte,
                 ),
               ),
             ),
@@ -543,17 +547,32 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _fondPrincipal,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        foregroundColor: _textColor,
-        title: const Text(
-          "Mes adresses ANP Entreprise",
-          style: TextStyle(
-            color: _textColor,
-            fontWeight: FontWeight.w600,
-          ),
+        foregroundColor: _couleurTexte,
+        centerTitle: true,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Text(
+              "ANP Entreprise",
+              style: TextStyle(
+                color: _couleurTexte,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              "Mes adresses",
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
       body: SafeArea(
@@ -566,7 +585,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _allerCreerOuAjouterAdresse,
-        backgroundColor: _primaryBlue,
+        backgroundColor: _bleuPrincipal,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(999),
@@ -596,7 +615,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
             "ANP Entreprise",
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
-              color: _textColor,
+              color: _couleurTexte,
             ),
           ),
           const SizedBox(height: 8),
@@ -664,7 +683,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 onPressed: _voirQrEntreprise,
                 icon: const Icon(Icons.qr_code_2),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
+                  backgroundColor: _bleuPrincipal,
                   foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -680,7 +699,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade300),
                   color: Colors.grey.shade50,
                 ),
@@ -734,7 +753,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                   "Carte des adresses",
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: _textColor,
+                    color: _couleurTexte,
                   ),
                 ),
                 _buildToggleCarteSatellite(),
@@ -747,7 +766,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
               height: 260,
               width: double.infinity,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
                 child: FlutterMap(
                   options: MapOptions(
                     initialCenter: _mapCenter,
@@ -788,7 +807,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                   ? Icons.location_on
                                   : Icons.location_on_outlined,
                               size: 34,
-                              color: _primaryBlue,
+                              color: _bleuPrincipal,
                             ),
                           );
                         }).toList(),
@@ -807,7 +826,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 "Adresses de l’entreprise",
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: _textColor,
+                  color: _couleurTexte,
                 ),
               ),
             ),
@@ -819,7 +838,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade300),
                   color: Colors.grey.shade50,
                 ),
@@ -849,20 +868,29 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
 
                   return InkWell(
                     onTap: () => _focusSite(site),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey.shade300),
                         color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
                           Icon(
                             principal ? Icons.star : Icons.location_on_outlined,
-                            color: principal ? Colors.orange : _primaryBlue,
+                            color: principal ? Colors.orange : _bleuPrincipal,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -876,7 +904,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                         nomSite ?? "Site sans nom",
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          color: _textColor,
+                                          color: _couleurTexte,
                                         ),
                                       ),
                                     ),
@@ -889,7 +917,7 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                                         ),
                                         decoration: BoxDecoration(
                                           borderRadius:
-                                              BorderRadius.circular(6),
+                                              BorderRadius.circular(8),
                                           color: Colors.green.withOpacity(0.12),
                                         ),
                                         child: const Text(
@@ -964,23 +992,40 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _bleuClair,
+            _accentSoft,
+          ],
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.business, size: 32, color: _primaryBlue),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.business,
+              size: 28,
+              color: _bleuPrincipal,
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -993,14 +1038,14 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                         nom,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: _textColor,
+                          color: _couleurTexte,
                         ),
                       ),
                     ),
                     IconButton(
                       onPressed: _voirQrEntreprise,
                       icon: const Icon(Icons.qr_code_2),
-                      color: _primaryBlue,
+                      color: _bleuPrincipal,
                       tooltip: "QR ANP Entreprise",
                     ),
                   ],
@@ -1018,18 +1063,23 @@ class _PageAnpEntrepriseSitesState extends State<PageAnpEntrepriseSites> {
                 if (email != null && email.isNotEmpty)
                   Text(
                     email,
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _couleurTexte,
+                    ),
                   ),
                 if (tel != null && tel.isNotEmpty)
                   Text(
                     tel,
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _couleurTexte,
+                    ),
                   ),
                 if (siteWeb != null && siteWeb.isNotEmpty)
                   Text(
                     siteWeb,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: _primaryBlue,
+                      color: _bleuPrincipal,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
               ],

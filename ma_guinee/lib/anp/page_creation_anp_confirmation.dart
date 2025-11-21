@@ -1,7 +1,16 @@
+// lib/anp/page_creation_anp_confirmation.dart
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'service_anp.dart';
+
+/// Palette ANP (partagée entre les pages)
+const Color kAnpBleuPrincipal = Color(0xFF0066FF);
+const Color kAnpBleuClair = Color(0xFFEAF3FF);
+const Color kAnpCouleurTexte = Color(0xFF0D1724);
+const Color kAnpFondPrincipal = Color(0xFFF2F4F8);
+const Color kAnpAccentSoft = Color(0xFFEDF2FF);
 
 class PageCreationAnpConfirmation extends StatefulWidget {
   final Position position;
@@ -29,10 +38,6 @@ class _PageCreationAnpConfirmationState
   bool _accepteConditions = false;
   bool _chargement = false;
   String? _erreur;
-
-  static const Color _bleuPrincipal = Color(0xFF0066FF);
-  static const Color _bleuClair = Color(0xFFEAF3FF);
-  static const Color _couleurTexte = Color(0xFF0D1724);
 
   Future<void> _finaliserCreation() async {
     if (!_accepteConditions) return;
@@ -78,152 +83,250 @@ class _PageCreationAnpConfirmationState
     final pos = widget.position;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: kAnpFondPrincipal,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        foregroundColor: _couleurTexte,
-        title: const Text(
-          "Mon ANP – Confirmation",
-          style: TextStyle(
-            color: _couleurTexte,
-            fontWeight: FontWeight.w600,
-          ),
+        foregroundColor: kAnpCouleurTexte,
+        centerTitle: true,
+        title: Column(
+          children: const [
+            Text(
+              "Mon ANP – Confirmation",
+              style: TextStyle(
+                color: kAnpCouleurTexte,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            SizedBox(height: 3),
+            Text(
+              "Étape 2 / 2 • Validation",
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "Étape 2 sur 2 : Confirmation & règles",
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: _couleurTexte,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                "Avant d’enregistrer ou de mettre à jour votre Adresse Numérique Personnelle (ANP), "
-                "merci de lire et d’accepter les règles suivantes :",
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.black54,
-                  height: 1.3,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: _bleuClair,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _LigneRegleAnp(
-                      texte:
-                          "Une seule ANP par personne. Elle est liée à votre compte.",
-                    ),
-                    SizedBox(height: 8),
-                    _LigneRegleAnp(
-                      texte:
-                          "Personne ne peut trouver votre ANP sans que vous lui donniez votre code.",
-                    ),
-                    SizedBox(height: 8),
-                    _LigneRegleAnp(
-                      texte:
-                          "Pour venir chez vous, les gens devront entrer votre code ANP dans l’application.",
-                    ),
-                    SizedBox(height: 8),
-                    _LigneRegleAnp(
-                      texte:
-                          "Votre position pourra être mise à jour, mais votre code ANP restera le même.",
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                "Position utilisée pour votre ANP",
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: _couleurTexte,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: _bleuClair.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  "Latitude : ${pos.latitude.toStringAsFixed(5)}\n"
-                  "Longitude : ${pos.longitude.toStringAsFixed(5)}",
-                  style: const TextStyle(
-                    color: _couleurTexte,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    value: _accepteConditions,
-                    activeColor: _bleuPrincipal,
-                    onChanged: (v) {
-                      setState(() {
-                        _accepteConditions = v ?? false;
-                      });
-                    },
-                  ),
-                  const SizedBox(width: 4),
-                  const Expanded(
-                    child: Text(
-                      "J’accepte et je souhaite enregistrer (ou mettre à jour) mon Adresse Numérique Personnelle (ANP) "
-                      "avec ces règles.",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _couleurTexte,
-                        height: 1.3,
+              // Contenu scrollable
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Carte en-tête moderne
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: kAnpBleuClair,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(
+                                Icons.verified_user,
+                                color: kAnpBleuPrincipal,
+                                size: 26,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Étape 2 sur 2 : Confirmation & règles",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: kAnpCouleurTexte,
+                                    ),
+                                  ),
+                                  SizedBox(height: 6),
+                                  Text(
+                                    "Avant d’enregistrer ou de mettre à jour votre Adresse Numérique Personnelle (ANP), "
+                                    "merci de lire et d’accepter les règles suivantes.",
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black54,
+                                      height: 1.32,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              if (_erreur != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _erreur!,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 13,
-                    ),
+
+                      const SizedBox(height: 18),
+
+                      // Bloc règles
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kAnpAccentSoft,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _LigneRegleAnp(
+                              texte:
+                                  "Une seule ANP par personne. Elle est liée à votre compte.",
+                            ),
+                            SizedBox(height: 10),
+                            _LigneRegleAnp(
+                              texte:
+                                  "Personne ne peut trouver votre ANP sans que vous lui donniez votre code.",
+                            ),
+                            SizedBox(height: 10),
+                            _LigneRegleAnp(
+                              texte:
+                                  "Pour venir chez vous, les gens devront entrer votre code ANP dans l’application.",
+                            ),
+                            SizedBox(height: 10),
+                            _LigneRegleAnp(
+                              texte:
+                                  "Votre position pourra être mise à jour, mais votre code ANP restera le même.",
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      const Text(
+                        "Position utilisée pour votre ANP",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: kAnpCouleurTexte,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kAnpBleuClair.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.location_on,
+                                color: kAnpBleuPrincipal,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "Latitude : ${pos.latitude.toStringAsFixed(5)}\n"
+                                "Longitude : ${pos.longitude.toStringAsFixed(5)}",
+                                style: const TextStyle(
+                                  color: kAnpCouleurTexte,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Checkbox conditions
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: _accepteConditions,
+                            activeColor: kAnpBleuPrincipal,
+                            onChanged: (v) {
+                              setState(() {
+                                _accepteConditions = v ?? false;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 4),
+                          const Expanded(
+                            child: Text(
+                              "J’accepte et je souhaite enregistrer (ou mettre à jour) mon Adresse Numérique Personnelle (ANP) "
+                              "avec ces règles.",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: kAnpCouleurTexte,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (_erreur != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _erreur!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ],
-              const Spacer(),
+              ),
+
+              // Bouton bas de page
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -231,7 +334,7 @@ class _PageCreationAnpConfirmationState
                       ? null
                       : _finaliserCreation,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _bleuPrincipal,
+                    backgroundColor: kAnpBleuPrincipal,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -243,7 +346,7 @@ class _PageCreationAnpConfirmationState
                         ? "Enregistrement de votre ANP…"
                         : "Enregistrer mon ANP",
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
                   ),
@@ -266,20 +369,23 @@ class _LigneRegleAnp extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          "• ",
-          style: TextStyle(
-            color: Colors.black87,
-            fontSize: 14,
+        Container(
+          margin: const EdgeInsets.only(top: 3),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: kAnpBleuPrincipal,
+            borderRadius: BorderRadius.circular(999),
           ),
         ),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             texte,
             style: const TextStyle(
-              color: Colors.black87,
+              color: kAnpCouleurTexte,
               fontSize: 14,
-              height: 1.3,
+              height: 1.32,
             ),
           ),
         ),
