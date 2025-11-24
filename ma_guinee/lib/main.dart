@@ -118,13 +118,13 @@ Timer? _heartbeatTimer;
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
   try {
-    await Supabase.instance.client
-        .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
+    await Supabase.instance.client.rpc('update_heartbeat',
+        params: {'_device': kIsWeb ? 'web' : 'flutter'});
   } catch (_) {}
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
-      await Supabase.instance.client
-          .rpc('update_heartbeat', params: {'_device': kIsWeb ? 'web' : 'flutter'});
+      await Supabase.instance.client.rpc('update_heartbeat',
+          params: {'_device': kIsWeb ? 'web' : 'flutter'});
     } catch (_) {}
   });
 }
@@ -217,8 +217,9 @@ Future<bool> isCurrentUserAdmin() async {
 // ——— Redirection centralisée selon le rôle ———
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = (userProv.utilisateur?.role ?? '').toLowerCase();
-  final dest =
-      (role == 'admin' || role == 'owner') ? AppRoutes.adminCenter : AppRoutes.mainNav;
+  final dest = (role == 'admin' || role == 'owner')
+      ? AppRoutes.adminCenter
+      : AppRoutes.mainNav;
   _pushUnique(dest);
 }
 
@@ -264,7 +265,8 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider<UserProvider>.value(value: userProvider),
         ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
-        ChangeNotifierProvider(create: (_) => PrestatairesProvider()..loadPrestataires()),
+        ChangeNotifierProvider(
+            create: (_) => PrestatairesProvider()..loadPrestataires()),
       ],
       child: const MyApp(),
     ),
@@ -280,8 +282,8 @@ Future<void> main() async {
 
       // Notifications locales + channel + foreground iOS
       // (non bloquants pour l'affichage initial)
-      await _initLocalNotification();                 // déplacé après runApp
-      await _createAndroidNotificationChannel();      // déplacé après runApp
+      await _initLocalNotification(); // déplacé après runApp
+      await _createAndroidNotificationChannel(); // déplacé après runApp
       await FirebaseMessaging.instance
           .setForegroundNotificationPresentationOptions(
         alert: true,
@@ -387,7 +389,8 @@ class MyApp extends StatelessWidget {
       locale: const Locale('fr'),
       builder: (context, child) {
         final style = AppTheme.light.textTheme.bodyMedium!;
-        return DefaultTextStyle.merge(style: style, child: child ?? const SizedBox.shrink());
+        return DefaultTextStyle.merge(
+            style: style, child: child ?? const SizedBox.shrink());
       },
     );
   }

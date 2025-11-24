@@ -1,3 +1,4 @@
+// lib/pages/main_navigation_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,8 +15,12 @@ const Color kBleu = Color(0xFF113CFC);
 class Badge extends StatelessWidget {
   final int count;
   final double size;
-  const Badge({Key? key, required this.count, this.size = 18})
-      : super(key: key);
+
+  const Badge({
+    Key? key,
+    required this.count,
+    this.size = 18,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -49,21 +54,18 @@ class MainNavigationPage extends StatefulWidget {
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
-  final _svc = MessageService();
+  final MessageService _svc = MessageService();
 
   Future<void> _onTapTab(int index, String? userId) async {
     setState(() => _currentIndex = index);
-    // IMPORTANT :
-    // Aucune lecture automatique ici.
-    // Le "lu" est géré uniquement quand on ouvre une conversation.
   }
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // Stream de Supabase en temps réel
-    final Stream<int> unreadStream =
+    // STREAM TEMPS RÉEL – COMPTEUR UNREAD
+    final unreadStream =
         (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
 
     final pages = <Widget>[
@@ -113,34 +115,31 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               icon: Icon(Icons.map),
               label: 'Carte',
             ),
+
+            // ---------------------------------------------------------
+            //                   ONGLET MESSAGES
+            //        FULL TEMPS RÉEL — BADGE INSTANTANÉ
+            // ---------------------------------------------------------
             BottomNavigationBarItem(
               label: 'Messages',
               icon: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   const Icon(Icons.forum_rounded),
+
+                  // BADGE TEMPS RÉEL
                   Positioned(
                     right: -6,
                     top: -6,
                     child: StreamBuilder<int>(
                       stream: unreadStream,
                       initialData: 0,
-                      builder: (context, snapshot) {
-                        final fromServer = snapshot.data ?? 0;
+                      builder: (context, snap) {
+                        final unread = snap.data ?? 0;
 
-                        return ValueListenableBuilder<int>(
-                          valueListenable: _svc.optimisticUnreadDelta,
-                          builder: (_, delta, __) {
-                            final count = (fromServer - delta).clamp(0, 9999);
-
-                            if (delta > 0 && fromServer <= delta) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _svc.clearOptimisticDelta();
-                              });
-                            }
-
-                            return Badge(count: count, size: 18);
-                          },
+                        return Badge(
+                          count: unread,
+                          size: 18,
                         );
                       },
                     ),
@@ -148,6 +147,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 ],
               ),
             ),
+            // ---------------------------------------------------------
+
             const BottomNavigationBarItem(
               icon: Icon(Icons.person),
               label: 'Profil',
