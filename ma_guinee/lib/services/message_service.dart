@@ -7,7 +7,8 @@ class MessageService {
   final _client = Supabase.instance.client;
 
   // Notifications internes optionnelles
-  final StreamController<void> unreadChanged = StreamController<void>.broadcast();
+  final StreamController<void> unreadChanged =
+      StreamController<void>.broadcast();
   final ValueNotifier<int> optimisticUnreadDelta = ValueNotifier<int>(0);
 
   // ---------------- Helpers ----------------
@@ -28,7 +29,8 @@ class MessageService {
   }
 
   // ---------------- Conversations ----------------
-  Future<List<Map<String, dynamic>>> fetchUserConversations(String userId) async {
+  Future<List<Map<String, dynamic>>> fetchUserConversations(
+      String userId) async {
     // A) tous les messages où je suis sender OU receiver
     final rawParticipant = await _client
             .from('messages')
@@ -85,7 +87,8 @@ class MessageService {
     }
 
     final list = byId.values.toList()
-      ..sort((a, b) => _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
+      ..sort((a, b) =>
+          _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
 
     return list;
   }
@@ -96,7 +99,8 @@ class MessageService {
     deleted_for_sender_at,deleted_for_receiver_at
   ''';
 
-  Future<List<Map<String, dynamic>>> fetchMessagesForAnnonce(String annonceId) async {
+  Future<List<Map<String, dynamic>>> fetchMessagesForAnnonce(
+      String annonceId) async {
     final raw = await _client
         .from('messages')
         .select(_colsThread)
@@ -106,7 +110,8 @@ class MessageService {
     return (raw as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
-  Future<List<Map<String, dynamic>>> fetchMessagesForLogement(String logementId) async {
+  Future<List<Map<String, dynamic>>> fetchMessagesForLogement(
+      String logementId) async {
     final raw = await _client
         .from('messages')
         .select(_colsThread)
@@ -116,7 +121,8 @@ class MessageService {
     return (raw as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
-  Future<List<Map<String, dynamic>>> fetchMessagesForPrestataire(String prestataireId) async {
+  Future<List<Map<String, dynamic>>> fetchMessagesForPrestataire(
+      String prestataireId) async {
     final raw = await _client
         .from('messages')
         .select(_colsThread)
@@ -213,10 +219,12 @@ class MessageService {
           .maybeSingle()
           .catchError((_) => null);
 
-      resolvedReceiver =
-          (r1?['utilisateur_id']?.toString() ?? r2?['owner_user_id']?.toString() ?? '');
+      resolvedReceiver = (r1?['utilisateur_id']?.toString() ??
+          r2?['owner_user_id']?.toString() ??
+          '');
       if (resolvedReceiver.isEmpty) {
-        throw Exception("Le prestataire $prestataireId n'a pas d'utilisateur propriétaire.");
+        throw Exception(
+            "Le prestataire $prestataireId n'a pas d'utilisateur propriétaire.");
       }
     }
 
@@ -236,9 +244,9 @@ class MessageService {
   // ---------------- Lecture (lu) ----------------
   Future<void> markThreadAsReadInstant({
     required String viewerUserId,
-    required String contexte,       // 'annonce' | 'logement' | 'prestataire'
-    String? annonceOrLogementId,    // pour 'annonce' et 'logement'
-    String? prestataireId,          // pour 'prestataire'
+    required String contexte, // 'annonce' | 'logement' | 'prestataire'
+    String? annonceOrLogementId, // pour 'annonce' et 'logement'
+    String? prestataireId, // pour 'prestataire'
     required String otherUserId,
   }) async {
     try {
@@ -368,7 +376,8 @@ class MessageService {
   }
 
   // ---------------- Realtime utilitaire ----------------
-  StreamSubscription<List<Map<String, dynamic>>> subscribeAll(VoidCallback onUpdate) {
+  StreamSubscription<List<Map<String, dynamic>>> subscribeAll(
+      VoidCallback onUpdate) {
     return _client
         .from('messages')
         .stream(primaryKey: ['id'])
@@ -384,7 +393,8 @@ class MessageService {
 
   // ---------------- Compteurs + Optimisme ----------------
   Future<int> getUnreadMessagesCount(String userId) async {
-    final res = await _client.from('messages').select('lu').eq('receiver_id', userId);
+    final res =
+        await _client.from('messages').select('lu').eq('receiver_id', userId);
     final list = (res as List?) ?? const [];
     return list.where((r) => r['lu'] != true).length;
   }
@@ -425,11 +435,15 @@ class MessageService {
       await _client.from('message_thread_hides').upsert({
         'utilisateur_id': userId,
         'contexte': contexte,
-        'annonce_id':
-            (contexte == 'annonce' || contexte == 'logement') ? (annonceId ?? '') : null,
-        'prestataire_id': (contexte == 'prestataire') ? (prestataireId ?? '') : null,
+        'annonce_id': (contexte == 'annonce' || contexte == 'logement')
+            ? (annonceId ?? '')
+            : null,
+        'prestataire_id':
+            (contexte == 'prestataire') ? (prestataireId ?? '') : null,
         'peer_user_id': peerUserId,
-      }, onConflict: 'utilisateur_id,contexte,annonce_id,prestataire_id,peer_user_id');
+      },
+          onConflict:
+              'utilisateur_id,contexte,annonce_id,prestataire_id,peer_user_id');
       return;
     } catch (_) {
       // Variante 1 fallback : message_thread_hides(user_id,…)
@@ -437,32 +451,26 @@ class MessageService {
         await _client.from('message_thread_hides').upsert({
           'user_id': userId,
           'contexte': contexte,
-          'annonce_id':
-              (contexte == 'annonce' || contexte == 'logement') ? (annonceId ?? '') : null,
-          'prestataire_id': (contexte == 'prestataire') ? (prestataireId ?? '') : null,
+          'annonce_id': (contexte == 'annonce' || contexte == 'logement')
+              ? (annonceId ?? '')
+              : null,
+          'prestataire_id':
+              (contexte == 'prestataire') ? (prestataireId ?? '') : null,
           'peer_user_id': peerUserId,
-        }, onConflict: 'user_id,contexte,annonce_id,prestataire_id,peer_user_id');
+        },
+            onConflict:
+                'user_id,contexte,annonce_id,prestataire_id,peer_user_id');
         return;
       } catch (_) {/* continue */}
     }
 
-    // Variante 2 : conversation_hidden(utilisateur_id, …) puis fallback user_id
-    try {
-      await _client.from('conversation_hidden').upsert({
-        'utilisateur_id': userId,
-        'contexte': contexte,
-        'context_id': ctxId ?? '',
-        'peer_id': peerUserId,
-      }, onConflict: 'utilisateur_id,contexte,context_id,peer_id');
-      return;
-    } catch (_) {
-      await _client.from('conversation_hidden').upsert({
-        'user_id': userId,
-        'contexte': contexte,
-        'context_id': ctxId ?? '',
-        'peer_id': peerUserId,
-      }, onConflict: 'user_id,contexte,context_id,peer_id');
-    }
+    // Variante 2 : conversation_hidden(user_id, …)
+    await _client.from('conversation_hidden').upsert({
+      'user_id': userId,
+      'contexte': contexte,
+      'context_id': ctxId ?? '',
+      'peer_id': peerUserId,
+    }, onConflict: 'user_id,contexte,context_id,peer_id');
   }
 
   Future<Set<String>> fetchHiddenThreadKeys(String userId) async {
@@ -476,14 +484,15 @@ class MessageService {
       final keys = <String>{};
       for (final r in (rows as List? ?? const [])) {
         final ctx = (r['contexte'] ?? '').toString();
-        final ctxId =
-            (ctx == 'prestataire') ? (r['prestataire_id'] ?? '').toString() : (r['annonce_id'] ?? '').toString();
+        final ctxId = (ctx == 'prestataire')
+            ? (r['prestataire_id'] ?? '').toString()
+            : (r['annonce_id'] ?? '').toString();
         final peer = (r['peer_user_id'] ?? '').toString();
         keys.add('$ctx-$ctxId-$peer');
       }
       return keys;
     } catch (_) {
-      // message_thread_hides(user_id, …)
+      // message_thread_hides(user_id, …
       try {
         final rows = await _client
             .from('message_thread_hides')
@@ -493,8 +502,9 @@ class MessageService {
         final keys = <String>{};
         for (final r in (rows as List? ?? const [])) {
           final ctx = (r['contexte'] ?? '').toString();
-          final ctxId =
-              (ctx == 'prestataire') ? (r['prestataire_id'] ?? '').toString() : (r['annonce_id'] ?? '').toString();
+          final ctxId = (ctx == 'prestataire')
+              ? (r['prestataire_id'] ?? '').toString()
+              : (r['annonce_id'] ?? '').toString();
           final peer = (r['peer_user_id'] ?? '').toString();
           keys.add('$ctx-$ctxId-$peer');
         }
@@ -502,30 +512,19 @@ class MessageService {
       } catch (_) {/* continue */}
     }
 
-    // conversation_hidden(utilisateur_id, …) puis fallback user_id
+    // conversation_hidden(user_id, …)
     try {
       final rows = await _client
           .from('conversation_hidden')
           .select('contexte,context_id,peer_id')
-          .eq('utilisateur_id', userId);
+          .eq('user_id', userId);
       return {
         for (final r in (rows as List? ?? const []))
           '${(r['contexte'] ?? '').toString()}-${(r['context_id'] ?? '').toString()}-${(r['peer_id'] ?? '').toString()}'
       };
-    } catch (_) {
-      try {
-        final rows = await _client
-            .from('conversation_hidden')
-            .select('contexte,context_id,peer_id')
-            .eq('user_id', userId);
-        return {
-          for (final r in (rows as List? ?? const []))
-            '${(r['contexte'] ?? '').toString()}-${(r['context_id'] ?? '').toString()}-${(r['peer_id'] ?? '').toString()}'
-        };
-      } catch (e) {
-        debugPrint('fetchHiddenThreadKeys: $e');
-        return <String>{};
-      }
+    } catch (e) {
+      debugPrint('fetchHiddenThreadKeys: $e');
+      return <String>{};
     }
   }
 }

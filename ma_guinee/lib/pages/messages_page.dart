@@ -105,7 +105,6 @@ class _MessagesPageState extends State<MessagesPage> {
       return url;
     }
 
-    // Fallback (devine un chemin simple)
     for (final ext in const ['jpg', 'png', 'jpeg']) {
       final guess = 'u/$userId.$ext';
       final url = _publicUrl(guess);
@@ -117,22 +116,35 @@ class _MessagesPageState extends State<MessagesPage> {
   String _threadKey(String contexte, dynamic ctxId, String otherId) =>
       '$contexte-${ctxId ?? ''}-$otherId';
 
-  /// Helper pour récupérer un ctxId propre selon le contexte,
-  /// avec fallback pour logement (logement_id OU annonce_id).
+  // ************ CORRECTION IMPORTANTE ************
+  // Contexte stabilisé avec fallback message.id pour ANNONCE / LOGEMENT
   String _ctxIdForMessage(Map<String, dynamic> msg) {
     final ctx = (msg['contexte'] ?? '').toString();
+
     if (ctx == 'prestataire') {
       return (msg['prestataire_id'] ?? '').toString();
-    } else if (ctx == 'logement') {
+    }
+
+    if (ctx == 'logement') {
       final lid = (msg['logement_id'] ?? '').toString();
       if (lid.isNotEmpty) return lid;
-      // compat : certains anciens messages logement utilisent encore annonce_id
-      return (msg['annonce_id'] ?? '').toString();
-    } else {
-      // annonce
-      return (msg['annonce_id'] ?? '').toString();
+
+      final aid = (msg['annonce_id'] ?? '').toString();
+      if (aid.isNotEmpty) return aid;
+
+      return msg['id'].toString(); // fallback
     }
+
+    if (ctx == 'annonce') {
+      final aid = (msg['annonce_id'] ?? '').toString();
+      if (aid.isNotEmpty) return aid;
+
+      return msg['id'].toString(); // fallback robuste
+    }
+
+    return msg['id'].toString(); // sécurité
   }
+  // ***********************************************
 
   @override
   void initState() {
@@ -177,23 +189,18 @@ class _MessagesPageState extends State<MessagesPage> {
 
         if (otherId.isNotEmpty) participantIds.add(otherId);
 
-        final ctx = (msg['contexte'] ?? '')
-            .toString(); // annonce | logement | prestataire
+        final ctx = (msg['contexte'] ?? '').toString();
         final ctxId = _ctxIdForMessage(msg);
 
-        // --- Clés de masquage robustes
         final keyExact = _threadKey(ctx, ctxId, otherId);
-        final keyEmpty =
-            _threadKey(ctx, '', otherId); // anciens masquages sans ctxId
+        final keyEmpty = _threadKey(ctx, '', otherId);
 
-        // --- Bypass masquage pour PRESTATAIRE quand JE SUIS le destinataire
         final iAmReceiver = receiverId == myId;
         final isPrestataire = ctx == 'prestataire';
 
         final isHidden =
             hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
         if (isHidden && !(isPrestataire && iAmReceiver)) {
-          // respecte le masquage sauf si (prestataire && je suis le destinataire)
           continue;
         }
 
@@ -286,17 +293,14 @@ class _MessagesPageState extends State<MessagesPage> {
     if (me == null) return;
 
     try {
-      final ctx = (convo['contexte'] ?? '')
-          .toString(); // annonce | logement | prestataire
+      final ctx = (convo['contexte'] ?? '').toString();
       final isAnnOrLog = (ctx == 'annonce' || ctx == 'logement');
       final ctxId = isAnnOrLog
-          ? _ctxIdForMessage(convo) // utilise helper avec fallback
+          ? _ctxIdForMessage(convo)
           : (convo['prestataire_id'] ?? '').toString();
 
-      // Optimisme UI (on baisse le badge immédiatement)
       _messageService.decUnreadOptimistic(1);
 
-      // Tolérant aux schémas différents
       try {
         await _messageService.markThreadAsReadInstant(
           viewerUserId: me.id,
@@ -328,9 +332,8 @@ class _MessagesPageState extends State<MessagesPage> {
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Supprimer la conversation ?'),
-            content: const Text(
-                "Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
+            title: const Text('Confirmer la suppression ?'),
+            content: const Text("Voulez-vous supprimer cette conversation ?"),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -358,7 +361,6 @@ class _MessagesPageState extends State<MessagesPage> {
       await _messageService.hideThread(
         userId: me,
         contexte: ctx,
-        // IMPORTANT : ta méthode n’a PAS logementId → on réutilise annonceId
         annonceId: (ctx == 'annonce' || ctx == 'logement') ? ctxId : null,
         prestataireId: (ctx == 'prestataire') ? ctxId : null,
         peerUserId: otherId,
@@ -471,7 +473,6 @@ class _MessagesPageState extends State<MessagesPage> {
                           final userId = otherIdStr;
                           final initials = _initials(utilisateur);
 
-                          // --- AVATAR: direct URL > cache > résolution asynchrone ---
                           final directUrl = _rawUrl(utilisateur);
                           String? photoUrl = directUrl ?? _avatarCache[userId];
                           if (photoUrl == null) {
@@ -562,7 +563,6 @@ class _MessagesPageState extends State<MessagesPage> {
                                 ),
                               ),
                               onTap: () async {
-                                // Marque le fil comme lu (serveur + UI)
                                 await _markThreadAsRead(
                                     convo: m, otherId: userId);
 
@@ -591,7 +591,6 @@ class _MessagesPageState extends State<MessagesPage> {
                                     ),
                                   );
                                 } else if (contexte == 'logement') {
-                                  // utilise logement_id si dispo, sinon fallback sur annonce_id
                                   final logementId = (m['logement_id'] ??
                                           m['annonce_id'] ??
                                           '')
@@ -636,7 +635,7 @@ class _MessagesPageState extends State<MessagesPage> {
                                   );
                                 }
 
-                                _loadConversations(); // refresh au retour
+                                _loadConversations();
                               },
                             ),
                           );
