@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
-import 'messages_annonce_page.dart';       // Chat ANNONCES
+import 'messages_annonce_page.dart'; // Chat ANNONCES
 import 'messages/message_chat_page.dart'; // Chat LOGEMENT & PRESTATAIRE
 
 class MessagesPage extends StatefulWidget {
@@ -40,7 +40,8 @@ class _MessagesPageState extends State<MessagesPage> {
   String _dateLabel(dynamic v) {
     final d = _asDate(v).toLocal();
     final now = DateTime.now();
-    final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+    final isToday =
+        d.year == now.year && d.month == now.month && d.day == now.day;
     if (isToday) {
       final hh = d.hour.toString().padLeft(2, '0');
       final mm = d.minute.toString().padLeft(2, '0');
@@ -54,7 +55,8 @@ class _MessagesPageState extends State<MessagesPage> {
   String _initials(Map<String, dynamic>? u) {
     final p = (u?['prenom'] ?? '').toString().trim();
     final n = (u?['nom'] ?? '').toString().trim();
-    final s = '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
+    final s =
+        '${p.isNotEmpty ? p[0] : ''}${n.isNotEmpty ? n[0] : ''}'.toUpperCase();
     return s.isNotEmpty ? s : '·';
   }
 
@@ -66,7 +68,13 @@ class _MessagesPageState extends State<MessagesPage> {
 
   String? _rawPath(Map<String, dynamic>? u) {
     if (u == null) return null;
-    for (final k in const ['photo_path','photo_url','image_url','avatar_url','photo']) {
+    for (final k in const [
+      'photo_path',
+      'photo_url',
+      'image_url',
+      'avatar_url',
+      'photo'
+    ]) {
       final v = u[k]?.toString();
       if (v != null && v.isNotEmpty && !v.startsWith('http')) return v;
     }
@@ -109,6 +117,23 @@ class _MessagesPageState extends State<MessagesPage> {
   String _threadKey(String contexte, dynamic ctxId, String otherId) =>
       '$contexte-${ctxId ?? ''}-$otherId';
 
+  /// Helper pour récupérer un ctxId propre selon le contexte,
+  /// avec fallback pour logement (logement_id OU annonce_id).
+  String _ctxIdForMessage(Map<String, dynamic> msg) {
+    final ctx = (msg['contexte'] ?? '').toString();
+    if (ctx == 'prestataire') {
+      return (msg['prestataire_id'] ?? '').toString();
+    } else if (ctx == 'logement') {
+      final lid = (msg['logement_id'] ?? '').toString();
+      if (lid.isNotEmpty) return lid;
+      // compat : certains anciens messages logement utilisent encore annonce_id
+      return (msg['annonce_id'] ?? '').toString();
+    } else {
+      // annonce
+      return (msg['annonce_id'] ?? '').toString();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -145,27 +170,28 @@ class _MessagesPageState extends State<MessagesPage> {
       for (final raw in messages) {
         final msg = Map<String, dynamic>.from(raw as Map);
 
-        final String senderId   = (msg['sender_id']   ?? '').toString();
+        final String senderId = (msg['sender_id'] ?? '').toString();
         final String receiverId = (msg['receiver_id'] ?? '').toString();
-        final String myId       = me.id;
-        final String otherId    = (senderId == myId) ? receiverId : senderId;
+        final String myId = me.id;
+        final String otherId = (senderId == myId) ? receiverId : senderId;
 
         if (otherId.isNotEmpty) participantIds.add(otherId);
 
-        final ctx = (msg['contexte'] ?? '').toString();          // annonce | logement | prestataire
-        final ctxId = (ctx == 'prestataire')
-            ? (msg['prestataire_id'] ?? '').toString()
-            : (msg['annonce_id'] ?? '').toString();
+        final ctx = (msg['contexte'] ?? '')
+            .toString(); // annonce | logement | prestataire
+        final ctxId = _ctxIdForMessage(msg);
 
         // --- Clés de masquage robustes
         final keyExact = _threadKey(ctx, ctxId, otherId);
-        final keyEmpty = _threadKey(ctx, '', otherId); // anciens masquages sans ctxId
+        final keyEmpty =
+            _threadKey(ctx, '', otherId); // anciens masquages sans ctxId
 
         // --- Bypass masquage pour PRESTATAIRE quand JE SUIS le destinataire
         final iAmReceiver = receiverId == myId;
         final isPrestataire = ctx == 'prestataire';
 
-        final isHidden = hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
+        final isHidden =
+            hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
         if (isHidden && !(isPrestataire && iAmReceiver)) {
           // respecte le masquage sauf si (prestataire && je suis le destinataire)
           continue;
@@ -173,7 +199,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
         final gkey = '$ctx-$ctxId-$otherId';
         if (!grouped.containsKey(gkey) ||
-            _asDate(msg['date_envoi']).isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
+            _asDate(msg['date_envoi'])
+                .isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
           grouped[gkey] = msg;
         }
       }
@@ -184,7 +211,8 @@ class _MessagesPageState extends State<MessagesPage> {
         try {
           users = await _sb
               .from('utilisateurs')
-              .select('id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
+              .select(
+                  'id,nom,prenom,photo_url,photo_path,image_url,avatar_url,photo')
               .inFilter('id', participantIds.toList());
         } catch (_) {
           try {
@@ -211,7 +239,8 @@ class _MessagesPageState extends State<MessagesPage> {
       }
 
       final list = grouped.values.toList()
-        ..sort((a, b) => _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
+        ..sort((a, b) =>
+            _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
 
       if (!mounted) return;
       setState(() {
@@ -257,10 +286,11 @@ class _MessagesPageState extends State<MessagesPage> {
     if (me == null) return;
 
     try {
-      final ctx = (convo['contexte'] ?? '').toString(); // annonce | logement | prestataire
+      final ctx = (convo['contexte'] ?? '')
+          .toString(); // annonce | logement | prestataire
       final isAnnOrLog = (ctx == 'annonce' || ctx == 'logement');
       final ctxId = isAnnOrLog
-          ? (convo['annonce_id'] ?? '').toString()
+          ? _ctxIdForMessage(convo) // utilise helper avec fallback
           : (convo['prestataire_id'] ?? '').toString();
 
       // Optimisme UI (on baisse le badge immédiatement)
@@ -286,7 +316,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
       final idx = _conversations.indexOf(convo);
       if (idx != -1 && mounted) {
-        setState(() => _conversations[idx] = {..._conversations[idx], 'lu': true});
+        setState(
+            () => _conversations[idx] = {..._conversations[idx], 'lu': true});
       }
     } catch (e) {
       debugPrint('markAsRead error: $e');
@@ -298,10 +329,15 @@ class _MessagesPageState extends State<MessagesPage> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Supprimer la conversation ?'),
-            content: const Text("Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
+            content: const Text(
+                "Elle sera supprimée pour vous (l’autre personne la verra toujours)."),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Supprimer')),
             ],
           ),
         ) ??
@@ -316,14 +352,13 @@ class _MessagesPageState extends State<MessagesPage> {
     if (me == null) return;
 
     final ctx = (convo['contexte'] ?? '').toString();
-    final ctxId = ((ctx == 'annonce' || ctx == 'logement')
-            ? (convo['annonce_id'] ?? '').toString()
-            : (convo['prestataire_id'] ?? '').toString());
+    final ctxId = _ctxIdForMessage(convo);
 
     try {
       await _messageService.hideThread(
         userId: me,
         contexte: ctx,
+        // IMPORTANT : ta méthode n’a PAS logementId → on réutilise annonceId
         annonceId: (ctx == 'annonce' || ctx == 'logement') ? ctxId : null,
         prestataireId: (ctx == 'prestataire') ? ctxId : null,
         peerUserId: otherId,
@@ -331,8 +366,8 @@ class _MessagesPageState extends State<MessagesPage> {
 
       if (!mounted) return;
       setState(() => _conversations.remove(convo));
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Conversation supprimée.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Conversation supprimée.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -357,13 +392,18 @@ class _MessagesPageState extends State<MessagesPage> {
           : (m['sender_id'] ?? '').toString();
 
       final u = _utilisateurs[otherIdStr];
-      final nom = ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
+      final nom =
+          ("${u?['prenom'] ?? ''} ${u?['nom'] ?? ''}").toLowerCase().trim();
 
       final titreAnnonce = (m['annonce_titre'] ?? '').toString().toLowerCase();
-      final titrePresta  = (m['prestataire_name'] ?? '').toString().toLowerCase();
+      final titrePresta =
+          (m['prestataire_name'] ?? '').toString().toLowerCase();
       final titre = titreAnnonce.isNotEmpty ? titreAnnonce : titrePresta;
 
-      return filter.isEmpty || contenu.contains(filter) || nom.contains(filter) || titre.contains(filter);
+      return filter.isEmpty ||
+          contenu.contains(filter) ||
+          nom.contains(filter) ||
+          titre.contains(filter);
     }).toList();
 
     return Scaffold(
@@ -411,14 +451,18 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final myId = me?.id ?? '';
                           final senderId = (m['sender_id'] ?? '').toString();
-                          final receiverId = (m['receiver_id'] ?? '').toString();
-                          final otherIdStr = (senderId == myId) ? receiverId : senderId;
+                          final receiverId =
+                              (m['receiver_id'] ?? '').toString();
+                          final otherIdStr =
+                              (senderId == myId) ? receiverId : senderId;
 
-                          final isUnread = (receiverId == myId) && (m['lu'] != true);
+                          final isUnread =
+                              (receiverId == myId) && (m['lu'] != true);
 
                           final utilisateur = _utilisateurs[otherIdStr];
                           final interlocutorName = (utilisateur != null)
-                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}".trim()
+                              ? "${utilisateur['prenom'] ?? ''} ${utilisateur['nom'] ?? ''}"
+                                  .trim()
                               : "Utilisateur";
 
                           final subtitle = (m['contenu'] ?? '').toString();
@@ -438,7 +482,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
                           final convKey = ValueKey<String>([
                             (m['contexte'] ?? '').toString(),
-                            ((m['annonce_id'] ?? m['prestataire_id'] ?? '')).toString(),
+                            _ctxIdForMessage(m),
                             userId,
                           ].join('-'));
 
@@ -446,17 +490,22 @@ class _MessagesPageState extends State<MessagesPage> {
                             key: convKey,
                             direction: DismissDirection.endToStart,
                             confirmDismiss: (_) => _confirmDelete(),
-                            onDismissed: (_) => _deleteConversation(convo: m, otherId: userId),
+                            onDismissed: (_) =>
+                                _deleteConversation(convo: m, otherId: userId),
                             background: Container(
                               color: Colors.red,
                               alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: const Icon(Icons.delete, color: Colors.white),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child:
+                                  const Icon(Icons.delete, color: Colors.white),
                             ),
                             child: ListTile(
                               onLongPress: () async {
                                 final ok = await _confirmDelete();
-                                if (ok) await _deleteConversation(convo: m, otherId: userId);
+                                if (ok)
+                                  await _deleteConversation(
+                                      convo: m, otherId: userId);
                               },
                               leading: Stack(
                                 children: [
@@ -469,7 +518,8 @@ class _MessagesPageState extends State<MessagesPage> {
                                           : Image.network(
                                               photoUrl,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => _initialsAvatar(initials),
+                                              errorBuilder: (_, __, ___) =>
+                                                  _initialsAvatar(initials),
                                             ),
                                     ),
                                   ),
@@ -485,9 +535,13 @@ class _MessagesPageState extends State<MessagesPage> {
                                 ],
                               ),
                               title: Text(
-                                interlocutorName.isEmpty ? "Utilisateur" : interlocutorName,
+                                interlocutorName.isEmpty
+                                    ? "Utilisateur"
+                                    : interlocutorName,
                                 style: TextStyle(
-                                  fontWeight: isUnread ? FontWeight.w800 : FontWeight.w600,
+                                  fontWeight: isUnread
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
                                 ),
                               ),
                               subtitle: Text(
@@ -499,22 +553,31 @@ class _MessagesPageState extends State<MessagesPage> {
                                 dateLabel,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isUnread ? Colors.red : Colors.grey.shade600,
-                                  fontWeight: isUnread ? FontWeight.w700 : FontWeight.w400,
+                                  color: isUnread
+                                      ? Colors.red
+                                      : Colors.grey.shade600,
+                                  fontWeight: isUnread
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
                                 ),
                               ),
                               onTap: () async {
                                 // Marque le fil comme lu (serveur + UI)
-                                await _markThreadAsRead(convo: m, otherId: userId);
+                                await _markThreadAsRead(
+                                    convo: m, otherId: userId);
 
-                                final contexte = (m['contexte'] ?? '').toString();
+                                final contexte =
+                                    (m['contexte'] ?? '').toString();
 
                                 if (contexte == 'annonce') {
-                                  final annonceId = (m['annonce_id'] ?? '').toString();
-                                  final annonceTitreRaw = (m['annonce_titre'] ?? '').toString();
-                                  final annonceTitre = annonceTitreRaw.trim().isNotEmpty
-                                      ? annonceTitreRaw
-                                      : 'Annonce';
+                                  final annonceId =
+                                      (m['annonce_id'] ?? '').toString();
+                                  final annonceTitreRaw =
+                                      (m['annonce_titre'] ?? '').toString();
+                                  final annonceTitre =
+                                      annonceTitreRaw.trim().isNotEmpty
+                                          ? annonceTitreRaw
+                                          : 'Annonce';
 
                                   await Navigator.push(
                                     context,
@@ -528,11 +591,17 @@ class _MessagesPageState extends State<MessagesPage> {
                                     ),
                                   );
                                 } else if (contexte == 'logement') {
-                                  final logementId = (m['annonce_id'] ?? '').toString();
-                                  final logementTitreRaw = (m['annonce_titre'] ?? '').toString();
-                                  final logementTitre = logementTitreRaw.trim().isNotEmpty
-                                      ? logementTitreRaw
-                                      : 'Logement';
+                                  // utilise logement_id si dispo, sinon fallback sur annonce_id
+                                  final logementId = (m['logement_id'] ??
+                                          m['annonce_id'] ??
+                                          '')
+                                      .toString();
+                                  final logementTitreRaw =
+                                      (m['annonce_titre'] ?? '').toString();
+                                  final logementTitre =
+                                      logementTitreRaw.trim().isNotEmpty
+                                          ? logementTitreRaw
+                                          : 'Logement';
 
                                   await Navigator.push(
                                     context,
@@ -547,8 +616,11 @@ class _MessagesPageState extends State<MessagesPage> {
                                     ),
                                   );
                                 } else {
-                                  final prestataireId = (m['prestataire_id'] ?? '').toString();
-                                  final titre = (m['prestataire_name'] ?? interlocutorName).toString();
+                                  final prestataireId =
+                                      (m['prestataire_id'] ?? '').toString();
+                                  final titre = (m['prestataire_name'] ??
+                                          interlocutorName)
+                                      .toString();
 
                                   await Navigator.push(
                                     context,

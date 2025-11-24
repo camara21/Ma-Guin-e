@@ -35,33 +35,14 @@ class PageProfil extends StatelessWidget {
       photoUrl = appUser.photoUrl;
     }
 
-    // --------- Métadonnées Wontanara (quartier, rôle, points...) ---------
-    String quartier = 'Quartier inconnu';
-    String prefecture = 'Préfecture inconnue';
-    String role = 'Citoyen';
-
-    int points = 0;
-    int nbAides = 0;
-
+    // --------- Métadonnées Wontanara ---------
     bool isEntrepriseRecyclage = false;
     bool isModerateur = false;
 
     if (supaUser != null) {
       final meta = supaUser.userMetadata ?? {};
 
-      final q = (meta['quartier'] as String?)?.trim();
-      if (q != null && q.isNotEmpty) quartier = q;
-
-      final p = (meta['prefecture'] as String?)?.trim();
-      if (p != null && p.isNotEmpty) prefecture = p;
-
-      final r = (meta['role'] as String?)?.trim();
-      if (r != null && r.isNotEmpty) role = r;
-
-      points = (meta['points'] as int?) ?? 0;
-      nbAides = (meta['aides'] as int?) ?? 0;
-
-      // Entreprise de recyclage
+      // Entreprise recyclage
       final typeProfil = (meta['type_profil'] as String?)?.trim();
       if (typeProfil == 'entreprise_recyclage') {
         isEntrepriseRecyclage = true;
@@ -120,69 +101,8 @@ class PageProfil extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$role • $quartier • $prefecture',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: ThemeWontanara.texte2,
-                        ),
-                      ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // -------- RÉPUTATION & BADGES --------
-          const _SectionTitle('Réputation & badges'),
-          const SizedBox(height: 8),
-          Container(
-            decoration: _cardBox,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _KpiChip(
-                      label: 'Points',
-                      value: '$points',
-                      icon: Ionicons.star,
-                    ),
-                    const SizedBox(width: 8),
-                    _KpiChip(
-                      label: 'Aides données',
-                      value: '$nbAides',
-                      icon: Ionicons.hand_left_outline,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Badges',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: const [
-                    _BadgeChip(
-                      icon: Ionicons.hand_left_outline,
-                      label: 'Aides données',
-                    ),
-                    _BadgeChip(
-                      icon: Ionicons.leaf_outline,
-                      label: 'Eco-responsable',
-                    ),
-                  ],
                 ),
               ],
             ),
@@ -243,9 +163,6 @@ class PageProfil extends StatelessWidget {
                 ),
                 trailing: const Icon(Ionicons.chevron_forward),
                 onTap: () {
-                  // Pour l’instant, on peut soit laisser comme avant,
-                  // soit aussi afficher le message "bientôt dispo".
-                  // Je garde la navigation réelle si tu veux tester la page.
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -296,7 +213,7 @@ class PageProfil extends StatelessWidget {
 }
 
 /* ============================================================
- *  Petits widgets UI
+ * UI Components
  * ==========================================================*/
 
 class _SectionTitle extends StatelessWidget {
@@ -316,76 +233,6 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _KpiChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-
-  const _KpiChip({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: ThemeWontanara.menthe,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: ThemeWontanara.vertPetrole),
-            const SizedBox(width: 6),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BadgeChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _BadgeChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      backgroundColor: ThemeWontanara.menthe,
-      avatar: Icon(
-        icon,
-        size: 16,
-        color: ThemeWontanara.vertPetrole,
-      ),
-      label: Text(
-        label,
-        style: const TextStyle(fontSize: 12),
-      ),
-    );
-  }
-}
-
 final _cardBox = BoxDecoration(
   color: Colors.white,
   borderRadius: BorderRadius.circular(18),
@@ -399,27 +246,8 @@ final _cardBox = BoxDecoration(
 );
 
 /* ============================================================
- *  Pages liées (à brancher plus tard)
+ *  Pages liées
  * ==========================================================*/
-
-class PageAbonnementWontanara extends StatelessWidget {
-  const PageAbonnementWontanara({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mon abonnement Wontanara'),
-      ),
-      body: const Center(
-        child: Text(
-          'Espace abonnement Wontanara (intégration à faire).',
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-}
 
 class PageModerationWontanara extends StatelessWidget {
   const PageModerationWontanara({super.key});

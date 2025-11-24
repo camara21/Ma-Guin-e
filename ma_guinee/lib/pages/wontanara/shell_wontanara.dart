@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'theme_wontanara.dart';
 import 'pages/page_flux.dart';
-import 'pages/page_carte.dart';
-import 'pages/page_services.dart';
-import 'pages/page_collecte.dart';
 import 'pages/page_profil.dart';
 
 class ShellWontanara extends StatefulWidget {
@@ -22,10 +19,6 @@ class _ShellWontanaraState extends State<ShellWontanara> {
   // Onglets principaux -> vraies pages “prod”
   final List<Widget> _pages = const [
     PageFlux(), // Actualités locales
-    PageCarte(), // Carte communautaire
-    PageServices(), // Entraide & micro-services
-    PageCollecte(), // Collecte / abonnements
-    PageProfil(), // Profil & rôle
   ];
 
   @override
@@ -58,14 +51,6 @@ class _ShellWontanaraState extends State<ShellWontanara> {
                 label: 'Actualités',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.map_rounded),
-                label: 'Carte',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.volunteer_activism_rounded),
-                label: 'Entraide',
-              ),
-              BottomNavigationBarItem(
                 icon: Icon(Icons.recycling_rounded),
                 label: 'Collecte',
               ),
@@ -77,8 +62,7 @@ class _ShellWontanaraState extends State<ShellWontanara> {
           ),
         ),
       ),
-      // Chaque page gère désormais son propre FAB,
-      // donc pas de FloatingActionButton global ici.
+      // Chaque page gère désormais son propre FAB.
     );
   }
 }
