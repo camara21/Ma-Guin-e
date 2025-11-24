@@ -14,7 +14,8 @@ const Color kBleu = Color(0xFF113CFC);
 class Badge extends StatelessWidget {
   final int count;
   final double size;
-  const Badge({Key? key, required this.count, this.size = 18}) : super(key: key);
+  const Badge({Key? key, required this.count, this.size = 18})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +30,11 @@ class Badge extends StatelessWidget {
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -48,15 +53,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   Future<void> _onTapTab(int index, String? userId) async {
     setState(() => _currentIndex = index);
-    // ❌ Ne marque plus tout comme lu ici.
-    // La mise à jour "lu" se fait à l'ouverture d'un fil dans MessagesPage.
+    // IMPORTANT :
+    // Aucune lecture automatique ici.
+    // Le "lu" est géré uniquement quand on ouvre une conversation.
   }
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    final Stream<int> supabaseUnreadStream =
+    // Stream de Supabase en temps réel
+    final Stream<int> unreadStream =
         (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
 
     final pages = <Widget>[
@@ -98,8 +105,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           selectedFontSize: 12,
           unselectedFontSize: 12,
           items: [
-            const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
-            const BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Carte'),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: 'Accueil',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.map),
+              label: 'Carte',
+            ),
             BottomNavigationBarItem(
               label: 'Messages',
               icon: Stack(
@@ -110,20 +123,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                     right: -6,
                     top: -6,
                     child: StreamBuilder<int>(
-                      stream: supabaseUnreadStream,
+                      stream: unreadStream,
                       initialData: 0,
                       builder: (context, snapshot) {
-                        final fromStream = snapshot.data ?? 0;
+                        final fromServer = snapshot.data ?? 0;
+
                         return ValueListenableBuilder<int>(
                           valueListenable: _svc.optimisticUnreadDelta,
                           builder: (_, delta, __) {
-                            final shown = (fromStream - delta).clamp(0, 9999);
-                            if (delta > 0 && fromStream <= delta) {
+                            final count = (fromServer - delta).clamp(0, 9999);
+
+                            if (delta > 0 && fromServer <= delta) {
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _svc.clearOptimisticDelta();
                               });
                             }
-                            return Badge(count: shown, size: 18);
+
+                            return Badge(count: count, size: 18);
                           },
                         );
                       },
@@ -132,7 +148,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 ],
               ),
             ),
-            const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.person),
+              label: 'Profil',
+            ),
           ],
         ),
       ),
