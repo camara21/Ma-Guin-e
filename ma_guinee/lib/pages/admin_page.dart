@@ -39,12 +39,13 @@ class Demarche {
 // ================== Données (photos Conakry) ==================
 // Remplace ces URLs par tes propres images (ex: Supabase public URLs)
 final List<String> kConakryPhotos = [
-  "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=1600",
-  "https://images.unsplash.com/photo-1482192505345-5655af888cc4?q=80&w=1600",
-  "https://images.unsplash.com/photo-1520975922219-b2c1d0d4f6b1?q=80&w=1600",
-  "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=1600",
-  "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600",
-  "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1600",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide1.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide4.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide3.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide2.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide5.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide9.png",
 ];
 
 final List<Demarche> kDemarches = [
@@ -188,12 +189,28 @@ class _AdminPageState extends State<AdminPage> {
   String _normalize(String s) {
     final lower = s.trim().toLowerCase();
     const map = {
-      'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a', 'ã': 'a',
+      'à': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'á': 'a',
+      'ã': 'a',
       'ç': 'c',
-      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-      'î': 'i', 'ï': 'i', 'ì': 'i', 'í': 'i',
-      'ô': 'o', 'ö': 'o', 'ò': 'o', 'ó': 'o',
-      'ù': 'u', 'û': 'u', 'ü': 'u', 'ú': 'u',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'î': 'i',
+      'ï': 'i',
+      'ì': 'i',
+      'í': 'i',
+      'ô': 'o',
+      'ö': 'o',
+      'ò': 'o',
+      'ó': 'o',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ú': 'u',
       'œ': 'oe',
     };
     final b = StringBuffer();
@@ -297,7 +314,8 @@ class DemarcheDetailPage extends StatelessWidget {
           child: Container(
             height: 3,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [kGNFGreen, kGNFYellow, kGNFRed]),
+              gradient:
+                  LinearGradient(colors: [kGNFGreen, kGNFYellow, kGNFRed]),
             ),
           ),
         ),
@@ -314,7 +332,8 @@ class DemarcheDetailPage extends StatelessWidget {
             title: "Documents requis",
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: demarche.documents.map((e) => _Bullet(text: e)).toList(),
+              children:
+                  demarche.documents.map((e) => _Bullet(text: e)).toList(),
             ),
           ),
           if (demarche.etapes.isNotEmpty)
@@ -330,9 +349,11 @@ class DemarcheDetailPage extends StatelessWidget {
               ),
             ),
           if (demarche.cout != null)
-            _InfoTile(icon: Icons.payments, label: "Coût", value: demarche.cout!),
+            _InfoTile(
+                icon: Icons.payments, label: "Coût", value: demarche.cout!),
           if (demarche.delai != null)
-            _InfoTile(icon: Icons.schedule, label: "Délai", value: demarche.delai!),
+            _InfoTile(
+                icon: Icons.schedule, label: "Délai", value: demarche.delai!),
           if (demarche.lieux != null)
             _InfoTile(
                 icon: Icons.location_on,
@@ -351,12 +372,14 @@ class DemarcheDetailPage extends StatelessWidget {
                 runSpacing: 8,
                 children: demarche.liens.map((l) {
                   return ActionChip(
-                    label: Text(l['label']!, style: const TextStyle(color: Colors.white)),
+                    label: Text(l['label']!,
+                        style: const TextStyle(color: Colors.white)),
                     backgroundColor: kGNFGreen,
                     onPressed: () async {
                       final uri = Uri.parse(l['url']!);
                       if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
                       }
                     },
                   );
@@ -463,11 +486,13 @@ class _ConakryBannerState extends State<_ConakryBanner> {
                         CachedNetworkImage(
                           imageUrl: url,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: Colors.black12),
+                          placeholder: (_, __) =>
+                              Container(color: Colors.black12),
                           errorWidget: (_, __, ___) => Container(
                             color: Colors.black12,
                             alignment: Alignment.center,
-                            child: const Icon(Icons.image_not_supported, color: Colors.black45),
+                            child: const Icon(Icons.image_not_supported,
+                                color: Colors.black45),
                           ),
                         ),
                         Container(
@@ -502,7 +527,9 @@ class _ConakryBannerState extends State<_ConakryBanner> {
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
-                              shadows: [Shadow(blurRadius: 8, color: Colors.black54)],
+                              shadows: [
+                                Shadow(blurRadius: 8, color: Colors.black54)
+                              ],
                             ),
                           ),
                         ),
@@ -549,7 +576,8 @@ class _DemarcheTileGuinea extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
-          BoxShadow(color: Color(0x11000000), blurRadius: 12, offset: Offset(0, 6)),
+          BoxShadow(
+              color: Color(0x11000000), blurRadius: 12, offset: Offset(0, 6)),
         ],
       ),
       child: InkWell(
@@ -593,7 +621,10 @@ class _DemarcheTileGuinea extends StatelessWidget {
                     end: Alignment.bottomRight,
                   ),
                   boxShadow: [
-                    BoxShadow(color: Color(0x22CE1126), blurRadius: 10, offset: Offset(0, 6))
+                    BoxShadow(
+                        color: Color(0x22CE1126),
+                        blurRadius: 10,
+                        offset: Offset(0, 6))
                   ],
                 ),
                 child: Icon(d.icone, color: Colors.white),
@@ -602,7 +633,8 @@ class _DemarcheTileGuinea extends StatelessWidget {
                 d.titre,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kInk),
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w800, color: kInk),
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 3),
@@ -619,7 +651,8 @@ class _DemarcheTileGuinea extends StatelessWidget {
                   color: kGNFRed.withOpacity(.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.arrow_forward_ios, size: 16, color: kGNFRed),
+                child: const Icon(Icons.arrow_forward_ios,
+                    size: 16, color: kGNFRed),
               ),
             ),
           ],
@@ -647,7 +680,10 @@ class _SectionCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kGNFGreen)),
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: kGNFGreen)),
             const SizedBox(height: 8),
             child,
           ],
@@ -673,7 +709,9 @@ class _Bullet extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+            child: Text(text,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
           ),
         ],
       ),
@@ -699,16 +737,20 @@ class _StepItem extends StatelessWidget {
             decoration: BoxDecoration(
               color: kGNFYellow.withOpacity(0.15),
               borderRadius: BorderRadius.circular(11),
-              border: const Border.fromBorderSide(BorderSide(color: kGNFYellow, width: 1)),
+              border: const Border.fromBorderSide(
+                  BorderSide(color: kGNFYellow, width: 1)),
             ),
             child: Text(
               '$index',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kGNFYellow),
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w800, color: kGNFYellow),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+            child: Text(text,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
           ),
         ],
       ),
@@ -719,7 +761,8 @@ class _StepItem extends StatelessWidget {
 class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String label, value;
-  const _InfoTile({required this.icon, required this.label, required this.value});
+  const _InfoTile(
+      {required this.icon, required this.label, required this.value});
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -728,11 +771,14 @@ class _InfoTile extends StatelessWidget {
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
-        leading: CircleAvatar(backgroundColor: kGNFGreen, child: Icon(icon, color: Colors.white)),
+        leading: CircleAvatar(
+            backgroundColor: kGNFGreen, child: Icon(icon, color: Colors.white)),
         title: Text(label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kGNFGreen)),
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w800, color: kGNFGreen)),
         subtitle: Text(value,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w500, color: kInk)),
       ),
     );
   }
@@ -753,11 +799,14 @@ class _ExplainerSection extends StatelessWidget {
         children: [
           Container(
             height: 160,
-            decoration:
-                BoxDecoration(color: kInk.withOpacity(0.04), borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(
+                color: kInk.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(16)),
             child: Center(
               child: Icon(
-                demarche.mediaType == 'lottie' ? Icons.animation : Icons.play_circle_fill_rounded,
+                demarche.mediaType == 'lottie'
+                    ? Icons.animation
+                    : Icons.play_circle_fill_rounded,
                 size: 64,
                 color: kInk.withOpacity(0.35),
               ),
@@ -768,18 +817,22 @@ class _ExplainerSection extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: ElevatedButton.icon(
               icon: const Icon(Icons.ondemand_video),
-              label: Text(demarche.mediaUrl == null ? "Bientôt disponible" : "Regarder"),
+              label: Text(demarche.mediaUrl == null
+                  ? "Bientôt disponible"
+                  : "Regarder"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: kGNFRed,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: demarche.mediaUrl == null
                   ? null
                   : () async {
                       final url = Uri.parse(demarche.mediaUrl!);
                       if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                        await launchUrl(url,
+                            mode: LaunchMode.externalApplication);
                       }
                     },
             ),
@@ -788,7 +841,10 @@ class _ExplainerSection extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               demarche.mediaCaption!,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kInk.withOpacity(.7)),
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: kInk.withOpacity(.7)),
             ),
           ],
         ],

@@ -11,7 +11,7 @@ import '../../utils/error_messages_fr.dart'; // ⬅️ traduction FR des erreurs
 String _resetRedirectUrl() {
   // Pour Flutter Web (HashRouter), on cible la page dédiée.
   if (kIsWeb) {
-    final origin = Uri.base.origin; // ex: https://tangerine-halva-c59cd2.netlify.app
+    final origin = Uri.base.origin; // ex: https://xxx.netlify.app
     return '$origin/#/reset_password';
   }
   // Sur mobile: deep link si disponible, sinon '' (laisse Supabase ouvrir l’app)
@@ -65,7 +65,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Un lien de réinitialisation a été envoyé par e-mail.')),
+        const SnackBar(
+          content: Text('Un lien de réinitialisation a été envoyé par e-mail.'),
+        ),
       );
       Navigator.pop(context); // Retour (page de connexion)
     } catch (e, st) {
@@ -82,7 +84,16 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mot de passe oublié ?')),
+      backgroundColor: Colors.white, // PAGE BLANCHE
+      appBar: AppBar(
+        backgroundColor: Colors.white, // BARRE BLANCHE
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: Colors.black),
+        title: const Text(
+          'Mot de passe oublié ?',
+          style: TextStyle(color: Colors.black),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Form(
@@ -106,7 +117,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 validator: (v) {
                   final val = v?.trim() ?? '';
                   if (val.isEmpty) return 'E-mail requis';
-                  if (!val.contains('@') || !val.contains('.')) return 'E-mail invalide';
+                  if (!val.contains('@') || !val.contains('.')) {
+                    return 'E-mail invalide';
+                  }
                   return null;
                 },
               ),
@@ -159,8 +172,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       if (!mounted) return;
       if (event.event == AuthChangeEvent.passwordRecovery ||
           event.event == AuthChangeEvent.signedIn) {
-        setState(() =>
-            _hasRecoverySession = Supabase.instance.client.auth.currentSession != null);
+        setState(() => _hasRecoverySession =
+            Supabase.instance.client.auth.currentSession != null);
       }
     });
   }
@@ -193,8 +206,6 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       final hasCode = uri.queryParameters['code'];
       final fragPath = uri.fragment.split('?').first;
       if (kIsWeb && hasCode != null && fragPath.contains('reset_password')) {
-        // Certaines config renvoient déjà une session via passwordRecovery → _hasRecoverySession sera true.
-        // Si aucune session, on essaie d’échanger le code comme ci-dessus.
         try {
           await Supabase.instance.client.auth.exchangeCodeForSession(hasCode);
         } catch (_) {}
@@ -244,22 +255,26 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
 
     try {
       final newPwd = _pwd1Ctrl.text.trim();
-      await Supabase.instance.client.auth.updateUser(UserAttributes(password: newPwd));
+      await Supabase.instance.client.auth
+          .updateUser(UserAttributes(password: newPwd));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Mot de passe mis à jour.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mot de passe mis à jour.')),
+      );
 
-      // ✅ Désactiver le flow recovery, puis déconnecter
+      // Désactiver le flow recovery, puis déconnecter
       RecoveryGuard.deactivate();
       await Supabase.instance.client.auth.signOut();
 
-      // ✅ Revenir proprement sur Welcome (main.dart routera ensuite selon état)
-      navKey.currentState?.pushNamedAndRemoveUntil(AppRoutes.welcome, (_) => false);
+      // Revenir proprement sur Welcome
+      navKey.currentState
+          ?.pushNamedAndRemoveUntil(AppRoutes.welcome, (_) => false);
     } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(frMessageFromError(e, st))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(frMessageFromError(e, st))),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -268,7 +283,16 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nouveau mot de passe')),
+      backgroundColor: Colors.white, // PAGE BLANCHE
+      appBar: AppBar(
+        backgroundColor: Colors.white, // BARRE BLANCHE
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: Colors.black),
+        title: const Text(
+          'Nouveau mot de passe',
+          style: TextStyle(color: Colors.black),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: _hasRecoverySession
@@ -276,7 +300,10 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    const Text('Choisis un nouveau mot de passe.', textAlign: TextAlign.center),
+                    const Text(
+                      'Choisis un nouveau mot de passe.',
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 24),
                     TextFormField(
                       controller: _pwd1Ctrl,
@@ -286,8 +313,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         prefixIcon: Icon(Icons.lock),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) =>
-                          (v == null || v.length < 6) ? '6 caractères minimum' : null,
+                      validator: (v) => (v == null || v.length < 6)
+                          ? '6 caractères minimum'
+                          : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -298,8 +326,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         prefixIcon: Icon(Icons.lock_outline),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) =>
-                          (v != _pwd1Ctrl.text) ? 'Les mots de passe ne correspondent pas' : null,
+                      validator: (v) => (v != _pwd1Ctrl.text)
+                          ? 'Les mots de passe ne correspondent pas'
+                          : null,
                     ),
                     const SizedBox(height: 20),
                     SizedBox(
@@ -308,7 +337,11 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         onPressed: _busy ? null : _updatePassword,
                         child: _busy
                             ? const SizedBox(
-                                height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                height: 18,
+                                width: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
                             : const Text('Mettre à jour'),
                       ),
                     ),

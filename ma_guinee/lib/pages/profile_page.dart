@@ -1,4 +1,5 @@
 // lib/pages/profile_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
@@ -17,9 +18,9 @@ import 'mes_lieux_page.dart';
 import 'parametre_page.dart';
 import '../routes.dart';
 
-// 👇 Ajouté
-import 'mes_rdv_page.dart'; // Page utilisateur “Mes rendez-vous”
-// 👇 NOUVEAU : hub de réservations (hôtels, restos, tourisme)
+// RDV utilisateur
+import 'mes_rdv_page.dart';
+// Hub reservations
 import 'reservations/mes_reservations_hub.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -39,42 +40,92 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _photoUrl = widget.user.photoUrl;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    Future.microtask(() async {
       await context.read<UserProvider>().chargerUtilisateurConnecte();
-      setState(() {});
+      if (mounted) setState(() {});
     });
   }
 
-  /// Reconstruit le numéro sans l'exposer en clair dans l'UI
-  String _waNumber() {
-    // 00224620452964 -> reconstruit par morceaux
-    const parts = ['002', '24', '620', '45', '29', '64'];
-    return parts.join();
-  }
+  String _waNumber() => "00224620452964";
 
-  /// Ouvrir WhatsApp (aucun texte/numéro n'est affiché dans l'UI)
   Future<void> _openWhatsApp() async {
     String number = _waNumber().replaceAll(RegExp(r'[^0-9]'), '');
-    if (number.startsWith('00')) number = number.substring(2); // -> 224…
+    if (number.startsWith('00')) number = number.substring(2);
 
-    final uri = Uri.parse('https://wa.me/$number');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final whatsappUri = Uri.parse('whatsapp://send?phone=$number');
+    final webUri = Uri.parse('https://wa.me/$number');
+    final intentUri = Uri.parse(
+        'intent://send/?phone=$number#Intent;scheme=whatsapp;package=com.whatsapp;end');
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    if (await canLaunchUrl(webUri)) {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    if (await canLaunchUrl(intentUri)) {
+      await launchUrl(intentUri, mode: LaunchMode.externalApplication);
       return;
     }
 
-    // Fallback
-    final alt = Uri.parse('whatsapp://send?phone=$number');
-    if (!await canLaunchUrl(alt) ||
-        !await launchUrl(alt, mode: LaunchMode.externalApplication)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Impossible d’ouvrir la conversation.")),
-        );
-      }
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Impossible d’ouvrir WhatsApp.")),
+    );
   }
 
+  // ----------------------------
+  //   POPUP PHOTO
+  // ----------------------------
+  void _showPhotoPopup() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: _photoUrl != null && _photoUrl!.isNotEmpty
+                    ? Image.network(_photoUrl!, height: 280, fit: BoxFit.cover)
+                    : Image.asset('assets/default_avatar.png',
+                        height: 280, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _pickImageAndUpload();
+                },
+                icon: const Icon(Icons.edit),
+                label: const Text("Modifier la photo"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30)),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child:
+                    const Text("Fermer", style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ----------------------------
+  //   UPLOAD PHOTO
+  // ----------------------------
   Future<void> _pickImageAndUpload() async {
     if (_isUploading) return;
 
@@ -85,6 +136,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (picked == null) return;
 
     setState(() => _isUploading = true);
+
     try {
       final supabase = Supabase.instance.client;
       final userId = context.read<UserProvider>().utilisateur!.id;
@@ -93,16 +145,10 @@ class _ProfilePageState extends State<ProfilePage> {
       final mime =
           lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
 
-      String ext = 'bin';
-      if (mime.contains('jpeg')) {
-        ext = 'jpg';
-      } else if (mime.contains('png')) {
+      String ext = 'jpg';
+      if (mime.contains('png'))
         ext = 'png';
-      } else if (mime.contains('webp')) {
-        ext = 'webp';
-      } else if (mime.contains('gif')) {
-        ext = 'gif';
-      }
+      else if (mime.contains('webp')) ext = 'webp';
 
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/profile_$ts.$ext';
@@ -134,35 +180,29 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       setState(() => _isUploading = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur upload : $e')),
       );
     }
   }
 
-  // 👇 Ajouté : ouvre MesRdvPage
+  // ----------------------------
+  //   RDV
+  // ----------------------------
   void _openMesRdv() {
     Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MesRdvPage()),
-    );
+        context, MaterialPageRoute(builder: (_) => const MesRdvPage()));
   }
 
-  // 👇 MODIFIÉ : ouvre désormais le HUB des réservations
   void _openMesReservations() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MesReservationsHubPage()),
-    );
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const MesReservationsHubPage()));
   }
 
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<UserProvider>();
-    if (prov.isLoadingUser || prov.isLoadingAnnonces) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
     final user = prov.utilisateur ?? widget.user;
     final annoncesCount = prov.annoncesUtilisateur.length;
 
@@ -178,14 +218,16 @@ class _ProfilePageState extends State<ProfilePage> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // ---------- En-tête profil ----------
+          // ----------------------------------------------------------------------
+          // HEADER AVEC POPUP
+          // ----------------------------------------------------------------------
           Container(
             padding: const EdgeInsets.symmetric(vertical: 26),
             color: Colors.grey[50],
             child: Column(
               children: [
                 GestureDetector(
-                  onTap: _pickImageAndUpload,
+                  onTap: _showPhotoPopup, // <===== MODIFICATION ICI
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
@@ -216,24 +258,18 @@ class _ProfilePageState extends State<ProfilePage> {
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 19)),
                 if (user.telephone.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5),
-                    child: Text(user.telephone,
-                        style:
-                            TextStyle(color: Colors.grey[700], fontSize: 14)),
-                  ),
+                  Text(user.telephone,
+                      style: TextStyle(color: Colors.grey[700])),
                 if (user.email.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Text(user.email,
-                        style:
-                            TextStyle(color: Colors.grey[700], fontSize: 13)),
-                  ),
+                  Text(user.email, style: TextStyle(color: Colors.grey[700])),
               ],
             ),
           ),
 
-          // ---------- RDV + Réservations ----------
+          // ----------------------------------------------------------------------
+          // RESTE DE LA PAGE  (inchangé)
+          // ----------------------------------------------------------------------
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: InkWell(
@@ -241,9 +277,12 @@ class _ProfilePageState extends State<ProfilePage> {
               borderRadius: BorderRadius.circular(14),
               child: Card(
                 elevation: 0.5,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: const ListTile(
-                  leading: Icon(Icons.event_available, color: Color(0xFF009460)),
+                  leading:
+                      Icon(Icons.event_available, color: Color(0xFF009460)),
                   title: Text('Mes rendez-vous',
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('Suivre / annuler mes rendez-vous santé'),
@@ -251,6 +290,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: InkWell(
@@ -258,7 +298,9 @@ class _ProfilePageState extends State<ProfilePage> {
               borderRadius: BorderRadius.circular(14),
               child: Card(
                 elevation: 0.5,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: const ListTile(
                   leading: Icon(Icons.book_online, color: Color(0xFFF39C12)),
                   title: Text('Mes réservations',
@@ -269,7 +311,6 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          // ---------- Mes annonces ----------
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: InkWell(
@@ -307,7 +348,6 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          // ---------- Espaces ----------
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Column(
@@ -317,41 +357,40 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.home_repair_service,
                   iconColor: const Color(0xFF009460),
                   title: 'Espace prestataire',
-                  subtitle: user.espacePrestataire != null
-                      ? user.espacePrestataire!['metier'] ?? ''
+                  subtitle: widget.user.espacePrestataire != null
+                      ? widget.user.espacePrestataire!['metier'] ?? ''
                       : "Vous n'êtes pas encore inscrit comme prestataire.",
-                  onTap: user.espacePrestataire != null
+                  onTap: widget.user.espacePrestataire != null
                       ? () =>
                           Navigator.pushNamed(context, AppRoutes.mesPrestations)
                       : null,
-                  onButton: user.espacePrestataire == null
+                  onButton: widget.user.espacePrestataire == null
                       ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    const InscriptionPrestatairePage() ),
-                          )
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const InscriptionPrestatairePage()))
                       : null,
-                  buttonLabel:
-                      user.espacePrestataire == null ? "S'inscrire" : "Modifier",
+                  buttonLabel: widget.user.espacePrestataire == null
+                      ? "S'inscrire"
+                      : "Modifier",
                 ),
                 _blocEspace(
                   color: Colors.orange.shade50,
                   icon: Icons.restaurant,
                   iconColor: Colors.orange,
                   title: 'Mes Restaurants',
-                  subtitle: user.restos.isNotEmpty
-                      ? "${user.restos.first['nom']} - ${user.restos.first['ville']}"
+                  subtitle: widget.user.restos.isNotEmpty
+                      ? "${widget.user.restos.first['nom']} - ${widget.user.restos.first['ville']}"
                       : 'Aucun restaurant enregistré.',
-                  onTap: user.restos.isNotEmpty
+                  onTap: widget.user.restos.isNotEmpty
                       ? () =>
                           Navigator.pushNamed(context, AppRoutes.mesRestaurants)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const InscriptionRestoPage()),
-                  ),
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const InscriptionRestoPage())),
                   buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
@@ -359,17 +398,16 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.hotel,
                   iconColor: Colors.purple,
                   title: 'Mes Hôtels',
-                  subtitle: user.hotels.isNotEmpty
-                      ? "${user.hotels.first['nom']} - ${user.hotels.first['ville']}"
+                  subtitle: widget.user.hotels.isNotEmpty
+                      ? "${widget.user.hotels.first['nom']} - ${widget.user.hotels.first['ville']}"
                       : 'Aucun hôtel enregistré.',
-                  onTap: user.hotels.isNotEmpty
+                  onTap: widget.user.hotels.isNotEmpty
                       ? () => Navigator.pushNamed(context, AppRoutes.mesHotels)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const InscriptionHotelPage()),
-                  ),
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const InscriptionHotelPage())),
                   buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
@@ -377,20 +415,19 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.local_hospital,
                   iconColor: Colors.teal,
                   title: 'Mes Cliniques',
-                  subtitle: user.cliniques.isNotEmpty
-                      ? user.cliniques
+                  subtitle: widget.user.cliniques.isNotEmpty
+                      ? widget.user.cliniques
                           .map((c) => "${c['nom']} - ${c['ville']}")
                           .join(', ')
                       : 'Aucune clinique enregistrée.',
-                  onTap: user.cliniques.isNotEmpty
+                  onTap: widget.user.cliniques.isNotEmpty
                       ? () =>
                           Navigator.pushNamed(context, AppRoutes.mesCliniques)
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const InscriptionCliniquePage()),
-                  ),
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const InscriptionCliniquePage())),
                   buttonLabel: 'Ajouter',
                 ),
                 _blocEspace(
@@ -398,42 +435,37 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.place,
                   iconColor: Colors.indigo,
                   title: 'Mes Lieux',
-                  subtitle: user.lieux != null && user.lieux.isNotEmpty
-                      ? "${user.lieux.first['nom']} - ${user.lieux.first['ville']}"
+                  subtitle: widget.user.lieux.isNotEmpty
+                      ? "${widget.user.lieux.first['nom']} - ${widget.user.lieux.first['ville']}"
                       : 'Aucun lieu enregistré.',
-                  onTap: (user.lieux != null && user.lieux.isNotEmpty)
+                  onTap: widget.user.lieux.isNotEmpty
                       ? () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const MesLieuxPage()),
-                          )
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const MesLieuxPage()))
                       : null,
                   onButton: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const InscriptionLieuPage()),
-                  ),
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const InscriptionLieuPage())),
                   buttonLabel: 'Ajouter',
                 ),
               ],
             ),
           ),
-          const Divider(height: 30, thickness: 1),
 
-          // ---------- Paramètres ----------
+          const Divider(height: 30),
+
           ListTile(
             leading: const Icon(Icons.settings, color: Colors.black),
             title: const Text('Paramètres',
                 style: TextStyle(fontWeight: FontWeight.w500)),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => ParametrePage(user: user)),
-              );
-            },
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => ParametrePage(user: user)),
+            ),
           ),
 
-          // ---------- Support ----------
           ListTile(
             leading: Container(
               width: 38,
@@ -450,39 +482,35 @@ class _ProfilePageState extends State<ProfilePage> {
             onTap: _openWhatsApp,
           ),
 
-          // ---------- Déconnexion ----------
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text(
-              'Se déconnecter',
-              style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red),
-            ),
+            title: const Text('Se déconnecter',
+                style:
+                    TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
             onTap: () async {
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Confirmation'),
-                  content: const Text(
-                      'Voulez-vous vraiment vous déconnecter ?'),
+                  content:
+                      const Text('Voulez-vous vraiment vous déconnecter ?'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         child: const Text('Annuler')),
                     TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Se déconnecter',
-                          style: TextStyle(color: Colors.red)),
-                    ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Se déconnecter',
+                            style: TextStyle(color: Colors.red))),
                   ],
                 ),
               );
 
               if (confirm == true) {
                 await Supabase.instance.client.auth.signOut();
-                if (context.mounted) {
-                  Navigator.pushNamedAndRemoveUntil(
-                      context, '/welcome', (route) => false);
-                }
+                if (!context.mounted) return;
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/welcome', (route) => false);
               }
             },
           ),
