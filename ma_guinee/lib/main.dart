@@ -13,6 +13,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
+// ✅ Hive (cache disque)
+import 'package:hive_flutter/hive_flutter.dart';
+
 import 'firebase_options.dart';
 import 'routes.dart'; // RecoveryGuard + AppRoutes
 
@@ -27,6 +30,9 @@ import 'providers/favoris_provider.dart';
 import 'providers/prestataires_provider.dart';
 import 'providers/user_provider.dart';
 import 'theme/app_theme.dart';
+
+// ——— Constantes Hive ———
+const String kAnnoncesBox = 'annonces_box';
 
 // ——— Navigation globale ———
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -235,6 +241,12 @@ bool _isRecoveryUrl(Uri uri) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ Hive: cache disque global (annonces, plus tard d'autres box si besoin)
+  await Hive.initFlutter();
+  await Hive.openBox(kAnnoncesBox);
+  await Hive.openBox('hotels_box');
+  await Hive.openBox('logement_feed_box');
+
   if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -255,8 +267,6 @@ Future<void> main() async {
     ),
   );
 
-  // ⚠️ CHANGEMENT: on ne bloque plus l'UI avec des awaits supplémentaires ici.
-
   // Prépare les providers sans attendre des charges réseau
   final userProvider = UserProvider();
 
@@ -272,7 +282,7 @@ Future<void> main() async {
     ),
   );
 
-  // Post-frame: on fait les inits lentes **sans bloquer le splash**
+  // Post-frame: inits lentes **sans bloquer le splash**
   WidgetsBinding.instance.addPostFrameCallback((_) async {
     try {
       // Recovery Guard (web)
@@ -281,9 +291,8 @@ Future<void> main() async {
       }
 
       // Notifications locales + channel + foreground iOS
-      // (non bloquants pour l'affichage initial)
-      await _initLocalNotification(); // déplacé après runApp
-      await _createAndroidNotificationChannel(); // déplacé après runApp
+      await _initLocalNotification();
+      await _createAndroidNotificationChannel();
       await FirebaseMessaging.instance
           .setForegroundNotificationPresentationOptions(
         alert: true,
@@ -292,7 +301,7 @@ Future<void> main() async {
       );
 
       // Charge l'utilisateur connecté (réseau)
-      await userProvider.chargerUtilisateurConnecte(); // déplacé après runApp
+      await userProvider.chargerUtilisateurConnecte();
 
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
@@ -309,7 +318,7 @@ Future<void> main() async {
         await _goHomeBasedOnRole(userProvider);
       }
 
-      // Auth state (inchangé, mais démarré après l’affichage initial)
+      // Auth state
       Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
         final session = event.session;
 
@@ -329,7 +338,6 @@ Future<void> main() async {
 
           await userProvider.chargerUtilisateurConnecte();
 
-          // ✅ Redemande ici uniquement si pas déjà fait (ex: login depuis Welcome)
           _askPushOnce();
 
           if (!RecoveryGuard.isActive) {
@@ -390,7 +398,9 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         final style = AppTheme.light.textTheme.bodyMedium!;
         return DefaultTextStyle.merge(
-            style: style, child: child ?? const SizedBox.shrink());
+          style: style,
+          child: child ?? const SizedBox.shrink(),
+        );
       },
     );
   }

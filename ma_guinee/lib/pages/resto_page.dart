@@ -19,14 +19,14 @@ class RestoPage extends StatefulWidget {
 
 class _RestoPageState extends State<RestoPage> {
   // Couleurs — Restaurants
-  static const Color _restoPrimary   = Color(0xFFE76F51);
+  static const Color _restoPrimary = Color(0xFFE76F51);
   static const Color _restoSecondary = Color(0xFFF4A261);
   static const Color _restoOnPrimary = Color(0xFFFFFFFF);
 
   // Neutres
-  static const Color _neutralBg      = Color(0xFFF7F7F9);
+  static const Color _neutralBg = Color(0xFFF7F7F9);
   static const Color _neutralSurface = Color(0xFFFFFFFF);
-  static const Color _neutralBorder  = Color(0xFFE5E7EB);
+  static const Color _neutralBorder = Color(0xFFE5E7EB);
 
   // Cache
   static const String _cacheKey = 'restaurants:list:v1';
@@ -34,9 +34,13 @@ class _RestoPageState extends State<RestoPage> {
   final _searchCtrl = TextEditingController();
 
   // Données
-  List<Map<String, dynamic>> _restos   = [];
+  List<Map<String, dynamic>> _restos = [];
   List<Map<String, dynamic>> _filtered = [];
-  bool _loading = true; // pour afficher les squelettes
+
+  // État d’affichage
+  bool _loading = true; // skeleton quand pas encore de data
+  bool _syncing = false; // sync réseau silencieuse (sans spinner)
+  bool _hasAnyCache = false; // sait si on a déjà pu afficher quelque chose
 
   // Localisation
   Position? _position;
@@ -59,14 +63,17 @@ class _RestoPageState extends State<RestoPage> {
   }
 
   // ======= Distance précise (Haversine) =======
-  double? _distanceMeters(double? lat1, double? lon1, double? lat2, double? lon2) {
+  double? _distanceMeters(
+      double? lat1, double? lon1, double? lat2, double? lon2) {
     if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
     const R = 6371000.0;
     final dLat = (lat2! - lat1!) * (pi / 180);
     final dLon = (lon2! - lon1!) * (pi / 180);
     final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * (pi / 180)) * cos(lat2 * (pi / 180)) *
-        sin(dLon / 2) * sin(dLon / 2);
+        cos(lat1 * (pi / 180)) *
+            cos(lat2 * (pi / 180)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
   // ============================================
@@ -88,9 +95,13 @@ class _RestoPageState extends State<RestoPage> {
       if (!await Geolocator.isLocationServiceEnabled()) return;
 
       var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) {
         _locationDenied = true;
+        if (mounted) setState(() {});
         return;
       }
 
@@ -98,11 +109,12 @@ class _RestoPageState extends State<RestoPage> {
       final last = await Geolocator.getLastKnownPosition();
       if (last != null) {
         _position = last;
-        _recomputeDistancesAndSort(); // affiche distance tout de suite
+        _recomputeDistancesAndSort(); // distance quasi immédiate
       }
 
       // 2) position actuelle en arrière-plan → retri quand dispo
-      Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium).then((pos) async {
+      Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium)
+          .then((pos) async {
         _position = pos;
 
         try {
@@ -110,12 +122,15 @@ class _RestoPageState extends State<RestoPage> {
         } catch (_) {}
 
         try {
-          final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+          final marks =
+              await placemarkFromCoordinates(pos.latitude, pos.longitude);
           if (marks.isNotEmpty) {
             final m = marks.first;
             final city = (m.locality?.isNotEmpty == true)
                 ? m.locality
-                : (m.subAdministrativeArea?.isNotEmpty == true ? m.subAdministrativeArea : null);
+                : (m.subAdministrativeArea?.isNotEmpty == true
+                    ? m.subAdministrativeArea
+                    : null);
             _villeGPS = city?.toLowerCase().trim();
           }
         } catch (_) {}
@@ -127,33 +142,32 @@ class _RestoPageState extends State<RestoPage> {
     }
   }
 
-  // ---------- SWR : montre le cache immédiatement puis synchronise ----------
+  // ---------- SWR : cache instantané + sync réseau silencieuse ----------
   Future<void> _loadAllSWR() async {
-    // 1) Mémoire → instant
-    final mem = AppCache.I.getListMemory(_cacheKey, maxAge: const Duration(days: 7));
-    if (mem != null && mem.isNotEmpty) {
-      _restos = List<Map<String, dynamic>>.from(mem);
+    // 1) Lecture cache mémoire / disque (non bloquant)
+    final mem =
+        AppCache.I.getListMemory(_cacheKey, maxAge: const Duration(days: 7));
+    List<Map<String, dynamic>>? disk;
+    if (mem == null) {
+      disk = await AppCache.I
+          .getListPersistent(_cacheKey, maxAge: const Duration(days: 14));
+    }
+    final snapshot = mem ?? disk;
+
+    if (snapshot != null) {
+      _restos = List<Map<String, dynamic>>.from(snapshot);
       _applyFilter(_searchCtrl.text);
+      _hasAnyCache = true;
       if (mounted) setState(() => _loading = false);
     } else {
-      // 2) Disque (persistance) → quasi instant
-      final disk = await AppCache.I.getListPersistent(_cacheKey, maxAge: const Duration(days: 14));
-      if (disk != null && disk is List && disk.isNotEmpty) {
-        _restos = List<Map<String, dynamic>>.from(disk);
-        _applyFilter(_searchCtrl.text);
-        if (mounted) setState(() => _loading = false);
-      } else {
-        if (mounted) setState(() => _loading = true); // squelettes si aucun cache
-      }
+      // premier chargement SANS cache → skeleton
+      if (mounted) setState(() => _loading = true);
     }
 
-    // 3) Sync réseau en arrière-plan (ne bloque pas l’UI)
-    unawaited(_loadFromNetwork());
-    // 4) Géoloc en parallèle
+    // 2) Sync réseau en arrière-plan (ne bloque pas l’UI)
+    if (mounted) setState(() => _syncing = true);
     unawaited(_getLocation());
-  }
 
-  Future<void> _loadFromNetwork() async {
     try {
       final data = await Supabase.instance.client
           .from('v_restaurants_ratings') // adapte si nécessaire
@@ -167,7 +181,8 @@ class _RestoPageState extends State<RestoPage> {
         for (final r in restos) {
           final lat = (r['latitude'] as num?)?.toDouble();
           final lon = (r['longitude'] as num?)?.toDouble();
-          r['_distance'] = _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+          r['_distance'] = _distanceMeters(
+              _position!.latitude, _position!.longitude, lat, lon);
         }
       }
       for (final r in restos) {
@@ -177,11 +192,14 @@ class _RestoPageState extends State<RestoPage> {
 
       // Tri (ville courante > distance > nom)
       void sortByDistance(List<Map<String, dynamic>> list) {
-        int byName(a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        int byName(a, b) =>
+            (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
         if ((_villeGPS ?? '').isNotEmpty) {
           list.sort((a, b) {
-            final aSame = (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-            final bSame = (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            final aSame =
+                (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            final bSame =
+                (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
             if (aSame != bSame) return aSame ? -1 : 1;
             final ad = (a['_distance'] as double?);
             final bd = (b['_distance'] as double?);
@@ -209,30 +227,44 @@ class _RestoPageState extends State<RestoPage> {
 
       _restos = restos;
       _applyFilter(_searchCtrl.text);
-      if (mounted && _loading) setState(() => _loading = false);
+      _hasAnyCache = true;
+
+      if (mounted) setState(() => _loading = false);
     } catch (e) {
-      // On garde le cache à l’écran, pas de spinner
       debugPrint('Erreur réseau restos: $e');
-      if (_restos.isEmpty && mounted) setState(() => _loading = false);
+      if (mounted && !_hasAnyCache) {
+        _loading = false;
+        setState(() {});
+      }
+    } finally {
+      if (mounted) {
+        _syncing = false;
+        setState(() {});
+      }
     }
   }
 
   void _recomputeDistancesAndSort() {
     if (_restos.isEmpty || _position == null) {
-      if (mounted) setState(() {}); // petit rebuild
+      if (mounted) setState(() {});
       return;
     }
     for (final r in _restos) {
       final lat = (r['latitude'] as num?)?.toDouble();
       final lon = (r['longitude'] as num?)?.toDouble();
-      r['_distance'] = _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+      r['_distance'] =
+          _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
     }
 
     // Tri cohérent
     _restos.sort((a, b) {
-      final aSame = (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-      final bSame = (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-      if ((_villeGPS ?? '').isNotEmpty && aSame != bSame) return aSame ? -1 : 1;
+      final aSame =
+          (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+      final bSame =
+          (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+      if ((_villeGPS ?? '').isNotEmpty && aSame != bSame) {
+        return aSame ? -1 : 1;
+      }
       final ad = (a['_distance'] as double?);
       final bd = (b['_distance'] as double?);
       if (ad != null && bd != null) return ad.compareTo(bd);
@@ -274,7 +306,11 @@ class _RestoPageState extends State<RestoPage> {
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
         5,
-        (i) => Icon(i < c ? Icons.star : Icons.star_border, size: 14, color: _restoSecondary),
+        (i) => Icon(
+          i < c ? Icons.star : Icons.star_border,
+          size: 14,
+          color: _restoSecondary,
+        ),
       ),
     );
   }
@@ -312,7 +348,6 @@ class _RestoPageState extends State<RestoPage> {
       end: Alignment.centerRight,
     );
 
-    // Grille “serrée” identique à Divertissement/Santé
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
     final screenW = media.size.width;
@@ -333,8 +368,13 @@ class _RestoPageState extends State<RestoPage> {
       child: Scaffold(
         backgroundColor: _neutralBg,
         appBar: AppBar(
-          title: const Text('Restaurants',
-              style: TextStyle(color: _restoPrimary, fontWeight: FontWeight.w700)),
+          title: const Text(
+            'Restaurants',
+            style: TextStyle(
+              color: _restoPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           backgroundColor: _neutralSurface,
           foregroundColor: _restoPrimary,
           elevation: 1,
@@ -342,14 +382,16 @@ class _RestoPageState extends State<RestoPage> {
             IconButton(
               icon: const Icon(Icons.refresh, color: _restoPrimary),
               tooltip: 'Rafraîchir',
-              onPressed: _loadAllSWR, // ⚡ instantané
+              onPressed: _loadAllSWR, // ⚡ instantané + sync réseau
             ),
           ],
           bottom: const PreferredSize(
             preferredSize: Size.fromHeight(3),
             child: SizedBox(
               height: 3,
-              child: DecoratedBox(decoration: BoxDecoration(gradient: bottomGradient)),
+              child: DecoratedBox(
+                decoration: BoxDecoration(gradient: bottomGradient),
+              ),
             ),
           ),
         ),
@@ -357,7 +399,7 @@ class _RestoPageState extends State<RestoPage> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Column(
             children: [
-              // ----- Bandeau compact (fix débordement 1px) -----
+              // ----- Bandeau compact -----
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: ClipRRect(
@@ -409,9 +451,8 @@ class _RestoPageState extends State<RestoPage> {
                   ),
                 ),
               ),
-              // -----------------------------------------------
 
-              // Recherche (debounce léger pour éviter rebuilds)
+              // Recherche
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 child: TextField(
@@ -421,7 +462,8 @@ class _RestoPageState extends State<RestoPage> {
                     prefixIcon: Icon(Icons.search, color: _restoPrimary),
                     filled: true,
                     fillColor: _neutralSurface,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(12)),
                       borderSide: BorderSide.none,
@@ -436,184 +478,247 @@ class _RestoPageState extends State<RestoPage> {
                 ),
               ),
 
-              // Grille — squelettes si _loading
+              // Grille — skeleton ou data (aucun spinner)
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: _loading
-                      ? _skeletonGrid(context)
-                      : RefreshIndicator(
-                          color: _restoPrimary,
-                          onRefresh: _loadAllSWR, // ⚡ instant + sync
-                          child: _filtered.isEmpty
-                              ? ListView(
-                                  children: const [
-                                    SizedBox(height: 200),
-                                    Center(child: Text('Aucun restaurant trouvé.')),
-                                  ],
-                                )
-                              : GridView.builder(
-                                  physics: const AlwaysScrollableScrollPhysics(),
-                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: crossCount,
-                                    mainAxisSpacing: 8,
-                                    crossAxisSpacing: 8,
-                                    childAspectRatio: ratio,
+                child: _loading
+                    ? _skeletonGrid(context)
+                    : (_filtered.isEmpty
+                        ? ListView(
+                            children: const [
+                              SizedBox(height: 200),
+                              Center(
+                                child: Text('Aucun restaurant trouvé.'),
+                              ),
+                            ],
+                          )
+                        : GridView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossCount,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              childAspectRatio: ratio,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 8),
+                            itemCount: _filtered.length,
+                            itemBuilder: (context, i) {
+                              final resto = _filtered[i];
+                              final images = _imagesFrom(resto['images']);
+                              final image = images.isNotEmpty
+                                  ? images.first
+                                  : 'https://via.placeholder.com/300x200.png?text=Restaurant';
+
+                              final hasPrix = (resto['prix'] is num) ||
+                                  (resto['prix'] is String &&
+                                      (resto['prix'] as String)
+                                          .trim()
+                                          .isNotEmpty);
+                              final prixVal = (resto['prix'] is num)
+                                  ? (resto['prix'] as num).toInt()
+                                  : int.tryParse(
+                                      (resto['prix'] ?? '').toString(),
+                                    );
+
+                              final avgInt = (resto['_avg_int'] as int?) ??
+                                  ((resto['note_moyenne'] is num)
+                                      ? (resto['note_moyenne'] as num).round()
+                                      : null) ??
+                                  ((resto['etoiles'] is int)
+                                      ? resto['etoiles'] as int
+                                      : null);
+
+                              return InkWell(
+                                onTap: () {
+                                  final String restoId = resto['id'].toString();
+                                  Navigator.pushNamed(
+                                    context,
+                                    AppRoutes.restoDetail,
+                                    arguments: restoId,
+                                  );
+                                },
+                                child: Card(
+                                  margin: EdgeInsets.zero,
+                                  color: _neutralSurface,
+                                  elevation: 1.5,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    side:
+                                        const BorderSide(color: _neutralBorder),
                                   ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                  itemCount: _filtered.length,
-                                  itemBuilder: (context, i) {
-                                    final resto = _filtered[i];
-                                    final images = _imagesFrom(resto['images']);
-                                    final image = images.isNotEmpty
-                                        ? images.first
-                                        : 'https://via.placeholder.com/300x200.png?text=Restaurant';
-
-                                    final hasPrix = (resto['prix'] is num) ||
-                                        (resto['prix'] is String && (resto['prix'] as String).trim().isNotEmpty);
-                                    final prixVal = (resto['prix'] is num)
-                                        ? (resto['prix'] as num).toInt()
-                                        : int.tryParse((resto['prix'] ?? '').toString());
-
-                                    final avgInt =
-                                        (resto['_avg_int'] as int?) ??
-                                        ((resto['note_moyenne'] is num)
-                                            ? (resto['note_moyenne'] as num).round()
-                                            : null) ??
-                                        ((resto['etoiles'] is int) ? resto['etoiles'] as int : null);
-
-                                    return InkWell(
-                                      onTap: () {
-                                        final String restoId = resto['id'].toString();
-                                        Navigator.pushNamed(context, AppRoutes.restoDetail, arguments: restoId);
-                                      },
-                                      child: Card(
-                                        margin: EdgeInsets.zero, // cartes serrées
-                                        color: _neutralSurface,
-                                        elevation: 1.5,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14),
-                                          side: const BorderSide(color: _neutralBorder),
-                                        ),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            // IMAGE 16:11 + badge ville (cached)
-                                            Expanded(
-                                              child: LayoutBuilder(
-                                                builder: (context, cons) {
-                                                  final w = cons.maxWidth;
-                                                  final h = w * (11 / 16);
-                                                  return Stack(
-                                                    fit: StackFit.expand,
-                                                    children: [
-                                                      CachedNetworkImage(
-                                                        imageUrl: image,
-                                                        fit: BoxFit.cover,
-                                                        memCacheWidth: w.isFinite ? (w * 2).round() : null,
-                                                        memCacheHeight: h.isFinite ? (h * 2).round() : null,
-                                                        placeholder: (_, __) =>
-                                                            Container(color: Colors.grey[200]),
-                                                        errorWidget: (_, __, ___) => Container(
-                                                          color: Colors.grey[200],
-                                                          child: const Icon(Icons.restaurant, size: 40, color: Colors.grey),
-                                                        ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // IMAGE 16:11 + badge ville (cached)
+                                      Expanded(
+                                        child: LayoutBuilder(
+                                          builder: (context, cons) {
+                                            final w = cons.maxWidth;
+                                            final h = w * (11 / 16);
+                                            return Stack(
+                                              fit: StackFit.expand,
+                                              children: [
+                                                CachedNetworkImage(
+                                                  imageUrl: image,
+                                                  fit: BoxFit.cover,
+                                                  memCacheWidth: w.isFinite
+                                                      ? (w * 2).round()
+                                                      : null,
+                                                  memCacheHeight: h.isFinite
+                                                      ? (h * 2).round()
+                                                      : null,
+                                                  placeholder: (_, __) =>
+                                                      Container(
+                                                          color:
+                                                              Colors.grey[200]),
+                                                  errorWidget: (_, __, ___) =>
+                                                      Container(
+                                                    color: Colors.grey[200],
+                                                    child: const Icon(
+                                                      Icons.restaurant,
+                                                      size: 40,
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if ((resto['ville'] ?? '')
+                                                    .toString()
+                                                    .isNotEmpty)
+                                                  Positioned(
+                                                    left: 8,
+                                                    top: 8,
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
                                                       ),
-                                                      if ((resto['ville'] ?? '').toString().isNotEmpty)
-                                                        Positioned(
-                                                          left: 8,
-                                                          top: 8,
-                                                          child: Container(
-                                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                            decoration: BoxDecoration(
-                                                              color: Colors.black.withOpacity(0.55),
-                                                              borderRadius: BorderRadius.circular(12),
-                                                            ),
-                                                            child: Row(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              children: [
-                                                                const Icon(Icons.location_on, size: 14, color: Colors.white),
-                                                                const SizedBox(width: 4),
-                                                                Text(
-                                                                  resto['ville'].toString(),
-                                                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                                                  maxLines: 1,
-                                                                  overflow: TextOverflow.ellipsis,
-                                                                ),
-                                                              ],
-                                                            ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withOpacity(0.55),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(12),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(
+                                                            Icons.location_on,
+                                                            size: 14,
+                                                            color: Colors.white,
                                                           ),
-                                                        ),
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                            ),
+                                                          const SizedBox(
+                                                              width: 4),
+                                                          Text(
+                                                            resto['ville']
+                                                                .toString(),
+                                                            style: const TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 12),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ),
 
-                                            // TEXTE compact
-                                            Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    (resto['nom'] ?? 'Sans nom').toString(),
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 15,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 3),
-                                                  Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Text(
-                                                          (resto['ville'] ?? '').toString(),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                                                        ),
-                                                      ),
-                                                      if (resto.containsKey('_distance') && resto['_distance'] != null) ...[
-                                                        const SizedBox(width: 6),
-                                                        Text(
-                                                          '${(resto['_distance'] / 1000).toStringAsFixed(1)} km',
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow.fade,
-                                                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                  if (hasPrix && prixVal != null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 2),
-                                                      child: Text(
-                                                        'Prix : ${_formatGNF(prixVal)} (plat)',
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(color: _restoPrimary, fontSize: 12),
-                                                      ),
-                                                    ),
-                                                  if (avgInt != null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 2),
-                                                      child: _buildStarsInt(avgInt),
-                                                    ),
-                                                ],
+                                      // TEXTE compact
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              (resto['nom'] ?? 'Sans nom')
+                                                  .toString(),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
                                               ),
                                             ),
+                                            const SizedBox(height: 3),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    (resto['ville'] ?? '')
+                                                        .toString(),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Colors.grey,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (resto.containsKey(
+                                                        '_distance') &&
+                                                    resto['_distance'] !=
+                                                        null) ...[
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '${(resto['_distance'] / 1000).toStringAsFixed(1)} km',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.fade,
+                                                    style: const TextStyle(
+                                                      color: Colors.grey,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            if (hasPrix && prixVal != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    top: 2),
+                                                child: Text(
+                                                  'Prix : ${_formatGNF(prixVal)} (plat)',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: _restoPrimary,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (avgInt != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    top: 2),
+                                                child: _buildStarsInt(avgInt),
+                                              ),
                                           ],
                                         ),
                                       ),
-                                    );
-                                  },
+                                    ],
+                                  ),
                                 ),
-                        ),
-                ),
+                              );
+                            },
+                          )),
               ),
             ],
           ),
@@ -630,22 +735,39 @@ class _SkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
       elevation: 1.5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(aspectRatio: 16 / 11, child: Container(color: Colors.grey.shade200)),
+          AspectRatio(
+            aspectRatio: 16 / 11,
+            child: Container(color: Colors.grey.shade200),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 140, color: Colors.grey.shade200),
+                Container(
+                  height: 14,
+                  width: 140,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 90, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 90,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 70, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 70,
+                  color: Colors.grey.shade200,
+                ),
               ],
             ),
           ),

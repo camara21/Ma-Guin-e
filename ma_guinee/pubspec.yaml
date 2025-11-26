@@ -15,7 +15,6 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
-
   ionicons: ^0.2.2
 
   # Cartes & géolocalisation
@@ -84,8 +83,12 @@ dependencies:
   path_provider: ^2.1.4
   open_filex: ^4.4.0
 
-  # Cache persistant
+  # Cache persistant simple (prefs)
   shared_preferences: ^2.2.3
+
+  # Cache disque structuré (annonces, etc.) ✅ AJOUT
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
 
   # Caméra
   camera: ^0.11.3
@@ -125,8 +128,6 @@ flutter:
     - assets/jobs/hero.png
     - assets/anp/guinee_holo.png
     - assets/icons/soneya-1024.png   # ✅ déclare ton icône
-
-    # (tes polices ne sont pas des assets, elles vont dans "fonts" ci-dessous)
 
   fonts:
     - family: Inter

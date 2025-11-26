@@ -81,10 +81,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   Future<void> _load() async {
+    // PLUS DE LOADER — affichage immédiat
     setState(() {
       _loading = true;
       _error = null;
     });
+
     try {
       final data = await _svc.getById(widget.logementId);
 
@@ -104,7 +106,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       setState(() {
         _bien = data;
         _fav = fav;
-        _loading = false;
+        _loading = false; // Mais pas de spinner
       });
     } catch (e) {
       if (!mounted) return;
@@ -116,7 +118,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   // -------- actions --------
-  /// Ouvre la carte en centrant et en affichant directement l’aperçu du logement
   void _openMap() {
     final b = _bien;
     if (b == null) return;
@@ -177,11 +178,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     }
   }
 
-  // --------- composer + chat ----------
+  // --------- Compose + chat ----------
   void _openMessages() {
     final b = _bien;
     if (b == null) return;
     _msgCtrl.clear();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -226,7 +228,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                   autofocus: true,
                   minLines: 2,
                   maxLines: 6,
-                  textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
                     hintText: 'Écrire votre message…',
                     filled: true,
@@ -247,12 +248,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                             ? null
                             : () => _sendMessage(closeAfter: true),
                         icon: _sending
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white),
-                              )
+                            ? const Icon(Icons.refresh,
+                                size: 16, color: Colors.white)
                             : const Icon(Icons.send),
                         label: Text(_sending ? 'Envoi…' : 'Envoyer'),
                         style: ElevatedButton.styleFrom(
@@ -277,12 +274,14 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   Future<void> _sendMessage({bool closeAfter = false}) async {
     final b = _bien;
     if (b == null) return;
+
     final me = _currentUserId();
     if (me == null) {
       _snack("Connecte-toi pour envoyer un message.");
       Navigator.pushNamed(context, AppRoutes.login);
       return;
     }
+
     final body = _msgCtrl.text.trim();
     if (body.isEmpty) return;
 
@@ -349,6 +348,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       return;
     }
     final id = widget.logementId;
+
     try {
       if (_fav) {
         await _sb
@@ -397,11 +397,13 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     final b = _bien;
     if (b == null) return;
     final me = _currentUserId();
+
     if (me == null) {
       _snack("Connecte-toi pour signaler.");
       Navigator.pushNamed(context, AppRoutes.login);
       return;
     }
+
     if (_isOwner) {
       _snack("Action non autorisée pour votre propre annonce.");
       return;
@@ -415,6 +417,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       'Usurpation d’identité',
       'Autre'
     ];
+
     final TextEditingController ctrl = TextEditingController();
     String selected = reasons.first;
 
@@ -464,7 +467,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.report_gmailerrorred),
-                  label: Text(_sendingReport ? 'Envoi…' : 'Envoyer le signalement'),
+                  label: Text(
+                      _sendingReport ? 'Envoi…' : 'Envoyer le signalement'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _accent,
                     foregroundColor: Colors.white,
@@ -525,12 +529,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
       });
 
       _snack('Signalement envoyé. Merci.');
-    } on PostgrestException catch (e) {
-      if (e.code == '23505') {
-        _snack('Déjà signalé.');
-      } else {
-        _snack('Erreur : ${e.message}');
-      }
     } catch (e) {
       _snack('Erreur : $e');
     } finally {
@@ -591,180 +589,11 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorBox(_error!)
-              : b == null
-                  ? const Center(child: Text("Bien introuvable"))
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView(
-                              padding: EdgeInsets.zero,
-                              children: [
-                                _imagesHeader(b),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(b.titre,
-                                          style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.w700)),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _formatPrice(b.prixGnf, b.mode),
-                                        style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: _accent),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: -6,
-                                        children: [
-                                          _chip(b.mode == LogementMode.achat
-                                              ? 'Achat'
-                                              : 'Location'),
-                                          _chip(logementCategorieToString(
-                                              b.categorie)),
-                                          if (b.chambres != null)
-                                            _chip('${b.chambres} ch'),
-                                          if (b.superficieM2 != null)
-                                            _chip(
-                                                '${b.superficieM2!.toStringAsFixed(0)} m²'),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.place,
-                                              size: 18, color: Colors.black54),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              [
-                                                if (b.adresse?.isNotEmpty ==
-                                                    true)
-                                                  b.adresse!,
-                                                if (b.commune?.isNotEmpty ==
-                                                    true)
-                                                  b.commune!,
-                                                if (b.ville?.isNotEmpty == true)
-                                                  b.ville!,
-                                              ].join(' • '),
-                                              style: const TextStyle(
-                                                  color: Colors.black54),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: _accent,
-                                              side: BorderSide(color: _accent),
-                                              shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                          12)),
-                                            ),
-                                            onPressed: _openMap,
-                                            icon:
-                                                const Icon(Icons.map_outlined),
-                                            label: const Text("Carte"),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 18),
-                                      const Divider(height: 1),
-                                      const SizedBox(height: 18),
-                                      const Text("Description",
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600)),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        (b.description ?? '—').trim().isEmpty
-                                            ? '—'
-                                            : b.description!.trim(),
-                                        style: const TextStyle(
-                                            fontSize: 14, height: 1.4),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
 
-                        // barre d’actions
-                        SafeArea(
-                          top: false,
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                            decoration: BoxDecoration(
-                              color: _bg,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.06),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, -4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                if (!_isOwner) ...[
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        side: BorderSide(color: _accent),
-                                        foregroundColor: _accent,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                      onPressed: _openMessages,
-                                      icon: const Icon(Icons.forum_outlined),
-                                      label: const Text("Message"),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: _accent,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                      onPressed: _callOwner,
-                                      icon: const Icon(Icons.call),
-                                      label: const Text("Contacter"),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-      floatingActionButton: (_loading || _error != null || !_isOwner)
+      // === SUPPRESSION DU SPINNER ===
+      body: _error != null ? _errorBox(_error!) : _buildDetailInstant(b),
+
+      floatingActionButton: (_error != null || !_isOwner)
           ? null
           : FloatingActionButton.extended(
               backgroundColor: _accent,
@@ -773,6 +602,166 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
               icon: const Icon(Icons.edit_outlined),
               label: const Text("Modifier"),
             ),
+    );
+  }
+
+  // === Page instantanée ===
+  Widget _buildDetailInstant(LogementModel? b) {
+    if (b == null) {
+      // page vide instantanée sans spinner
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(color: Colors.grey.shade200),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _imagesHeader(b),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b.titre,
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      Text(
+                        _formatPrice(b.prixGnf, b.mode),
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: _accent),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: -6,
+                        children: [
+                          _chip(b.mode == LogementMode.achat
+                              ? 'Achat'
+                              : 'Location'),
+                          _chip(logementCategorieToString(b.categorie)),
+                          if (b.chambres != null) _chip('${b.chambres} ch'),
+                          if (b.superficieM2 != null)
+                            _chip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.place,
+                              size: 18, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              [
+                                if (b.adresse?.isNotEmpty == true) b.adresse!,
+                                if (b.commune?.isNotEmpty == true) b.commune!,
+                                if (b.ville?.isNotEmpty == true) b.ville!,
+                              ].join(' • '),
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _accent,
+                              side: BorderSide(color: _accent),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: _openMap,
+                            icon: const Icon(Icons.map_outlined),
+                            label: const Text("Carte"),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      const Divider(height: 1),
+                      const SizedBox(height: 18),
+                      const Text("Description",
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text(
+                        (b.description ?? '—').trim().isEmpty
+                            ? '—'
+                            : b.description!.trim(),
+                        style: const TextStyle(fontSize: 14, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (!_isOwner)
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              decoration: BoxDecoration(
+                color: _bg,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: _accent),
+                        foregroundColor: _accent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _openMessages,
+                      icon: const Icon(Icons.forum_outlined),
+                      label: const Text("Message"),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _callOwner,
+                      icon: const Icon(Icons.call),
+                      label: const Text("Contacter"),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -836,8 +825,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                 icon: const Icon(Icons.chevron_left,
                     color: Colors.white, size: 28),
                 onPressed: () => _page.previousPage(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOut,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.linear,
                 ),
               ),
             ),
@@ -849,8 +838,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                 icon: const Icon(Icons.chevron_right,
                     color: Colors.white, size: 28),
                 onPressed: () => _page.nextPage(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOut,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.linear,
                 ),
               ),
             ),
@@ -862,6 +851,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
   void _openViewer(List<String> photos, int initial) {
     final ctrl = PageController(initialPage: initial);
+
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -900,8 +890,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     icon: const Icon(Icons.chevron_left,
                         size: 36, color: Colors.white),
                     onPressed: () => ctrl.previousPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.linear,
                     ),
                   ),
                 ),
@@ -913,8 +903,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     icon: const Icon(Icons.chevron_right,
                         size: 36, color: Colors.white),
                     onPressed: () => ctrl.nextPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.linear,
                     ),
                   ),
                 ),

@@ -1,13 +1,12 @@
-// lib/models/logement_models.dart
 import 'dart:convert';
 
-/// Type d'opÃ©Â©Ã†â€™Â©ration
+/// Type d’opération
 enum LogementMode { location, achat }
 
 String logementModeToString(LogementMode m) =>
     m == LogementMode.achat ? 'achat' : 'location';
 
-/// Parse robuste depuis la DB (gÃ©Â©Ã†â€™Â¨re null/espaces/majuscules)
+/// Parse robuste depuis la DB (gère null / espaces / majuscules)
 LogementMode logementModeFromDb(dynamic v) {
   final s = v?.toString().trim().toLowerCase();
   switch (s) {
@@ -19,7 +18,7 @@ LogementMode logementModeFromDb(dynamic v) {
   }
 }
 
-/// CatÃ©Â©Ã†â€™Â©gorie de bien
+/// Catégorie de bien
 enum LogementCategorie { maison, appartement, studio, terrain, autres }
 
 String logementCategorieToString(LogementCategorie c) {
@@ -37,7 +36,7 @@ String logementCategorieToString(LogementCategorie c) {
   }
 }
 
-/// Parse robuste depuis la DB (gÃ©Â©Ã†â€™Â¨re null/espaces/majuscules)
+/// Parse robuste depuis la DB (gère null / espaces / majuscules)
 LogementCategorie logementCategorieFromDb(dynamic v) {
   final s = v?.toString().trim().toLowerCase();
   switch (s) {
@@ -54,7 +53,7 @@ LogementCategorie logementCategorieFromDb(dynamic v) {
   }
 }
 
-/// ModÃ©Â©Ã†â€™Â¨le principal
+/// Modèle principal
 class LogementModel {
   final String id;
   final String userId;
@@ -74,7 +73,7 @@ class LogementModel {
   final List<String> photos; // URLs publiques (via table logement_photos)
   final DateTime creeLe;
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œÃ©â€¦Â¾ colonne SQL: contact_telephone
+  /// colonne SQL: contact_telephone
   final String? contactTelephone;
 
   LogementModel({
@@ -97,6 +96,7 @@ class LogementModel {
     this.contactTelephone,
   });
 
+  /// Factory principale depuis une map DB (Supabase)
   factory LogementModel.fromMap(Map<String, dynamic> m) {
     List<String> _photos = const [];
     final p = m['photos'];
@@ -155,7 +155,35 @@ class LogementModel {
     );
   }
 
-  /// Ã©Â©Â¢Ã©â€¦Â¡ Ã©Â©Â¯Â¸Â Sans `photos` (elles sont stockÃ©Â©Ã†â€™Â©es dans `logement_photos`)
+  /// Factory JSON pour Hive / cache (réutilise fromMap pour garder la même logique)
+  factory LogementModel.fromJson(Map<String, dynamic> json) {
+    return LogementModel.fromMap(json);
+  }
+
+  /// Sérialisation complète pour Hive / cache
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'titre': titre,
+      'description': description,
+      'mode': logementModeToString(mode),
+      'categorie': logementCategorieToString(categorie),
+      'prix_gnf': prixGnf,
+      'ville': ville,
+      'commune': commune,
+      'adresse': adresse,
+      'superficie_m2': superficieM2,
+      'chambres': chambres,
+      'lat': lat,
+      'lng': lng,
+      'photos': photos,
+      'cree_le': creeLe.toIso8601String(),
+      'contact_telephone': contactTelephone,
+    };
+  }
+
+  /// Map pour insertion dans la DB (sans `photos`)
   Map<String, dynamic> toInsertMap() => {
         'titre': titre,
         'description': description,
@@ -213,9 +241,9 @@ class LogementModel {
   }
 }
 
-/// ParamÃ©Â©Ã†â€™Â¨tres de recherche
+/// Paramètres de recherche
 class LogementSearchParams {
-  final String? q; // mot-clÃ©Â©Ã†â€™Â©
+  final String? q; // mot-clé
   final LogementMode? mode;
   final LogementCategorie? categorie;
   final String? ville;

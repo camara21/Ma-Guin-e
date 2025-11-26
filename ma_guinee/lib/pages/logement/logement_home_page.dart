@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
@@ -36,6 +37,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
   // Flux paginé
   static const int _pageSize = 20;
   final ScrollController _scrollCtrl = ScrollController();
+
+  // Cache global en mémoire (comme AnnoncesPage._cacheAnnonces)
+  static List<LogementModel> _cacheFeed = [];
+
   final List<LogementModel> _feed = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -69,15 +74,59 @@ class _LogementHomePageState extends State<LogementHomePage> {
   @override
   void initState() {
     super.initState();
+
     _attachInfiniteScroll();
+
+    // 1) Essayer de charger depuis le cache disque (Hive) -> ouverture app instantanée
+    _tryLoadFromCache();
+
+    // 2) Si pas de cache disque mais cache mémoire dispo (même session)
+    if (_feed.isEmpty && _cacheFeed.isNotEmpty) {
+      _feed.addAll(_cacheFeed);
+      _loading = false;
+      _hasMore = true;
+    }
+
+    // 3) Requête réseau en arrière-plan pour rafraîchir les données
     _reloadAll();
 
-    // Auto-slide du hero en sécurité (si controller attaché)
+    // Auto-slide du hero
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final next = (_heroIndex + 1) % _heroImages.length;
       _animateHeroTo(next);
     });
+  }
+
+  void _tryLoadFromCache() {
+    try {
+      if (Hive.isBoxOpen('logement_feed_box')) {
+        final box = Hive.box('logement_feed_box');
+        final cached = box.get('logements') as List?;
+        if (cached != null && cached.isNotEmpty) {
+          final items = cached
+              .whereType<Map>()
+              .map(
+                (e) => LogementModel.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList();
+
+          _cacheFeed = List<LogementModel>.from(items);
+
+          setState(() {
+            _feed
+              ..clear()
+              ..addAll(items);
+            _loading = false;
+            _hasMore = true;
+          });
+        }
+      }
+    } catch (_) {
+      // on ignore, ça ne doit pas casser l'affichage
+    }
   }
 
   void _animateHeroTo(int index) {
@@ -124,32 +173,59 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   Future<void> _reloadAll() async {
+    if (!mounted) return;
+
+    // Comme pour Annonces : on ne vide pas la liste si on a déjà des données
     setState(() {
       _loading = true;
       _error = null;
-      _feed.clear();
       _hasMore = true;
     });
+
     try {
-      final firstPage = _fetchPage(offset: 0);
+      final firstPageF = _fetchPage(offset: 0);
       final favF = _loadFavoris();
       final mineF = _loadMine();
-      final results = await Future.wait([firstPage, favF, mineF]);
+
+      final results = await Future.wait([firstPageF, favF, mineF]);
 
       final pageItems = results[0] as List<LogementModel>;
+
+      if (!mounted) return;
       setState(() {
-        _feed.addAll(pageItems);
+        _feed
+          ..clear()
+          ..addAll(pageItems);
         _hasMore = pageItems.length == _pageSize;
         _favoris = results[1] as List<Map<String, dynamic>>;
         _mine = results[2] as List<Map<String, dynamic>>;
         _loading = false;
       });
+
+      // Met à jour le cache mémoire
+      _cacheFeed = List<LogementModel>.from(pageItems);
+
+      // Sauvegarde disque (Hive) pour les prochains lancements
+      await _saveFeedToDisk(pageItems);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _saveFeedToDisk(List<LogementModel> items) async {
+    try {
+      if (!Hive.isBoxOpen('logement_feed_box')) return;
+      final box = Hive.box('logement_feed_box');
+      await box.put(
+        'logements',
+        items.map((e) => e.toJson()).toList(),
+      );
+    } catch (_) {
+      // ne casse pas l'UI
     }
   }
 
@@ -162,6 +238,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
         _feed.addAll(items);
         _hasMore = items.length == _pageSize;
       });
+
+      // Met à jour le cache mémoire + disque avec le feed étendu
+      _cacheFeed = List<LogementModel>.from(_feed);
+      await _saveFeedToDisk(_feed);
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -259,6 +339,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
     final padding = media.size.width > 600 ? 20.0 : 12.0;
 
+    // Skeleton uniquement si on charge ET qu'on n'a pas encore de données
+    final bool showSkeleton = _loading && _feed.isEmpty && _cacheFeed.isEmpty;
+
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
       child: Scaffold(
@@ -266,8 +349,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
         appBar: AppBar(
           backgroundColor: _primary,
           elevation: 0,
-          title: const Text("Logements en Guinée",
-              style: TextStyle(color: Colors.white)),
+          title: const Text(
+            "Logements en Guinée",
+            style: TextStyle(color: Colors.white),
+          ),
           iconTheme: const IconThemeData(color: Colors.white),
           actions: [
             Builder(
@@ -291,15 +376,15 @@ class _LogementHomePageState extends State<LogementHomePage> {
               const SizedBox(height: 16),
               _modeSwitch(),
               const SizedBox(height: 10),
-              _categoriesBar(), // ← remplace l’ancien GridView.count
+              _categoriesBar(),
               const SizedBox(height: 16),
               _quickActions(),
               const SizedBox(height: 22),
 
               // ====== FEED ======
-              if (_loading)
+              if (showSkeleton)
                 _skeletonGrid(context)
-              else if (_error != null)
+              else if (_error != null && _feed.isEmpty)
                 _errorBox(_error!)
               else ...[
                 _sectionTitle("Tous les biens"),
@@ -317,8 +402,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
                         ? const Center(
                             child: Padding(
                               padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text("— Fin de la liste —",
-                                  style: TextStyle(color: Colors.black45)),
+                              child: Text(
+                                "— Fin de la liste —",
+                                style: TextStyle(color: Colors.black45),
+                              ),
                             ),
                           )
                         : const SizedBox.shrink()),
@@ -446,15 +533,15 @@ class _LogementHomePageState extends State<LogementHomePage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black26.withOpacity(0.10),
-              blurRadius: 18,
-              offset: const Offset(0, 7))
+            color: Colors.black26.withOpacity(0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          // >>> image avec fade haute qualité
           PageView.builder(
             controller: _heroCtrl,
             itemCount: _heroImages.length,
@@ -493,10 +580,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
             child: Text(
               "Trouvez votre logement idéal,\nsimplement.",
               style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25),
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
             ),
           ),
           Positioned(
@@ -546,8 +634,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
@@ -567,11 +656,14 @@ class _LogementHomePageState extends State<LogementHomePage> {
           },
           selectedColor: _accent,
           labelStyle: TextStyle(
-              color: _mode == "location" ? Colors.white : Colors.black87),
+            color: _mode == "location" ? Colors.white : Colors.black87,
+          ),
           backgroundColor: Colors.white,
           shape: StadiumBorder(
-              side: BorderSide(
-                  color: _mode == "location" ? _accent : Colors.black12)),
+            side: BorderSide(
+              color: _mode == "location" ? _accent : Colors.black12,
+            ),
+          ),
         ),
         const SizedBox(width: 10),
         ChoiceChip(
@@ -583,17 +675,19 @@ class _LogementHomePageState extends State<LogementHomePage> {
           },
           selectedColor: _accent,
           labelStyle: TextStyle(
-              color: _mode == "achat" ? Colors.white : Colors.black87),
+            color: _mode == "achat" ? Colors.white : Colors.black87,
+          ),
           backgroundColor: Colors.white,
           shape: StadiumBorder(
-              side: BorderSide(
-                  color: _mode == "achat" ? _accent : Colors.black12)),
+            side: BorderSide(
+              color: _mode == "achat" ? _accent : Colors.black12,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  /// 🔁 Nouvelle barre catégories (sans GridView pour éviter tout overflow)
   Widget _categoriesBar() {
     final cats = const [
       (Icons.grid_view, 'Tous', 'tous'),
@@ -619,8 +713,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: selected ? _accent : Colors.white,
-                  child: Icon(icon,
-                      size: 22, color: selected ? Colors.white : _primary),
+                  child: Icon(
+                    icon,
+                    size: 22,
+                    color: selected ? Colors.white : _primary,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -676,16 +773,21 @@ class _LogementHomePageState extends State<LogementHomePage> {
   Widget _sectionTitle(String txt, {Widget? trailing}) {
     return Row(
       children: [
-        Text(txt,
-            style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: _primary)),
+        Text(
+          txt,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: _primary,
+          ),
+        ),
         const Spacer(),
         if (trailing != null) trailing,
       ],
     );
   }
 
-  // ---------- Skeleton grid (instantané) ----------
+  // ---------- Skeleton grid (cold start uniquement) ----------
   Widget _skeletonGrid(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
     final crossCount = screenW < 600
@@ -745,7 +847,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
         height: 120,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(14)),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: Text(msg, style: const TextStyle(color: Colors.black54)),
       );
 
@@ -787,14 +891,17 @@ class _BienCardTight extends StatelessWidget {
         : 'Prix à discuter';
     final loc = [
       if (bien.ville != null) bien.ville!,
-      if (bien.commune != null) bien.commune!
+      if (bien.commune != null) bien.commune!,
     ].join(' • ');
 
     return InkWell(
       onTap: () {
         if (bien.id.isEmpty) return;
-        Navigator.pushNamed(context, AppRoutes.logementDetail,
-            arguments: bien.id);
+        Navigator.pushNamed(
+          context,
+          AppRoutes.logementDetail,
+          arguments: bien.id,
+        );
       },
       child: Card(
         margin: EdgeInsets.zero,
@@ -804,7 +911,6 @@ class _BienCardTight extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image flexible 16:11 avec cacheWidth/Height (haute qualité)
             Expanded(
               child: LayoutBuilder(
                 builder: (context, c) {
@@ -816,8 +922,11 @@ class _BienCardTight extends StatelessWidget {
                       if (image == null || image.isEmpty)
                         Container(
                           color: Colors.grey.shade200,
-                          child: const Icon(Icons.image,
-                              size: 46, color: Colors.black26),
+                          child: const Icon(
+                            Icons.image,
+                            size: 46,
+                            color: Colors.black26,
+                          ),
                         )
                       else
                         _FadeInNetworkImage(
@@ -831,7 +940,9 @@ class _BienCardTight extends StatelessWidget {
                         top: 8,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.45),
                             borderRadius: BorderRadius.circular(12),
@@ -839,7 +950,9 @@ class _BienCardTight extends StatelessWidget {
                           child: Text(
                             mode,
                             style: const TextStyle(
-                                color: Colors.white, fontSize: 12),
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -848,8 +961,6 @@ class _BienCardTight extends StatelessWidget {
                 },
               ),
             ),
-
-            // Zone texte compacte et sans overflow
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
@@ -876,14 +987,19 @@ class _BienCardTight extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        color: _accent, fontWeight: FontWeight.bold),
+                      color: _accent,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     loc,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -924,12 +1040,14 @@ class _BienCardTight extends StatelessWidget {
   static Widget _chip(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-            color: _neutralBg, borderRadius: BorderRadius.circular(8)),
+          color: _neutralBg,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Text(text, style: const TextStyle(fontSize: 12)),
       );
 }
 
-// ------------------ Skeleton Card --------------------
+// ----------------- Skeleton Card --------------------
 class _SkeletonBienCard extends StatelessWidget {
   const _SkeletonBienCard();
 
@@ -943,28 +1061,47 @@ class _SkeletonBienCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-              aspectRatio: 16 / 11,
-              child: Container(color: Colors.grey.shade200)),
+            aspectRatio: 16 / 11,
+            child: Container(color: Colors.grey.shade200),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 150, color: Colors.grey.shade200),
+                Container(
+                  height: 14,
+                  width: 150,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Container(
-                        height: 18, width: 60, color: Colors.grey.shade200),
+                      height: 18,
+                      width: 60,
+                      color: Colors.grey.shade200,
+                    ),
                     const SizedBox(width: 6),
                     Container(
-                        height: 18, width: 70, color: Colors.grey.shade200),
+                      height: 18,
+                      width: 70,
+                      color: Colors.grey.shade200,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Container(height: 14, width: 90, color: Colors.grey.shade200),
+                Container(
+                  height: 14,
+                  width: 90,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 120, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 120,
+                  color: Colors.grey.shade200,
+                ),
               ],
             ),
           ),
@@ -974,7 +1111,7 @@ class _SkeletonBienCard extends StatelessWidget {
   }
 }
 
-// ----------------- Image réseau avec fade-in (haute qualité) -----------------
+// ----------------- Image réseau avec fade-in SANS SPINNER -----------------
 class _FadeInNetworkImage extends StatefulWidget {
   final String url;
   final int? cacheWidth;
@@ -995,7 +1132,9 @@ class _FadeInNetworkImage extends StatefulWidget {
 class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 220));
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
   late final Animation<double> _fade =
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
 
@@ -1019,7 +1158,8 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
       cacheWidth: widget.cacheWidth,
       cacheHeight: widget.cacheHeight,
       filterQuality: FilterQuality.high,
-      // load avec mini-spinner, puis fondu
+
+      // Chargement : image grise SANS spinner
       loadingBuilder: (ctx, child, ev) {
         if (ev == null) {
           _ctrl.forward();
@@ -1027,16 +1167,15 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
         }
         return Container(
           color: Colors.grey.shade200,
-          alignment: Alignment.center,
-          child: const SizedBox(
-            height: 18,
-            width: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
         );
       },
-      errorBuilder: (_, __, ___) =>
-          const Center(child: Icon(Icons.broken_image, size: 40)),
+
+      errorBuilder: (_, __, ___) => Container(
+        color: Colors.grey.shade200,
+        alignment: Alignment.center,
+        child: const Icon(Icons.broken_image_outlined,
+            size: 40, color: Colors.black26),
+      ),
     );
   }
 }

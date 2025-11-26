@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:ma_guinee/models/annonce_model.dart';
 import 'package:ma_guinee/pages/messages_annonce_page.dart';
@@ -18,20 +19,22 @@ class AnnonceDetailPage extends StatefulWidget {
   State<AnnonceDetailPage> createState() => _AnnonceDetailPageState();
 }
 
-class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
+class _AnnonceDetailPageState extends State<AnnonceDetailPage>
+    with AutomaticKeepAliveClientMixin {
   final _sb = Supabase.instance.client;
 
   // ---------- PALETTE DOUCE ----------
-  static const Color kPrimary    = Color(0xFFD92D20); // rouge doux (actif)
-  static const Color kPrimaryD   = Color(0xFFB42318); // rouge doux foncé (pressed)
-  static const Color kSecondary  = Color(0xFFFFF1F1); // fond très léger
-  static const Color kOnPrimary  = Colors.white;
+  static const Color kPrimary = Color(0xFFD92D20); // rouge doux (actif)
+  static const Color kPrimaryD =
+      Color(0xFFB42318); // rouge doux foncé (pressed)
+  static const Color kSecondary = Color(0xFFFFF1F1); // fond très léger
+  static const Color kOnPrimary = Colors.white;
 
   // Neutres
-  static const Color kPageBg     = Color(0xFFF5F7FA);
+  static const Color kPageBg = Color(0xFFF5F7FA);
   static const Color kCardStroke = Color(0xFFE5E7EB);
-  static const Color kText       = Color(0xFF1F2937);
-  static const Color kText2      = Color(0xFF6B7280);
+  static const Color kText = Color(0xFF1F2937);
+  static const Color kText2 = Color(0xFF6B7280);
 
   // ---------- Storage ----------
   static const String _annonceBucket = 'annonce-photos';
@@ -72,6 +75,16 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     _futureSimilaires = _fetchAnnoncesSimilaires();
     _futureSellerAnnonces = _fetchSellerAnnonces();
     _incrementerVueEtCharger();
+
+    // Pré-cache des photos pour un swipe instantané
+    WidgetsBinding.instance.addPostFrameCallback((_) => _precachePhotos());
+  }
+
+  void _precachePhotos() {
+    final photos = widget.annonce.images.map(_publicUrl);
+    for (final url in photos) {
+      precacheImage(NetworkImage(url), context);
+    }
   }
 
   @override
@@ -79,6 +92,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     _pageController.dispose();
     super.dispose();
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   // ---------- Compteur de vues ----------
   Future<void> _incrementerVueEtCharger() async {
@@ -125,7 +141,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   Future<List<AnnonceModel>> _fetchSellerAnnonces() async {
     try {
-      final raw = await _sb.from('annonces').select().eq('user_id', widget.annonce.userId);
+      final raw = await _sb
+          .from('annonces')
+          .select()
+          .eq('user_id', widget.annonce.userId);
       final list = raw is List ? raw : <dynamic>[];
       return list
           .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
@@ -140,25 +159,33 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     final photos = widget.annonce.images.map(_publicUrl).toList();
     final hasImages = photos.isNotEmpty;
 
-    return Stack(
-      alignment: Alignment.bottomCenter,
-      children: [
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: hasImages
+    final screenW = MediaQuery.of(context).size.width;
+    // Ratio 4/3 : plus de hauteur, rendu plus "pro"
+    final double headerH = screenW * 3 / 4;
+
+    return SizedBox(
+      height: headerH,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          hasImages
               ? PageView.builder(
                   controller: _pageController,
                   itemCount: photos.length,
                   onPageChanged: (i) => setState(() => _currentImageIndex = i),
                   itemBuilder: (_, i) => GestureDetector(
                     onTap: () => _openViewer(i),
-                    child: Image.network(
-                      photos[i],
+                    child: CachedNetworkImage(
+                      imageUrl: photos[i],
                       fit: BoxFit.cover,
                       width: double.infinity,
-                      errorBuilder: (_, __, ___) => Container(
+                      placeholder: (_, __) => Container(color: Colors.black12),
+                      errorWidget: (_, __, ___) => Container(
                         color: Colors.grey.shade200,
-                        child: const Center(child: Icon(Icons.image_not_supported)),
+                        child: const Center(
+                          child: Icon(Icons.image_not_supported,
+                              color: Colors.grey, size: 40),
+                        ),
                       ),
                     ),
                   ),
@@ -166,82 +193,88 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
               : Container(
                   color: Colors.grey.shade200,
                   child: const Center(
-                      child: Icon(Icons.image, size: 60, color: Colors.grey)),
+                    child: Icon(Icons.image, size: 60, color: Colors.grey),
+                  ),
                 ),
-        ),
 
-        if (hasImages)
+          if (hasImages)
+            Positioned(
+              bottom: 12,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentImageIndex + 1}/${photos.length}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+
+          // Back
           Positioned(
-            bottom: 12,
-            right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${_currentImageIndex + 1}/${photos.length}',
-                style: const TextStyle(color: Colors.white),
+            top: 12,
+            left: 12,
+            child: CircleAvatar(
+              backgroundColor: Colors.black45,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ),
 
-        // Back
-        Positioned(
-          top: 12,
-          left: 12,
-          child: CircleAvatar(
-            backgroundColor: Colors.black54,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-        ),
-
-        // Actions (icônes blanches au-dessus de la photo)
-        Positioned(
-          top: 12,
-          right: 12,
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: Icon(
-                    widget.annonce.estFavori
-                        ? Icons.favorite
-                        : Icons.favorite_border,
+          // Actions (icônes blanches au-dessus de la photo)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.black45,
+                  child: IconButton(
+                    icon: Icon(
+                      widget.annonce.estFavori
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      color: Colors.white,
+                    ),
+                    onPressed: () => setState(
+                      () =>
+                          widget.annonce.estFavori = !widget.annonce.estFavori,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Colors.black45,
+                  child: PopupMenuButton<String>(
                     color: Colors.white,
-                  ),
-                  onPressed: () => setState(
-                    () => widget.annonce.estFavori = !widget.annonce.estFavori,
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    onSelected: (v) =>
+                        v == 'share' ? _shareAnnonce() : _openReportSheet(),
+                    itemBuilder: (_) => _isOwner
+                        ? const [
+                            PopupMenuItem(
+                                value: 'share', child: Text('Partager')),
+                          ]
+                        : const [
+                            PopupMenuItem(
+                                value: 'share', child: Text('Partager')),
+                            PopupMenuItem(
+                                value: 'report', child: Text('Signaler')),
+                          ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: PopupMenuButton<String>(
-                  color: Colors.white,
-                  icon: const Icon(Icons.more_vert, color: Colors.white),
-                  onSelected: (v) =>
-                      v == 'share' ? _shareAnnonce() : _openReportSheet(),
-                  itemBuilder: (_) => _isOwner
-                      ? const [
-                          PopupMenuItem(value: 'share', child: Text('Partager')),
-                        ]
-                      : const [
-                          PopupMenuItem(value: 'share', child: Text('Partager')),
-                          PopupMenuItem(value: 'report', child: Text('Signaler')),
-                        ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -259,8 +292,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             PhotoViewGallery.builder(
               itemCount: photos.length,
               pageController: PageController(initialPage: index),
+              // Pas de spinner ici non plus
+              loadingBuilder: (context, event) => const SizedBox.shrink(),
               builder: (_, i) => PhotoViewGalleryPageOptions(
-                imageProvider: NetworkImage(photos[i]),
+                imageProvider: CachedNetworkImageProvider(photos[i]),
                 heroAttributes: PhotoViewHeroAttributes(tag: i),
               ),
             ),
@@ -290,11 +325,17 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   void _openReportSheet() {
     if (_meId == null) return _snack('Connexion requise pour signaler.');
-    if (_isOwner) return _snack('Vous ne pouvez pas signaler votre propre annonce.');
+    if (_isOwner) {
+      return _snack('Vous ne pouvez pas signaler votre propre annonce.');
+    }
 
     final reasons = [
-      'Fausse annonce','Tentative de fraude','Contenu inapproprié',
-      'Mauvaise expérience','Usurpation d’identité','Autre'
+      'Fausse annonce',
+      'Tentative de fraude',
+      'Contenu inapproprié',
+      'Mauvaise expérience',
+      'Usurpation d’identité',
+      'Autre'
     ];
     final ctrl = TextEditingController();
     String selected = reasons.first;
@@ -308,7 +349,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => Padding(
           padding: EdgeInsets.only(
-            left: 16, right: 16, top: 16,
+            left: 16,
+            right: 16,
+            top: 16,
             bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Column(
@@ -319,13 +362,16 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               Wrap(
-                spacing: 8, runSpacing: 8,
-                children: reasons.map((r) => ChoiceChip(
-                  label: Text(r),
-                  selected: selected == r,
-                  selectedColor: kSecondary,
-                  onSelected: (_) => setLocal(() => selected = r),
-                )).toList(),
+                spacing: 8,
+                runSpacing: 8,
+                children: reasons
+                    .map((r) => ChoiceChip(
+                          label: Text(r),
+                          selected: selected == r,
+                          selectedColor: kSecondary,
+                          onSelected: (_) => setLocal(() => selected = r),
+                        ))
+                    .toList(),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -352,7 +398,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   ).copyWith(
                     overlayColor: MaterialStateProperty.resolveWith(
                       (s) => s.contains(MaterialState.pressed)
-                          ? kPrimaryD.withOpacity(.12) : null,
+                          ? kPrimaryD.withOpacity(.12)
+                          : null,
                     ),
                   ),
                   onPressed: () async {
@@ -364,7 +411,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       'owner_id': a.userId,
                       'reported_by': _meId!,
                       'reason': selected,
-                      'details': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
+                      'details':
+                          ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
                       'ville': a.ville,
                       'titre': a.titre,
                       'prix': a.prix,
@@ -383,6 +431,36 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
+  // ---------- Skeleton vendeur ----------
+  Widget _vendeurSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Vendu par', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ListTile(
+          leading: CircleAvatar(
+            radius: 24,
+            backgroundColor: Colors.grey.shade300,
+          ),
+          title: Container(
+            height: 12,
+            width: 100,
+            color: Colors.grey.shade300,
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              height: 10,
+              width: 140,
+              color: Colors.grey.shade200,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ---------- Fiche vendeur ----------
   Widget _buildVendeurComplet() {
     return FutureBuilder<List<AnnonceModel>>(
@@ -398,8 +476,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             ),
           );
         }
+
+        // Chargement : pas de spinner, seulement skeleton
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return _vendeurSkeleton();
         }
 
         final toutes = (snap.data ?? []);
@@ -416,24 +496,31 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         final photo = (u['photo_url'] ?? '').toString().trim();
         final hasPhoto = photo.isNotEmpty && photo.startsWith('http');
 
-        final dstr = (u['date_inscription'] ?? u['created_at'] ?? '').toString();
+        final dstr =
+            (u['date_inscription'] ?? u['created_at'] ?? '').toString();
         final d = DateTime.tryParse(dstr);
-        final membreDepuis = (d != null) ? 'Membre depuis ${d.month}/${d.year}' : '';
+        final membreDepuis =
+            (d != null) ? 'Membre depuis ${d.month}/${d.year}' : '';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Vendu par', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Vendu par',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             ListTile(
               leading: CircleAvatar(
                 radius: 24,
                 backgroundColor: Colors.grey.shade300,
-                backgroundImage: hasPhoto ? NetworkImage(photo) : null,
-                child: hasPhoto ? null : const Icon(Icons.person, color: Colors.white),
+                backgroundImage:
+                    hasPhoto ? CachedNetworkImageProvider(photo) : null,
+                child: hasPhoto
+                    ? null
+                    : const Icon(Icons.person, color: Colors.white),
               ),
               title: Text(displayName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: kText)),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, color: kText)),
               subtitle: Text(
                 [
                   if (membreDepuis.isNotEmpty) membreDepuis,
@@ -464,6 +551,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           );
         }
         if (snap.connectionState != ConnectionState.done) {
+          // Pas de spinner ici non plus
           return const SizedBox.shrink();
         }
         final list =
@@ -492,8 +580,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   return GestureDetector(
                     onTap: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => AnnonceDetailPage(annonce: a),
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) =>
+                            AnnonceDetailPage(annonce: a),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                        transitionsBuilder: (_, __, ___, child) => child,
                       ),
                     ),
                     child: Container(
@@ -509,12 +601,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                             ClipRRect(
                               borderRadius: const BorderRadius.vertical(
                                   top: Radius.circular(8)),
-                              child: Image.network(
-                                thumb,
+                              child: CachedNetworkImage(
+                                imageUrl: thumb,
                                 height: 90,
                                 width: 150,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                placeholder: (_, __) =>
+                                    Container(color: Colors.grey.shade300),
+                                errorWidget: (_, __, ___) => Container(
                                   height: 90,
                                   width: 150,
                                   color: Colors.grey.shade200,
@@ -564,6 +658,71 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     );
   }
 
+  // ---------- Skeleton similaires ----------
+  Widget _similairesSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            "D’autres annonces qui pourraient vous intéresser",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+        ),
+        SizedBox(
+          height: 200,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 3,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, __) {
+              return Container(
+                width: 160,
+                decoration: BoxDecoration(
+                  border: Border.all(color: kCardStroke),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 100,
+                      width: 160,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Container(
+                        height: 10,
+                        width: 120,
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Container(
+                        height: 10,
+                        width: 80,
+                        color: Colors.grey.shade200,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   // ---------- Similaires ----------
   Widget _buildAnnoncesSimilaires() {
     return FutureBuilder<List<AnnonceModel>>(
@@ -579,9 +738,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             ),
           );
         }
+
+        // Chargement : skeleton horizontal, pas de spinner
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return _similairesSkeleton();
         }
+
         final list = snap.data ?? <AnnonceModel>[];
         if (list.isEmpty) {
           return const Padding(
@@ -616,8 +778,12 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   return GestureDetector(
                     onTap: () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => AnnonceDetailPage(annonce: a),
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) =>
+                            AnnonceDetailPage(annonce: a),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                        transitionsBuilder: (_, __, ___, child) => child,
                       ),
                     ),
                     child: Container(
@@ -633,11 +799,19 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                             ClipRRect(
                               borderRadius: const BorderRadius.vertical(
                                   top: Radius.circular(8)),
-                              child: Image.network(
-                                thumb,
+                              child: CachedNetworkImage(
+                                imageUrl: thumb,
                                 height: 100,
                                 width: 160,
                                 fit: BoxFit.cover,
+                                placeholder: (_, __) =>
+                                    Container(color: Colors.grey.shade300),
+                                errorWidget: (_, __, ___) => Container(
+                                  height: 100,
+                                  width: 160,
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(Icons.image_not_supported),
+                                ),
                               ),
                             )
                           else
@@ -760,7 +934,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                   final telRaw = a.telephone; // <- vient de l'annonce
                   final tel = _normalizePhone(telRaw);
                   if (tel.isEmpty) {
-                    _snack('Numéro de téléphone indisponible dans cette annonce.');
+                    _snack(
+                        'Numéro de téléphone indisponible dans cette annonce.');
                     return;
                   }
                   final uri = Uri.parse('tel:$tel');
@@ -784,6 +959,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   // ---------- Build ----------
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final a = widget.annonce;
 
     return Scaffold(
@@ -798,7 +975,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 Text(
                   a.titre,
                   style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700, color: kText,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: kText,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -814,12 +993,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                             TextSpan(
                               text: '${_fmtInt(a.prix)} ${a.devise}',
                               style: const TextStyle(
-                                fontSize: 19, fontWeight: FontWeight.w800, color: kText,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: kText,
                               ),
                             ),
                             TextSpan(
                               text: '  •  ${a.ville}',
-                              style: const TextStyle(fontSize: 16, color: kText2),
+                              style:
+                                  const TextStyle(fontSize: 16, color: kText2),
                             ),
                           ],
                         ),
@@ -833,7 +1015,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                               size: 18, color: kText2),
                           const SizedBox(width: 4),
                           Text('${_fmtInt(_views)} vues',
-                              style: const TextStyle(fontSize: 13, color: kText2)),
+                              style:
+                                  const TextStyle(fontSize: 13, color: kText2)),
                         ],
                       ),
                     ),

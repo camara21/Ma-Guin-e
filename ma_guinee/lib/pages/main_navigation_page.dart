@@ -1,9 +1,9 @@
 // lib/pages/main_navigation_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/user_provider.dart';
-import '../services/message_service.dart';
 
 import 'home_page.dart';
 import 'carte_page.dart';
@@ -12,6 +12,9 @@ import 'profile_page.dart';
 
 const Color kBleu = Color(0xFF113CFC);
 
+// ----------------------------------------------------------------------
+// Badge rouge
+// ----------------------------------------------------------------------
 class Badge extends StatelessWidget {
   final int count;
   final double size;
@@ -25,6 +28,7 @@ class Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (count <= 0) return const SizedBox.shrink();
+
     return Container(
       width: size,
       height: size,
@@ -35,9 +39,9 @@ class Badge extends StatelessWidget {
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 10,
+          fontSize: size * 0.55,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -45,6 +49,9 @@ class Badge extends StatelessWidget {
   }
 }
 
+// ----------------------------------------------------------------------
+// MainNavigationPage
+// ----------------------------------------------------------------------
 class MainNavigationPage extends StatefulWidget {
   const MainNavigationPage({Key? key}) : super(key: key);
 
@@ -54,36 +61,45 @@ class MainNavigationPage extends StatefulWidget {
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
-  final MessageService _svc = MessageService();
 
-  Future<void> _onTapTab(int index, String? userId) async {
-    setState(() => _currentIndex = index);
+  // Stream compteur non lus
+  Stream<int>? _unreadStream;
+
+  // Stream direct sur Supabase, filtrage côté Flutter
+  Stream<int> _buildUnreadStream(String userId) {
+    final supa = Supabase.instance.client;
+
+    return supa.from('messages').stream(primaryKey: ['id']).map((rows) {
+      final unread = rows.where((m) {
+        return m['receiver_id'] == userId && m['lu'] == false;
+      }).length;
+      return unread;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // STREAM TEMPS RÉEL – COMPTEUR UNREAD
-    final unreadStream =
-        (user == null) ? Stream<int>.value(0) : _svc.unreadCountStream(user.id);
+    // Tant que le user n'est pas chargé
+    if (user == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // On crée le stream UNE SEULE FOIS, quand on a enfin un user
+    _unreadStream ??= _buildUnreadStream(user.id);
 
     final pages = <Widget>[
       const HomePage(),
       const CartePage(),
       const MessagesPage(),
-      user != null
-          ? ProfilePage(user: user)
-          : const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  "Connectez-vous pour accéder à votre profil",
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
+      ProfilePage(user: user), // on ne touche pas
     ];
+
+    // fallback : si pour une raison quelconque le stream est null
+    final unreadStream = _unreadStream ?? Stream<int>.value(0);
 
     return WillPopScope(
       onWillPop: () async {
@@ -98,14 +114,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed,
           currentIndex: _currentIndex,
-          onTap: (i) => _onTapTab(i, user?.id),
           selectedItemColor: kBleu,
           unselectedItemColor: Colors.grey,
-          iconSize: 30,
-          selectedIconTheme: const IconThemeData(size: 34),
-          unselectedIconTheme: const IconThemeData(size: 28),
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
+          onTap: (i) => setState(() => _currentIndex = i),
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.home),
@@ -117,8 +128,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             ),
 
             // ---------------------------------------------------------
-            //                   ONGLET MESSAGES
-            //        FULL TEMPS RÉEL — BADGE INSTANTANÉ
+            // Onglet Messages avec badge temps réel
             // ---------------------------------------------------------
             BottomNavigationBarItem(
               label: 'Messages',
@@ -126,28 +136,21 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 clipBehavior: Clip.none,
                 children: [
                   const Icon(Icons.forum_rounded),
-
-                  // BADGE TEMPS RÉEL
                   Positioned(
                     right: -6,
                     top: -6,
                     child: StreamBuilder<int>(
                       stream: unreadStream,
                       initialData: 0,
-                      builder: (context, snap) {
-                        final unread = snap.data ?? 0;
-
-                        return Badge(
-                          count: unread,
-                          size: 18,
-                        );
+                      builder: (context, snapshot) {
+                        final unread = snapshot.data ?? 0;
+                        return Badge(count: unread, size: 18);
                       },
                     ),
                   ),
                 ],
               ),
             ),
-            // ---------------------------------------------------------
 
             const BottomNavigationBarItem(
               icon: Icon(Icons.person),

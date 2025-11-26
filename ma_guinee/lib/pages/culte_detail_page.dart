@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class CulteDetailPage extends StatelessWidget {
   final Map<String, dynamic> lieu;
@@ -13,14 +14,33 @@ class CulteDetailPage extends StatelessWidget {
     final s = (v ?? '').toString().toLowerCase().trim();
     if (s.isEmpty) return '';
     const map = {
-      'à': 'a', 'á': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+      'à': 'a',
+      'á': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'ã': 'a',
+      'å': 'a',
       'ç': 'c',
-      'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
-      'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+      'è': 'e',
+      'é': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'ì': 'i',
+      'í': 'i',
+      'î': 'i',
+      'ï': 'i',
       'ñ': 'n',
-      'ò': 'o', 'ó': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
-      'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
-      'ý': 'y', 'ÿ': 'y',
+      'ò': 'o',
+      'ó': 'o',
+      'ô': 'o',
+      'ö': 'o',
+      'õ': 'o',
+      'ù': 'u',
+      'ú': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ý': 'y',
+      'ÿ': 'y',
       'œ': 'oe',
     };
     final buf = StringBuffer();
@@ -139,7 +159,10 @@ class CulteDetailPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(texte, style: const TextStyle(height: 1.35, fontSize: 14.5)),
+          Text(
+            texte,
+            style: const TextStyle(height: 1.35, fontSize: 14.5),
+          ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -152,7 +175,8 @@ class CulteDetailPage extends StatelessWidget {
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 elevation: 0,
               ),
@@ -239,22 +263,37 @@ class CulteDetailPage extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // Ville
-                Text(ville, style: const TextStyle(fontSize: 16, color: Colors.black87)),
+                Text(
+                  ville,
+                  style: const TextStyle(fontSize: 16, color: Colors.black87),
+                ),
 
                 // Description
                 if (description != null && description.trim().isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const Text("Description :",
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Text(
+                    "Description :",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(description,
-                      textAlign: TextAlign.start,
-                      style: const TextStyle(fontSize: 15, height: 1.45)),
+                  Text(
+                    description,
+                    textAlign: TextAlign.start,
+                    style: const TextStyle(fontSize: 15, height: 1.45),
+                  ),
                 ],
 
                 const SizedBox(height: 20),
-                const Text("Localisation :",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const Text(
+                  "Localisation :",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 10),
 
                 Container(
@@ -272,7 +311,7 @@ class CulteDetailPage extends StatelessWidget {
                   height: 200,
                   child: FlutterMap(
                     options: MapOptions(
-                      initialCenter: LatLng(latitude, longitude), // ✅ v6
+                      initialCenter: LatLng(latitude, longitude),
                       initialZoom: 15,
                       interactionOptions: const InteractionOptions(
                         flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
@@ -280,7 +319,8 @@ class CulteDetailPage extends StatelessWidget {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        urlTemplate:
+                            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                         userAgentPackageName: 'com.example.ma_guinee',
                       ),
                       MarkerLayer(
@@ -289,8 +329,11 @@ class CulteDetailPage extends StatelessWidget {
                             point: LatLng(latitude, longitude),
                             width: 44,
                             height: 44,
-                            child: const Icon(Icons.location_on,
-                                color: Color(0xFF009460), size: 40),
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Color(0xFF009460),
+                              size: 40,
+                            ),
                           ),
                         ],
                       ),
@@ -298,19 +341,25 @@ class CulteDetailPage extends StatelessWidget {
                   ),
                 ),
 
-                // ---- Section Don (juste sous la carte) ----
+                // Section Don
                 _donationSection(context),
 
                 const SizedBox(height: 18),
                 Center(
                   child: ElevatedButton.icon(
-                    onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
+                    onPressed: () => _ouvrirDansGoogleMaps(
+                      latitude,
+                      longitude,
+                    ),
                     icon: const Icon(Icons.map),
                     label: const Text("Ouvrir dans Google Maps"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
+                      ),
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       elevation: 2,
                       shape: RoundedRectangleBorder(
@@ -333,6 +382,7 @@ class _ImagesCarouselWithThumbs extends StatefulWidget {
   final List<String> images;
   final void Function(int index)? onOpenFull;
   final String heroPrefix;
+
   const _ImagesCarouselWithThumbs({
     required this.images,
     this.onOpenFull,
@@ -376,15 +426,25 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                     onTap: () => widget.onOpenFull?.call(i),
                     child: Hero(
                       tag: '${widget.heroPrefix}_$i',
-                      child: Image.network(
-                        widget.images[i],
-                        width: double.infinity,
-                        height: 220,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade300,
-                          child: const Center(child: Icon(Icons.broken_image)),
-                        ),
+                      child: LayoutBuilder(
+                        builder: (ctx, cons) {
+                          final w = cons.maxWidth;
+                          const h = 220.0;
+                          return CachedNetworkImage(
+                            imageUrl: widget.images[i],
+                            fit: BoxFit.cover,
+                            memCacheWidth: w.isFinite ? (w * 2).round() : null,
+                            memCacheHeight: (h * 2).round(),
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey.shade200),
+                            errorWidget: (_, __, ___) => Container(
+                              color: Colors.grey.shade300,
+                              child: const Center(
+                                child: Icon(Icons.broken_image),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -395,7 +455,10 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                 right: 10,
                 top: 10,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.55),
                     borderRadius: BorderRadius.circular(20),
@@ -403,7 +466,9 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                   child: Text(
                     '${_current + 1}/$total',
                     style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -437,7 +502,9 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: selected ? const Color(0xFF113CFC) : Colors.transparent,
+                      color: selected
+                          ? const Color(0xFF113CFC)
+                          : Colors.transparent,
                       width: 2,
                     ),
                     boxShadow: [
@@ -450,10 +517,12 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                     ],
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: Image.network(
-                    widget.images[i],
+                  child: CachedNetworkImage(
+                    imageUrl: widget.images[i],
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    placeholder: (_, __) =>
+                        Container(color: Colors.grey.shade200),
+                    errorWidget: (_, __, ___) => Container(
                       color: Colors.grey.shade300,
                       child: const Icon(Icons.broken_image),
                     ),
@@ -511,8 +580,10 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
-        title: Text('${_index + 1}/$total',
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          '${_index + 1}/$total',
+          style: const TextStyle(color: Colors.white),
+        ),
       ),
       body: PageView.builder(
         controller: _ctrl,
@@ -526,11 +597,15 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
               child: InteractiveViewer(
                 minScale: 1.0,
                 maxScale: 4.0,
-                child: Image.network(
-                  url,
+                child: CachedNetworkImage(
+                  imageUrl: url,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) =>
-                      const Icon(Icons.broken_image, color: Colors.white, size: 64),
+                  placeholder: (_, __) => Container(color: Colors.black),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white,
+                    size: 64,
+                  ),
                 ),
               ),
             ),

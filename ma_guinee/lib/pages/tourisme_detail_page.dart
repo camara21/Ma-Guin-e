@@ -7,13 +7,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'reservation_tourisme_page.dart';
 
-/// === Palette Tourisme ===
+/// Palette Tourisme
 const Color tourismePrimary = Color(0xFFDAA520);
 const Color tourismeSecondary = Color(0xFFFFD700);
 const Color tourismeOnPrimary = Color(0xFF000000);
 
 class TourismeDetailPage extends StatefulWidget {
-  final Map<String, dynamic> lieu; // données partielles depuis la liste
+  final Map<String, dynamic> lieu;
   const TourismeDetailPage({super.key, required this.lieu});
 
   @override
@@ -38,8 +38,12 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
-  bool _isUuid(String s) =>
-      RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(s);
+  // Carte instantanée
+  final MapController _mapController = MapController();
+  LatLng _defaultCenter = const LatLng(9.6412, -13.5784);
+  double _defaultZoom = 15;
+
+  bool _isUuid(String s) => RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(s);
 
   bool _validUrl(String? s) {
     if (s == null || s.trim().isEmpty) return false;
@@ -61,41 +65,69 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     super.dispose();
   }
 
-  // ---------- utils ----------
+  // -----------------------------------------------------
+  // Images
+  // -----------------------------------------------------
   List<String> _images(Map<String, dynamic> lieu) {
     final List<String> out = [];
     final raw = lieu['images'];
+
     if (raw is List) {
       for (final e in raw) {
         final s = e?.toString();
         if (_validUrl(s)) out.add(s!);
       }
     }
+
     final p = lieu['photo_url']?.toString();
     if (_validUrl(p)) out.add(p!);
+
     return out;
   }
 
+  // -----------------------------------------------------
+  // Téléphone
+  // -----------------------------------------------------
   String _extractPhone(Map<String, dynamic> m) {
-    final raw = (m['contact'] ?? m['telephone'] ?? m['phone'] ?? m['tel'] ?? '').toString().trim();
-    return raw.replaceAll(RegExp(r'[^0-9+]'), '');
-    }
+    final raw = (m['contact'] ?? m['telephone'] ?? m['phone'] ?? m['tel'] ?? '')
+        .toString()
+        .trim();
 
-  // ---------- Charger le lieu COMPLET par id ----------
+    return raw.replaceAll(RegExp(r'[^0-9+]'), '');
+  }
+
+  // -----------------------------------------------------
+  // Charger lieu
+  // -----------------------------------------------------
   Future<void> _loadFullLieu() async {
     final id = widget.lieu['id']?.toString();
     if (id == null || !_isUuid(id)) return;
 
     setState(() => _loadingLieu = true);
+
     try {
       final rows = await _sb
           .from('lieux')
-          .select('id, nom, ville, description, type, categorie, images, latitude, longitude, created_at, contact, photo_url')
+          .select(
+              'id, nom, ville, description, type, categorie, images, latitude, longitude, created_at, contact, photo_url')
           .eq('id', id)
           .limit(1);
 
       final list = List<Map<String, dynamic>>.from(rows);
-      if (list.isNotEmpty && mounted) setState(() => _fullLieu = list.first);
+      if (list.isNotEmpty && mounted) {
+        _fullLieu = list.first;
+
+        final lat = (_fullLieu!['latitude'] as num?)?.toDouble();
+        final lon = (_fullLieu!['longitude'] as num?)?.toDouble();
+
+        if (lat != null && lon != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _mapController.move(LatLng(lat, lon), 15);
+            }
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -106,7 +138,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     }
   }
 
-  // ---------- Charger avis + profils ----------
+  // -----------------------------------------------------
+  // Avis
+  // -----------------------------------------------------
   Future<void> _loadAvisBloc() async {
     try {
       final lieuId = widget.lieu['id']?.toString();
@@ -122,8 +156,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
       double moyenne = 0.0;
       if (list.isNotEmpty) {
-        final notes = list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        moyenne = notes.isEmpty ? 0.0 : notes.reduce((a, b) => a + b) / notes.length;
+        final notes =
+            list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
+        moyenne =
+            notes.isEmpty ? 0.0 : notes.reduce((a, b) => a + b) / notes.length;
       }
 
       final me = _sb.auth.currentUser;
@@ -171,7 +207,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     }
   }
 
-  // ---------- Envoyer / MAJ avis ----------
+  // -----------------------------------------------------
+  // Envoyer avis
+  // -----------------------------------------------------
   Future<void> _envoyerAvis() async {
     final note = _noteUtilisateur;
     final commentaire = _avisController.text.trim();
@@ -215,7 +253,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         _avisController.clear();
         _dejaNote = true;
       });
-      FocusScope.of(context).unfocus();
+
       await _loadAvisBloc();
 
       if (mounted) {
@@ -231,7 +269,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     }
   }
 
-  // ---------- Actions ----------
+  // -----------------------------------------------------
+  // Actions
+  // -----------------------------------------------------
   Future<void> _contacterLieu(String numero) async {
     final num = numero.trim();
     if (num.isEmpty) {
@@ -247,15 +287,17 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   }
 
   Future<void> _ouvrirGoogleMaps(double lat, double lon) async {
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
+    final uri =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  // ---------- Plein écran SANS dialog (route dédiée, fond noir) ----------
+  // -----------------------------------------------------
+  // Plein écran
+  // -----------------------------------------------------
   void _openFullScreenGallery(List<String> images, int initialIndex) {
-    if (images.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FullscreenGalleryPage(
@@ -272,12 +314,13 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     final lieu = _fullLieu ?? widget.lieu;
 
     final images = _images(lieu);
-    final String nom = (lieu['nom'] ?? 'Site touristique').toString();
-    final String ville = (lieu['ville'] ?? '').toString();
-    final String description = (lieu['description'] ?? '').toString();
-    final String numero = _extractPhone(lieu);
-    final double? lat = (lieu['latitude'] as num?)?.toDouble();
-    final double? lon = (lieu['longitude'] as num?)?.toDouble();
+    final nom = (lieu['nom'] ?? 'Site touristique').toString();
+    final ville = (lieu['ville'] ?? '').toString();
+    final description = (lieu['description'] ?? '').toString();
+    final numero = _extractPhone(lieu);
+
+    final lat = (lieu['latitude'] as num?)?.toDouble();
+    final lon = (lieu['longitude'] as num?)?.toDouble();
 
     return Scaffold(
       appBar: AppBar(
@@ -291,10 +334,11 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                     color: tourismePrimary, fontWeight: FontWeight.w700),
               ),
             ),
-            if (_loadingLieu) ...[
-              const SizedBox(width: 8),
-              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
+            if (_loadingLieu)
+              const SizedBox(
+                width: 16,
+                height: 16,
+              ),
           ],
         ),
         backgroundColor: Colors.white,
@@ -302,7 +346,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         elevation: 0.6,
       ),
 
-      // === Barre d’actions FIXE en bas ===
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -310,19 +353,31 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           decoration: BoxDecoration(
             color: Colors.white,
             border: const Border(top: BorderSide(color: Color(0xFFEAEAEA))),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(.06), blurRadius: 8, offset: const Offset(0, -2))],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.06),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              )
+            ],
           ),
           child: Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _contacterLieu(numero),
-                  icon: const Icon(Icons.phone, size: 18, color: tourismePrimary),
-                  label: const Text("Contacter", style: TextStyle(color: tourismePrimary, fontWeight: FontWeight.w700)),
+                  icon:
+                      const Icon(Icons.phone, size: 18, color: tourismePrimary),
+                  label: const Text(
+                    "Contacter",
+                    style: TextStyle(
+                        color: tourismePrimary, fontWeight: FontWeight.w700),
+                  ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: tourismePrimary, width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -330,14 +385,25 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReservationTourismePage(lieu: lieu)));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReservationTourismePage(lieu: lieu),
+                      ),
+                    );
                   },
-                  icon: const Icon(Icons.event_available, size: 18, color: tourismeOnPrimary),
-                  label: const Text("Réserver", style: TextStyle(color: tourismeOnPrimary, fontWeight: FontWeight.w700)),
+                  icon: const Icon(Icons.event_available,
+                      size: 18, color: tourismeOnPrimary),
+                  label: const Text(
+                    "Réserver",
+                    style: TextStyle(
+                        color: tourismeOnPrimary, fontWeight: FontWeight.w700),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: tourismePrimary,
                     padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
                   ),
                 ),
@@ -347,10 +413,13 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         ),
       ),
 
+      // CONTENU
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
-          // Galerie (pas de teinte)
+          // -----------------------------------------------------
+          // Galerie
+          // -----------------------------------------------------
           if (images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -363,27 +432,21 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                       controller: _pageController,
                       itemCount: images.length,
                       onPageChanged: (i) => setState(() => _currentIndex = i),
-                      itemBuilder: (context, index) => GestureDetector(
+                      itemBuilder: (_, index) => GestureDetector(
                         onTap: () => _openFullScreenGallery(images, index),
                         child: Hero(
                           tag: 'tourisme_$index',
-                          child: LayoutBuilder(
-                            builder: (context, cons) {
-                              final w = cons.maxWidth;
-                              const h = 230.0;
-                              return CachedNetworkImage(
-                                imageUrl: images[index],
-                                fit: BoxFit.cover,
-                                memCacheWidth: w.isFinite ? (w * 2).round() : null,
-                                memCacheHeight: (h * 2).round(),
-                                placeholder: (_, __) => Container(color: Colors.grey.shade200),
-                                errorWidget: (_, __, ___) => Container(
-                                  color: Colors.grey.shade200,
-                                  alignment: Alignment.center,
-                                  child: const Icon(Icons.landscape, size: 40, color: Colors.grey),
-                                ),
-                              );
-                            },
+                          child: CachedNetworkImage(
+                            imageUrl: images[index],
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey.shade200),
+                            errorWidget: (_, __, ___) => Container(
+                              color: Colors.grey.shade200,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.landscape,
+                                  size: 40, color: Colors.grey),
+                            ),
                           ),
                         ),
                       ),
@@ -393,14 +456,24 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                     right: 8,
                     top: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.45), borderRadius: BorderRadius.circular(14)),
-                      child: Text('${_currentIndex + 1}/${images.length}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.45),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        '${_currentIndex + 1}/${images.length}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+
+            // Miniatures
             const SizedBox(height: 8),
             SizedBox(
               height: 68,
@@ -408,11 +481,14 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                 scrollDirection: Axis.horizontal,
                 itemCount: images.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
+                itemBuilder: (_, index) {
                   final isActive = index == _currentIndex;
+
                   return GestureDetector(
                     onTap: () {
-                      _pageController.animateToPage(index, duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+                      _pageController.animateToPage(index,
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeOut);
                       setState(() => _currentIndex = index);
                     },
                     child: AnimatedContainer(
@@ -420,18 +496,20 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                       width: 90,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: isActive ? tourismePrimary : Colors.transparent, width: 2),
+                        border: Border.all(
+                          color:
+                              isActive ? tourismePrimary : Colors.transparent,
+                          width: 2,
+                        ),
                       ),
                       clipBehavior: Clip.hardEdge,
                       child: CachedNetworkImage(
                         imageUrl: images[index],
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: Colors.grey.shade200),
-                        errorWidget: (_, __, ___) => Container(
-                          color: Colors.grey.shade200,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.broken_image),
-                        ),
+                        placeholder: (_, __) =>
+                            Container(color: Colors.grey.shade200),
+                        errorWidget: (_, __, ___) =>
+                            const Center(child: Icon(Icons.broken_image)),
                       ),
                     ),
                   );
@@ -441,43 +519,94 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           ] else
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Container(height: 230, color: Colors.grey.shade300, child: const Center(child: Icon(Icons.landscape, size: 60, color: Colors.grey))),
-            ),
-
-          const SizedBox(height: 12),
-          Text(nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          if (ville.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(children: const [Icon(Icons.location_on, color: Colors.black54), SizedBox(width: 4)]),
-            Text(ville, style: const TextStyle(color: Colors.black87)),
-          ],
-          if (description.isNotEmpty) ...[const SizedBox(height: 8), Text(description)],
-
-          if (lat != null && lon != null) ...[
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 210,
-              child: FlutterMap(
-                options: MapOptions(initialCenter: LatLng(lat, lon), initialZoom: 13),
-                children: [
-                  TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.example.app'),
-                  MarkerLayer(markers: [
-                    Marker(point: LatLng(lat, lon), width: 40, height: 40, child: const Icon(Icons.location_on, size: 40, color: tourismePrimary)),
-                  ]),
-                ],
+              child: Container(
+                height: 230,
+                color: Colors.grey.shade300,
+                child: const Center(
+                  child: Icon(Icons.landscape, size: 60, color: Colors.grey),
+                ),
               ),
             ),
+
+          // -----------------------------------------------------
+          // Texte
+          // -----------------------------------------------------
+          const SizedBox(height: 12),
+          Text(nom,
+              style:
+                  const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          if (ville.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.location_on, color: Colors.black54),
+                const SizedBox(width: 4),
+                Text(ville),
+              ],
+            ),
+          ],
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(description),
+          ],
+
+          // -----------------------------------------------------
+          // CARTE INSTANTANÉE (VERSION RESTO)
+          // -----------------------------------------------------
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 210,
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _defaultCenter,
+                initialZoom: _defaultZoom,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  subdomains: const ['a', 'b', 'c'],
+                  userAgentPackageName: 'com.soneya.app',
+                ),
+                if (lat != null && lon != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(lat, lon),
+                        width: 40,
+                        height: 40,
+                        child: const Icon(Icons.location_on,
+                            size: 40, color: tourismePrimary),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+
+          if (lat != null && lon != null) ...[
             const SizedBox(height: 12),
             ElevatedButton.icon(
               onPressed: () => _ouvrirGoogleMaps(lat, lon),
               icon: const Icon(Icons.map),
               label: const Text("Ouvrir dans Google Maps"),
-              style: ElevatedButton.styleFrom(backgroundColor: tourismePrimary, foregroundColor: tourismeOnPrimary),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tourismePrimary,
+                foregroundColor: tourismeOnPrimary,
+              ),
             ),
           ],
 
+          // -----------------------------------------------------
+          // Avis
+          // -----------------------------------------------------
           const SizedBox(height: 24),
-          Text("Avis des visiteurs", style: Theme.of(context).textTheme.titleMedium),
+          Text("Avis des visiteurs",
+              style: Theme.of(context).textTheme.titleMedium),
           if (_avis.isEmpty)
             const Text("Aucun avis pour le moment.")
           else ...[
@@ -489,29 +618,43 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
               final prenom = (u['prenom'] ?? '').toString();
               final nomU = (u['nom'] ?? '').toString();
               final photo = (u['photo_url'] ?? '').toString();
-              final fullName = ('$prenom $nomU').trim().isEmpty ? 'Utilisateur' : ('$prenom $nomU').trim();
+              final fullName = ('$prenom $nomU').trim().isEmpty
+                  ? 'Utilisateur'
+                  : ('$prenom $nomU').trim();
               final note = (a['etoiles'] as num?)?.toInt() ?? 0;
 
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
+                  backgroundImage: photo.isNotEmpty
+                      ? CachedNetworkImageProvider(photo)
+                      : null,
                   child: photo.isEmpty ? const Icon(Icons.person) : null,
                 ),
                 title: Text(fullName),
-                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text("$note ★"),
-                  if ((a['commentaire'] ?? '').toString().isNotEmpty) Text(a['commentaire'].toString()),
-                ]),
+                subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("$note ★"),
+                      if ((a['commentaire'] ?? '').toString().isNotEmpty)
+                        Text(a['commentaire'].toString()),
+                    ]),
               );
             }),
           ],
 
+          // -----------------------------------------------------
+          // Laisser un avis
+          // -----------------------------------------------------
           const SizedBox(height: 24),
-          Text("Laisser un avis", style: Theme.of(context).textTheme.titleSmall),
+          Text("Laisser un avis",
+              style: Theme.of(context).textTheme.titleSmall),
           if (_dejaNote)
             const Padding(
               padding: EdgeInsets.only(bottom: 6),
-              child: Text("Vous avez déjà laissé un avis. Renvoyez pour le mettre à jour.", style: TextStyle(fontSize: 12, color: Colors.black54)),
+              child: Text(
+                "Vous avez déjà laissé un avis. Renvoyez pour mettre à jour.",
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
             ),
           Row(
             children: List.generate(5, (i) {
@@ -528,7 +671,8 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             maxLines: 3,
             decoration: InputDecoration(
               hintText: "Votre avis…",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               filled: true,
               fillColor: const Color(0xFFF8F6F9),
             ),
@@ -538,7 +682,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             onPressed: _envoyerAvis,
             icon: const Icon(Icons.send),
             label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFDE68A), foregroundColor: Colors.black87),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFDE68A),
+              foregroundColor: Colors.black87,
+            ),
           ),
         ],
       ),
@@ -546,11 +693,14 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   }
 }
 
-/// ---------- Page plein écran réutilisable (fond noir, zéro teinte) ----------
+/* =====================================================
+   GALERIE PLEIN ÉCRAN SANS SPINNER
+   ===================================================== */
 class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
@@ -562,7 +712,8 @@ class _FullscreenGalleryPage extends StatefulWidget {
 }
 
 class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
-  late final PageController _ctrl = PageController(initialPage: widget.initialIndex);
+  late final PageController _ctrl =
+      PageController(initialPage: widget.initialIndex);
   late int _index = widget.initialIndex;
 
   @override
@@ -574,13 +725,17 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
   @override
   Widget build(BuildContext context) {
     final total = widget.images.length;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
-        title: Text('${_index + 1}/$total', style: const TextStyle(color: Colors.white)),
+        title: Text(
+          '${_index + 1}/$total',
+          style: const TextStyle(color: Colors.white),
+        ),
       ),
       body: PageView.builder(
         controller: _ctrl,
@@ -592,14 +747,16 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
             child: Hero(
               tag: '${widget.heroPrefix}_$i',
               child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
+                minScale: 1,
+                maxScale: 4,
                 child: CachedNetworkImage(
                   imageUrl: url,
                   fit: BoxFit.contain,
-                  errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white70, size: 64),
-                  placeholder: (_, __) => const SizedBox(
-                    width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                  placeholder: (_, __) => Container(color: Colors.black),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    size: 60,
+                    color: Colors.white70,
                   ),
                 ),
               ),

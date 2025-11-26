@@ -33,13 +33,16 @@ class _HotelPageState extends State<HotelPage> {
   static const String _CACHE_KEY = 'hotels_v1';
   static const Duration _CACHE_MAX_AGE = Duration(hours: 12);
 
+  // ✅ Cache mémoire global (pour affichage instantané quand on revient)
+  static List<Map<String, dynamic>> _memoryCacheHotels = [];
+
   // Données
   List<Map<String, dynamic>> hotels = [];
   List<Map<String, dynamic>> filteredHotels = [];
 
   // État
   bool _hasAnyCache = false; // sait si on a au moins un snapshot pour afficher
-  bool _syncing = false;     // rafraîchissement en arrière-plan
+  bool _syncing = false; // rafraîchissement en arrière-plan
 
   // ⭐️ notes moyennes calculées en batch
   final Map<String, double> _avgByHotelId = {};
@@ -56,7 +59,16 @@ class _HotelPageState extends State<HotelPage> {
   @override
   void initState() {
     super.initState();
-    _loadAll(); // SWR par défaut
+
+    // 0) Cache mémoire global (instantané, même session)
+    if (_memoryCacheHotels.isNotEmpty) {
+      hotels = List<Map<String, dynamic>>.from(_memoryCacheHotels);
+      filteredHotels = hotels;
+      _hasAnyCache = true;
+    }
+
+    // 1) SWR classique (AppCache + réseau en arrière-plan)
+    _loadAll(); // ne bloque pas l’UI
   }
 
   // ------- format prix (espaces) -------
@@ -107,7 +119,7 @@ class _HotelPageState extends State<HotelPage> {
         try {
           final placemarks =
               await placemarkFromCoordinates(pos.latitude, pos.longitude);
-        if (placemarks.isNotEmpty) {
+          if (placemarks.isNotEmpty) {
             final p = placemarks.first;
             final city = (p.locality?.isNotEmpty == true)
                 ? p.locality
@@ -133,7 +145,9 @@ class _HotelPageState extends State<HotelPage> {
   // ⚠️ On NE TOUCHE PAS à ta logique de distance
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
-    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
+      return null;
+    }
     const R = 6371000.0;
     double dLat = (lat2 - lat1) * (pi / 180);
     double dLon = (lon1 - lon2) * (pi / 180);
@@ -156,8 +170,8 @@ class _HotelPageState extends State<HotelPage> {
       for (final h in list) {
         final lat = (h['latitude'] as num?)?.toDouble();
         final lon = (h['longitude'] as num?)?.toDouble();
-        h['_distance'] =
-            _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+        h['_distance'] = _distanceMeters(
+            _position!.latitude, _position!.longitude, lat, lon);
       }
 
       if ((_villeGPS ?? '').isNotEmpty) {
@@ -174,7 +188,8 @@ class _HotelPageState extends State<HotelPage> {
           if (ad != null && bd != null) return ad.compareTo(bd);
           if (ad != null) return -1;
           if (bd != null) return 1;
-          return (a['nom'] ?? '').toString()
+          return (a['nom'] ?? '')
+              .toString()
               .compareTo((b['nom'] ?? '').toString());
         });
       } else {
@@ -184,7 +199,8 @@ class _HotelPageState extends State<HotelPage> {
           if (ad != null && bd != null) return ad.compareTo(bd);
           if (ad != null) return -1;
           if (bd != null) return 1;
-          return (a['nom'] ?? '').toString()
+          return (a['nom'] ?? '')
+              .toString()
               .compareTo((b['nom'] ?? '').toString());
         });
       }
@@ -264,26 +280,34 @@ class _HotelPageState extends State<HotelPage> {
   }
 
   // =======================
-  // CHARGEMENT SWR PRINCIPAL — instantané & sans spinner
+  // CHARGEMENT SWR PRINCIPAL — instantané & sans gros spinner
   // =======================
   Future<void> _loadAll({bool forceNetwork = false}) async {
-    // 1) Snapshot cache immédiat
-    if (!forceNetwork) {
+    // 1) Snapshot cache immédiat (AppCache) si pas forcé
+    if (!forceNetwork && !_hasAnyCache) {
       final mem = AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
       List<Map<String, dynamic>>? disk;
       if (mem == null) {
-        disk = await AppCache.I.getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+        disk = await AppCache.I
+            .getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
       }
       final snapshot = mem ?? disk;
 
       if (snapshot != null) {
         _hasAnyCache = true;
-        final snapClone = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+
+        final snapClone =
+            snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
         final enriched = await _enrichAndSort(snapClone);
+
         hotels = enriched;
-        await _preloadAverages(enriched.map((e) => e['id'].toString()).toList());
+        // ✅ met à jour le cache mémoire global
+        _memoryCacheHotels = List<Map<String, dynamic>>.from(enriched);
+
+        await _preloadAverages(
+            enriched.map((e) => e['id'].toString()).toList());
         _filterHotels(searchQuery);
-        if (mounted) setState(() {}); // affiche instantanément
+        if (mounted) setState(() {});
       }
     }
 
@@ -305,23 +329,30 @@ class _HotelPageState extends State<HotelPage> {
 
       // Met à jour l'écran (sans bloquer)
       hotels = enriched;
+      _memoryCacheHotels =
+          List<Map<String, dynamic>>.from(enriched); // ✅ mémoire globale
       _filterHotels(searchQuery);
 
       // Persist cache (retire champs volatils)
-      final toCache = enriched.map((h) {
-        final clone = Map<String, dynamic>.from(h);
-        clone.remove('_distance');
-        return clone;
-      }).toList(growable: false).cast<Map<String, dynamic>>();
+      final toCache = enriched
+          .map((h) {
+            final clone = Map<String, dynamic>.from(h);
+            clone.remove('_distance');
+            return clone;
+          })
+          .toList(growable: false)
+          .cast<Map<String, dynamic>>();
 
       AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
 
       if (mounted) setState(() => _hasAnyCache = true);
     } catch (e) {
       if (mounted && !_hasAnyCache) {
-        // cold start sans cache => on reste sur skeleton (pas de spinner) + snack
+        // cold start sans cache => on reste sur skeleton + snack discret
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Réseau lent — affichage du squelette. ($e)')),
+          SnackBar(
+            content: Text('Réseau lent — affichage du squelette. ($e)'),
+          ),
         );
       }
     } finally {
@@ -336,8 +367,8 @@ class _HotelPageState extends State<HotelPage> {
       for (final h in hotels) {
         final lat = (h['latitude'] as num?)?.toDouble();
         final lon = (h['longitude'] as num?)?.toDouble();
-        h['_distance'] =
-            _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+        h['_distance'] = _distanceMeters(
+            _position!.latitude, _position!.longitude, lat, lon);
       }
     }
     // sort
@@ -354,7 +385,9 @@ class _HotelPageState extends State<HotelPage> {
         if (ad != null && bd != null) return ad.compareTo(bd);
         if (ad != null) return -1;
         if (bd != null) return 1;
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        return (a['nom'] ?? '')
+            .toString()
+            .compareTo((b['nom'] ?? '').toString());
       });
     } else if (_position != null) {
       hotels.sort((a, b) {
@@ -363,7 +396,9 @@ class _HotelPageState extends State<HotelPage> {
         if (ad != null && bd != null) return ad.compareTo(bd);
         if (ad != null) return -1;
         if (bd != null) return 1;
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        return (a['nom'] ?? '')
+            .toString()
+            .compareTo((b['nom'] ?? '').toString());
       });
     } else {
       hotels.sort((a, b) =>
@@ -434,8 +469,9 @@ class _HotelPageState extends State<HotelPage> {
               if (_syncing) const SizedBox(width: 8),
               if (_syncing)
                 const SizedBox(
-                  height: 14, width: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2), // petit, discret
+                  height: 14,
+                  width: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
             ],
           ),
@@ -443,7 +479,8 @@ class _HotelPageState extends State<HotelPage> {
             IconButton(
               icon: const Icon(Icons.refresh, color: hotelsPrimary),
               tooltip: 'Rafraîchir',
-              onPressed: () => _loadAll(forceNetwork: true), // instantané, UI conserve la grille
+              onPressed: () => _loadAll(
+                  forceNetwork: true), // instantané, UI conserve la grille
             ),
           ],
           bottom: const PreferredSize(
@@ -463,9 +500,9 @@ class _HotelPageState extends State<HotelPage> {
           ),
         ),
         body: (!_hasAnyCache && !_syncing)
-            // Cold start sans cache => skeleton (aucun spinner/pinner)
+            // Cold start sans cache => skeleton (aucun spinner global)
             ? _skeletonGrid(context)
-            // Sinon, affiche la grille (instantané). Pendant que ça sync, on garde la grille affichée.
+            // Sinon, affiche la grille instantanément.
             : (hotels.isEmpty
                 ? const Center(child: Text("Aucun hôtel trouvé."))
                 : Padding(
@@ -544,18 +581,19 @@ class _HotelPageState extends State<HotelPage> {
                             ),
                           ),
 
-                        // Grille d'hôtels — espacement serré + images nettes
+                        // Grille d'hôtels
                         Expanded(
                           child: filteredHotels.isEmpty
                               ? const Center(child: Text("Aucun hôtel trouvé."))
                               : GridView.builder(
                                   padding: EdgeInsets.zero,
-                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
                                   gridDelegate:
                                       SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: crossCount,
-                                    mainAxisSpacing: 8, // ✅ serré
-                                    crossAxisSpacing: 8, // ✅ serré
+                                    mainAxisSpacing: 8,
+                                    crossAxisSpacing: 8,
                                     childAspectRatio: ratio,
                                   ),
                                   cacheExtent: 900,
@@ -586,7 +624,8 @@ class _HotelPageState extends State<HotelPage> {
                                           context,
                                           MaterialPageRoute(
                                             builder: (_) => HotelDetailPage(
-                                                hotelId: hotel['id']),
+                                              hotelId: hotel['id'],
+                                            ),
                                           ),
                                         ),
                                         child: Column(
@@ -621,10 +660,9 @@ class _HotelPageState extends State<HotelPage> {
                                                             padding:
                                                                 const EdgeInsets
                                                                     .symmetric(
-                                                                    horizontal:
-                                                                        8,
-                                                                    vertical:
-                                                                        4),
+                                                              horizontal: 8,
+                                                              vertical: 4,
+                                                            ),
                                                             decoration:
                                                                 BoxDecoration(
                                                               color: hotelsPrimary
@@ -641,22 +679,25 @@ class _HotelPageState extends State<HotelPage> {
                                                                       .min,
                                                               children: [
                                                                 const Icon(
-                                                                    Icons
-                                                                        .location_on,
-                                                                    size: 14,
-                                                                    color: Colors
-                                                                        .white),
+                                                                  Icons
+                                                                      .location_on,
+                                                                  size: 14,
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
                                                                 const SizedBox(
                                                                     width: 4),
                                                                 Text(
                                                                   (hotel['ville'] ??
                                                                           '')
                                                                       .toString(),
-                                                                  style: const TextStyle(
-                                                                      color: Colors
-                                                                          .white,
-                                                                      fontSize:
-                                                                          12),
+                                                                  style:
+                                                                      const TextStyle(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        12,
+                                                                  ),
                                                                   maxLines: 1,
                                                                   overflow:
                                                                       TextOverflow
@@ -688,8 +729,9 @@ class _HotelPageState extends State<HotelPage> {
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                                   ),
                                                   const SizedBox(height: 4),
                                                   // ⭐️ Note moyenne
@@ -697,11 +739,15 @@ class _HotelPageState extends State<HotelPage> {
                                                     children: [
                                                       _starsFor(avg),
                                                       if (count > 0)
-                                                        Text('  ($count)',
-                                                            style: const TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .black45)),
+                                                        Text(
+                                                          '  ($count)',
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 11,
+                                                            color:
+                                                                Colors.black45,
+                                                          ),
+                                                        ),
                                                     ],
                                                   ),
                                                   const SizedBox(height: 4),
@@ -726,18 +772,20 @@ class _HotelPageState extends State<HotelPage> {
                                                               '_distance') &&
                                                           hotel['_distance'] !=
                                                               null) ...[
-                                                        const Text('  •  ',
-                                                            style: TextStyle(
-                                                                color:
-                                                                    Colors.grey,
-                                                                fontSize: 13)),
+                                                        const Text(
+                                                          '  •  ',
+                                                          style: TextStyle(
+                                                            color: Colors.grey,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
                                                         Text(
                                                           '${(hotel['_distance'] / 1000).toStringAsFixed(1)} km',
                                                           style:
                                                               const TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                  fontSize: 13),
+                                                            color: Colors.grey,
+                                                            fontSize: 13,
+                                                          ),
                                                         ),
                                                       ],
                                                     ],
@@ -833,7 +881,11 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
       errorBuilder: (_, __, ___) => Container(
         color: Colors.grey.shade200,
         alignment: Alignment.center,
-        child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade500),
+        child: Icon(
+          Icons.broken_image,
+          size: 40,
+          color: Colors.grey.shade500,
+        ),
       ),
     );
   }
@@ -856,17 +908,32 @@ class _HotelSkeletonCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(aspectRatio: 16/11, child: Container(color: Colors.grey.shade200)),
+          AspectRatio(
+            aspectRatio: 16 / 11,
+            child: Container(color: Colors.grey.shade200),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 140, color: Colors.grey.shade200),
+                Container(
+                  height: 14,
+                  width: 140,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 90, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 90,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 120, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 120,
+                  color: Colors.grey.shade200,
+                ),
               ],
             ),
           ),

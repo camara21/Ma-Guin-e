@@ -1,4 +1,3 @@
-// lib/pages/culte_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,8 +29,8 @@ class _CultePageState extends State<CultePage> {
   List<Map<String, dynamic>> _filtered = [];
 
   // État
-  bool _loading = true;   // seulement pour 1er rendu sans cache -> skeleton
-  bool _syncing = false;  // sync réseau silencieuse (aucun spinner affiché)
+  bool _loading = true; // uniquement pour cold start sans cache -> skeleton
+  bool _syncing = false; // sync réseau silencieuse (aucun spinner)
 
   // Recherche
   String _query = '';
@@ -44,7 +43,7 @@ class _CultePageState extends State<CultePage> {
   @override
   void initState() {
     super.initState();
-    _loadAllSWR(); // ⚡ instantané (cache) + réseau en arrière-plan
+    _loadAllSWR(); // ⚡ SWR : cache instantané + réseau en arrière-plan
   }
 
   // ---------------- Localisation ----------------
@@ -133,52 +132,80 @@ class _CultePageState extends State<CultePage> {
 
   Color _iconColor(Map<String, dynamic> l) {
     if (_isMosquee(l)) return const Color(0xFF009460);
-    if (_isEglise(l)) return const Color(0xFF0F6EFD); // bleu discret (pas de rouge)
+    if (_isEglise(l)) return const Color(0xFF0F6EFD); // bleu discret
     return Colors.indigo;
   }
 
   // --------------- SWR: Cache -> Réseau ---------------
-  Future<void> _loadAllSWR() async {
-    // 1) Instantané: mémoire ou disque si non expiré
-    final mem = AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
-    List<Map<String, dynamic>>? disk;
-    if (mem == null) {
-      disk = await AppCache.I.getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
-    }
-    final snapshot = mem ?? disk;
+  Future<void> _loadAllSWR({bool forceNetwork = false}) async {
+    // 1) Instantané cache (mémoire / disque) si pas "forceNetwork"
+    if (!forceNetwork) {
+      final mem = AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+      List<Map<String, dynamic>>? disk;
+      if (mem == null) {
+        disk = await AppCache.I.getListPersistent(
+          _CACHE_KEY,
+          maxAge: _CACHE_MAX_AGE,
+        );
+      }
+      final snapshot = mem ?? disk;
 
-    if (snapshot != null) {
-      final snapClone = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
-      // enrichissements distance + tri
-      await _getLocation();
-      final enriched = await _enrichAndSort(snapClone);
-      _allLieux = enriched;
-      _applyFilter(_query);
-      if (mounted) setState(() => _loading = false);
-    } else {
-      // premier affichage sans données -> skeleton (pas de spinner)
-      if (mounted) setState(() => _loading = true);
+      if (snapshot != null) {
+        final snapClone =
+            snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+        // On affiche tout de suite, SANS attendre la géoloc
+        _allLieux = snapClone;
+        _applyFilter(_query);
+        if (mounted) {
+          setState(() {
+            _loading = false; // on passe du skeleton → grille
+          });
+        }
+
+        // Puis on affine avec la distance en ARRIÈRE-PLAN
+        _ensureLocationAndResort();
+      } else {
+        // Premier affichage sans données -> skeleton (pas de spinner)
+        if (mounted) {
+          setState(() {
+            _loading = true;
+          });
+        }
+      }
     }
 
-    // 2) Réseau en arrière-plan: met à jour l’UI et recache
-    if (mounted) setState(() => _syncing = true);
+    // 2) Réseau en arrière-plan : on ne bloque plus sur la géoloc
+    if (mounted) {
+      setState(() {
+        _syncing = true;
+      });
+    }
+
     try {
-      await _getLocation();
-
       final res = await Supabase.instance.client
           .from('lieux')
-          .select('id, nom, ville, type, categorie, sous_categorie, description, images, latitude, longitude, created_at')
+          .select(
+              'id, nom, ville, type, categorie, sous_categorie, description, images, latitude, longitude, created_at')
           .eq('type', 'culte')
           .order('nom', ascending: true);
 
       final list = List<Map<String, dynamic>>.from(res);
-      final enriched = await _enrichAndSort(list);
 
-      _allLieux = enriched;
+      // On affiche les résultats réseau le plus tôt possible (tri simple)
+      _allLieux = list;
       _applyFilter(_query);
 
-      // retire champs volatils avant cache
-      final toCache = enriched.map((m) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+
+      // Enrichissement distance + tri en arrière-plan
+      _ensureLocationAndResort();
+
+      // On met en cache SANS les champs volatils
+      final toCache = list.map((m) {
         final c = Map<String, dynamic>.from(m);
         c.remove('_distance');
         return c;
@@ -186,14 +213,41 @@ class _CultePageState extends State<CultePage> {
 
       AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
     } catch (e) {
-      // silencieux: on reste sur le cache/skeleton
+      // silencieux: on reste sur le cache/skeleton si dispo
     } finally {
       if (mounted) {
-        _syncing = false;
-        _loading = false;
-        setState(() {});
+        setState(() {
+          _syncing = false;
+        });
       }
     }
+  }
+
+  /// Enrichit la liste actuelle avec la distance + tri en arrière-plan.
+  Future<void> _ensureLocationAndResort() async {
+    if (_locationDenied) return;
+    if (_allLieux.isEmpty) return;
+
+    try {
+      // Si on a déjà une position, pas la peine de rappeler la permission
+      if (_position == null || _villeGPS == null) {
+        await _getLocation();
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    if (_position == null && !_locationDenied) {
+      // pas de position exploitable -> on reste sur le tri par nom
+      return;
+    }
+
+    final cloned = _allLieux.map((e) => Map<String, dynamic>.from(e)).toList();
+    final enriched = await _enrichAndSort(cloned);
+    if (!mounted) return;
+
+    _allLieux = enriched;
+    _applyFilter(_query); // setState interne
   }
 
   Future<List<Map<String, dynamic>>> _enrichAndSort(
@@ -202,8 +256,8 @@ class _CultePageState extends State<CultePage> {
       for (final l in list) {
         final lat = (l['latitude'] as num?)?.toDouble();
         final lon = (l['longitude'] as num?)?.toDouble();
-        l['_distance'] =
-            _distanceMeters(_position!.latitude, _position!.longitude, lat, lon);
+        l['_distance'] = _distanceMeters(
+            _position!.latitude, _position!.longitude, lat, lon);
       }
       list.sort((a, b) {
         final aMosq = _isMosquee(a);
@@ -222,14 +276,18 @@ class _CultePageState extends State<CultePage> {
         if (ad != null) return -1;
         if (bd != null) return 1;
 
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        return (a['nom'] ?? '')
+            .toString()
+            .compareTo((b['nom'] ?? '').toString());
       });
     } else {
       list.sort((a, b) {
         final aMosq = _isMosquee(a);
         final bMosq = _isMosquee(b);
         if (aMosq != bMosq) return aMosq ? -1 : 1;
-        return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+        return (a['nom'] ?? '')
+            .toString()
+            .compareTo((b['nom'] ?? '').toString());
       });
     }
     return list;
@@ -256,14 +314,34 @@ class _CultePageState extends State<CultePage> {
     final s = (v ?? '').toString().toLowerCase().trim();
     if (s.isEmpty) return '';
     const map = {
-      'à': 'a','á': 'a','â': 'a','ä': 'a','ã': 'a','å': 'a',
+      'à': 'a',
+      'á': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'ã': 'a',
+      'å': 'a',
       'ç': 'c',
-      'è': 'e','é': 'e','ê': 'e','ë': 'e',
-      'ì': 'i','í': 'i','î': 'i','ï': 'i',
+      'è': 'e',
+      'é': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'ì': 'i',
+      'í': 'i',
+      'î': 'i',
+      'ï': 'i',
       'ñ': 'n',
-      'ò': 'o','ó': 'o','ô': 'o','ö': 'o','õ': 'o',
-      'ù': 'u','ú': 'u','û': 'u','ü': 'u',
-      'ý': 'y','ÿ': 'y','œ': 'oe',
+      'ò': 'o',
+      'ó': 'o',
+      'ô': 'o',
+      'ö': 'o',
+      'õ': 'o',
+      'ù': 'u',
+      'ú': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ý': 'y',
+      'ÿ': 'y',
+      'œ': 'oe',
     };
     final buf = StringBuffer();
     for (final ch in s.split('')) {
@@ -305,15 +383,21 @@ class _CultePageState extends State<CultePage> {
               const Expanded(
                 child: Text(
                   'Lieux de culte',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // aucune roue/loader : on peut afficher un petit point vert/bleu si on veut
               if (_syncing)
                 const Padding(
                   padding: EdgeInsets.only(right: 6),
-                  child: Icon(Icons.check_circle, size: 14, color: Colors.white70),
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 14,
+                    color: Colors.white70,
+                  ),
                 ),
             ],
           ),
@@ -324,7 +408,7 @@ class _CultePageState extends State<CultePage> {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _loadAllSWR, // ⚡ instant + sync silencieuse
+              onPressed: () => _loadAllSWR(forceNetwork: true),
               tooltip: 'Rafraîchir',
             ),
           ],
@@ -341,7 +425,10 @@ class _CultePageState extends State<CultePage> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
                       gradient: LinearGradient(
-                        colors: [primaryColor, primaryColor.withOpacity(0.65)],
+                        colors: [
+                          primaryColor,
+                          primaryColor.withOpacity(0.65),
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -349,27 +436,35 @@ class _CultePageState extends State<CultePage> {
                     child: const Text(
                       "Mosquées, églises et lieux de prière près de vous",
                       style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          height: 1.2),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        height: 1.2,
+                      ),
                     ),
                   ),
 
                   // Recherche
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     child: TextField(
                       decoration: InputDecoration(
                         hintText: 'Rechercher par nom, type ou ville...',
-                        prefixIcon: const Icon(Icons.search, color: primaryColor),
+                        prefixIcon:
+                            const Icon(Icons.search, color: primaryColor),
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       onChanged: _applyFilter,
                     ),
@@ -379,17 +474,23 @@ class _CultePageState extends State<CultePage> {
                       padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
                       child: Text(
                         "Active la localisation pour afficher la distance.",
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
 
-                  // Grille (pas de RefreshIndicator => pas de spinner)
+                  // Grille (aucun RefreshIndicator => aucun spinner)
                   Expanded(
                     child: _filtered.isEmpty
-                        ? const Center(child: Text("Aucun lieu de culte trouvé."))
+                        ? const Center(
+                            child: Text("Aucun lieu de culte trouvé."),
+                          )
                         : GridView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 14),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: crossCount,
                               mainAxisSpacing: 8, // serré
                               crossAxisSpacing: 8, // serré
@@ -471,11 +572,15 @@ class _CulteCardTight extends StatelessWidget {
     return InkWell(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => CulteDetailPage(lieu: lieu)),
+        MaterialPageRoute(
+          builder: (_) => CulteDetailPage(lieu: lieu),
+        ),
       ),
       child: Card(
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         elevation: 2,
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -483,72 +588,102 @@ class _CulteCardTight extends StatelessWidget {
           children: [
             // IMAGE + BADGES
             Expanded(
-              child: LayoutBuilder(builder: (context, c) {
-                final w = c.maxWidth;
-                final h = w * (11 / 16);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // ✅ Image de haute qualité sans spinner (placeholder gris)
-                    CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: w.isFinite ? (w * 2).round() : null,
-                      memCacheHeight: h.isFinite ? (h * 2).round() : null,
-                      placeholder: (_, __) => Container(color: Colors.grey.shade200),
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade500),
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  final w = c.maxWidth;
+                  final h = w * (11 / 16);
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // ✅ Image de haute qualité sans spinner
+                      CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: w.isFinite ? (w * 2).round() : null,
+                        memCacheHeight: h.isFinite ? (h * 2).round() : null,
+                        placeholder: (_, __) =>
+                            Container(color: Colors.grey.shade200),
+                        errorWidget: (_, __, ___) => Container(
+                          color: Colors.grey.shade200,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.broken_image,
+                            size: 40,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
                       ),
-                    ),
-                    if (ville.isNotEmpty)
+                      if (ville.isNotEmpty)
+                        Positioned(
+                          left: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.location_on,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  ville,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       Positioned(
-                        left: 8,
+                        right: 8,
                         top: 8,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.55),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on, size: 14, color: Colors.white),
-                              const SizedBox(width: 4),
-                              Text(
-                                ville,
-                                style: const TextStyle(color: Colors.white, fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                          width: 36,
+                          height: 36,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
                               ),
                             ],
                           ),
+                          child: Icon(
+                            icon,
+                            color: iconColor,
+                            size: 20,
+                          ),
                         ),
                       ),
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
-                        ),
-                        child: Icon(icon, color: iconColor, size: 20),
-                      ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                },
+              ),
             ),
 
             // TEXTE
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -556,7 +691,10 @@ class _CulteCardTight extends StatelessWidget {
                     (lieu['nom'] ?? '').toString(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Row(
@@ -566,12 +704,21 @@ class _CulteCardTight extends StatelessWidget {
                           ville,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                       if (distLabel != null) ...[
                         const SizedBox(width: 6),
-                        Text(distLabel!, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                        Text(
+                          distLabel!,
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -607,22 +754,39 @@ class _SkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       elevation: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(aspectRatio: 16 / 11, child: Container(color: Colors.grey.shade200)),
+          AspectRatio(
+            aspectRatio: 16 / 11,
+            child: Container(color: Colors.grey.shade200),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 140, color: Colors.grey.shade200),
+                Container(
+                  height: 14,
+                  width: 140,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 90, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 90,
+                  color: Colors.grey.shade200,
+                ),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 70, color: Colors.grey.shade200),
+                Container(
+                  height: 12,
+                  width: 70,
+                  color: Colors.grey.shade200,
+                ),
               ],
             ),
           ),
