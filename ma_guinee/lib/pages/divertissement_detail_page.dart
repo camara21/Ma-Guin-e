@@ -264,7 +264,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
-  // ----------------- Plein écran (style Culte, sans "voile rouge") -----------------
+  // Plein écran
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     final heroPrefix =
         'divert_${widget.lieu['id'] ?? (widget.lieu['nom'] ?? '')}';
@@ -321,10 +321,10 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final String ambiance =
         (lieu['categorie'] ?? lieu['type'] ?? '').toString();
 
-    // clamp léger pour éviter l’explosion des polices
+    // clamp léger
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
-    final heroPrefix = 'divert_${lieu['id'] ?? nom}'; // stable & unique
+    final heroPrefix = 'divert_${lieu['id'] ?? nom}';
 
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
@@ -405,7 +405,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ---------- Galerie ----------
+              // ---------- Galerie ---------- (sans spinner)
               if (images.isNotEmpty) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(13),
@@ -505,6 +505,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
               const SizedBox(height: 20),
 
               // ---------- Infos ----------
+
               Text(nom,
                   style: const TextStyle(
                       fontSize: 22, fontWeight: FontWeight.bold)),
@@ -723,7 +724,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   }
 }
 
-// ----------------- Widgets images avec fade-in (chargement fluide) -----------------
+// ----------------- Widgets images avec fade-in (sans spinner) -----------------
 class _FadeInNetworkImage extends StatefulWidget {
   final String url;
   final String? heroTag;
@@ -737,7 +738,9 @@ class _FadeInNetworkImage extends StatefulWidget {
 class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 220));
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
   late final Animation<double> _fade =
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
 
@@ -763,6 +766,7 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
           _ctrl.forward();
           return FadeTransition(opacity: _fade, child: child);
         }
+        // ✅ placeholder simple, SANS spinner
         return const _ImagePlaceholder();
       },
       errorBuilder: (_, __, ___) =>
@@ -783,10 +787,10 @@ class _ImagePlaceholder extends StatelessWidget {
     return Container(
       color: Colors.grey.shade200,
       alignment: Alignment.center,
-      child: const SizedBox(
-        height: 18,
-        width: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+      child: const Icon(
+        Icons.image,
+        size: 40,
+        color: Colors.grey,
       ),
     );
   }
@@ -830,13 +834,15 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
     final total = widget.images.length;
 
     return Scaffold(
-      backgroundColor: Colors.black, // ✅ noir opaque (plus de voile rouge)
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
-        title: Text('${_index + 1}/$total',
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          '${_index + 1}/$total',
+          style: const TextStyle(color: Colors.white),
+        ),
       ),
       body: PageView.builder(
         controller: _ctrl,
@@ -846,13 +852,13 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
           final url = widget.images[i];
           return Center(
             child: Hero(
-              tag: '${widget.heroPrefix}_$i', // ✅ même tag que l’aperçu
+              tag: '${widget.heroPrefix}_$i',
               child: InteractiveViewer(
                 minScale: 1.0,
                 maxScale: 4.0,
                 child: Image.network(
                   url,
-                  fit: BoxFit.contain, // ✅ pas de crop ni teinte
+                  fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image,
                     color: Colors.white70,

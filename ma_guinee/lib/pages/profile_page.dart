@@ -1,5 +1,3 @@
-// lib/pages/profile_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
@@ -46,6 +44,7 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
+  // WhatsApp number
   String _waNumber() => "00224620452964";
 
   Future<void> _openWhatsApp() async {
@@ -227,7 +226,7 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               children: [
                 GestureDetector(
-                  onTap: _showPhotoPopup, // <===== MODIFICATION ICI
+                  onTap: _showPhotoPopup,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
@@ -267,7 +266,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
 
           // ----------------------------------------------------------------------
-          // RESTE DE LA PAGE  (inchangé)
+          // BLOC FONCTIONNALITÉS
           // ----------------------------------------------------------------------
 
           Padding(
@@ -348,6 +347,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
+          // ESPACES
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Column(
@@ -456,6 +456,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
           const Divider(height: 30),
 
+          // PARAMETRES SEULEMENT (support supprimé)
           ListTile(
             leading: const Icon(Icons.settings, color: Colors.black),
             title: const Text('Paramètres',
@@ -466,22 +467,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          ListTile(
-            leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF9FF),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.headset_mic, color: Color(0xFF1E88E5)),
-            ),
-            title: const Text('Support',
-                style: TextStyle(fontWeight: FontWeight.w500)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openWhatsApp,
-          ),
-
+          // DECONNEXION
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Se déconnecter',

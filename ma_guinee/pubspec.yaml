@@ -125,7 +125,6 @@ flutter:
     - assets/logo_guinee.png
     - assets/nimba.png
     - assets/carte_guinee.png
-    - assets/jobs/hero.png
     - assets/anp/guinee_holo.png
     - assets/icons/soneya-1024.png   # ✅ déclare ton icône
 

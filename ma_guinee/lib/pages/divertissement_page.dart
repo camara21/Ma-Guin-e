@@ -1,11 +1,15 @@
 // lib/pages/divertissement_page.dart
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
+import '../services/app_cache.dart';
+import '../services/geoloc_service.dart';
 import 'divertissement_detail_page.dart';
 
 class DivertissementPage extends StatefulWidget {
@@ -16,105 +20,152 @@ class DivertissementPage extends StatefulWidget {
 }
 
 class _DivertissementPageState extends State<DivertissementPage> {
-  // Données
-  List<Map<String, dynamic>> _allLieux = [];
-  List<Map<String, dynamic>> _filteredLieux = [];
-  bool _loading = true;
+  // Couleurs
+  static const Color primaryColor = Color(0xFF7B1FA2);
+  static const Color secondaryColor = Color(0xFF00C9FF);
+  static const Color onPrimary = Colors.white;
 
-  // Recherche (petit debounce)
-  String searchQuery = '';
+  static const Color _neutralBg = Color(0xFFF7F7F9);
+  static const Color _neutralSurface = Color(0xFFFFFFFF);
+  static const Color _neutralBorder = Color(0xFFE5E7EB);
+
+  // Cache
+  static const String _cacheKey = 'divertissement:list:v1';
+
+  // Données
+  final _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> _lieux = [];
+  List<Map<String, dynamic>> _filtered = [];
+
+  // État
+  bool _loading = true; // skeleton quand pas encore de data
+  bool _syncing = false; // sync réseau silencieuse
+  bool _hasAnyCache = false;
+
+  // Recherche (debounce)
   Timer? _debounce;
 
   // Localisation
   Position? _position;
   String? _villeGPS;
-
-  // Couleur
-  static const primaryColor = Colors.deepPurple;
+  bool _locationDenied = false;
 
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadAllSWR(); // cache instantané + sync réseau
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  // ====== Distance précise (même principe que Santé: Haversine) ======
+  // ====== Distance précise (Haversine, même logique que Resto) ======
   double? _distanceMeters(
-      double? lat1, double? lon1, double? lat2, double? lon2) {
+    double? lat1,
+    double? lon1,
+    double? lat2,
+    double? lon2,
+  ) {
     if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
 
-    // radians
-    final double phi1 = lat1! * pi / 180.0;
-    final double phi2 = lat2! * pi / 180.0;
-    final double lam1 = lon1! * pi / 180.0;
-    final double lam2 = lon2! * pi / 180.0;
+    const R = 6371000.0; // rayon Terre en mètres
+    final dLat = (lat2! - lat1!) * (pi / 180.0);
+    final dLon = (lon2! - lon1!) * (pi / 180.0);
 
-    final double dPhi = phi2 - phi1;
-    final double dLam = lam2 - lam1;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * (pi / 180.0)) *
+            cos(lat2 * (pi / 180.0)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
 
-    final double a = sin(dPhi / 2) * sin(dPhi / 2) +
-        cos(phi1) * cos(phi2) * sin(dLam / 2) * sin(dLam / 2);
-
-    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return 6371000.0 * c; // mètres
+    // ✅ formule correcte: atan2(sqrt(a), sqrt(1 - a))
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
-  // -------------------------------------------------------------------
 
-  // Localisation (non bloquante)
+  // ---------- Localisation non bloquante ----------
   Future<void> _getLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) {
+        _locationDenied = true;
+        if (mounted) setState(() {});
         return;
       }
 
-      // Last known = instantané
+      // 1) last known → instantané
       final last = await Geolocator.getLastKnownPosition();
-      if (last != null) _position = last;
+      if (last != null) {
+        _position = last;
+        _recomputeDistancesAndSort(); // distances quasi immédiates
+      }
 
-      // Position actuelle en arrière-plan
+      // 2) position actuelle → en arrière-plan
       Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium)
           .then((pos) async {
         _position = pos;
+
         try {
-          final placemarks =
+          await GeolocService.reportPosition(pos); // silencieux si erreur
+        } catch (_) {}
+
+        try {
+          final marks =
               await placemarkFromCoordinates(pos.latitude, pos.longitude);
-          if (placemarks.isNotEmpty) {
-            final p = placemarks.first;
-            final city = (p.locality?.isNotEmpty == true)
-                ? p.locality
-                : (p.subAdministrativeArea?.isNotEmpty == true
-                    ? p.subAdministrativeArea
+          if (marks.isNotEmpty) {
+            final m = marks.first;
+            final city = (m.locality?.isNotEmpty == true)
+                ? m.locality
+                : (m.subAdministrativeArea?.isNotEmpty == true
+                    ? m.subAdministrativeArea
                     : null);
             _villeGPS = city?.toLowerCase().trim();
           }
         } catch (_) {}
-        _recomputeDistancesAndSort(); // maj tri dès qu’on a la position fraîche
+
+        _recomputeDistancesAndSort();
       }).catchError((_) {});
     } catch (e) {
       debugPrint('Erreur localisation divertissement: $e');
     }
   }
 
-  Future<void> _loadAll() async {
-    setState(() => _loading = true);
-    try {
-      // localisation en parallèle (non bloquante)
-      unawaited(_getLocation());
+  // ---------- SWR : cache instantané + sync réseau ----------
+  Future<void> _loadAllSWR() async {
+    // 1) Lecture cache mémoire / disque
+    final mem =
+        AppCache.I.getListMemory(_cacheKey, maxAge: const Duration(days: 7));
+    List<Map<String, dynamic>>? disk;
+    if (mem == null) {
+      disk = await AppCache.I
+          .getListPersistent(_cacheKey, maxAge: const Duration(days: 14));
+    }
+    final snapshot = mem ?? disk;
 
-      // Lieux + avis imbriqués (pour moyenne)
+    if (snapshot != null) {
+      _lieux = List<Map<String, dynamic>>.from(snapshot);
+      _applyFilter(_searchCtrl.text);
+      _hasAnyCache = true;
+      if (mounted) setState(() => _loading = false);
+    } else {
+      // premier chargement sans cache → skeleton
+      if (mounted) setState(() => _loading = true);
+    }
+
+    // 2) Sync réseau en arrière-plan
+    if (mounted) setState(() => _syncing = true);
+    unawaited(_getLocation());
+
+    try {
       final response = await Supabase.instance.client.from('lieux').select('''
         id, nom, ville, type, categorie, description,
         images, latitude, longitude, adresse, created_at,
@@ -131,52 +182,103 @@ class _DivertissementPageState extends State<DivertissementPage> {
           sum += (a['etoiles'] as num?)?.toInt() ?? 0;
         }
         final count = avis.length;
-        l['_avg'] = count == 0 ? null : (sum / count);
+        final avg = count == 0 ? null : (sum / count);
+        l['_avg'] = avg;
         l['_count'] = count;
       }
 
-      _allLieux = list;
+      // Ajout distance si on a déjà une position
+      if (_position != null) {
+        for (final l in list) {
+          final lat = (l['latitude'] as num?)?.toDouble();
+          final lon = (l['longitude'] as num?)?.toDouble();
+          l['_distance'] = _distanceMeters(
+            _position!.latitude,
+            _position!.longitude,
+            lat,
+            lon,
+          );
+        }
+      }
 
-      // Si on a déjà une position (last known), affiche tout de suite les distances
-      _recomputeDistancesAndSort();
+      // Tri (même ville > distance > nom)
+      void sortByDistance(List<Map<String, dynamic>> arr) {
+        int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
+            (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
 
-      _filterLieux(searchQuery);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de chargement : $e')),
-      );
-    } finally {
+        if ((_villeGPS ?? '').isNotEmpty) {
+          arr.sort((a, b) {
+            final aSame =
+                (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            final bSame =
+                (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+            if (aSame != bSame) return aSame ? -1 : 1;
+
+            final ad = (a['_distance'] as double?);
+            final bd = (b['_distance'] as double?);
+            if (ad != null && bd != null) return ad.compareTo(bd);
+            if (ad != null) return -1;
+            if (bd != null) return 1;
+            return byName(a, b);
+          });
+        } else {
+          arr.sort((a, b) {
+            final ad = (a['_distance'] as double?);
+            final bd = (b['_distance'] as double?);
+            if (ad != null && bd != null) return ad.compareTo(bd);
+            if (ad != null) return -1;
+            if (bd != null) return 1;
+            return byName(a, b);
+          });
+        }
+      }
+
+      sortByDistance(list);
+
+      // Écrit dans le cache (mémoire + disque)
+      AppCache.I.setList(_cacheKey, list, persist: true);
+
+      _lieux = list;
+      _applyFilter(_searchCtrl.text);
+      _hasAnyCache = true;
+
       if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      debugPrint('Erreur réseau divertissement: $e');
+      if (mounted && !_hasAnyCache) {
+        _loading = false;
+        setState(() {});
+      }
+    } finally {
+      if (mounted) {
+        _syncing = false;
+        setState(() {});
+      }
     }
   }
 
   void _recomputeDistancesAndSort() {
-    if (_allLieux.isEmpty) {
-      setState(() {}); // force rebuild si besoin
+    if (_lieux.isEmpty || _position == null) {
+      if (mounted) setState(() {});
       return;
     }
 
-    // Ajoute/MAJ distance si position connue
-    if (_position != null) {
-      for (final l in _allLieux) {
-        final lat = (l['latitude'] as num?)?.toDouble();
-        final lon = (l['longitude'] as num?)?.toDouble();
-        l['_distance'] = _distanceMeters(
-          _position!.latitude,
-          _position!.longitude,
-          lat,
-          lon,
-        );
-      }
+    for (final l in _lieux) {
+      final lat = (l['latitude'] as num?)?.toDouble();
+      final lon = (l['longitude'] as num?)?.toDouble();
+      l['_distance'] = _distanceMeters(
+        _position!.latitude,
+        _position!.longitude,
+        lat,
+        lon,
+      );
     }
 
-    // Tri: même ville -> distance -> nom (sinon: distance -> nom)
     int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
         (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
 
-    if ((_villeGPS ?? '').isNotEmpty && _position != null) {
-      _allLieux.sort((a, b) {
+    if ((_villeGPS ?? '').isNotEmpty) {
+      _lieux.sort((a, b) {
         final aSame =
             (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
         final bSame =
@@ -190,8 +292,8 @@ class _DivertissementPageState extends State<DivertissementPage> {
         if (bd != null) return 1;
         return byName(a, b);
       });
-    } else if (_position != null) {
-      _allLieux.sort((a, b) {
+    } else {
+      _lieux.sort((a, b) {
         final ad = (a['_distance'] as double?);
         final bd = (b['_distance'] as double?);
         if (ad != null && bd != null) return ad.compareTo(bd);
@@ -199,44 +301,42 @@ class _DivertissementPageState extends State<DivertissementPage> {
         if (bd != null) return 1;
         return byName(a, b);
       });
-    } else {
-      _allLieux.sort(byName);
     }
 
-    // Rafraîchit la vue + garde le filtre courant
-    _filterLieux(searchQuery, doSetState: true);
+    _applyFilter(_searchCtrl.text);
   }
 
-  void _filterLieux(String query, {bool doSetState = true}) {
-    final q = query.toLowerCase().trim();
-    final filtered = _allLieux.where((lieu) {
-      final nom = (lieu['nom'] ?? '').toString().toLowerCase();
-      final ville = (lieu['ville'] ?? '').toString().toLowerCase();
-      final tag =
-          (lieu['type'] ?? lieu['categorie'] ?? lieu['description'] ?? '')
-              .toString()
-              .toLowerCase();
-      return nom.contains(q) || ville.contains(q) || tag.contains(q);
-    }).toList();
+  // ---------- Filtre ----------
+  void _applyFilter(String value) {
+    final q = value.toLowerCase().trim();
+    final filtered = q.isEmpty
+        ? _lieux
+        : _lieux.where((lieu) {
+            final nom = (lieu['nom'] ?? '').toString().toLowerCase();
+            final ville = (lieu['ville'] ?? '').toString().toLowerCase();
+            final tag =
+                (lieu['type'] ?? lieu['categorie'] ?? lieu['description'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            return nom.contains(q) || ville.contains(q) || tag.contains(q);
+          }).toList();
 
-    if (doSetState) {
+    if (mounted) {
       setState(() {
-        searchQuery = query;
-        _filteredLieux = filtered;
+        _filtered = filtered;
       });
     } else {
-      searchQuery = query;
-      _filteredLieux = filtered;
+      _filtered = filtered;
     }
   }
 
+  // ---------- Helpers ----------
   List<String> _imagesFrom(dynamic raw) {
     if (raw is List) return raw.map((e) => e.toString()).toList();
     if (raw is String && raw.trim().isNotEmpty) return [raw];
     return const [];
   }
 
-  // ---------------- Skeletons ----------------
   Widget _skeletonGrid(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
     final crossCount = screenW < 600
@@ -257,73 +357,133 @@ class _DivertissementPageState extends State<DivertissementPage> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       itemCount: 8,
-      itemBuilder: (_, __) => _SkeletonCard(),
+      itemBuilder: (_, __) => const _SkeletonCard(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // limite légère du textScale
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
 
-    // grille responsive (mêmes paramètres loading/data)
     final screenW = media.size.width;
     final crossCount = screenW < 600
         ? max(2, (screenW / 200).floor())
         : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 16.0; // gaps + padding
+    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
     final itemW = (screenW - totalHGap) / crossCount;
     final itemH = itemW * (11 / 16) + 112.0;
     final ratio = itemW / itemH;
 
+    final subtitleInfo = (_position != null && _villeGPS != null)
+        ? 'Autour de ${_villeGPS!.isEmpty ? "vous" : _villeGPS}'
+        : (_locationDenied ? 'Localisation refusée — tri par défaut' : null);
+
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: _neutralBg,
         appBar: AppBar(
-          title: const Text('Divertissement'),
+          title: const Text(
+            'Divertissement',
+            style: TextStyle(
+              color: onPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           centerTitle: true,
           backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
-          iconTheme: const IconThemeData(color: Colors.white),
+          foregroundColor: onPrimary,
           elevation: 1.2,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadAll,
-              tooltip: 'Rafraîchir',
-              color: Colors.white,
-            ),
+            if (_syncing)
+              const Padding(
+                padding: EdgeInsets.only(right: 12.0),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadAllSWR,
+                tooltip: 'Rafraîchir',
+                color: Colors.white,
+              ),
           ],
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(3),
+            child: SizedBox(
+              height: 3,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [primaryColor, secondaryColor],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
         body: Column(
           children: [
             // Bandeau
-            Container(
-              width: double.infinity,
-              height: 72,
-              margin: const EdgeInsets.only(
+            Padding(
+              padding: const EdgeInsets.only(
                   left: 12, right: 12, top: 12, bottom: 8),
-              decoration: BoxDecoration(
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF7B1FA2), Color(0xFF00C9FF)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "Bars, clubs, lounges et sorties à Conakry",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 72),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [primaryColor, secondaryColor],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            "Bars, clubs, lounges et sorties en Guinée",
+                            style: TextStyle(
+                              color: onPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              height: 1.2,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                          if (subtitleInfo != null)
+                            Text(
+                              subtitleInfo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                              style: const TextStyle(
+                                color: onPrimary,
+                                fontSize: 12,
+                                height: 1.1,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -334,22 +494,25 @@ class _DivertissementPageState extends State<DivertissementPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: TextField(
+                controller: _searchCtrl,
                 decoration: InputDecoration(
                   hintText: 'Rechercher un lieu, une catégorie, une ville...',
                   prefixIcon: const Icon(Icons.search, color: primaryColor),
                   filled: true,
-                  fillColor: Colors.grey[100],
+                  fillColor: _neutralSurface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
                 onChanged: (txt) {
                   _debounce?.cancel();
                   _debounce = Timer(const Duration(milliseconds: 230), () {
-                    _filterLieux(txt);
+                    _applyFilter(txt);
                   });
                 },
               ),
@@ -362,10 +525,10 @@ class _DivertissementPageState extends State<DivertissementPage> {
                 duration: const Duration(milliseconds: 200),
                 child: _loading
                     ? _skeletonGrid(context)
-                    : (_filteredLieux.isEmpty
+                    : (_filtered.isEmpty
                         ? const Center(child: Text("Aucun lieu trouvé."))
                         : RefreshIndicator(
-                            onRefresh: _loadAll,
+                            onRefresh: _loadAllSWR,
                             child: GridView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
                               gridDelegate:
@@ -378,9 +541,9 @@ class _DivertissementPageState extends State<DivertissementPage> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 8),
                               cacheExtent: 900,
-                              itemCount: _filteredLieux.length,
+                              itemCount: _filtered.length,
                               itemBuilder: (context, index) {
-                                final lieu = _filteredLieux[index];
+                                final lieu = _filtered[index];
                                 final images = _imagesFrom(lieu['images']);
                                 final image = images.isNotEmpty
                                     ? images.first
@@ -412,7 +575,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
   }
 }
 
-// ======================== Carte adaptative ===========================
+// ======================== Carte ===========================
 class _LieuCardTight extends StatelessWidget {
   final Map<String, dynamic> lieu;
   final String imageUrl;
@@ -428,7 +591,9 @@ class _LieuCardTight extends StatelessWidget {
     required this.nbAvis,
   });
 
-  static const primaryColor = Colors.deepPurple;
+  static const Color primaryColor = _DivertissementPageState.primaryColor;
+  static const Color _neutralSurface = _DivertissementPageState._neutralSurface;
+  static const Color _neutralBorder = _DivertissementPageState._neutralBorder;
 
   @override
   Widget build(BuildContext context) {
@@ -442,9 +607,13 @@ class _LieuCardTight extends StatelessWidget {
         );
       },
       child: Card(
-        margin: EdgeInsets.zero, // serré
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: _neutralBorder),
+        ),
         elevation: 1.5,
+        color: _neutralSurface,
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -457,20 +626,17 @@ class _LieuCardTight extends StatelessWidget {
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      imageUrl,
+                    CachedNetworkImage(
+                      imageUrl: imageUrl,
                       fit: BoxFit.cover,
-                      cacheWidth: w.isFinite ? (w * 2).round() : null,
-                      cacheHeight: h.isFinite ? (h * 2).round() : null,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color: Colors.grey.shade200,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.image, size: 36),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) => Container(
+                      memCacheWidth: w.isFinite ? (w * 2).round() : null,
+                      memCacheHeight: h.isFinite ? (h * 2).round() : null,
+                      placeholder: (_, __) => Container(
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image, size: 36),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
                         color: Colors.grey.shade300,
                         alignment: Alignment.center,
                         child: const Icon(Icons.broken_image, size: 40),
@@ -490,8 +656,11 @@ class _LieuCardTight extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.location_on,
-                                  size: 14, color: Colors.white),
+                              const Icon(
+                                Icons.location_on,
+                                size: 14,
+                                color: Colors.white,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 (lieu['ville'] ?? '').toString(),
@@ -629,6 +798,8 @@ class _Stars extends StatelessWidget {
 
 // ------------------ Skeleton Card --------------------
 class _SkeletonCard extends StatelessWidget {
+  const _SkeletonCard();
+
   @override
   Widget build(BuildContext context) {
     return Card(

@@ -8,16 +8,16 @@ import 'cgu_page.dart';
 /// =======================
 /// RÉGLAGES TRANSPARENCE (ultra premium, “plus bas possible”)
 /// =======================
-const _kHaloOpacity      = 0.10; // lueur néon autour de la barre
-const _kGlassBgOpacity   = 0.03; // fond de la barre (quasi invisible)
-const _kGlassBorderOpac  = 0.08; // bordure “verre” douce
-const _kGlassBlur        = 4.0;  // blur minimal pour laisser passer l’image
-const _kCTAOpacity       = 0.72; // opacité du dégradé du bouton principal
-const _kOutlineFillOpac  = 0.04; // léger voile sous le bouton outline
-const _kScrimTop         = 0.06; // scrim global: top
-const _kScrimMid1        = 0.10; // scrim global: milieu 1
-const _kScrimMid2        = 0.12; // scrim global: milieu 2
-const _kScrimBottom      = 0.10; // scrim global: bas
+const _kHaloOpacity = 0.10; // lueur néon autour de la barre
+const _kGlassBgOpacity = 0.03; // fond de la barre (quasi invisible)
+const _kGlassBorderOpac = 0.08; // bordure “verre” douce
+const _kGlassBlur = 4.0; // blur minimal pour laisser passer l’image
+const _kCTAOpacity = 0.72; // opacité du dégradé du bouton principal
+const _kOutlineFillOpac = 0.04; // léger voile sous le bouton outline
+const _kScrimTop = 0.06; // scrim global: top
+const _kScrimMid1 = 0.10; // scrim global: milieu 1
+const _kScrimMid2 = 0.12; // scrim global: milieu 2
+const _kScrimBottom = 0.10; // scrim global: bas
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -30,15 +30,19 @@ class _WelcomePageState extends State<WelcomePage> {
   static const kPrimary = Color(0xFF0175C2);
 
   static const List<_ServiceChip> _services = [
+    _ServiceChip(Icons.shield, 'ANP'),
     _ServiceChip(Icons.campaign, 'Annonces'),
-    _ServiceChip(Icons.work, 'Emplois'),
+    _ServiceChip(Icons.home_repair_service, 'Prestataires'),
+    _ServiceChip(Icons.account_balance, 'Services Admin'),
     _ServiceChip(Icons.restaurant, 'Restaurants'),
-    _ServiceChip(Icons.local_hotel, 'Hôtels'),
-    _ServiceChip(Icons.health_and_safety, 'Santé'),
-    _ServiceChip(Icons.church, 'Lieux de culte'),
-    _ServiceChip(Icons.map, 'Tourisme'),
+    _ServiceChip(Icons.account_balance_wallet, 'Lieux de culte'),
     _ServiceChip(Icons.local_activity, 'Divertissement'),
-    _ServiceChip(Icons.store_mall_directory, 'Prestataires'),
+    _ServiceChip(Icons.map, 'Tourisme'),
+    _ServiceChip(Icons.health_and_safety, 'Santé'),
+    _ServiceChip(Icons.local_hotel, 'Hôtels'),
+    _ServiceChip(Icons.apartment, 'Logement'),
+    _ServiceChip(Icons.work, 'Wali fen'),
+    _ServiceChip(Icons.confirmation_number, 'Billetterie'),
   ];
 
   late final TapGestureRecognizer _termsTap;
@@ -48,7 +52,8 @@ class _WelcomePageState extends State<WelcomePage> {
     super.initState();
     _termsTap = TapGestureRecognizer()
       ..onTap = () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const CGUPage()));
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const CGUPage()));
       };
   }
 
@@ -114,7 +119,8 @@ class _WelcomePageState extends State<WelcomePage> {
                 child: _BottomGlassBar(
                   primaryColor: kPrimary,
                   onLogin: () => Navigator.pushNamed(context, AppRoutes.login),
-                  onRegister: () => Navigator.pushNamed(context, AppRoutes.register),
+                  onRegister: () =>
+                      Navigator.pushNamed(context, AppRoutes.register),
                   termsRecognizer: _termsTap,
                 ),
               ),
@@ -136,7 +142,8 @@ class _TopGlassHeader extends StatefulWidget {
   State<_TopGlassHeader> createState() => _TopGlassHeaderState();
 }
 
-class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProviderStateMixin {
+class _TopGlassHeaderState extends State<_TopGlassHeader>
+    with SingleTickerProviderStateMixin {
   final _ctrl = ScrollController();
   late final Ticker _ticker;
   static const double _speed = 40;
@@ -153,7 +160,8 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
       } else {
         _ctrl.jumpTo(newOffset);
       }
-    })..start();
+    })
+      ..start();
   }
 
   @override
@@ -195,7 +203,8 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
                         end: Alignment.bottomRight,
                       ),
                     ),
-                    child: const Icon(Icons.star_rounded, color: Colors.white, size: 20),
+                    child: const Icon(Icons.star_rounded,
+                        color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 10),
                   const Text(
@@ -204,7 +213,12 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      shadows: [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
+                      shadows: [
+                        Shadow(
+                            blurRadius: 8,
+                            color: Colors.black54,
+                            offset: Offset(0, 1))
+                      ],
                     ),
                   ),
                 ],
@@ -221,11 +235,13 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
                   itemBuilder: (context, i) {
                     final s = items[i];
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(.22),
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Colors.white.withOpacity(.35)),
+                        border:
+                            Border.all(color: Colors.white.withOpacity(.35)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -234,7 +250,9 @@ class _TopGlassHeaderState extends State<_TopGlassHeader> with SingleTickerProvi
                           const SizedBox(width: 6),
                           Text(
                             s.label,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -275,7 +293,8 @@ class _BottomGlassBar extends StatefulWidget {
   State<_BottomGlassBar> createState() => _BottomGlassBarState();
 }
 
-class _BottomGlassBarState extends State<_BottomGlassBar> with SingleTickerProviderStateMixin {
+class _BottomGlassBarState extends State<_BottomGlassBar>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
 
   @override
@@ -335,12 +354,14 @@ class _BottomGlassBarState extends State<_BottomGlassBar> with SingleTickerProvi
 
               // contenu "glass" quasi invisible mais présent (premium)
               BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: _kGlassBlur, sigmaY: _kGlassBlur),
+                filter:
+                    ImageFilter.blur(sigmaX: _kGlassBlur, sigmaY: _kGlassBlur),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(_kGlassBgOpacity),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(_kGlassBorderOpac)),
+                    border: Border.all(
+                        color: Colors.white.withOpacity(_kGlassBorderOpac)),
                   ),
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                   child: Column(
@@ -371,7 +392,12 @@ class _BottomGlassBarState extends State<_BottomGlassBar> with SingleTickerProvi
                               color: Colors.white,
                               decoration: TextDecoration.underline,
                               fontWeight: FontWeight.w700,
-                              shadows: [Shadow(blurRadius: 6, color: Colors.black45, offset: Offset(0, 1))],
+                              shadows: [
+                                Shadow(
+                                    blurRadius: 6,
+                                    color: Colors.black45,
+                                    offset: Offset(0, 1))
+                              ],
                             ),
                             recognizer: widget.termsRecognizer,
                           ),
@@ -403,16 +429,20 @@ class _AnimatedGradientButton extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedGradientButton> createState() => _AnimatedGradientButtonState();
+  State<_AnimatedGradientButton> createState() =>
+      _AnimatedGradientButtonState();
 }
 
-class _AnimatedGradientButtonState extends State<_AnimatedGradientButton> with SingleTickerProviderStateMixin {
+class _AnimatedGradientButtonState extends State<_AnimatedGradientButton>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
 
   @override
   void initState() {
     super.initState();
-    _ctl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))..repeat();
+    _ctl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2600))
+      ..repeat();
   }
 
   @override
@@ -463,9 +493,13 @@ class _AnimatedGradientButtonState extends State<_AnimatedGradientButton> with S
                       child: Container(
                         height: 10,
                         decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                          borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16)),
                           gradient: LinearGradient(
-                            colors: [Colors.white.withOpacity(.08), Colors.white.withOpacity(0)],
+                            colors: [
+                              Colors.white.withOpacity(.08),
+                              Colors.white.withOpacity(0)
+                            ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                           ),
@@ -480,7 +514,12 @@ class _AnimatedGradientButtonState extends State<_AnimatedGradientButton> with S
                           fontWeight: FontWeight.w900,
                           fontSize: 18,
                           letterSpacing: 0.8,
-                          shadows: [Shadow(blurRadius: 8, color: Colors.black45, offset: Offset(0, 2))],
+                          shadows: [
+                            Shadow(
+                                blurRadius: 8,
+                                color: Colors.black45,
+                                offset: Offset(0, 2))
+                          ],
                         ),
                       ),
                     ),
@@ -538,7 +577,12 @@ class _OutlineButtonThin extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                   fontSize: 16.5,
                   letterSpacing: 0.6,
-                  shadows: [Shadow(blurRadius: 6, color: Colors.black45, offset: Offset(0, 1))],
+                  shadows: [
+                    Shadow(
+                        blurRadius: 6,
+                        color: Colors.black45,
+                        offset: Offset(0, 1))
+                  ],
                 ),
               ),
             ),

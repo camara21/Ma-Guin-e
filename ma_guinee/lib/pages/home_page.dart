@@ -15,9 +15,6 @@ import '../routes.dart';
 // Jobs
 import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 
-// ✅ Shell Wontanara
-import 'wontanara/shell_wontanara.dart';
-
 // ✅ ANP a son propre bloc
 import '../anp/anp_home_page.dart';
 
@@ -141,6 +138,79 @@ class _HomePageState extends State<HomePage> {
     await Navigator.pushNamed(context, AppRoutes.notifications);
     if (!mounted) return;
     await _chargerMessagesNonLus(); // force sync du badge après lecture
+  }
+
+  // ► Message “coming soon” Wontanara
+  Future<void> _showWontanaraComingSoon() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: false,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF0E5A51),
+                        Color(0xFF00B894),
+                        Color(0xFF00D8FF),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.hub_outlined,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Wontanara arrive bientôt',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Vous aurez bientôt d’autres services ici.\n\n"
+                "L’objectif de Soneya est de rassembler tout ce dont vous avez "
+                "besoin au même endroit.",
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Fermer'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // ========== UI helpers ==========
@@ -332,6 +402,90 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// ✅ Icône futuriste Wontanara, même hauteur que les autres
+  /// mais étendue sur toute la largeur de la dernière ligne.
+  Widget _wontanaraIcon(BuildContext context) {
+    final mq = MediaBox.of(context);
+    final side = mq.size.width < 360 ? 84.0 : 92.0;
+    final baseIconSize = _adaptiveIconSize(context);
+
+    const dark = Color(0xFF0F172A);
+    const c1 = Color(0xFF0E5A51);
+    const c2 = Color(0xFF0FB8B3);
+    const c3 = Color(0xFF00D4FF);
+
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final width = constraints.maxWidth;
+
+        return Container(
+          width: width,
+          height: side, // même hauteur que les autres cartes
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                colors: [dark, c1, c2, c3],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Bloc gauche : hub + sparkles
+                Row(
+                  children: [
+                    Icon(
+                      Icons.hub_outlined,
+                      color: Colors.white,
+                      size: baseIconSize * 0.9,
+                    ),
+                    SizedBox(width: baseIconSize * 0.20),
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.white70,
+                      size: baseIconSize * 0.7,
+                    ),
+                  ],
+                ),
+                // Bloc droite : data / techno
+                Row(
+                  children: [
+                    Icon(
+                      Icons.memory_outlined,
+                      color: Colors.white70,
+                      size: baseIconSize * 0.65,
+                    ),
+                    SizedBox(width: baseIconSize * 0.16),
+                    Icon(
+                      Icons.data_thresholding_rounded,
+                      color: Colors.white70,
+                      size: baseIconSize * 0.65,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final utilisateur = context.watch<UserProvider>().utilisateur;
@@ -500,7 +654,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Grille
+            // Grille principale (12 services)
             GridView.count(
               crossAxisCount: crossAxisCount,
               childAspectRatio: childAspectRatio,
@@ -620,34 +774,36 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
-                _ServiceTile(
-                  icon: _iconWithBadge(
-                    main: Icons.confirmation_num,
-                    color: _kEventSecondary,
-                    badge: Icons.lock_clock,
-                    context: context,
-                  ),
-                  label: "Billetterie",
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.billetterie),
-                ),
+              ],
+            ),
 
-                // ✅ Wontanara tout en bas de la grille, icon changé
-                _ServiceTile(
-                  icon: _iconWithBadge(
-                    main: Icons.location_city_rounded, // nouveau pictogramme
-                    color: const Color(0xFF0E5A51), // vert pétrole Wontanara
-                    badge: Icons.groups_2_rounded, // badge "communauté"
-                    context: context,
+            const SizedBox(height: 10),
+
+            // Dernière ligne : Billetterie (1/3) + Wontanara (2/3)
+            Row(
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: _ServiceTile(
+                    icon: _iconWithBadge(
+                      main: Icons.confirmation_num,
+                      color: _kEventSecondary,
+                      badge: Icons.lock_clock,
+                      context: context,
+                    ),
+                    label: "Billetterie",
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.billetterie),
                   ),
-                  label: "Wontanara",
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ShellWontanara(),
-                      ),
-                    );
-                  },
+                ),
+                SizedBox(width: spacing),
+                Expanded(
+                  flex: 2,
+                  child: _ServiceTile(
+                    icon: _wontanaraIcon(context),
+                    label: "Wontanara",
+                    onTap: _showWontanaraComingSoon,
+                  ),
                 ),
               ],
             ),
@@ -680,19 +836,18 @@ class _ServiceTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(height: iconZone, child: Center(child: icon)),
+          SizedBox(
+            height: iconZone,
+            child: Center(child: icon),
+          ),
           const SizedBox(height: 6),
-          Expanded(
-            child: Center(
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
