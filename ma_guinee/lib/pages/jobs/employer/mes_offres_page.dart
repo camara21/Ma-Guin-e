@@ -137,44 +137,61 @@ class _MesOffresPageState extends State<MesOffresPage> {
                 })
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    itemCount: _items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _OfferCard(
-                      job: _items[i],
-                      onOpenCandidatures: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CandidaturesPage(
-                              jobId: _items[i].id,
-                              jobTitle: _items[i].titre,
-                            ),
-                          ),
-                        );
-                      },
-                      onEdit: () async {
-                        final ok = await Navigator.push<bool>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => OffreEditPage(
-                              existing: _items[i],
-                              employeurId: widget.employeurId,
-                            ),
-                          ),
-                        );
-                        if (ok == true) _load();
-                      },
-                      onDelete: () => _deleteOffer(_items[i]),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Sur grands écrans, on centre la colonne
+                      final list = ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _OfferCard(
+                          job: _items[i],
+                          onOpenCandidatures: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CandidaturesPage(
+                                  jobId: _items[i].id,
+                                  jobTitle: _items[i].titre,
+                                ),
+                              ),
+                            );
+                          },
+                          onEdit: () async {
+                            final ok = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => OffreEditPage(
+                                  existing: _items[i],
+                                  employeurId: widget.employeurId,
+                                ),
+                              ),
+                            );
+                            if (ok == true) _load();
+                          },
+                          onDelete: () => _deleteOffer(_items[i]),
+                        ),
+                      );
+
+                      if (constraints.maxWidth <= 720) {
+                        return list;
+                      }
+
+                      return Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: list,
+                        ),
+                      );
+                    },
                   ),
                 )),
     );
   }
 }
 
-/// ---------- Carte d’offre
+/// ---------- Carte d’offre (responsive)
 class _OfferCard extends StatelessWidget {
   const _OfferCard({
     required this.job,
@@ -196,7 +213,7 @@ class _OfferCard extends StatelessWidget {
       return '$base / mois';
     }
     return 'À négocier';
-    }
+  }
 
   bool _isActive(EmploiModel j) {
     try {
@@ -245,6 +262,7 @@ class _OfferCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Titre + statut
                     Row(
                       children: [
                         Expanded(
@@ -260,6 +278,8 @@ class _OfferCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
+
+                    // Sous-titre (ville + contrat)
                     Text(
                       sousTitre,
                       maxLines: 1,
@@ -267,23 +287,62 @@ class _OfferCard extends StatelessWidget {
                       style: const TextStyle(color: Colors.black54),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _Pill(text: _salaire()),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Modifier',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: onEdit,
-                        ),
-                        IconButton(
-                          tooltip: 'Supprimer',
-                          icon: const Icon(Icons.delete_outline),
-                          color: Colors.red.shade700,
-                          onPressed: onDelete,
-                        ),
-                        const Icon(Icons.chevron_right),
-                      ],
+
+                    // Ligne responsive salaire + actions
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isVeryNarrow = constraints.maxWidth < 320;
+
+                        if (isVeryNarrow) {
+                          // Petits écrans : pill au dessus, actions en dessous
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _Pill(text: _salaire()),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Modifier',
+                                    icon: const Icon(Icons.edit_outlined),
+                                    onPressed: onEdit,
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Supprimer',
+                                    icon: const Icon(Icons.delete_outline),
+                                    color: Colors.red.shade700,
+                                    onPressed: onDelete,
+                                  ),
+                                  const Icon(Icons.chevron_right),
+                                ],
+                              ),
+                            ],
+                          );
+                        }
+
+                        // Écrans "normaux" : tout sur une seule ligne
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: _Pill(text: _salaire()),
+                            ),
+                            IconButton(
+                              tooltip: 'Modifier',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: onEdit,
+                            ),
+                            IconButton(
+                              tooltip: 'Supprimer',
+                              icon: const Icon(Icons.delete_outline),
+                              color: Colors.red.shade700,
+                              onPressed: onDelete,
+                            ),
+                            const Icon(Icons.chevron_right),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -299,6 +358,7 @@ class _OfferCard extends StatelessWidget {
 class _Pill extends StatelessWidget {
   const _Pill({required this.text});
   final String text;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -306,7 +366,12 @@ class _Pill extends StatelessWidget {
       shape: const StadiumBorder(side: BorderSide(color: Colors.black12)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w500)),
+        child: Text(
+          text,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
       ),
     );
   }
@@ -329,8 +394,10 @@ class _StatusChip extends StatelessWidget {
           children: [
             Icon(Icons.circle, size: 8, color: color),
             const SizedBox(width: 6),
-            Text(text,
-                style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+            Text(
+              text,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       ),

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'jobs_page.dart';
 import 'job_detail_page.dart';
@@ -86,7 +89,7 @@ class _JobHomePageState extends State<JobHomePage> {
     }
   }
 
-  // charge l'état des favoris (public.emplois_favoris)
+  // charge l’état des favoris (public.emplois_favoris)
   Future<Set<String>> _loadFavSetFor(List<EmploiModel> items) async {
     final sb = Supabase.instance.client;
     final uid = sb.auth.currentUser?.id;
@@ -115,7 +118,8 @@ class _JobHomePageState extends State<JobHomePage> {
     if (uid == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Connectez-vous pour ajouter des favoris.')),
+        const SnackBar(
+            content: Text('Connectez-vous pour ajouter des favoris.')),
       );
       return;
     }
@@ -150,7 +154,8 @@ class _JobHomePageState extends State<JobHomePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Veuillez vous connecter pour accéder à l’espace employeur.'),
+          content: Text(
+              'Veuillez vous connecter pour accéder à l’espace employeur.'),
         ),
       );
       return;
@@ -168,7 +173,8 @@ class _JobHomePageState extends State<JobHomePage> {
         final String employeurId = row['id'] as String;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => MesOffresPage(employeurId: employeurId)),
+          MaterialPageRoute(
+              builder: (_) => MesOffresPage(employeurId: employeurId)),
         );
       } else {
         Navigator.push(
@@ -192,13 +198,15 @@ class _JobHomePageState extends State<JobHomePage> {
           case 1:
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()),
+              MaterialPageRoute(
+                  builder: (_) => const apps.MyApplicationsPage()),
             );
             break;
           case 2:
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()),
+              MaterialPageRoute(
+                  builder: (_) => const favs.MyFavoriteJobsPage()),
             );
             break;
           case 3:
@@ -256,12 +264,19 @@ class _JobHomePageState extends State<JobHomePage> {
   String _relativeFromEmploi(EmploiModel e) {
     try {
       final dyn = e as dynamic;
-      final iso =
-          (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)?.toString();
+      final iso = (dyn.creeLe ?? dyn.cree_le ?? dyn.createdAt ?? dyn.created_at)
+          ?.toString();
       return _formatRelative(iso);
     } catch (_) {
       return '';
     }
+  }
+
+  String _formatVilleContrat(EmploiModel e) {
+    final parts = <String>[];
+    if (e.ville.isNotEmpty) parts.add(e.ville);
+    if (e.typeContrat.isNotEmpty) parts.add(e.typeContrat);
+    return parts.join(' • ');
   }
 
   @override
@@ -289,7 +304,6 @@ class _JobHomePageState extends State<JobHomePage> {
               context,
               MaterialPageRoute(builder: (_) => const JobsPage()),
             ),
-            imageAsset: 'assets/jobs/hero.png',
           ),
           const SizedBox(height: 12),
 
@@ -304,7 +318,8 @@ class _JobHomePageState extends State<JobHomePage> {
                   color: kGreen,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const apps.MyApplicationsPage()),
+                    MaterialPageRoute(
+                        builder: (_) => const apps.MyApplicationsPage()),
                   ),
                 ),
                 _PillAction(
@@ -313,7 +328,8 @@ class _JobHomePageState extends State<JobHomePage> {
                   color: kRed,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const favs.MyFavoriteJobsPage()),
+                    MaterialPageRoute(
+                        builder: (_) => const favs.MyFavoriteJobsPage()),
                   ),
                 ),
                 _PillAction(
@@ -355,7 +371,8 @@ class _JobHomePageState extends State<JobHomePage> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: kBlue,
                 side: const BorderSide(color: kBlue),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               onPressed: () => Navigator.push(
                 context,
@@ -400,7 +417,6 @@ class _JobHomePageState extends State<JobHomePage> {
                 builder: (context, metaSnap) {
                   final meta = metaSnap.data ?? {};
 
-                  // charge l’état favoris pour la liste
                   return FutureBuilder<Set<String>>(
                     future: _loadFavSetFor(items),
                     builder: (context, favSnap) {
@@ -418,7 +434,8 @@ class _JobHomePageState extends State<JobHomePage> {
                           final e = items[i];
                           String empId = '';
                           try {
-                            empId = ((e as dynamic).employeurId ?? '').toString();
+                            empId =
+                                ((e as dynamic).employeurId ?? '').toString();
                           } catch (_) {}
                           final company = meta[empId]?['nom'] ?? '';
                           final logo = meta[empId]?['logo'] ?? '';
@@ -428,7 +445,7 @@ class _JobHomePageState extends State<JobHomePage> {
                             title: e.titre,
                             company: company,
                             subtitle: _formatVilleContrat(e),
-                            meta: _relativeFromEmploi(e), // date relative
+                            meta: _relativeFromEmploi(e),
                             logoUrl: logo,
                             bannerUrl: null,
                             favorite: isFav,
@@ -454,138 +471,255 @@ class _JobHomePageState extends State<JobHomePage> {
       ),
     );
   }
-
-  String _formatVilleContrat(EmploiModel e) {
-    final parts = <String>[];
-    if (e.ville.isNotEmpty) parts.add(e.ville);
-    if (e.typeContrat.isNotEmpty) parts.add(e.typeContrat);
-    return parts.join(' • ');
-  }
 }
 
-// ================== HERO ==================
-class _HeroJobs extends StatelessWidget {
+// ================== HERO AVEC CARROUSEL (fluide) ==================
+class _HeroJobs extends StatefulWidget {
   const _HeroJobs({
     required this.titleTop,
     required this.titleBottom,
     required this.onSearchTap,
-    this.imageAsset = 'assets/jobs/hero.png',
   });
 
   final String titleTop;
   final String titleBottom;
   final VoidCallback onSearchTap;
-  final String imageAsset;
+
+  @override
+  State<_HeroJobs> createState() => _HeroJobsState();
+}
+
+class _HeroJobsState extends State<_HeroJobs> {
+  final PageController _ctrl = PageController();
+  int _index = 0;
+  Timer? _timer;
+
+  bool _precached = false;
+  bool _autoStarted = false;
+
+  // mêmes images que ton ancien hero
+  final List<String> _images = const [
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v3.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v1.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v10.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v8.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v12.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v7.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v14.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v13.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v6.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v11.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v15.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v18.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v2.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v20.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v4.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/c13.png',
+    'https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/wali-images/v9.png',
+  ];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_precached) {
+      _precached = true;
+      _precacheAll();
+    }
+  }
+
+  Future<void> _precacheAll() async {
+    // on précharge toutes les images pour éviter les écrans blancs entre deux
+    for (final url in _images) {
+      try {
+        await precacheImage(CachedNetworkImageProvider(url), context);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    _startAuto();
+  }
+
+  void _startAuto() {
+    if (_autoStarted || _images.length <= 1 || !_ctrl.hasClients) return;
+    _autoStarted = true;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_ctrl.hasClients) return;
+      _index = (_index + 1) % _images.length;
+      _ctrl.animateToPage(
+        _index,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final w =
-        MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio;
+    if (_images.isEmpty) return const SizedBox.shrink();
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: Stack(
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Image.asset(
-              imageAsset,
-              fit: BoxFit.cover,
-              cacheWidth: w.round(),
-              filterQuality: FilterQuality.medium,
+      child: SizedBox(
+        height: 190,
+        child: Stack(
+          children: [
+            // ---------- Carrousel d’images ----------
+            PageView.builder(
+              controller: _ctrl,
+              itemCount: _images.length,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemBuilder: (_, i) {
+                final url = _images[i];
+                return CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) =>
+                      Container(color: Colors.black12), // pas de blanc
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.black12,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.image_not_supported,
+                        color: Colors.black45),
+                  ),
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  fadeOutDuration: Duration.zero,
+                );
+              },
             ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.black.withOpacity(0.65),
-                    Colors.black.withOpacity(0.15),
-                    Colors.black.withOpacity(0.55),
-                  ],
-                  stops: const [0, .5, 1],
+
+            // léger dégradé pour la lisibilité
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.black.withOpacity(0.25),
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.18),
+                    ],
+                    stops: const [0.0, 0.55, 1.0],
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            top: 16,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: RichText(
-                text: TextSpan(
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        shadows: const [
-                          Shadow(
-                            color: Colors.black54,
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                  children: [
-                    TextSpan(text: '$titleTop\n'),
-                    TextSpan(
-                      text: titleBottom,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: Material(
-              color: Colors.white,
-              elevation: 3,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                onTap: onSearchTap,
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
-                  child: Row(
-                    children: const [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Trouver mon job',
-                              style:
-                                  TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Métier, entreprise, compétence…',
-                              style: TextStyle(color: Colors.black45, fontSize: 14),
-                            ),
-                          ],
+
+            // ---------- Texte haut ----------
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 16,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: RichText(
+                  text: TextSpan(
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
                         ),
-                      ),
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.black,
-                        child: Icon(Icons.search, color: Colors.white, size: 22),
+                      ],
+                    ),
+                    children: [
+                      TextSpan(text: '${widget.titleTop}\n'),
+                      TextSpan(
+                        text: widget.titleBottom,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ],
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+
+            // ---------- CTA recherche ----------
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: Material(
+                color: Colors.white,
+                elevation: 3,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: widget.onSearchTap,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
+                    child: Row(
+                      children: const [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Trouver mon job',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.w800),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Métier, entreprise, compétence…',
+                                style: TextStyle(
+                                    color: Colors.black45, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor: Colors.black,
+                          child: Icon(
+                            Icons.search,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ---------- Dots ----------
+            if (_images.length > 1)
+              Positioned(
+                bottom: 6,
+                right: 16,
+                child: Row(
+                  children: List.generate(_images.length, (i) {
+                    final active = i == _index;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      height: 6,
+                      width: active ? 18 : 6,
+                      decoration: BoxDecoration(
+                        color: active
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -629,7 +763,7 @@ class _PillAction extends StatelessWidget {
   }
 }
 
-// ===================== Carte "vitrine" (logo cover + cœur) =====================
+// ===================== Carte "vitrine" =====================
 class _JobCardVitrine extends StatelessWidget {
   const _JobCardVitrine({
     required this.title,
@@ -646,9 +780,9 @@ class _JobCardVitrine extends StatelessWidget {
   final String title;
   final String company;
   final String subtitle;
-  final String meta; // date relative
-  final String? logoUrl; // utilisé en badge ou bannière (fallback)
-  final String? bannerUrl; // bannière dédiée si dispo
+  final String meta;
+  final String? logoUrl;
+  final String? bannerUrl;
   final bool favorite;
   final VoidCallback onFavoriteTap;
   final VoidCallback onTap;
@@ -658,7 +792,6 @@ class _JobCardVitrine extends StatelessWidget {
     final hasLogo = (logoUrl ?? '').trim().isNotEmpty;
     final hasBanner = (bannerUrl ?? '').trim().isNotEmpty;
 
-    // Si pas de bannière mais un logo → bannière = logo recadré en cover
     final bool useLogoAsBanner = !hasBanner && hasLogo;
 
     final isMobile = MediaQuery.of(context).size.width < 600;
@@ -674,7 +807,6 @@ class _JobCardVitrine extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ===== BANNIÈRE =====
             SizedBox(
               height: bannerHeight,
               width: double.infinity,
@@ -692,7 +824,7 @@ class _JobCardVitrine extends StatelessWidget {
                       color: Colors.white,
                       child: Image.network(
                         logoUrl!.trim(),
-                        fit: BoxFit.cover, // remplit et recadre
+                        fit: BoxFit.cover,
                         alignment: Alignment.center,
                         filterQuality: FilterQuality.high,
                         errorBuilder: (_, __, ___) => const Icon(
@@ -712,8 +844,6 @@ class _JobCardVitrine extends StatelessWidget {
                         ),
                       ),
                     ),
-
-                  // Badge logo (si on n’utilise pas déjà le logo en bannière)
                   if (!useLogoAsBanner && hasLogo)
                     Positioned(
                       top: 10,
@@ -723,7 +853,9 @@ class _JobCardVitrine extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(8),
-                          boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black12)],
+                          boxShadow: const [
+                            BoxShadow(blurRadius: 8, color: Colors.black12)
+                          ],
                         ),
                         child: SizedBox(
                           width: badgeSize,
@@ -740,8 +872,6 @@ class _JobCardVitrine extends StatelessWidget {
                         ),
                       ),
                     ),
-
-                  // Cœur favoris
                   Positioned(
                     top: 6,
                     right: 6,
@@ -762,8 +892,6 @@ class _JobCardVitrine extends StatelessWidget {
                 ],
               ),
             ),
-
-            // ===== Texte + bouton =====
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
               child: Column(
@@ -773,20 +901,26 @@ class _JobCardVitrine extends StatelessWidget {
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                   if (company.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    const SizedBox(height: 2),
-                    Text(company, style: const TextStyle(color: Colors.black54)),
+                    Text(company,
+                        style: const TextStyle(color: Colors.black54)),
                   ],
                   if (subtitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text(subtitle, style: const TextStyle(color: Colors.black54)),
+                    Text(subtitle,
+                        style: const TextStyle(color: Colors.black54)),
                   ],
                   if (meta.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text(meta, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                    Text(
+                      meta,
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black45),
+                    ),
                   ],
                   const SizedBox(height: 8),
                   Align(

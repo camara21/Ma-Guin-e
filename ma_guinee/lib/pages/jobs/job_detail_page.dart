@@ -231,9 +231,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
         _cvBucket = bucket;
         _cvPath = path;
       });
-      _toast(_cvPublic
-          ? 'CV public ajouté…'
-          : 'CV ajouté (privé)…');
+      _toast(_cvPublic ? 'CV public ajouté…' : 'CV ajouté (privé)…');
     } catch (e) {
       _toast('Échec upload CV : $e');
     }
@@ -288,6 +286,7 @@ class _JobDetailPageState extends State<JobDetailPage> {
     final phone = _phoneCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final lettre = _letterCtrl.text.trim();
+
     if (prenom.isEmpty || nom.isEmpty) {
       _toast('Prénom et Nom sont requis');
       return;
@@ -306,17 +305,20 @@ class _JobDetailPageState extends State<JobDetailPage> {
         : _cvPath!;
 
     try {
-      // Colonnes conformes au schéma (candidat_id)
       await _svc.sb.from('candidatures').insert({
         'emploi_id': widget.jobId,
-        'candidat_id': user.id, // <- cohérent avec la lecture
+        'candidat': user.id, // ← IMPORTANT
+        'candidat_id': user.id, // ← idem
         'prenom': prenom,
         'nom': nom,
         'telephone': phone,
         if (email.isNotEmpty) 'email': email,
         if (lettre.isNotEmpty) 'lettre': lettre,
         'cv_url': cvValue,
+        // si tu veux, tu peux aussi envoyer:
+        // 'cv_is_public': _cvPublic,
       });
+
       if (!mounted) return;
       _toast('Candidature envoyée…');
       Navigator.pop(context);
@@ -355,19 +357,6 @@ class _JobDetailPageState extends State<JobDetailPage> {
     final description = (j['description'] ?? '').toString();
     final exigences = (j['exigences'] ?? '').toString();
     final avantages = (j['avantages'] ?? '').toString();
-
-    // libellé salaire explicite
-    String salaireText() {
-      final per = (periodeSalaire.isEmpty ? 'mois' : periodeSalaire);
-      if (salMin != null && salMax != null) {
-        return '{_fmtMontant(salMin)} et ${_fmtMontant(salMax)} GNF par $per';
-      } else if (salMin != null) {
-        return 'Salaire : ${_fmtMontant(salMin)} GNF par $per';
-      } else if (salMax != null) {
-        return 'Salaire : jusqu’à ${_fmtMontant(salMax)} GNF par $per';
-      }
-      return 'Salaire : à négocier';
-    }
 
     final logoUrl =
         (employer?['logo_url'] as String?) ?? (employer?['logo'] as String?);
@@ -434,247 +423,291 @@ class _JobDetailPageState extends State<JobDetailPage> {
 
       body: RefreshIndicator(
         onRefresh: _load,
-        child: ListView(
-          padding:
-              const EdgeInsets.fromLTRB(16, 12, 16, 120), // espace pour le CTA bas
-          children: [
-            // En-tête
-            _Card(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth > 820;
+
+            final list = ListView(
+              padding:
+                  const EdgeInsets.fromLTRB(16, 12, 16, 120), // espace CTA bas
+              children: [
+                // En-tête / fiche offre
+                _Card(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (logoUrl != null && logoUrl.trim().isNotEmpty)
-                        CircleAvatar(
-                            radius: 22, backgroundImage: NetworkImage(logoUrl))
-                      else
-                        const CircleAvatar(
-                          radius: 22,
-                          backgroundColor: kBlue,
-                          child: Icon(Icons.business,
-                              color: Colors.white, size: 20),
-                        ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (employer?['nom'] ?? 'Employeur').toString(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 16),
-                            ),
-                            if (publie.isNotEmpty)
-                              Text(publie,
-                                  style: const TextStyle(
-                                      color: Colors.black45, fontSize: 12)),
-                          ],
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Tag(
-                          icon: Icons.place,
-                          text:
-                              commune.isNotEmpty ? '$ville, $commune' : ville),
-                      if (contrat.isNotEmpty)
-                        _Tag(
-                            icon: Icons.badge_outlined,
-                            text: contrat.toUpperCase()),
-                      // Salaire explicite
-                      _Tag(icon: Icons.payments_outlined, text: salaireText()),
-                      _Tag(
-                        icon: teletravail
-                            ? Icons.home_work_outlined
-                            : Icons.pin_drop_outlined,
-                        text: teletravail ? 'Télétravail' : 'Sur site',
-                        color: teletravail ? kGreen : kYellow,
-                      ),
-                      if ((employer?['telephone'] ?? '').toString().isNotEmpty)
-                        _MiniPill(
-                            icon: Icons.phone,
-                            text: employer!['telephone'].toString()),
-                      if ((employer?['email'] ?? '').toString().isNotEmpty)
-                        _MiniPill(
-                            icon: Icons.email_outlined,
-                            text: employer!['email'].toString()),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Bloc description/profil/avantages
-            if (description.isNotEmpty ||
-                exigences.isNotEmpty ||
-                avantages.isNotEmpty)
-              _Card(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (description.isNotEmpty) ...[
-                      const _InnerTitle('Les missions du poste'),
-                      const SizedBox(height: 6),
-                      _ExpandableText(description),
-                    ],
-                    if (description.isNotEmpty &&
-                        (exigences.isNotEmpty || avantages.isNotEmpty))
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Divider(height: 1),
-                      ),
-                    if (exigences.isNotEmpty) ...[
-                      const _InnerTitle('Le profil recherché'),
-                      const SizedBox(height: 6),
-                      _ExpandableText(exigences),
-                    ],
-                    if (exigences.isNotEmpty && avantages.isNotEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Divider(height: 1),
-                      ),
-                    if (avantages.isNotEmpty) ...[
-                      const _InnerTitle('Infos complémentaires'),
-                      const SizedBox(height: 6),
-                      _ExpandableText(avantages),
-                    ],
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 12),
-
-            // Candidature rapide
-            const _SectionTitle('Envoyez votre candidature'),
-            _Card(
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _firstNameCtrl,
-                          textCapitalization: TextCapitalization.words,
-                          decoration:
-                              _dec('Prénom', Icons.badge_outlined),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _lastNameCtrl,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: _dec('Nom', Icons.badge),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Téléphone : uniquement chiffres
-                  TextField(
-                    controller: _phoneCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      // LengthLimitingTextInputFormatter(9), // active si tu veux 9 chiffres max
-                    ],
-                    decoration: _dec('Téléphone', Icons.phone),
-                  ),
-
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: _dec('Email (optionnel)', Icons.email_outlined),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _letterCtrl,
-                    maxLines: 5,
-                    decoration:
-                        _dec('Message / Lettre (court)', Icons.edit_note_outlined),
-                  ),
-                  const SizedBox(height: 10),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.attach_file),
-                          label: Text(_cvName == null
-                              ? 'Joindre mon CV (PDF/DOCX)'
-                              : 'Remplacer le CV'),
-                          onPressed: _pickCv,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_cvPath != null) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: Colors.black12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          Icon(Icons.attachment,
-                              color: _cvBucket == 'cvs_public'
-                                  ? kGreen
-                                  : Colors.black54),
-                          const SizedBox(width: 8),
+                          if (logoUrl != null && logoUrl.trim().isNotEmpty)
+                            CircleAvatar(
+                                radius: 22,
+                                backgroundImage: NetworkImage(logoUrl))
+                          else
+                            const CircleAvatar(
+                              radius: 22,
+                              backgroundColor: kBlue,
+                              child: Icon(Icons.business,
+                                  color: Colors.white, size: 20),
+                            ),
+                          const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              _cvName ?? 'cv',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  (employer?['nom'] ?? 'Employeur').toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16),
+                                ),
+                                if (publie.isNotEmpty)
+                                  Text(
+                                    publie,
+                                    style: const TextStyle(
+                                        color: Colors.black45, fontSize: 12),
+                                  ),
+                              ],
                             ),
                           ),
-                          IconButton(
-                              tooltip: 'Voir le CV',
-                              icon: const Icon(Icons.open_in_new),
-                              onPressed: _viewCv),
-                          IconButton(
-                              tooltip: 'Supprimer le CV',
-                              icon: const Icon(Icons.close),
-                              onPressed: _removeCv),
                         ],
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    value: _cvPublic,
-                    onChanged: (_cvPath == null)
-                        ? (v) => setState(() => _cvPublic = v ?? false)
-                        : null,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text(
-                        'Rendre mon CV public (visible par les recruteurs)'),
-                    subtitle: const Text(
-                        'Si décoché : CV privé, accessible via lien signé'),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (ville.isNotEmpty)
+                            _Tag(
+                              icon: Icons.place,
+                              text: commune.isNotEmpty
+                                  ? '$ville, $commune'
+                                  : ville,
+                            ),
+                          if (contrat.isNotEmpty)
+                            _Tag(
+                              icon: Icons.badge_outlined,
+                              text: contrat.toUpperCase(),
+                            ),
+                          _Tag(
+                            icon: teletravail
+                                ? Icons.home_work_outlined
+                                : Icons.pin_drop_outlined,
+                            text: teletravail ? 'Télétravail' : 'Sur site',
+                            color: teletravail ? kGreen : kYellow,
+                          ),
+                          if ((employer?['telephone'] ?? '')
+                              .toString()
+                              .isNotEmpty)
+                            _MiniPill(
+                                icon: Icons.phone,
+                                text: employer!['telephone'].toString()),
+                          if ((employer?['email'] ?? '').toString().isNotEmpty)
+                            _MiniPill(
+                                icon: Icons.email_outlined,
+                                text: employer!['email'].toString()),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Bloc salaire dédié, responsive
+                _SalaryCard(
+                  salMin: salMin,
+                  salMax: salMax,
+                  period: periodeSalaire,
+                ),
+
+                const SizedBox(height: 12),
+
+                // Bloc description/profil/avantages
+                if (description.isNotEmpty ||
+                    exigences.isNotEmpty ||
+                    avantages.isNotEmpty)
+                  _Card(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (description.isNotEmpty) ...[
+                          const _InnerTitle('Les missions du poste'),
+                          const SizedBox(height: 6),
+                          _ExpandableText(description),
+                        ],
+                        if (description.isNotEmpty &&
+                            (exigences.isNotEmpty || avantages.isNotEmpty))
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Divider(height: 1),
+                          ),
+                        if (exigences.isNotEmpty) ...[
+                          const _InnerTitle('Le profil recherché'),
+                          const SizedBox(height: 6),
+                          _ExpandableText(exigences),
+                        ],
+                        if (exigences.isNotEmpty && avantages.isNotEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Divider(height: 1),
+                          ),
+                        if (avantages.isNotEmpty) ...[
+                          const _InnerTitle('Infos complémentaires'),
+                          const SizedBox(height: 6),
+                          _ExpandableText(avantages),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 12),
+
+                // Candidature rapide
+                const _SectionTitle('Envoyez votre candidature'),
+                _Card(
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _firstNameCtrl,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: _dec('Prénom', Icons.badge_outlined),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _lastNameCtrl,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: _dec('Nom', Icons.badge),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Téléphone : uniquement chiffres
+                      TextField(
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: _dec('Téléphone', Icons.phone),
+                      ),
+
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration:
+                            _dec('Email (optionnel)', Icons.email_outlined),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _letterCtrl,
+                        maxLines: 5,
+                        decoration: _dec('Message / Lettre (court)',
+                            Icons.edit_note_outlined),
+                      ),
+                      const SizedBox(height: 10),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.attach_file),
+                              label: Text(_cvName == null
+                                  ? 'Joindre mon CV (PDF/DOCX)'
+                                  : 'Remplacer le CV'),
+                              onPressed: _pickCv,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_cvPath != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: Colors.black12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.attachment,
+                                color: _cvBucket == 'cvs_public'
+                                    ? kGreen
+                                    : Colors.black54,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _cvName ?? 'cv',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Voir le CV',
+                                icon: const Icon(Icons.open_in_new),
+                                onPressed: _viewCv,
+                              ),
+                              IconButton(
+                                tooltip: 'Supprimer le CV',
+                                icon: const Icon(Icons.close),
+                                onPressed: _removeCv,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        value: _cvPublic,
+                        onChanged: (_cvPath == null)
+                            ? (v) => setState(() => _cvPublic = v ?? false)
+                            : null,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text(
+                            'Rendre mon CV public (visible par les recruteurs)'),
+                        subtitle: const Text(
+                            'Si décoché : CV privé, accessible via lien signé'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            );
+
+            if (!isWide) return list;
+
+            return Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: list,
               ),
-            ),
-            const SizedBox(height: 12),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -696,6 +729,138 @@ class _JobDetailPageState extends State<JobDetailPage> {
       );
 }
 
+// ----------- Bloc salaire -----------
+
+class _SalaryCard extends StatelessWidget {
+  const _SalaryCard({
+    required this.salMin,
+    required this.salMax,
+    required this.period,
+  });
+
+  final dynamic salMin;
+  final dynamic salMax;
+  final String period;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMin = salMin != null;
+    final hasMax = salMax != null;
+    final per = period.isEmpty ? 'mois' : period;
+
+    String main;
+    String subtitle;
+
+    if (hasMin && hasMax) {
+      main = '${_fmtMontant(salMin)} – ${_fmtMontant(salMax)} GNF';
+      subtitle = 'Fourchette brute par $per';
+    } else if (hasMin) {
+      main = '${_fmtMontant(salMin)} GNF';
+      subtitle = 'Minimum brut par $per';
+    } else if (hasMax) {
+      main = '${_fmtMontant(salMax)} GNF';
+      subtitle = 'Jusqu’à (brut) par $per';
+    } else {
+      main = 'À négocier';
+      subtitle = 'Salaire non communiqué';
+    }
+
+    return _Card(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 380;
+
+          final mainText = FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              main,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: _JobDetailPageState.kBlue,
+              ),
+            ),
+          );
+
+          final subtitleWidget = Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.black54,
+            ),
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.payments_outlined,
+                        color: _JobDetailPageState.kBlue),
+                    const SizedBox(width: 8),
+                    Expanded(child: mainText),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                subtitleWidget,
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _JobDetailPageState.kBlue.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Icon(
+                  Icons.payments_outlined,
+                  color: _JobDetailPageState.kBlue,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    mainText,
+                    const SizedBox(height: 4),
+                    subtitleWidget,
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(.04),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  per.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 // ---------------- Helpers UI ----------------
 
 class _Card extends StatelessWidget {
@@ -706,6 +871,8 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
+      elevation: 1.5,
+      shadowColor: Colors.black12,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         width: double.infinity,
