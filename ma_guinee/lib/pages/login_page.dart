@@ -1,5 +1,5 @@
 import 'dart:async'; // TimeoutException
-import 'dart:io';    // SocketException
+import 'dart:io'; // SocketException
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -46,6 +46,7 @@ class _LoginPageState extends State<LoginPage> {
       await context.read<UserProvider>().chargerUtilisateurConnecte();
 
       String dest = AppRoutes.mainNav;
+
       try {
         final row = await supabase
             .from('utilisateurs')
@@ -53,7 +54,9 @@ class _LoginPageState extends State<LoginPage> {
             .eq('id', user.id)
             .maybeSingle();
         final role = (row?['role'] as String?)?.toLowerCase() ?? '';
-        if (role == 'admin' || role == 'owner') dest = AppRoutes.adminCenter;
+        if (role == 'admin' || role == 'owner') {
+          dest = AppRoutes.adminCenter;
+        }
       } catch (_) {
         dest = AppRoutes.mainNav;
       }
@@ -62,25 +65,24 @@ class _LoginPageState extends State<LoginPage> {
       Navigator.of(context).pushNamedAndRemoveUntil(dest, (_) => false);
     } on SocketException {
       if (!mounted) return;
-      _toast("Aucune connexion Internet. Vérifiez vos données mobiles ou le Wi-Fi.");
+      _showInternetError();
     } on TimeoutException {
       if (!mounted) return;
-      _toast("La connexion a expiré. Réessayez lorsque vous avez Internet.");
+      _showTimeout();
     } on AuthException catch (e) {
       if (!mounted) return;
+
       final raw = (e.message ?? '').toLowerCase();
       String msg = "Une erreur d'authentification est survenue.";
-      if (raw.contains('invalid login') ||
-          raw.contains('invalid credentials') ||
-          raw.contains('email or password') ||
-          raw.contains('invalid email or password')) {
+
+      if (raw.contains('invalid') || raw.contains('password')) {
         msg = "Email ou mot de passe incorrect.";
-      } else if (raw.contains('email not confirmed') ||
-          raw.contains('not confirmed')) {
-        msg = "Votre e-mail n'est pas encore confirmé. Consultez votre boîte mail.";
+      } else if (raw.contains('not confirmed')) {
+        msg = "Votre e-mail n'est pas confirmé. Consultez votre boîte mail.";
       } else if (raw.isNotEmpty) {
         msg = e.message!;
       }
+
       _toast(msg);
     } catch (_) {
       if (!mounted) return;
@@ -88,6 +90,54 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  // SnackBar moderne : absence Internet
+  void _showInternetError() {
+    final snack = SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.red.shade600,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      content: Row(
+        children: const [
+          Icon(Icons.wifi_off, color: Colors.white),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              "Vous n’êtes pas connecté à Internet.\nVérifiez vos données mobiles ou le Wi-Fi.",
+              style: TextStyle(color: Colors.white, fontSize: 15),
+            ),
+          ),
+        ],
+      ),
+      duration: const Duration(seconds: 4),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snack);
+  }
+
+  // SnackBar : timeout
+  void _showTimeout() {
+    final snack = SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.orange.shade700,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      content: Row(
+        children: const [
+          Icon(Icons.timer_off, color: Colors.white),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              "La connexion a expiré. Réessayez lorsque vous avez Internet.",
+              style: TextStyle(color: Colors.white, fontSize: 15),
+            ),
+          ),
+        ],
+      ),
+      duration: const Duration(seconds: 4),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snack);
   }
 
   void _toast(String msg) {
@@ -141,20 +191,19 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: Column(
               children: [
-                // -------- EN-TÊTE ÉPURÉE : pas de disque, icônes + flèches --------
                 Column(
                   children: const [
                     _ServiceDialMinimal(
                       size: 150,
                       icons: [
-                        Icons.restaurant,         // Restaurants
-                        Icons.hotel,              // Hôtels
-                        Icons.local_hospital,     // Santé
-                        Icons.attractions,        // Tourisme & Culture
-                        Icons.confirmation_num,   // Billetterie / Events
-                        Icons.shopping_bag,       // Commerce
-                        Icons.work_outline,       // Jobs
-                        Icons.map,                // Carte / Lieux
+                        Icons.restaurant,
+                        Icons.hotel,
+                        Icons.local_hospital,
+                        Icons.attractions,
+                        Icons.confirmation_num,
+                        Icons.shopping_bag,
+                        Icons.work_outline,
+                        Icons.map,
                       ],
                     ),
                     SizedBox(height: 14),
@@ -195,18 +244,22 @@ class _LoginPageState extends State<LoginPage> {
                   decoration: _dec("Mot de passe", icon: Icons.lock).copyWith(
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                         color: Colors.grey,
                       ),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
-                  validator: (val) =>
-                      val == null || val.trim().length < 6 ? "Mot de passe trop court" : null,
+                  validator: (val) => val == null || val.trim().length < 6
+                      ? "Mot de passe trop court"
+                      : null,
                   onFieldSubmitted: (_) => _seConnecter(),
                 ),
-                const SizedBox(height: 6),
 
+                const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -227,7 +280,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Bouton Connexion
                 _loading
                     ? const Center(child: CircularProgressIndicator())
                     : SizedBox(
@@ -256,13 +308,9 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 22),
 
-                // Lien création de compte
                 TextButton(
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    minimumSize: Size.zero,
-                  ),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.register),
                   child: const Text(
                     "Créer un compte",
                     style: TextStyle(
@@ -281,8 +329,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// Version minimaliste : PAS de fond bleu.
-/// Anneau intérieur discret + flèches depuis le centre vers chaque icône.
+// -----------------------------------------------------------
+// VISUEL DES ICÔNES — inchangé
+// -----------------------------------------------------------
+
 class _ServiceDialMinimal extends StatelessWidget {
   final double size;
   final List<IconData> icons;
@@ -295,6 +345,7 @@ class _ServiceDialMinimal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconCount = icons.length.clamp(0, 12);
+
     return SizedBox(
       width: size,
       height: size,
@@ -314,7 +365,11 @@ class _ServiceDialMinimal extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.grey.shade300),
                   boxShadow: const [
-                    BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
                   ],
                 ),
                 child: Icon(icons[i], size: 18, color: Color(0xFF0E67B2)),
@@ -335,7 +390,7 @@ class _DialArrowsPainter extends CustomPainter {
   static Offset positionFor(int i, int count, double size) {
     final radius = size / 2;
     final orbit = radius * 0.72;
-    final theta = (2 * math.pi * i / count) - math.pi / 2; // départ en haut
+    final theta = (2 * math.pi * i / count) - math.pi / 2;
     return Offset(
       radius + orbit * math.cos(theta),
       radius + orbit * math.sin(theta),
@@ -346,13 +401,12 @@ class _DialArrowsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
 
-    // ✅ On garde UNIQUEMENT l’anneau intérieur
     final ring = Paint()
       ..color = const Color(0x11000000)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
+
     canvas.drawCircle(center, size.width * 0.36, ring);
-    // ❌ Anneau extérieur supprimé (avant: canvas.drawCircle(center, size.width * 0.72, ring);)
 
     final line = Paint()
       ..color = const Color(0x33000000)
@@ -367,21 +421,17 @@ class _DialArrowsPainter extends CustomPainter {
     for (int i = 0; i < iconCount; i++) {
       final p = positionFor(i, iconCount, size.width);
 
-      // vecteur centre -> icône
       final v = (p - center);
       final dir = v / v.distance;
 
-      // reculer un peu la pointe pour ne pas passer sous l'icône
       final end = p - dir * 22;
       final start = center + dir * 16;
 
-      // trait
       canvas.drawLine(start, end, line);
 
-      // petite tête de flèche triangulaire
-      const ah = 9.0; // hauteur
-      const aw = 6.0; // demi-largeur
-      final perp = Offset(-dir.dy, dir.dx); // perpendiculaire
+      const ah = 9.0;
+      const aw = 6.0;
+      final perp = Offset(-dir.dy, dir.dx);
 
       final tip = end;
       final base = end - dir * ah;
@@ -393,15 +443,16 @@ class _DialArrowsPainter extends CustomPainter {
         ..lineTo(p1.dx, p1.dy)
         ..lineTo(p2.dx, p2.dy)
         ..close();
+
       canvas.drawPath(path, arrow);
     }
 
-    // petit hub central discret
     final hubFill = Paint()..color = const Color(0x14000000);
     final hubRing = Paint()
       ..color = const Color(0x22000000)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
+
     canvas.drawCircle(center, 8, hubFill);
     canvas.drawCircle(center, 8, hubRing);
   }

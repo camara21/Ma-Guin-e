@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData; // ✅ copier numéro
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData; // copier numéro
+
+const kRestaurantsPrimary = Color(0xFFE76F51);
 
 class ProReservationsRestaurantsPage extends StatefulWidget {
   const ProReservationsRestaurantsPage({super.key});
@@ -12,6 +15,29 @@ class ProReservationsRestaurantsPage extends StatefulWidget {
       _ProReservationsRestaurantsPageState();
 }
 
+// ======================
+// Modèle interne
+// ======================
+class _RestaurantEvent {
+  final Map<String, dynamic> raw;
+  final String id;
+  final String restaurantName;
+  final String clientName;
+  final DateTime start;
+  final DateTime end;
+  final bool cancelled;
+
+  _RestaurantEvent({
+    required this.raw,
+    required this.id,
+    required this.restaurantName,
+    required this.clientName,
+    required this.start,
+    required this.end,
+    required this.cancelled,
+  });
+}
+
 class _ProReservationsRestaurantsPageState
     extends State<ProReservationsRestaurantsPage> {
   final _sb = Supabase.instance.client;
@@ -19,13 +45,14 @@ class _ProReservationsRestaurantsPageState
   bool _loading = true;
   String? _error;
 
-  // data
-  List<Map<String, dynamic>> _reservations = [];
+  // Tous les événements
+  List<_RestaurantEvent> _events = [];
 
-  // ui filters
-  String _q = '';
-  String _status = 'avenir'; // ✅ avenir | passees | annulees
-  DateTimeRange? _range;
+  // vue: jour | semaine | mois
+  String _view = 'jour';
+
+  // date de référence
+  DateTime _current = DateTime.now();
 
   @override
   void initState() {
@@ -33,36 +60,9 @@ class _ProReservationsRestaurantsPageState
     _loadAll();
   }
 
-  DateTime _rowDateTime(Map<String, dynamic> r) {
-    // res_date: 'YYYY-MM-DD' | res_time: 'HH:mm:ss' (ou HH:mm)
-    final dateStr = (r['res_date'] ?? '').toString();
-    final timeStr = (r['res_time'] ?? '00:00:00').toString();
-
-    DateTime base;
-    try {
-      base = DateTime.parse(dateStr);
-    } catch (_) {
-      base = DateTime.now();
-    }
-
-    int h = 0, m = 0, s = 0;
-    final parts = timeStr.split(':');
-    if (parts.isNotEmpty) h = int.tryParse(parts[0]) ?? 0;
-    if (parts.length > 1) m = int.tryParse(parts[1]) ?? 0;
-    if (parts.length > 2) s = int.tryParse(parts[2]) ?? 0;
-
-    return DateTime(base.year, base.month, base.day, h, m, s);
-  }
-
-  bool _isCancelled(Map<String, dynamic> r) =>
-      (r['status'] ?? '').toString() == 'annule';
-
-  bool _isPast(Map<String, dynamic> r) {
-    final now = DateTime.now();
-    // Pour un resto : passé si l'heure de réservation est <= maintenant
-    return !_rowDateTime(r).isAfter(now);
-  }
-
+  // =========================================================
+  //          CHARGEMENT SUPABASE
+  // =========================================================
   Future<void> _loadAll() async {
     if (!mounted) return;
     setState(() {
@@ -71,64 +71,78 @@ class _ProReservationsRestaurantsPageState
     });
 
     try {
-      // Base query: reservations + join restaurants
-      PostgrestFilterBuilder<dynamic> query = _sb
+      final uid = _sb.auth.currentUser?.id;
+      if (uid == null) {
+        setState(() {
+          _events = [];
+          _loading = false;
+        });
+        return;
+      }
+
+      // reservations + join restaurants
+      final rows = await _sb
           .from('reservations_restaurants')
           .select('''
             *,
             restaurants:restaurant_id (
               id, nom, ville, tel, telephone
             )
-          ''');
-
-      // Récupération brute (on filtrera/ordonnera côté client car on combine date+time)
-      final rows = await query
+          ''')
+          .eq('user_id', uid)
           .order('res_date', ascending: true)
           .order('res_time', ascending: true);
 
-      var list = List<Map<String, dynamic>>.from(rows as List);
+      final List<_RestaurantEvent> evts = [];
 
-      // Recherche locale (nom / téléphone client)
-      final q = _q.trim().toLowerCase();
-      if (q.isNotEmpty) {
-        list = list.where((r) {
-          final n = (r['client_nom'] ?? '').toString().toLowerCase();
-          final p = (r['client_phone'] ?? '').toString().toLowerCase();
-          return n.contains(q) || p.contains(q);
-        }).toList();
-      }
+      for (final raw in rows as List) {
+        final r = Map<String, dynamic>.from(raw);
 
-      // Filtre date range (sur DateTime combiné)
-      if (_range != null) {
-        list = list.where((r) {
-          final dt = _rowDateTime(r);
-          final start = DateTime(_range!.start.year, _range!.start.month, _range!.start.day, 0, 0, 0);
-          final end = DateTime(_range!.end.year, _range!.end.month, _range!.end.day, 23, 59, 59);
-          return dt.isAfter(start.subtract(const Duration(seconds: 1))) &&
-              dt.isBefore(end.add(const Duration(seconds: 1)));
-        }).toList();
-      }
+        // res_date: 'YYYY-MM-DD'
+        final dateStr = (r['res_date'] ?? '').toString();
+        if (dateStr.isEmpty) continue;
 
-      // Filtres "Avenir / Passées / Annulées" + tris
-      final now = DateTime.now();
-      if (_status == 'avenir') {
-        list = list
-            .where((r) => !_isCancelled(r) && _rowDateTime(r).isAfter(now))
-            .toList()
-          ..sort((a, b) => _rowDateTime(a).compareTo(_rowDateTime(b))); // ↑
-      } else if (_status == 'passees') {
-        list = list
-            .where((r) => !_isCancelled(r) && !_rowDateTime(r).isAfter(now))
-            .toList()
-          ..sort((a, b) => _rowDateTime(b).compareTo(_rowDateTime(a))); // ↓
-      } else if (_status == 'annulees') {
-        list = list.where(_isCancelled).toList()
-          ..sort((a, b) => _rowDateTime(b).compareTo(_rowDateTime(a))); // ↓
+        DateTime base;
+        try {
+          base = DateTime.parse(dateStr);
+        } catch (_) {
+          continue;
+        }
+
+        // res_time: 'HH:mm:ss' ou 'HH:mm'
+        final timeStr = (r['res_time'] ?? '00:00:00').toString();
+        int h = 0, m = 0, s = 0;
+        final parts = timeStr.split(':');
+        if (parts.isNotEmpty) h = int.tryParse(parts[0]) ?? 0;
+        if (parts.length > 1) m = int.tryParse(parts[1]) ?? 0;
+        if (parts.length > 2) s = int.tryParse(parts[2]) ?? 0;
+
+        final start = DateTime(base.year, base.month, base.day, h, m, s);
+
+        // Durée visuelle = 2h
+        final end = start.add(const Duration(hours: 2));
+
+        final resto = Map<String, dynamic>.from(r['restaurants'] ?? {});
+        final restaurantName = (resto['nom'] ?? 'Restaurant').toString();
+        final clientName = (r['client_nom'] ?? 'Client').toString();
+        final cancelled = (r['status'] ?? '').toString() == 'annule';
+
+        evts.add(
+          _RestaurantEvent(
+            raw: r,
+            id: (r['id'] ?? '').toString(),
+            restaurantName: restaurantName,
+            clientName: clientName,
+            start: start,
+            end: end,
+            cancelled: cancelled,
+          ),
+        );
       }
 
       if (!mounted) return;
       setState(() {
-        _reservations = list;
+        _events = evts;
         _loading = false;
       });
     } catch (e) {
@@ -140,35 +154,117 @@ class _ProReservationsRestaurantsPageState
     }
   }
 
-  Future<void> _pickRange() async {
-    final now = DateTime.now();
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-      initialDateRange: _range ??
-          DateTimeRange(
-            start: DateTime(now.year, now.month, now.day),
-            end: DateTime(now.year, now.month, now.day).add(const Duration(days: 30)),
-          ),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: const Color(0xFFE76F51)),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null) {
-      setState(() => _range = picked);
-      await _loadAll();
+  // =========================================================
+  //          OUTILS DATE / PERIODE
+  // =========================================================
+  DateTime _mondayOfWeek(DateTime d) {
+    final weekday = d.weekday; // 1 = lundi
+    return d.subtract(Duration(days: weekday - 1));
+  }
+
+  String _fmtDateShort(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd/$mm/$yyyy';
+  }
+
+  String _monthNameFr(int month) {
+    const names = [
+      '',
+      'Janvier',
+      'Février',
+      'Mars',
+      'Avril',
+      'Mai',
+      'Juin',
+      'Juillet',
+      'Août',
+      'Septembre',
+      'Octobre',
+      'Novembre',
+      'Décembre'
+    ];
+    return names[month];
+  }
+
+  String _weekdayNameFr(DateTime d) {
+    const names = [
+      'LUNDI',
+      'MARDI',
+      'MERCREDI',
+      'JEUDI',
+      'VENDREDI',
+      'SAMEDI',
+      'DIMANCHE'
+    ];
+    return names[d.weekday - 1];
+  }
+
+  String _periodLabel() {
+    if (_view == 'jour') {
+      final label = _weekdayNameFr(_current);
+      final date = _fmtDateShort(_current);
+      return '$label $date';
+    } else if (_view == 'semaine') {
+      final start = _mondayOfWeek(_current);
+      final end = start.add(const Duration(days: 6));
+      return '${_fmtDateShort(start)} – ${_fmtDateShort(end)}';
+    } else {
+      return '${_monthNameFr(_current.month)} ${_current.year}';
     }
   }
 
-  Future<void> _clearRange() async {
-    setState(() => _range = null);
-    await _loadAll();
+  void _goPrev() {
+    setState(() {
+      if (_view == 'jour') {
+        _current = _current.subtract(const Duration(days: 1));
+      } else if (_view == 'semaine') {
+        _current = _current.subtract(const Duration(days: 7));
+      } else {
+        _current = DateTime(_current.year, _current.month - 1, _current.day);
+      }
+    });
   }
 
+  void _goNext() {
+    setState(() {
+      if (_view == 'jour') {
+        _current = _current.add(const Duration(days: 1));
+      } else if (_view == 'semaine') {
+        _current = _current.add(const Duration(days: 7));
+      } else {
+        _current = DateTime(_current.year, _current.month + 1, _current.day);
+      }
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _current,
+      firstDate: DateTime(DateTime.now().year - 1),
+      lastDate: DateTime(DateTime.now().year + 2),
+      locale: const Locale('fr', 'FR'),
+    );
+    if (picked != null) {
+      setState(() {
+        _current = picked;
+      });
+    }
+  }
+
+  bool _isPastEvent(_RestaurantEvent e) {
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final endDate = DateTime(e.end.year, e.end.month, e.end.day);
+    return endDate.isBefore(todayDate) ||
+        (endDate.isAtSameMomentAs(todayDate) && e.end.isBefore(now));
+  }
+
+  // =========================================================
+  //          CONTACT & ANNULATION
+  // =========================================================
   Future<void> _launchCall(String phone) async {
     final cleaned = phone.replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleaned.isEmpty) return;
@@ -192,7 +288,8 @@ class _ProReservationsRestaurantsPageState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(clientName, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(clientName,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             SelectableText(number, style: const TextStyle(fontSize: 18)),
             const SizedBox(height: 10),
@@ -233,14 +330,17 @@ class _ProReservationsRestaurantsPageState
     );
   }
 
-  Future<void> _cancelReservation(String id) async {
+  Future<void> _cancelReservation(_RestaurantEvent e) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Annuler la réservation ?'),
-        content: const Text('Cette action marque la réservation comme “annulée”.'),
+        content:
+            const Text('Cette action marque la réservation comme “annulée”.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Fermer')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Fermer')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -252,93 +352,235 @@ class _ProReservationsRestaurantsPageState
     if (ok != true) return;
 
     try {
-      await _sb.from('reservations_restaurants').update({'status': 'annule'}).eq('id', id);
+      await _sb
+          .from('reservations_restaurants')
+          .update({'status': 'annule'}).eq('id', e.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Réservation annulée.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Réservation annulée.')));
       await _loadAll();
-    } catch (e) {
+    } catch (err) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur: $err')));
     }
   }
 
-  String _dateLabel(Map<String, dynamic> r) {
-    final d = DateTime.tryParse(r['res_date']?.toString() ?? '');
-    final t = (r['res_time'] ?? '').toString();
-    if (d == null) return '—';
-    return '${DateFormat('EEE d MMM', 'fr_FR').format(d)} • $t';
+  void _showEventSheet(_RestaurantEvent e) {
+    final r = e.raw;
+    final clientPhone = (r['client_phone'] ?? '').toString();
+
+    final fmtDate = DateFormat('dd/MM/yyyy HH:mm');
+    final dateStr = '${fmtDate.format(e.start)} → ${fmtDate.format(e.end)}';
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                e.restaurantName,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                e.clientName,
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.outline,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(dateStr,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _showContactDialog(e.clientName, clientPhone),
+                      icon: const Icon(Icons.phone),
+                      label: Text(e.clientName),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  if (!e.cancelled && !_isPastEvent(e))
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      onPressed: () => _cancelReservation(e),
+                      icon: const Icon(Icons.cancel),
+                      label: const Text('Annuler'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
+  // =========================================================
+  //          HEADER STYLE "OUTIL PRO"
+  // =========================================================
+  Widget _buildHeader() {
+    return Container(
+      color: Colors.grey.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        children: [
+          // Flèche gauche
+          SizedBox(
+            width: 36,
+            height: 32,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                side: BorderSide(color: Colors.grey.shade400),
+              ),
+              onPressed: _goPrev,
+              child: const Icon(Icons.chevron_left, size: 18),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // Période
+          Expanded(
+            child: Container(
+              height: 32,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: Text(
+                _periodLabel(),
+                style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // Bouton calendrier
+          SizedBox(
+            width: 36,
+            height: 32,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                side: BorderSide(color: Colors.grey.shade400),
+              ),
+              onPressed: _pickDate,
+              child: const Icon(Icons.calendar_today, size: 15),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // Flèche droite
+          SizedBox(
+            width: 36,
+            height: 32,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                side: BorderSide(color: Colors.grey.shade400),
+              ),
+              onPressed: _goNext,
+              child: const Icon(Icons.chevron_right, size: 18),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Aujourd'hui
+          SizedBox(
+            height: 32,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.black),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              onPressed: () {
+                setState(() {
+                  _current = DateTime.now();
+                  _view = 'jour';
+                });
+              },
+              icon: const Icon(Icons.today, size: 16),
+              label: const Text(
+                "Aujourd'hui",
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Boutons Jour / Semaine / Mois
+          SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                _buildViewButton('Jour', 'jour'),
+                _buildViewButton('Semaine', 'semaine'),
+                _buildViewButton('Mois', 'mois'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewButton(String label, String value) {
+    final bool selected = _view == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 2),
+      child: TextButton(
+        style: TextButton.styleFrom(
+          backgroundColor:
+              selected ? kRestaurantsPrimary : Colors.grey.shade300,
+          foregroundColor: selected ? Colors.white : Colors.black87,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 32),
+        ),
+        onPressed: () {
+          setState(() {
+            _view = value;
+          });
+        },
+        child: Text(label, style: const TextStyle(fontSize: 13)),
+      ),
+    );
+  }
+
+  // =========================================================
+  //          BUILD
+  // =========================================================
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Réservations — Restaurants'),
-        backgroundColor: const Color(0xFFE76F51),
+        backgroundColor: kRestaurantsPrimary,
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
-          // Barre filtres
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            color: scheme.surface,
-            child: Column(
-              children: [
-                TextField(
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'Rechercher (nom ou téléphone client)',
-                    filled: true,
-                    fillColor: scheme.surfaceVariant.withOpacity(.35),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  onChanged: (v) async {
-                    setState(() => _q = v);
-                    await _loadAll();
-                  },
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'avenir', label: Text('À venir')),   // ✅
-                        ButtonSegment(value: 'passees', label: Text('Passées')),   // ✅
-                        ButtonSegment(value: 'annulees', label: Text('Annulées')), // ✅
-                      ],
-                      selected: {_status},
-                      onSelectionChanged: (s) async {
-                        setState(() => _status = s.first);
-                        await _loadAll();
-                      },
-                    ),
-                    const Spacer(),
-                    if (_range != null)
-                      TextButton.icon(
-                        onPressed: _clearRange,
-                        icon: const Icon(Icons.clear),
-                        label: const Text('Dates'),
-                      ),
-                    OutlinedButton.icon(
-                      onPressed: _pickRange,
-                      icon: const Icon(Icons.event),
-                      label: Text(_range == null ? 'Dates' : 'Changer'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          _buildHeader(),
           const Divider(height: 1),
           Expanded(
             child: RefreshIndicator(
@@ -354,143 +596,369 @@ class _ProReservationsRestaurantsPageState
                             )
                           ],
                         )
-                      : _reservations.isEmpty
+                      : _events.isEmpty
                           ? ListView(
                               children: const [
                                 SizedBox(height: 120),
                                 Center(child: Text('Aucune réservation.')),
                               ],
                             )
-                          : ListView.separated(
-                              padding: const EdgeInsets.all(12),
-                              itemBuilder: (_, i) {
-                                final r = _reservations[i];
-                                final resto = Map<String, dynamic>.from(r['restaurants'] ?? {});
-                                final cancelled = _isCancelled(r);
-                                final isPast = _isPast(r);
-
-                                // Chip (texte + couleurs)
-                                final String chipText = cancelled
-                                    ? 'Annulée'
-                                    : (isPast ? 'Passée' : 'Confirmée');
-                                final Color chipFg = cancelled
-                                    ? Colors.red
-                                    : (isPast ? Colors.grey.shade700 : const Color(0xFFE67E22));
-                                final Color chipBg = cancelled
-                                    ? Colors.red.withOpacity(.12)
-                                    : (isPast
-                                        ? Colors.grey.withOpacity(.15)
-                                        : const Color(0xFFF4A261).withOpacity(.18));
-
-                                return Card(
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: BorderSide(color: scheme.outlineVariant),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                (resto['nom'] ?? 'Restaurant').toString(),
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                            ),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: chipBg,
-                                                borderRadius: BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                chipText,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: chipFg,
-                                                ),
-                                              ),
-                                            )
-                                          ],
-                                        ),
-                                        if ((resto['ville'] ?? '').toString().isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: Text(
-                                              (resto['ville']).toString(),
-                                              style: TextStyle(color: scheme.outline),
-                                            ),
-                                          ),
-                                        const SizedBox(height: 8),
-                                        Text(_dateLabel(r), style: const TextStyle(fontWeight: FontWeight.w600)),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.people_alt, size: 18),
-                                            const SizedBox(width: 6),
-                                            Text('Adultes ${r['adults']} • Enfants ${r['children']} • ${r['seating_pref']}'),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.celebration, size: 18),
-                                            const SizedBox(width: 6),
-                                            Text('Occasion : ${r['occasion']}'),
-                                          ],
-                                        ),
-                                        if ((r['notes'] ?? '').toString().trim().isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 8),
-                                            child: Text(
-                                              (r['notes'] ?? '').toString(),
-                                              style: TextStyle(color: scheme.onSurface.withOpacity(.75)),
-                                            ),
-                                          ),
-                                        const SizedBox(height: 10),
-                                        Container(height: 1, color: scheme.outlineVariant),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: OutlinedButton.icon(
-                                                onPressed: () => _showContactDialog(
-                                                  (r['client_nom'] ?? 'Client').toString(),
-                                                  (r['client_phone'] ?? '').toString(),
-                                                ),
-                                                icon: const Icon(Icons.phone),
-                                                label: Text((r['client_nom'] ?? 'Client').toString()),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            if (!cancelled && !isPast) // ✅ masqué si passée OU annulée
-                                              FilledButton.icon(
-                                                onPressed: () => _cancelReservation((r['id'] ?? '').toString()),
-                                                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                                                icon: const Icon(Icons.cancel),
-                                                label: const Text('Annuler'),
-                                              ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
-                              itemCount: _reservations.length,
-                            ),
+                          : _view == 'jour'
+                              ? _buildDayView()
+                              : (_view == 'semaine'
+                                  ? _buildWeekView()
+                                  : _buildMonthView()),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // =========================================================
+  //          VUE JOUR (08:00 → 23:00, blocs par heure)
+  // =========================================================
+  Widget _buildDayView() {
+    const startHour = 8;
+    const endHour = 24; // affichera 08:00 → 23:00
+
+    final date = DateTime(_current.year, _current.month, _current.day);
+
+    return ListView.builder(
+      itemCount: endHour - startHour,
+      itemBuilder: (context, index) {
+        final hour = startHour + index;
+
+        final slotEvents = _events.where((e) {
+          final d = e.start;
+          final sameDay =
+              d.year == date.year && d.month == date.month && d.day == date.day;
+          if (!sameDay) return false;
+          return e.start.hour == hour;
+        }).toList();
+
+        return Container(
+          height: 60,
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade300),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Heure
+              SizedBox(
+                width: 60,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '${hour.toString().padLeft(2, '0')}:00',
+                    style: const TextStyle(fontSize: 11),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              // Blocs rendez-vous (horizontaux)
+              Expanded(
+                child: slotEvents.isEmpty
+                    ? const SizedBox.shrink()
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final e in slotEvents)
+                              GestureDetector(
+                                onTap: () => _showEventSheet(e),
+                                child: Container(
+                                  margin:
+                                      const EdgeInsets.only(right: 6, top: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: e.cancelled
+                                        ? Colors.red.shade300
+                                        : (_isPastEvent(e)
+                                            ? Colors.grey.shade500
+                                            : kRestaurantsPrimary),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        e.clientName,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        e.restaurantName,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // =========================================================
+  //          VUE SEMAINE (08:00 → 23:00, colonnes)
+  // =========================================================
+  Widget _buildWeekView() {
+    const startHour = 8;
+    const endHour = 24;
+
+    final weekStart = _mondayOfWeek(_current);
+    final days = List.generate(7, (i) => weekStart.add(Duration(days: i)));
+    const labels = [
+      'LUNDI',
+      'MARDI',
+      'MERCREDI',
+      'JEUDI',
+      'VENDREDI',
+      'SAMEDI',
+      'DIMANCHE'
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double minDayWidth = 120;
+        final double hoursColWidth = 60;
+        final double neededWidth = hoursColWidth + minDayWidth * 7;
+        final double contentWidth = constraints.maxWidth < neededWidth
+            ? neededWidth
+            : constraints.maxWidth;
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: contentWidth,
+            child: Column(
+              children: [
+                // Ligne des jours
+                Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(width: hoursColWidth),
+                      for (int i = 0; i < 7; i++)
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                left: BorderSide(color: Colors.grey.shade300),
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 4),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  labels[i],
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${days[i].day.toString().padLeft(2, "0")}/${days[i].month.toString().padLeft(2, "0")}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Grille horaire
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: endHour - startHour,
+                    itemBuilder: (context, index) {
+                      final hour = startHour + index;
+                      return SizedBox(
+                        height: 52,
+                        child: Row(
+                          children: [
+                            // Colonne heures
+                            SizedBox(
+                              width: hoursColWidth,
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    '${hour.toString().padLeft(2, '0')}:00',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // Colonnes jours
+                            for (int d = 0; d < 7; d++)
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      top: BorderSide(
+                                          color: Colors.grey.shade300),
+                                      left: BorderSide(
+                                          color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                  child: _buildWeekCellEvents(days[d], hour),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWeekCellEvents(DateTime day, int hour) {
+    final cellEvents = _events.where((e) {
+      final sameDay = e.start.year == day.year &&
+          e.start.month == day.month &&
+          e.start.day == day.day;
+      if (!sameDay) return false;
+      return e.start.hour == hour;
+    }).toList();
+
+    if (cellEvents.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final e in cellEvents)
+            GestureDetector(
+              onTap: () => _showEventSheet(e),
+              child: Container(
+                margin: const EdgeInsets.all(2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: e.cancelled
+                      ? Colors.red.shade300
+                      : (_isPastEvent(e)
+                          ? Colors.grey.shade500
+                          : kRestaurantsPrimary),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  e.clientName,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================
+  //          VUE MOIS (simple)
+  // =========================================================
+  Widget _buildMonthView() {
+    final first = DateTime(_current.year, _current.month, 1);
+    final last = DateTime(_current.year, _current.month + 1, 0);
+    final days = List.generate(last.day, (i) => first.add(Duration(days: i)));
+
+    return GridView.count(
+      crossAxisCount: 7,
+      children: [
+        for (final d in days)
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            padding: const EdgeInsets.all(2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  d.day.toString(),
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+                ..._events.where((e) {
+                  return e.start.year == d.year &&
+                      e.start.month == d.month &&
+                      e.start.day == d.day;
+                }).map((e) {
+                  final bgColor = e.cancelled
+                      ? Colors.red.shade300
+                      : (_isPastEvent(e)
+                          ? Colors.grey.shade500
+                          : kRestaurantsPrimary);
+                  return GestureDetector(
+                    onTap: () => _showEventSheet(e),
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        e.clientName,
+                        style:
+                            const TextStyle(fontSize: 9, color: Colors.white),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
