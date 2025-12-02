@@ -1,26 +1,31 @@
+import org.gradle.api.tasks.Delete
+import java.io.File
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Plugin Firebase Google Services (obligatoire pour FCM)
+        classpath("com.google.gms:google-services:4.3.15")
+    }
+}
+
 allprojects {
     repositories {
         google()
         mavenCentral()
     }
-
-    // ⚠️ Force la bonne version de desugar pour tous les modules
-    configurations.all {
-        resolutionStrategy {
-            force("com.android.tools:desugar_jdk_libs:2.1.5")
-        }
-    }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+// IMPORTANT : pour que Flutter trouve bien l'APK dans ../build
+// (équivalent de: rootProject.buildDir = '../build' en Groovy)
+rootProject.buildDir = File("../build")
 
+// Même logique que le fichier Groovy d’origine, mais en Kotlin
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    project.buildDir = File(rootProject.buildDir, project.name)
 }
 
 subprojects {
@@ -28,5 +33,5 @@ subprojects {
 }
 
 tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+    delete(rootProject.buildDir)
 }

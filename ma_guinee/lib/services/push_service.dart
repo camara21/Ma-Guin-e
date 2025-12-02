@@ -1,212 +1,172 @@
 // lib/services/push_service.dart
 import 'dart:async';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
-import 'package:flutter/widgets.dart' show WidgetsBinding;
 
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../navigation/push_nav.dart';
 
 class PushService {
   PushService._();
-  static final instance = PushService._();
+  static final PushService instance = PushService._();
 
-  final _sb = Supabase.instance.client;
-  final _fm = FirebaseMessaging.instance;
-  final _fln = FlutterLocalNotificationsPlugin();
+  final SupabaseClient _sb = Supabase.instance.client;
+  final FirebaseMessaging _fm = FirebaseMessaging.instance;
 
-  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'messages_channel',
-    'Messages',
-    description: 'Notifications de messages',
-    importance: Importance.high,
-  );
+  bool _initialized = false;
+  String? _lastToken;
 
-  bool _started = false; // ✅ une seule init
-  StreamSubscription<String>? _tokenSub; // ✅ pour nettoyer au signout
-
+  /// Appelé depuis main.dart : `PushService.instance.initAndRegister()`
   Future<void> initAndRegister() async {
-    // 0) Sécurité : uniquement si connecté
-    final userId = _sb.auth.currentUser?.id;
-    if (userId == null) return;
+    // Ce service est uniquement pour mobile, on ignore le Web
+    if (kIsWeb) {
+      debugPrint('[PushService] init ignoré sur Web.');
+      return;
+    }
 
-    // 1) Ne pas lancer 2x
-    if (_started) return;
-    _started = true;
+    if (_initialized) {
+      debugPrint('[PushService] déjà initialisé, refresh token éventuel.');
+      await _refreshTokenIfNeeded();
+      return;
+    }
+    _initialized = true;
 
-    await _initLocalNotifications();
+    debugPrint('[PushService] initialisation FCM...');
 
-    // 2) Demander la permission *après* login (ici) et seulement ici
+    // Demande de permission (Android 13+ & iOS)
     final settings = await _fm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
-      provisional: false,
     );
 
-    // iOS: autoriser l’affichage en foreground (n’affiche rien sans notif explicite)
-    await _fm.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
+    debugPrint(
+      '[PushService] permission status = ${settings.authorizationStatus}',
     );
 
-    // Si l’utilisateur refuse → on arrête proprement
-    if (settings.authorizationStatus == AuthorizationStatus.denied ||
-        settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      debugPrint('[PushService] permission refusée → pas de token.');
       return;
     }
 
-    // 3) Récupérer le token
-    String? token;
-    if (kIsWeb) {
-      final vapid =
-          const String.fromEnvironment('FCM_VAPID_KEY', defaultValue: '');
-      token = await _fm.getToken(vapidKey: vapid.isEmpty ? null : vapid);
-    } else {
-      token = await _fm.getToken();
-    }
-    if (token == null || token.isEmpty) return;
+    // Token initial
+    await _refreshTokenIfNeeded();
 
-    // 4) Upsert métadonnées
-    final platform = _platformString(); // android / ios / web / other
-    String model = 'unknown';
-    if (kIsWeb) {
-      try {
-        // ignore: undefined_prefixed_name
-        final ua = const String.fromEnvironment('FLUTTER_WEB_USER_AGENT');
-        if (ua.isNotEmpty) model = ua;
-      } catch (_) {}
-    }
-    final pkg = await PackageInfo.fromPlatform();
-    final locale = WidgetsBinding.instance.platformDispatcher.locale.toString();
-
-    await _sb.from('push_devices').upsert({
-      'user_id': userId,
-      'token': token,
-      'platform': platform,
-      'model': model,
-      'app_version': pkg.version,
-      'enabled': true,
-      'locale': locale,
-    }, onConflict: 'user_id,token');
-
-    // 5) RPC: activer ce token et désactiver les autres de l’utilisateur
-    await _sb.rpc('enable_push_token', params: {
-      'p_user': userId,
-      'p_token': token,
+    // Ecoute des changements de token
+    FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      debugPrint('[PushService] onTokenRefresh = $token');
+      _lastToken = token;
+      unawaited(_saveTokenToSupabase(token));
     });
 
-    // 6) Renouvellement de token (attaché à l’utilisateur courant)
-    _tokenSub?.cancel();
-    _tokenSub = _fm.onTokenRefresh.listen((t) async {
-      try {
-        final uid = _sb.auth.currentUser?.id;
-        if (uid == null) return; // si déconnecté pendant le refresh
-        await _sb.from('push_devices').upsert({
-          'user_id': uid,
-          'token': t,
-          'platform': platform,
-          'enabled': true,
-        }, onConflict: 'user_id,token');
+    // Messages FCM
+    _setupForegroundListener();
+    _setupClickRouting();
+  }
 
-        await _sb.rpc('enable_push_token', params: {
-          'p_user': uid,
-          'p_token': t,
-        });
-      } catch (_) {}
-    });
+  /// Récupère le token FCM et le pousse en BDD si nécessaire.
+  Future<void> _refreshTokenIfNeeded() async {
+    final user = _sb.auth.currentUser;
+    if (user == null) {
+      debugPrint('[PushService] pas de user connecté → skip token.');
+      return;
+    }
 
-    // 7) Affichage local en foreground — seulement si permission accordée
-    FirebaseMessaging.onMessage.listen((RemoteMessage m) async {
-      if (!await _hasNotifPermission()) return; // ✅ garde anti-popup
-      final n = m.notification;
-      if (n == null) return;
-      await _fln.show(
-        DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        n.title ?? 'Notification',
-        n.body ?? '',
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channel.id,
-            _channel.name,
-            channelDescription: _channel.description,
-            importance: Importance.high,
-            priority: Priority.high,
-            // on force l’icône app si null
-            icon: n.android?.smallIcon ?? '@mipmap/ic_launcher',
-          ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-          ),
-        ),
-        payload: m.data.isEmpty ? null : m.data.toString(),
+    final token = await _fm.getToken();
+    if (token == null) {
+      debugPrint('[PushService] getToken() a renvoyé null.');
+      return;
+    }
+
+    if (token == _lastToken) {
+      // Token identique, rien à faire
+      return;
+    }
+
+    debugPrint('[PushService] FCM token courant = $token');
+
+    _lastToken = token;
+    await _saveTokenToSupabase(token);
+  }
+
+  /// Sauvegarde le token FCM dans `public.push_devices`.
+  ///
+  /// Stratégie : 1 seule ligne par user :
+  ///   - DELETE tous les anciens devices pour ce user
+  ///   - INSERT du nouveau device (android, enabled = true)
+  Future<void> _saveTokenToSupabase(String token) async {
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    final uid = user.id;
+    const platform = 'android';
+
+    try {
+      debugPrint('[PushService] enregistrement token pour user=$uid');
+
+      // 1) Supprimer tous les anciens devices de ce user
+      await _sb.from('push_devices').delete().eq('user_id', uid);
+
+      // 2) Insérer le nouveau device unique
+      await _sb.from('push_devices').insert({
+        'user_id': uid,
+        'token': token,
+        'platform': platform,
+        'enabled': true,
+        'locale': 'fr_FR',
+      });
+
+      debugPrint(
+        '[PushService] token enregistré en BDD ✅ (single row par user)',
       );
+    } catch (e, st) {
+      debugPrint('[PushService] ERREUR enregistrement token: $e');
+      debugPrint('[PushService] stack: $st');
+    }
+  }
+
+  /// Messages reçus quand l’app est au premier plan.
+  /// Pour l’instant on log seulement, sans afficher de notif système.
+  void _setupForegroundListener() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      debugPrint(
+        '[PushService] onMessage (foreground) data=${message.data} '
+        'notification=${message.notification}',
+      );
+      // Si tu veux plus tard afficher une bannière in-app ou rafraîchir un compteur,
+      // c’est ici qu’on le fera.
     });
   }
 
-  Future<void> disableForThisDevice() async {
-    final userId = _sb.auth.currentUser?.id;
-    final token = await _fm.getToken();
-    if (userId == null || token == null) return;
-    await _sb
-        .from('push_devices')
-        .update({'enabled': false})
-        .eq('user_id', userId)
-        .eq('token', token);
-  }
+  /// Routing quand l’utilisateur clique sur une notif FCM :
+  ///  - app en background
+  ///  - app lancée depuis un état "terminé"
+  void _setupClickRouting() {
+    // App en background → clique sur la notif FCM
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      try {
+        final data = message.data;
+        debugPrint('[PushService] onMessageOpenedApp data=$data');
+        PushNav.openMessageFromData(data);
+      } catch (e, st) {
+        debugPrint('[PushService] erreur onMessageOpenedApp: $e');
+        debugPrint('[PushService] stack: $st');
+      }
+    });
 
-  Future<void> signOutCleanup() async {
-    // Nettoyage DB pour ce device + écouteurs
-    _tokenSub?.cancel();
-    _tokenSub = null;
-    _started = false;
-
-    final userId = _sb.auth.currentUser?.id;
-    final token = await _fm.getToken();
-    if (userId == null || token == null) return;
-    await _sb
-        .from('push_devices')
-        .delete()
-        .eq('user_id', userId)
-        .eq('token', token);
-  }
-
-  Future<void> _initLocalNotifications() async {
-    const initAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initIOS = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const init = InitializationSettings(android: initAndroid, iOS: initIOS);
-    await _fln.initialize(init);
-
-    final androidImpl = _fln.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.createNotificationChannel(_channel);
-    // ⚠️ on ne demande pas la permission Android 13+ ici : on la déclenche via FCM requestPermission après login
-  }
-
-  Future<bool> _hasNotifPermission() async {
-    final s = await _fm.getNotificationSettings();
-    return s.authorizationStatus == AuthorizationStatus.authorized ||
-        s.authorizationStatus == AuthorizationStatus.provisional;
-  }
-
-  String _platformString() {
-    if (kIsWeb) return 'web';
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'android';
-      case TargetPlatform.iOS:
-        return 'ios';
-      default:
-        return 'other';
-    }
+    // App lancée depuis une notif FCM (terminated → launch)
+    _fm.getInitialMessage().then((RemoteMessage? message) {
+      if (message == null) return;
+      try {
+        final data = message.data;
+        debugPrint('[PushService] getInitialMessage data=$data');
+        PushNav.openMessageFromData(data);
+      } catch (e, st) {
+        debugPrint('[PushService] erreur getInitialMessage: $e');
+        debugPrint('[PushService] stack: $st');
+      }
+    });
   }
 }

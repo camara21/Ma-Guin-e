@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../routes.dart'; // RecoveryGuard (déclaré dans routes.dart)
-import '../../main.dart' show navKey; // pour la redirection finale
+import '../../navigation/nav_key.dart'; // ✅ navKey global
 import '../../utils/error_messages_fr.dart'; // ⬅️ traduction FR des erreurs
 
 /// -------- Helpers

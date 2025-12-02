@@ -174,6 +174,27 @@ class MessageService {
       'lu': false,
     });
     unreadChanged.add(null);
+
+    // 🔔 Push FCM vers le destinataire (non bloquant)
+    try {
+      await _client.functions.invoke('push-send', body: {
+        'title': 'Nouveau message',
+        'body': contenu.isEmpty ? 'Vous avez reçu un nouveau message' : contenu,
+        'user_id': receiverId,
+        'data': {
+          'type': 'message',
+          'contexte': 'annonce',
+          'sender_id': senderId,
+          'receiver_id': receiverId,
+          'annonce_id': annonceId,
+          'logement_id': '',
+          'prestataire_id': '',
+          'annonce_titre': annonceTitre,
+          'prestataire_name': '',
+          'title': annonceTitre,
+        },
+      });
+    } catch (_) {}
   }
 
   Future<void> sendMessageToLogement({
@@ -194,6 +215,28 @@ class MessageService {
       'lu': false,
     });
     unreadChanged.add(null);
+
+    // 🔔 Push FCM vers le destinataire (non bloquant)
+    try {
+      await _client.functions.invoke('push-send', body: {
+        'title': 'Nouveau message',
+        'body': contenu.isEmpty ? 'Vous avez reçu un nouveau message' : contenu,
+        'user_id': receiverId,
+        'data': {
+          'type': 'message',
+          'contexte': 'logement',
+          'sender_id': senderId,
+          'receiver_id': receiverId,
+          'annonce_id': logementId,
+          'logement_id': logementId,
+          'prestataire_id': '',
+          'annonce_titre': logementTitre,
+          'prestataire_name': '',
+          'logement_titre': logementTitre,
+          'title': logementTitre,
+        },
+      });
+    } catch (_) {}
   }
 
   Future<void> sendMessageToPrestataire({
@@ -241,6 +284,27 @@ class MessageService {
       'lu': false,
     });
     unreadChanged.add(null);
+
+    // 🔔 Push FCM vers le propriétaire du prestataire (non bloquant)
+    try {
+      await _client.functions.invoke('push-send', body: {
+        'title': 'Nouveau message',
+        'body': contenu.isEmpty ? 'Vous avez reçu un nouveau message' : contenu,
+        'user_id': resolvedReceiver,
+        'data': {
+          'type': 'message',
+          'contexte': 'prestataire',
+          'sender_id': senderId,
+          'receiver_id': resolvedReceiver,
+          'annonce_id': '',
+          'logement_id': '',
+          'prestataire_id': prestataireId,
+          'annonce_titre': '',
+          'prestataire_name': prestataireName,
+          'title': prestataireName,
+        },
+      });
+    } catch (_) {}
   }
 
   // ---------------- Lecture ----------------

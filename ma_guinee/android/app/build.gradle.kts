@@ -1,9 +1,9 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // Le plugin Flutter doit venir après Android & Kotlin
     id("dev.flutter.flutter-gradle-plugin")
-    // ✅ requis pour Firebase (google-services.json)
+
+    // Firebase Google Services plugin
     id("com.google.gms.google-services")
 }
 
@@ -12,7 +12,6 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // Java 17 + desugaring (requis par flutter_local_notifications)
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -29,9 +28,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // (Optionnel mais accélère sur ton Samsung ARM64)
-        // ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -47,8 +43,17 @@ flutter {
 }
 
 dependencies {
-    // Desugaring >= 2.1.4 exigé par flutter_local_notifications
+    // Obligatoire pour flutter_local_notifications + Java 17
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    // Si l'accessor n'est pas reconnu, utilise la forme:
-    // add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.1.5")
+
+    // Firebase Messaging (FCM)
+    implementation(platform("com.google.firebase:firebase-bom:33.2.0"))
+    implementation("com.google.firebase:firebase-messaging")
+}
+
+// Empêcher les conflits de version de desugaring
+configurations.all {
+    resolutionStrategy {
+        force("com.android.tools:desugar_jdk_libs:2.1.5")
+    }
 }
