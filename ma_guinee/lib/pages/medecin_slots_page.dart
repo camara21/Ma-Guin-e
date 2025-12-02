@@ -10,6 +10,7 @@ const kHealthGreen = Color(0xFF009460);
 class MedecinSlotsPage extends StatefulWidget {
   final int cliniqueId;
   final String titre;
+
   const MedecinSlotsPage({
     super.key,
     required this.cliniqueId,
@@ -106,11 +107,11 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
   // ---------- Filtres / vues classiques ----------
 
   DateTime get _now => DateTime.now();
-  DateTime get _cutoffPast => _now.subtract(const Duration(
-      hours: 1)); // RDV passés >1h masqués dans l'onglet "à venir"
+
+  // RDV passés >1h masqués dans l'onglet "à venir"
+  DateTime get _cutoffPast => _now.subtract(const Duration(hours: 1));
 
   List<Rdv> get _rdvAvenir {
-    // Réservations prises (confirmé / en_attente) et pas encore passées +1h
     return _rdv
         .where((r) =>
             (r.statut == 'confirme' || r.statut == 'en_attente') &&
@@ -162,88 +163,94 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
               const SizedBox(height: 10),
 
               // Dates
-              Row(children: [
-                Expanded(
-                  child: _tile(
-                    icon: Icons.today,
-                    label: DateFormat('EEE d MMM', 'fr_FR').format(_from),
-                    onTap: () async {
-                      final p = await showDatePicker(
-                        context: context,
-                        initialDate: _from,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                        locale: const Locale('fr', 'FR'),
-                      );
-                      if (p != null) setState(() => _from = p);
-                    },
+              Row(
+                children: [
+                  Expanded(
+                    child: _tile(
+                      icon: Icons.today,
+                      label: DateFormat('EEE d MMM', 'fr_FR').format(_from),
+                      onTap: () async {
+                        final p = await showDatePicker(
+                          context: context,
+                          initialDate: _from,
+                          firstDate: DateTime.now(),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365)),
+                          locale: const Locale('fr', 'FR'),
+                        );
+                        if (p != null) setState(() => _from = p);
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _tile(
-                    icon: Icons.event,
-                    label: DateFormat('EEE d MMM', 'fr_FR').format(_to),
-                    onTap: () async {
-                      final p = await showDatePicker(
-                        context: context,
-                        initialDate: _to,
-                        firstDate: _from,
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                        locale: const Locale('fr', 'FR'),
-                      );
-                      if (p != null) setState(() => _to = p);
-                    },
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _tile(
+                      icon: Icons.event,
+                      label: DateFormat('EEE d MMM', 'fr_FR').format(_to),
+                      onTap: () async {
+                        final p = await showDatePicker(
+                          context: context,
+                          initialDate: _to,
+                          firstDate: _from,
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365)),
+                          locale: const Locale('fr', 'FR'),
+                        );
+                        if (p != null) setState(() => _to = p);
+                      },
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 8),
 
               // Heures
-              Row(children: [
-                Expanded(
-                  child: _tile(
-                    icon: Icons.schedule,
-                    label: _fmtTod(_start),
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: context,
-                        initialTime: _start,
-                        helpText: 'Heure début',
-                        builder: (context, child) {
-                          final mq = MediaQuery.of(context)
-                              .copyWith(alwaysUse24HourFormat: true);
-                          return MediaQuery(data: mq, child: child!);
-                        },
-                      );
-                      if (t != null) setState(() => _start = t);
-                    },
+              Row(
+                children: [
+                  Expanded(
+                    child: _tile(
+                      icon: Icons.schedule,
+                      label: _fmtTod(_start),
+                      onTap: () async {
+                        final t = await showTimePicker(
+                          context: context,
+                          initialTime: _start,
+                          helpText: 'Heure début',
+                          builder: (context, child) {
+                            final mq = MediaQuery.of(context)
+                                .copyWith(alwaysUse24HourFormat: true);
+                            return MediaQuery(data: mq, child: child!);
+                          },
+                        );
+                        if (t != null) setState(() => _start = t);
+                      },
+                    ),
                   ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Text('→'),
-                ),
-                Expanded(
-                  child: _tile(
-                    icon: Icons.schedule,
-                    label: _fmtTod(_end),
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: context,
-                        initialTime: _end,
-                        helpText: 'Heure fin',
-                        builder: (context, child) {
-                          final mq = MediaQuery.of(context)
-                              .copyWith(alwaysUse24HourFormat: true);
-                          return MediaQuery(data: mq, child: child!);
-                        },
-                      );
-                      if (t != null) setState(() => _end = t);
-                    },
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text('→'),
                   ),
-                ),
-              ]),
+                  Expanded(
+                    child: _tile(
+                      icon: Icons.schedule,
+                      label: _fmtTod(_end),
+                      onTap: () async {
+                        final t = await showTimePicker(
+                          context: context,
+                          initialTime: _end,
+                          helpText: 'Heure fin',
+                          builder: (context, child) {
+                            final mq = MediaQuery.of(context)
+                                .copyWith(alwaysUse24HourFormat: true);
+                            return MediaQuery(data: mq, child: child!);
+                          },
+                        );
+                        if (t != null) setState(() => _end = t);
+                      },
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
 
               // Jours
@@ -316,31 +323,29 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('La date fin doit être ≥ date début.')),
       );
-      return;
-    }
-    if (_days.isEmpty) {
+    } else if (_days.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sélectionnez au moins un jour.')),
       );
-      return;
+    } else {
+      final count = await _svc.creerSlotsRecurrents(
+        cliniqueId: widget.cliniqueId,
+        fromDate: _from,
+        toDate: _to,
+        start: _start,
+        end: _end,
+        daysOfWeek: _days.toList(),
+        durationMinutes: 30,
+        capacityPerSlot: _capacity,
+      );
+      if (!mounted) return;
+      Navigator.of(context).maybePop(); // fermer la feuille
+      await _refreshAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$count créneaux créés.')),
+      );
     }
-    final count = await _svc.creerSlotsRecurrents(
-      cliniqueId: widget.cliniqueId,
-      fromDate: _from,
-      toDate: _to,
-      start: _start,
-      end: _end,
-      daysOfWeek: _days.toList(),
-      durationMinutes: 30,
-      capacityPerSlot: _capacity,
-    );
-    if (!mounted) return;
-    Navigator.of(context).maybePop(); // fermer la feuille
-    await _refreshAll();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$count créneaux créés.')),
-    );
   }
 
   // ---------- Actions ----------
@@ -523,7 +528,7 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
     return e.end.isBefore(now);
   }
 
-  // Construire la liste d’événements pour le planning (OPTION B : RDV + slots)
+  // Construire la liste d’événements pour le planning (RDV + slots)
   List<_MedPlanningEvent> get _planningEvents {
     final now = _now;
     final list = <_MedPlanningEvent>[];
@@ -660,12 +665,12 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
 
   Widget _buildBodyForTab(Color c) {
     switch (_tab) {
-      // ---- Onglet RDV à venir : PLANNING moderne ----
       case _Tab.avenir:
+        // Onglet RDV à venir : PLANNING moderne
         return _buildPlanningTab();
 
-      // ---- Onglet RDV annulés (liste par jour) ----
       case _Tab.annules:
+        // Onglet RDV annulés (liste par jour)
         final groups = _groupByDay<Rdv>(_rdvAnnules, (r) => r.startAt);
         if (groups.isEmpty) {
           return const Center(child: Text('Aucun rendez-vous annulé.'));
@@ -717,8 +722,8 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
           }).toList(),
         );
 
-      // ---- Onglet Créneaux (liste par jour avec chips) ----
       case _Tab.slots:
+        // Onglet Créneaux (liste par jour avec chips)
         final groups = _groupByDay<SlotDispo>(_slotsLibres, (s) => s.startAt);
         if (groups.isEmpty) {
           return const Center(child: Text('Aucun créneau disponible.'));
@@ -816,110 +821,116 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
     );
   }
 
+  // Header responsive (2 lignes, adapté mobile)
   Widget _buildPlanningHeader() {
     return Container(
       color: Colors.grey.shade100,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Flèche gauche
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+          // Ligne 1 : flèches + période + bouton calendrier
+          Row(
+            children: [
+              // Flèche gauche
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _goPrev,
+                  child: const Icon(Icons.chevron_left, size: 18),
+                ),
               ),
-              onPressed: _goPrev,
-              child: const Icon(Icons.chevron_left, size: 18),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Période
-          Expanded(
-            child: Container(
-              height: 32,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(3),
-                border: Border.all(color: Colors.grey.shade400),
+              // Période (jour / semaine / mois)
+              Expanded(
+                child: Container(
+                  height: 32,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: Colors.grey.shade400),
+                  ),
+                  child: Text(
+                    _periodLabel(),
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
-              child: Text(
-                _periodLabel(),
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Bouton calendrier
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+              // Bouton calendrier
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _pickDate,
+                  child: const Icon(Icons.calendar_today, size: 15),
+                ),
               ),
-              onPressed: _pickDate,
-              child: const Icon(Icons.calendar_today, size: 15),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Flèche droite
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+              // Flèche droite
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _goNext,
+                  child: const Icon(Icons.chevron_right, size: 18),
+                ),
               ),
-              onPressed: _goNext,
-              child: const Icon(Icons.chevron_right, size: 18),
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
 
-          // Aujourd'hui
-          SizedBox(
-            height: 32,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.black),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-              onPressed: () {
-                setState(() {
-                  _current = DateTime.now();
-                  _view = 'jour';
-                });
-              },
-              icon: const Icon(Icons.today, size: 16),
-              label: const Text(
-                "Aujourd'hui",
-                style: TextStyle(fontSize: 13),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(height: 6),
 
-          // Boutons Jour / Semaine / Mois
-          SizedBox(
-            height: 32,
-            child: Row(
-              children: [
-                _buildViewButton('Jour', 'jour'),
-                _buildViewButton('Semaine', 'semaine'),
-                _buildViewButton('Mois', 'mois'),
-              ],
-            ),
+          // Ligne 2 : Aujourd'hui + Jour / Semaine / Mois sous forme de Wrap
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                height: 32,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.black),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _current = DateTime.now();
+                      _view = 'jour';
+                    });
+                  },
+                  icon: const Icon(Icons.today, size: 16),
+                  label: const Text(
+                    "Aujourd'hui",
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+              _buildViewButton('Jour', 'jour'),
+              _buildViewButton('Semaine', 'semaine'),
+              _buildViewButton('Mois', 'mois'),
+            ],
           ),
         ],
       ),
@@ -1009,7 +1020,9 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
                                   margin:
                                       const EdgeInsets.only(right: 6, top: 4),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 6),
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: _planningColor(e),
                                     borderRadius: BorderRadius.circular(6),
@@ -1110,7 +1123,9 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
                               ),
                             ),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 4),
+                              horizontal: 4,
+                              vertical: 4,
+                            ),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1243,7 +1258,7 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
   }
 
   // =========================================================
-  //          VUE MOIS (résumé par jour)
+  //          VUE MOIS (résumé par jour, safe mobile)
   // =========================================================
 
   Widget _buildMonthView(List<_MedPlanningEvent> events) {
@@ -1251,11 +1266,34 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
     final last = DateTime(_current.year, _current.month + 1, 0);
     final days = List.generate(last.day, (i) => first.add(Duration(days: i)));
 
-    return GridView.count(
-      crossAxisCount: 7,
-      children: [
-        for (final d in days)
-          Container(
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        childAspectRatio: 0.9, // un peu de hauteur
+      ),
+      itemCount: days.length,
+      itemBuilder: (context, index) {
+        final d = days[index];
+
+        final dayEvents = events.where((e) {
+          return e.start.year == d.year &&
+              e.start.month == d.month &&
+              e.start.day == d.day;
+        }).toList();
+
+        final rdvCount = dayEvents.where((e) => !e.isSlot).length;
+        final slotsCount = dayEvents.where((e) => e.isSlot).length;
+
+        final hasEvents = dayEvents.isNotEmpty;
+
+        String summary = '';
+        if (rdvCount > 0) summary += '$rdvCount RDV';
+        if (rdvCount > 0 && slotsCount > 0) summary += ' • ';
+        if (slotsCount > 0) summary += '$slotsCount créneaux';
+
+        return InkWell(
+          onTap: hasEvents ? () => _showDayEventsSheet(d, dayEvents) : null,
+          child: Container(
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey.shade300),
             ),
@@ -1270,37 +1308,109 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                ...events.where((e) {
-                  return e.start.year == d.year &&
-                      e.start.month == d.month &&
-                      e.start.day == d.day;
-                }).map((e) {
-                  final bgColor = _planningColor(e);
-                  return GestureDetector(
-                    onTap: () => _openEventDetails(e),
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: bgColor,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        e.title,
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: Colors.white,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                const SizedBox(height: 2),
+                if (hasEvents)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 1,
                     ),
-                  );
-                }),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(
+                      summary,
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
               ],
             ),
           ),
-      ],
+        );
+      },
+    );
+  }
+
+  // Bottom sheet listant tous les événements d'un jour
+  void _showDayEventsSheet(
+    DateTime day,
+    List<_MedPlanningEvent> events,
+  ) {
+    final title = DateFormat('EEEE d MMMM y', 'fr_FR').format(day);
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.6,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: events.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (ctx, i) {
+                      final e = events[i];
+                      final start =
+                          DateFormat('HH:mm', 'fr_FR').format(e.start);
+                      final end = DateFormat('HH:mm', 'fr_FR').format(e.end);
+                      return ListTile(
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _openEventDetails(e);
+                        },
+                        leading: CircleAvatar(
+                          radius: 12,
+                          backgroundColor: _planningColor(e),
+                          child: const Icon(
+                            Icons.event,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                        title: Text(
+                          e.title,
+                          style: const TextStyle(fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '$start – $end',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        dense: true,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1463,11 +1573,10 @@ class _MedecinSlotsPageState extends State<MedecinSlotsPage> {
         ),
         child: Row(
           children: [
-            Icon(icon, color: kHealthGreen), // <-- const supprimé
+            Icon(icon, color: kHealthGreen),
             const SizedBox(width: 8),
             Expanded(child: Text(label)),
-            const Icon(
-                Icons.expand_more), // celui-ci reste const car c’est fixe
+            const Icon(Icons.expand_more),
           ],
         ),
       ),

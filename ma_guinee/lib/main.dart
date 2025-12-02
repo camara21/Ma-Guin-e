@@ -234,6 +234,7 @@ Future<void> main() async {
   await Hive.openBox(kAnnoncesBox);
   await Hive.openBox('hotels_box');
   await Hive.openBox('logement_feed_box');
+  await Hive.openBox('logements_map_box_v1');
 
   if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
 

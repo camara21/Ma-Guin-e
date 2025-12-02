@@ -255,7 +255,16 @@ class _ProReservationsTourismePageState
 
   bool _isPastEvent(_TourismEvent e) {
     final now = DateTime.now();
-    return e.end.isBefore(now);
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final endDate = DateTime(e.end.year, e.end.month, e.end.day);
+    return endDate.isBefore(todayDate) ||
+        (endDate.isAtSameMomentAs(todayDate) && e.end.isBefore(now));
+  }
+
+  Color _eventColor(_TourismEvent e) {
+    if (e.cancelled) return Colors.red.shade400;
+    if (_isPastEvent(e)) return Colors.grey.shade500;
+    return kTourismePrimary;
   }
 
   // =========================================================
@@ -437,113 +446,198 @@ class _ProReservationsTourismePageState
     );
   }
 
+  // Bottom-sheet listant tous les événements d'un jour (vue Mois)
+  void _showDayEventsSheet(DateTime day, List<_TourismEvent> events) {
+    final title = DateFormat('EEEE d MMMM y', 'fr_FR').format(day);
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.6,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: events.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (ctx, i) {
+                      final e = events[i];
+                      final start =
+                          DateFormat('HH:mm', 'fr_FR').format(e.start);
+                      final end = DateFormat('HH:mm', 'fr_FR').format(e.end);
+                      final status = e.cancelled
+                          ? 'Annulée'
+                          : (_isPastEvent(e) ? 'Passée' : 'Active');
+
+                      return ListTile(
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _showEventSheet(e);
+                        },
+                        leading: CircleAvatar(
+                          radius: 12,
+                          backgroundColor: _eventColor(e),
+                          child: const Icon(
+                            Icons.landscape,
+                            size: 14,
+                            color: Colors.black,
+                          ),
+                        ),
+                        title: Text(
+                          e.clientName,
+                          style: const TextStyle(fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '$start – $end • ${e.lieuName} • $status',
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        dense: true,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // =========================================================
-  //          HEADER STYLE "OUTIL PRO"
+  //          HEADER STYLE "OUTIL PRO" (responsive)
   // =========================================================
   Widget _buildHeader() {
     return Container(
       color: Colors.grey.shade100,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Flèche gauche
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+          // Ligne 1 : flèches + période + calendrier
+          Row(
+            children: [
+              // Flèche gauche
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _goPrev,
+                  child: const Icon(Icons.chevron_left, size: 18),
+                ),
               ),
-              onPressed: _goPrev,
-              child: const Icon(Icons.chevron_left, size: 18),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Période
-          Expanded(
-            child: Container(
-              height: 32,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(3),
-                border: Border.all(color: Colors.grey.shade400),
+              // Période
+              Expanded(
+                child: Container(
+                  height: 32,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: Colors.grey.shade400),
+                  ),
+                  child: Text(
+                    _periodLabel(),
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
-              child: Text(
-                _periodLabel(),
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Bouton calendrier
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+              // Bouton calendrier
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _pickDate,
+                  child: const Icon(Icons.calendar_today, size: 15),
+                ),
               ),
-              onPressed: _pickDate,
-              child: const Icon(Icons.calendar_today, size: 15),
-            ),
-          ),
-          const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-          // Flèche droite
-          SizedBox(
-            width: 36,
-            height: 32,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                side: BorderSide(color: Colors.grey.shade400),
+              // Flèche droite
+              SizedBox(
+                width: 36,
+                height: 32,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey.shade400),
+                  ),
+                  onPressed: _goNext,
+                  child: const Icon(Icons.chevron_right, size: 18),
+                ),
               ),
-              onPressed: _goNext,
-              child: const Icon(Icons.chevron_right, size: 18),
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
 
-          // Aujourd'hui
-          SizedBox(
-            height: 32,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.black),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-              onPressed: () {
-                setState(() {
-                  _current = DateTime.now();
-                  _view = 'jour';
-                });
-              },
-              icon: const Icon(Icons.today, size: 16),
-              label: const Text(
-                "Aujourd'hui",
-                style: TextStyle(fontSize: 13),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(height: 6),
 
-          // Boutons Jour / Semaine / Mois
-          SizedBox(
-            height: 32,
-            child: Row(
-              children: [
-                _buildViewButton('Jour', 'jour'),
-                _buildViewButton('Semaine', 'semaine'),
-                _buildViewButton('Mois', 'mois'),
-              ],
-            ),
+          // Ligne 2 : Aujourd'hui + Jour / Semaine / Mois
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                height: 32,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.black),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _current = DateTime.now();
+                      _view = 'jour';
+                    });
+                  },
+                  icon: const Icon(Icons.today, size: 16),
+                  label: const Text(
+                    "Aujourd'hui",
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+              _buildViewButton('Jour', 'jour'),
+              _buildViewButton('Semaine', 'semaine'),
+              _buildViewButton('Mois', 'mois'),
+            ],
           ),
         ],
       ),
@@ -620,7 +714,7 @@ class _ProReservationsTourismePageState
   }
 
   // =========================================================
-  //          VUE JOUR (STYLE RESTAURANT) 08:00 → 23:00
+  //          VUE JOUR (08:00 → 23:00)
   // =========================================================
   Widget _buildDayView() {
     const startHour = 8;
@@ -633,7 +727,6 @@ class _ProReservationsTourismePageState
       itemBuilder: (context, index) {
         final hour = startHour + index;
 
-        // Événements de ce créneau horaire
         final slotEvents = _events.where((e) {
           final d = e.start;
           final sameDay =
@@ -665,7 +758,7 @@ class _ProReservationsTourismePageState
                 ),
               ),
               const SizedBox(width: 4),
-              // Cases rendez-vous (horizontales)
+              // Événements horizontaux
               Expanded(
                 child: slotEvents.isEmpty
                     ? const SizedBox.shrink()
@@ -691,9 +784,7 @@ class _ProReservationsTourismePageState
 
   Widget _buildDayEventBlock(_TourismEvent e) {
     final bool isPast = _isPastEvent(e);
-    final Color bgColor = e.cancelled
-        ? Colors.red.shade400
-        : (isPast ? Colors.grey.shade500 : kTourismePrimary);
+    final Color bgColor = _eventColor(e);
     final Color textColor = e.cancelled || isPast ? Colors.white : Colors.black;
 
     return Container(
@@ -708,7 +799,6 @@ class _ProReservationsTourismePageState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Nom du client
           Text(
             e.clientName,
             maxLines: 1,
@@ -720,7 +810,6 @@ class _ProReservationsTourismePageState
             ),
           ),
           const SizedBox(height: 2),
-          // Nom du lieu
           Text(
             e.lieuName,
             maxLines: 1,
@@ -893,18 +982,16 @@ class _ProReservationsTourismePageState
                 margin: const EdgeInsets.all(2),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 decoration: BoxDecoration(
-                  color: e.cancelled
-                      ? Colors.red.shade300
-                      : (_isPastEvent(e)
-                          ? Colors.grey.shade500
-                          : kTourismePrimary),
+                  color: _eventColor(e),
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(
                   e.clientName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: Colors.black,
+                    color: e.cancelled || _isPastEvent(e)
+                        ? Colors.white
+                        : Colors.black,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -917,18 +1004,39 @@ class _ProReservationsTourismePageState
   }
 
   // =========================================================
-  //          VUE MOIS (simple)
+  //          VUE MOIS (résumé par jour, safe mobile)
   // =========================================================
   Widget _buildMonthView() {
     final first = DateTime(_current.year, _current.month, 1);
     final last = DateTime(_current.year, _current.month + 1, 0);
     final days = List.generate(last.day, (i) => first.add(Duration(days: i)));
 
-    return GridView.count(
-      crossAxisCount: 7,
-      children: [
-        for (final d in days)
-          Container(
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        childAspectRatio: 0.9,
+      ),
+      itemCount: days.length,
+      itemBuilder: (context, index) {
+        final d = days[index];
+
+        final dayEvents = _events.where((e) {
+          return e.start.year == d.year &&
+              e.start.month == d.month &&
+              e.start.day == d.day;
+        }).toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+
+        final count = dayEvents.length;
+        final hasEvents = count > 0;
+
+        final summary = hasEvents
+            ? (count == 1 ? '1 réservation' : '$count réservations')
+            : '';
+
+        return InkWell(
+          onTap: hasEvents ? () => _showDayEventsSheet(d, dayEvents) : null,
+          child: Container(
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey.shade300),
             ),
@@ -939,41 +1047,36 @@ class _ProReservationsTourismePageState
                 Text(
                   d.day.toString(),
                   style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.bold),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                ..._events.where((e) {
-                  return e.start.year == d.year &&
-                      e.start.month == d.month &&
-                      e.start.day == d.day;
-                }).map((e) {
-                  final bgColor = e.cancelled
-                      ? Colors.red.shade300
-                      : (_isPastEvent(e)
-                          ? Colors.grey.shade500
-                          : kTourismePrimary);
-                  return GestureDetector(
-                    onTap: () => _showEventSheet(e),
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: bgColor,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        e.clientName,
-                        style:
-                            const TextStyle(fontSize: 9, color: Colors.black),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                const SizedBox(height: 2),
+                if (hasEvents)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 1,
                     ),
-                  );
-                }),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(
+                      summary,
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
               ],
             ),
           ),
-      ],
+        );
+      },
     );
   }
 }

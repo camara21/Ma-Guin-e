@@ -1,16 +1,22 @@
-// lib/pages/logement/logement_map_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
 import '../../routes.dart';
 
 enum _MapStyle { voyager, satellite }
+
+const String _logementMapCacheBox = 'logements_map_box_v1';
+
+// Centre par défaut sur Conakry (comme avant)
+const LatLng _conakryCenter = LatLng(9.5412, -13.6773);
+const double _conakryZoom = 12.0;
 
 class LogementMapPage extends StatefulWidget {
   const LogementMapPage({
@@ -46,7 +52,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
   final MapController _map = MapController();
 
   List<LogementModel> _items = [];
-  bool _loading = true;
+  bool _loading = false; // seulement pour le bouton refresh
   String? _error;
 
   LatLng? _me;
@@ -60,23 +66,136 @@ class _LogementMapPageState extends State<LogementMapPage> {
   Color get _chipBg =>
       _isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6);
 
+  String get _cacheKey =>
+      'map|${widget.ville ?? ''}|${widget.commune ?? ''}|v1';
+
   @override
   void initState() {
     super.initState();
-    _init(); // lit directement widget.focus* (plus de ModalRoute)
+
+    // 1) lecture synchronisée du cache (aucun setState → déjà prêt avant 1er build)
+    _loadCacheSync();
+
+    // 2) centrer la carte dès la première frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_hasFocus) {
+        _fitAll();
+      }
+    });
+
+    // 3) tâches réseau en arrière-plan (position + refresh Supabase)
+    _init();
   }
 
+  // =========================================================
+  //          CACHE HIVE SYNCHRONE (avant 1er build)
+  // =========================================================
+  void _loadCacheSync() {
+    try {
+      if (!Hive.isBoxOpen(_logementMapCacheBox)) return;
+      final box = Hive.box(_logementMapCacheBox);
+      final raw = box.get(_cacheKey);
+      if (raw is List) {
+        final list = <LogementModel>[];
+        for (final e in raw) {
+          if (e is Map) {
+            final m = Map<String, dynamic>.from(e as Map);
+            list.add(_fromCacheMap(m));
+          }
+        }
+        _items = list;
+      }
+    } catch (_) {
+      // on ignore les erreurs de cache
+    }
+  }
+
+  Future<void> _saveToCache(List<LogementModel> list) async {
+    try {
+      final box = await Hive.openBox(_logementMapCacheBox);
+      final data = list.map(_toCacheMap).toList();
+      await box.put(_cacheKey, data);
+    } catch (_) {
+      // silencieux
+    }
+  }
+
+  Map<String, dynamic> _toCacheMap(LogementModel b) => {
+        'id': b.id,
+        'userId': b.userId,
+        'titre': b.titre,
+        'description': b.description,
+        'prixGnf': b.prixGnf,
+        'mode': b.mode.index,
+        'categorie': b.categorie.index,
+        'lat': b.lat,
+        'lng': b.lng,
+        'ville': b.ville,
+        'commune': b.commune,
+        'photos': b.photos,
+        'adresse': b.adresse,
+        'chambres': b.chambres,
+        'superficieM2': b.superficieM2,
+        'creeLe': b.creeLe.toIso8601String(),
+      };
+
+  LogementModel _fromCacheMap(Map<String, dynamic> m) {
+    LogementMode _modeFrom(dynamic v) {
+      if (v is int && v >= 0 && v < LogementMode.values.length) {
+        return LogementMode.values[v];
+      }
+      return LogementMode.location;
+    }
+
+    LogementCategorie _catFrom(dynamic v) {
+      if (v is int && v >= 0 && v < LogementCategorie.values.length) {
+        return LogementCategorie.values[v];
+      }
+      return LogementCategorie.appartement;
+    }
+
+    return LogementModel(
+      id: (m['id'] ?? '') as String,
+      userId: (m['userId'] ?? '') as String,
+      titre: (m['titre'] ?? '') as String,
+      description: (m['description'] ?? '') as String,
+      prixGnf: (m['prixGnf'] as num?)?.toInt(),
+      mode: _modeFrom(m['mode']),
+      categorie: _catFrom(m['categorie']),
+      lat: (m['lat'] as num?)?.toDouble(),
+      lng: (m['lng'] as num?)?.toDouble(),
+      ville: m['ville'] as String?,
+      commune: m['commune'] as String?,
+      photos: (m['photos'] as List?)?.cast<String>() ?? const [],
+      adresse: m['adresse'] as String?,
+      chambres: m['chambres'] as int?,
+      superficieM2: (m['superficieM2'] as num?)?.toDouble(),
+      creeLe: DateTime.tryParse(m['creeLe'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+
+  // =========================================================
+  //          INITIALISATION RÉSEAU (en arrière-plan)
+  // =========================================================
   Future<void> _init() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
-    await _getMe();
-    await _load();
-    await _focusIfNeeded(); // centre + ouvre l’aperçu si un focus est fourni
+
+    await _getMe(); // position utilisateur
+    await _loadFromNetwork(); // refresh Supabase
+    await _focusIfNeeded(); // si focus explicite
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+    });
   }
 
-  Future<void> _load() async {
+  Future<void> _loadFromNetwork() async {
     try {
       final list = await _svc.nearMe(
         ville: widget.ville,
@@ -86,13 +205,13 @@ class _LogementMapPageState extends State<LogementMapPage> {
       if (!mounted) return;
       setState(() {
         _items = list;
-        _loading = false;
       });
+      _saveToCache(list);
     } catch (e) {
       if (!mounted) return;
+      // on garde la carte avec les données du cache
       setState(() {
         _error = e.toString();
-        _loading = false;
       });
     }
   }
@@ -104,12 +223,16 @@ class _LogementMapPageState extends State<LogementMapPage> {
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
       }
-      if (p == LocationPermission.denied || p == LocationPermission.deniedForever) return;
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) return;
 
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
-      _me = LatLng(pos.latitude, pos.longitude);
+      if (!mounted) return;
+      setState(() {
+        _me = LatLng(pos.latitude, pos.longitude);
+      });
     } catch (_) {}
   }
 
@@ -118,6 +241,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   Future<void> _focusIfNeeded() async {
     if (!_hasFocus) {
+      // pas de focus explicite → on reste centrés sur Conakry
       _fitAll();
       return;
     }
@@ -126,9 +250,9 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
     // attendre 1 frame pour que la Map s’attache bien
     await Future.delayed(const Duration(milliseconds: 50));
-    _map.move(center, 17.5); // désactive le cluster
+    _map.move(center, 17.5); // désactive le cluster pour ce bien
 
-    // trouver l’élément ou construire un fallback
+    // trouver l’élément ou fallback
     final b = _items.firstWhere(
       (e) => e.id == widget.focusId,
       orElse: () => LogementModel(
@@ -155,24 +279,11 @@ class _LogementMapPageState extends State<LogementMapPage> {
     if (mounted) _showPreview(b);
   }
 
+  /// Centre toujours sur Conakry (comme avant), même si des annonces
+  /// existent dans d'autres pays.
   void _fitAll() {
     try {
-      final pts = _items
-          .map((e) {
-            if (e.lat == null || e.lng == null) return null;
-            return LatLng(e.lat!, e.lng!);
-          })
-          .whereType<LatLng>()
-          .toList();
-
-      if (pts.isEmpty) {
-        _map.move(const LatLng(9.5412, -13.6773), 12);
-        return;
-      }
-      final b = LatLngBounds.fromPoints(pts);
-      _map.fitCamera(
-        CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(48)),
-      );
+      _map.move(_conakryCenter, _conakryZoom);
     } catch (_) {}
   }
 
@@ -216,9 +327,190 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = [widget.ville, widget.commune]
-        .whereType<String>()
-        .join(' • ');
+    final subtitle =
+        [widget.ville, widget.commune].whereType<String>().join(' • ');
+
+    final bool showErrorBox = _error != null && _items.isEmpty;
+
+    final body = showErrorBox
+        ? _errorBox(_error!)
+        : Stack(
+            children: [
+              FlutterMap(
+                mapController: _map,
+                options: MapOptions(
+                  // Carte visible immédiatement, centrée sur Conakry
+                  initialCenter: _conakryCenter,
+                  initialZoom: _conakryZoom,
+                ),
+                children: [
+                  if (_style == _MapStyle.voyager)
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.ma_guinee',
+                      subdomains: const ['a', 'b', 'c'],
+                    )
+                  else
+                    TileLayer(
+                      urlTemplate:
+                          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                      userAgentPackageName: 'com.example.ma_guinee',
+                    ),
+
+                  // Cluster + marqueurs
+                  MarkerClusterLayerWidget(
+                    options: MarkerClusterLayerOptions(
+                      markers: _buildMarkers(),
+                      maxClusterRadius: 45,
+                      disableClusteringAtZoom: 17,
+                      size: const Size(44, 44),
+                      padding: const EdgeInsets.all(50),
+                      zoomToBoundsOnClick: true,
+                      builder: (context, markers) => Container(
+                        decoration: BoxDecoration(
+                          color: _primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.20),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${markers.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  if (_me != null)
+                    MarkerLayer(markers: [
+                      Marker(
+                        point: _me!,
+                        width: 80,
+                        height: 95,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                    color: Colors.blueAccent, width: 3),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const CircleAvatar(
+                                radius: 20,
+                                backgroundColor: Colors.white,
+                                child: Icon(
+                                  Icons.person_pin_circle,
+                                  color: Colors.blueAccent,
+                                  size: 28,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'Moi',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ]),
+
+                  // Marqueur de secours si le bien ciblé n'est pas dans la liste
+                  if (_hasFocus && !_items.any((e) => e.id == widget.focusId))
+                    MarkerLayer(markers: [
+                      Marker(
+                        point: LatLng(widget.focusLat!, widget.focusLng!),
+                        width: 60,
+                        height: 60,
+                        alignment: Alignment.topCenter,
+                        child: const Icon(
+                          Icons.location_on,
+                          size: 40,
+                          color: Color(0xFFE1005A),
+                        ),
+                      ),
+                    ]),
+                ],
+              ),
+
+              // switch style
+              Positioned(
+                top: 12,
+                right: 12,
+                child: SafeArea(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _isDark
+                          ? const Color(0xFF121826).withOpacity(0.85)
+                          : Colors.white.withOpacity(0.95),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isDark
+                            ? const Color(0xFF2A3242)
+                            : const Color(0xFFE6E6E6),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _styleButton(
+                          'Voyager',
+                          _style == _MapStyle.voyager,
+                          () => setState(() => _style = _MapStyle.voyager),
+                        ),
+                        _styleButton(
+                          'Satellite',
+                          _style == _MapStyle.satellite,
+                          () => setState(() => _style = _MapStyle.satellite),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // FAB
+              Positioned(
+                bottom: 24,
+                right: 18,
+                child: FloatingActionButton(
+                  onPressed: () {
+                    if (_me != null) _map.move(_me!, 15);
+                  },
+                  backgroundColor: Colors.blueAccent,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.my_location),
+                  tooltip: 'Ma position',
+                ),
+              ),
+            ],
+          );
 
     return Scaffold(
       backgroundColor: _bg,
@@ -231,7 +523,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            onPressed: _init,
+            onPressed: _loading ? null : _init,
             tooltip: 'Rafraîchir',
             icon: const Icon(Icons.refresh, color: Colors.white),
           ),
@@ -247,186 +539,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
           ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorBox(_error!)
-              : Stack(
-                  children: [
-                    FlutterMap(
-                      mapController: _map,
-                      options: const MapOptions(
-                        initialCenter: LatLng(9.5412, -13.6773),
-                        initialZoom: 12,
-                      ),
-                      children: [
-                        if (_style == _MapStyle.voyager)
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.ma_guinee',
-                            subdomains: const ['a', 'b', 'c'],
-                          )
-                        else
-                          TileLayer(
-                            urlTemplate:
-                                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                            userAgentPackageName: 'com.example.ma_guinee',
-                          ),
-
-                        // Cluster + marqueurs
-                        MarkerClusterLayerWidget(
-                          options: MarkerClusterLayerOptions(
-                            markers: _buildMarkers(),
-                            maxClusterRadius: 45,
-                            disableClusteringAtZoom: 17,
-                            size: const Size(44, 44),
-                            padding: const EdgeInsets.all(50),
-                            zoomToBoundsOnClick: true,
-                            builder: (context, markers) => Container(
-                              decoration: BoxDecoration(
-                                color: _primary,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.20),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 4),
-                                  )
-                                ],
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                '${markers.length}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        if (_me != null)
-                          MarkerLayer(markers: [
-                            Marker(
-                              point: _me!,
-                              width: 80,
-                              height: 95,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                          color: Colors.blueAccent, width: 3),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const CircleAvatar(
-                                      radius: 20,
-                                      backgroundColor: Colors.white,
-                                      child: Icon(
-                                        Icons.person_pin_circle,
-                                        color: Colors.blueAccent,
-                                        size: 28,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blueAccent,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Text(
-                                      'Moi',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ]),
-
-                        // Marqueur de secours si le bien ciblé n'est pas dans la liste
-                        if (_hasFocus && !_items.any((e) => e.id == widget.focusId))
-                          MarkerLayer(markers: [
-                            Marker(
-                              point: LatLng(widget.focusLat!, widget.focusLng!),
-                              width: 60,
-                              height: 60,
-                              alignment: Alignment.topCenter,
-                              child: const Icon(
-                                Icons.location_on,
-                                size: 40,
-                                color: Color(0xFFE1005A),
-                              ),
-                            ),
-                          ]),
-                      ],
-                    ),
-
-                    // switch style
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: SafeArea(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: _isDark
-                                ? const Color(0xFF121826).withOpacity(0.85)
-                                : Colors.white.withOpacity(0.95),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: _isDark
-                                  ? const Color(0xFF2A3242)
-                                  : const Color(0xFFE6E6E6),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _styleButton(
-                                'Voyager',
-                                _style == _MapStyle.voyager,
-                                () => setState(() => _style = _MapStyle.voyager),
-                              ),
-                              _styleButton(
-                                'Satellite',
-                                _style == _MapStyle.satellite,
-                                () => setState(() => _style = _MapStyle.satellite),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // FAB
-                    Positioned(
-                      bottom: 24,
-                      right: 18,
-                      child: FloatingActionButton(
-                        onPressed: () {
-                          if (_me != null) _map.move(_me!, 15);
-                        },
-                        backgroundColor: Colors.blueAccent,
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(Icons.my_location),
-                        tooltip: 'Ma position',
-                      ),
-                    ),
-                  ],
-                ),
+      body: body,
     );
   }
 
@@ -476,9 +589,7 @@ class _LogementMapPageState extends State<LogementMapPage> {
         child: const Icon(Icons.image_not_supported, color: Colors.grey),
       ),
     );
-    return radius != null
-        ? ClipRRect(borderRadius: radius, child: img)
-        : img;
+    return radius != null ? ClipRRect(borderRadius: radius, child: img) : img;
   }
 
   List<Marker> _buildMarkers() {
@@ -590,9 +701,90 @@ class _LogementMapPageState extends State<LogementMapPage> {
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
           child: LayoutBuilder(
             builder: (ctx, cons) {
-              // vignettes : 92x92 → image adaptée DPI
-              const thumb = 92.0;
+              final double maxW = cons.maxWidth;
+              final bool compact = maxW < 380;
+              final double thumb = compact ? 72.0 : 92.0;
               final photo = (b.photos.isNotEmpty) ? b.photos.first : null;
+
+              Widget actions;
+              if (maxW < 400) {
+                // Layout compact : actions en colonne
+                actions = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      price,
+                      style: TextStyle(
+                        color: _accent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(44),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.logementDetail,
+                          arguments: b.id,
+                        );
+                      },
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('Voir la fiche'),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Fermer'),
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                // Layout large : actions en ligne
+                actions = Row(
+                  children: [
+                    Text(
+                      price,
+                      style: TextStyle(
+                        color: _accent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Fermer'),
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.logementDetail,
+                          arguments: b.id,
+                        );
+                      },
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('Voir la fiche'),
+                    ),
+                  ],
+                );
+              }
 
               return Column(
                 mainAxisSize: MainAxisSize.min,
@@ -637,55 +829,35 @@ class _LogementMapPageState extends State<LogementMapPage> {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               _miniChip(
-                                  b.mode == LogementMode.achat ? 'Achat' : 'Location'),
+                                b.mode == LogementMode.achat
+                                    ? 'Achat'
+                                    : 'Location',
+                              ),
                               _miniChip(_labelCat(b.categorie)),
-                              if (b.chambres != null) _miniChip('${b.chambres} ch'),
+                              if (b.chambres != null)
+                                _miniChip('${b.chambres} ch'),
                               if (b.superficieM2 != null)
-                                _miniChip('${b.superficieM2!.toStringAsFixed(0)} m²'),
+                                _miniChip(
+                                  '${b.superficieM2!.toStringAsFixed(0)} m²',
+                                ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            [b.ville, b.commune].whereType<String>().join(' • '),
-                            style: const TextStyle(color: Colors.black54, fontSize: 12),
+                            [b.ville, b.commune]
+                                .whereType<String>()
+                                .join(' • '),
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ]),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Text(
-                      price,
-                      style: TextStyle(
-                        color: _accent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Fermer'),
-                    ),
-                    const SizedBox(width: 6),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.pushNamed(
-                          context,
-                          AppRoutes.logementDetail,
-                          arguments: b.id,
-                        );
-                      },
-                      icon: const Icon(Icons.chevron_right),
-                      label: const Text('Voir la fiche'),
-                    ),
-                  ]),
+                  const SizedBox(height: 12),
+                  actions,
                 ],
               );
             },
@@ -697,7 +869,10 @@ class _LogementMapPageState extends State<LogementMapPage> {
 
   Widget _miniChip(String t) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: _chipBg, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+          color: _chipBg,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Text(t, style: const TextStyle(fontSize: 12)),
       );
 
