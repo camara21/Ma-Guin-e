@@ -26,7 +26,9 @@ class _MessagesPageState extends State<MessagesPage> {
   bool _loading = true;
 
   final Map<String, String> _avatarCache = {};
-  RealtimeChannel? _channel;
+
+  // Polling périodique
+  Timer? _pollTimer;
 
   DateTime _asDate(dynamic v) {
     if (v is DateTime) return v;
@@ -149,29 +151,41 @@ class _MessagesPageState extends State<MessagesPage> {
   @override
   void initState() {
     super.initState();
-    _loadConversations();
-    _listenRealtime();
+    _loadConversations(initial: true);
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _loadConversations(initial: false);
+    });
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadConversations() async {
+  Future<void> _loadConversations({bool initial = false}) async {
     final me = _sb.auth.currentUser;
     if (me == null) {
-      setState(() {
-        _conversations = [];
-        _utilisateurs = {};
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _conversations = [];
+          _utilisateurs = {};
+          _loading = false;
+        });
+      }
       return;
     }
 
-    setState(() => _loading = true);
+    if (initial) {
+      setState(() => _loading = true);
+    }
+
     try {
       final messages = await _messageService.fetchUserConversations(me.id);
       final hiddenKeys = await _messageService.fetchHiddenThreadKeys(me.id);
@@ -253,36 +267,20 @@ class _MessagesPageState extends State<MessagesPage> {
       setState(() {
         _utilisateurs = usersMap;
         _conversations = list;
-        _loading = false;
+        if (initial) _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       debugPrint('loadConversations error: $e');
-      setState(() {
-        _conversations = [];
-        _utilisateurs = {};
-        _loading = false;
-      });
+      if (initial) {
+        setState(() {
+          _conversations = [];
+          _utilisateurs = {};
+          _loading = false;
+        });
+      }
+      // si ce n'est pas initial, on garde les anciennes données
     }
-  }
-
-  void _listenRealtime() {
-    _channel?.unsubscribe();
-    _channel = _sb
-        .channel('public:messages')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          callback: (_) => _loadConversations(),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'messages',
-          callback: (_) => _loadConversations(),
-        )
-        .subscribe();
   }
 
   Future<void> _markThreadAsRead({
@@ -504,9 +502,10 @@ class _MessagesPageState extends State<MessagesPage> {
                             child: ListTile(
                               onLongPress: () async {
                                 final ok = await _confirmDelete();
-                                if (ok)
+                                if (ok) {
                                   await _deleteConversation(
                                       convo: m, otherId: userId);
+                                }
                               },
                               leading: Stack(
                                 children: [
@@ -635,7 +634,8 @@ class _MessagesPageState extends State<MessagesPage> {
                                   );
                                 }
 
-                                _loadConversations();
+                                // refresh après retour (sans spinner)
+                                _loadConversations(initial: false);
                               },
                             ),
                           );

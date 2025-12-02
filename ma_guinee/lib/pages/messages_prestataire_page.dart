@@ -7,7 +7,8 @@ import '../services/message_service.dart';
 class MessagesPrestatairePage extends StatefulWidget {
   final String prestataireId; // id du prestataire (contexte)
   final String prestataireNom; // titre AppBar
-  final String receiverId; // id de l'autre utilisateur (peut être vide/obsolète)
+  final String
+      receiverId; // id de l'autre utilisateur (peut être vide/obsolète)
   final String senderId; // mon id
 
   const MessagesPrestatairePage({
@@ -33,30 +34,29 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   List<Map<String, dynamic>> _msgs = <Map<String, dynamic>>[];
   bool _loading = true;
 
-  RealtimeChannel? _channel;
-
   // Résolution du destinataire (source de vérité = prestataires.utilisateur_id)
   String? _resolvedReceiverId;
-  bool _peerMissing =
-      false; // pas de compte lié => envoi désactivé
+  bool _peerMissing = false; // pas de compte lié => envoi désactivé
   bool _ready = false;
+
+  // Polling périodique
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _bootstrap(); // résout receiver + charge messages
-    _listenRealtime(); // abonnement realtime
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  /// Lit toujours `prestataires.utilisateur_id` (certain trigger l'exige),
+  /// Lit toujours `prestataires.utilisateur_id`,
   /// puis charge l'historique et marque *lu*.
   Future<void> _bootstrap() async {
     try {
@@ -75,49 +75,26 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         _resolvedReceiverId = dbUid; // on s’aligne sur la base
       }
 
-      await _loadAndMarkRead();
+      await _loadAndMarkRead(initial: true);
+      _startPolling();
     } finally {
       if (mounted) setState(() => _ready = true);
     }
   }
 
-  // Realtime: insert + update filtrés sur ce prestataire
-  void _listenRealtime() {
-    _channel?.unsubscribe();
-    _channel = _sb
-        .channel('public:messages:prestataire:${widget.prestataireId}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            final r = payload.newRecord ?? const <String, dynamic>{};
-            if ((r['contexte'] == 'prestataire') &&
-                (r['prestataire_id']?.toString() == widget.prestataireId)) {
-              _loadAndMarkRead();
-            }
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            final r = (payload.newRecord ?? payload.oldRecord) ??
-                const <String, dynamic>{};
-            if ((r['contexte'] == 'prestataire') &&
-                (r['prestataire_id']?.toString() == widget.prestataireId)) {
-              _loadAndMarkRead();
-            }
-          },
-        )
-        .subscribe();
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _loadAndMarkRead(initial: false);
+    });
   }
 
   // Charger l'historique VISIBLE POUR MOI + marquer *lu*
-  Future<void> _loadAndMarkRead() async {
+  Future<void> _loadAndMarkRead({bool initial = false}) async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    if (initial) {
+      setState(() => _loading = true);
+    }
     try {
       final msgs = await _svc.fetchMessagesForPrestataireVisibleTo(
         viewerUserId: widget.senderId,
@@ -133,7 +110,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       ]..removeWhere((e) => e.isEmpty);
 
       if (idsAValider.isNotEmpty) {
-        // supabase_flutter v2 => inFilter()
         await _sb
             .from('messages')
             .update({'lu': true}).inFilter('id', idsAValider);
@@ -143,12 +119,14 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       if (!mounted) return;
       setState(() {
         _msgs = msgs;
-        _loading = false;
+        if (initial) _loading = false;
       });
       _scrollToEnd();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      if (initial) {
+        setState(() => _loading = false);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur de chargement : $e")),
       );
@@ -202,7 +180,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         prestataireName: widget.prestataireNom,
         contenu: texte,
       );
-      // le realtime rafraîchira l’écran
+      // le polling rattrape, mais on force un refresh rapide
+      await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -349,8 +328,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container
-                      (
+                    child: Container(
                       decoration: BoxDecoration(
                         color: const Color(0xFFF3F5FA),
                         borderRadius: BorderRadius.circular(24),

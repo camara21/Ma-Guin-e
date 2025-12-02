@@ -38,8 +38,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
 
   late Future<_AnnonceCard?> _annonceFuture;
 
-  // Realtime
-  RealtimeChannel? _channel;
+  // Polling périodique (comme logement)
+  Timer? _pollTimer;
 
   // ====== URL publique + bucket ======
   static const String _annonceBucket = 'annonce-photos';
@@ -56,49 +56,24 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   void initState() {
     super.initState();
     _annonceFuture = _fetchAnnonceCard();
-    _loadAndMarkRead();
-    _listenRealtime();
+    _loadAndMarkRead(initial: true);
+    _startPolling();
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  // Realtime (insert + update)
-  void _listenRealtime() {
-    _channel?.unsubscribe();
-    _channel = _sb
-        .channel('public:messages:annonce:${widget.annonceId}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            final r = payload.newRecord ?? const <String, dynamic>{};
-            if ((r['contexte'] == 'annonce') &&
-                (r['annonce_id']?.toString() == widget.annonceId)) {
-              _loadAndMarkRead();
-            }
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            final r = (payload.newRecord ?? payload.oldRecord) ??
-                const <String, dynamic>{};
-            if ((r['contexte'] == 'annonce') &&
-                (r['annonce_id']?.toString() == widget.annonceId)) {
-              _loadAndMarkRead();
-            }
-          },
-        )
-        .subscribe();
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      // pas de spinner à chaque poll
+      _loadAndMarkRead(initial: false);
+    });
   }
 
   // Carte produit à afficher en haut du chat
@@ -182,9 +157,11 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   }
 
   // Charger l'historique + marquer LU
-  Future<void> _loadAndMarkRead() async {
+  Future<void> _loadAndMarkRead({bool initial = false}) async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    if (initial) {
+      setState(() => _loading = true);
+    }
     try {
       final msgs = await _svc.fetchMessagesForAnnonceVisibleTo(
         viewerUserId: widget.senderId,
@@ -201,19 +178,23 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         }
       }
       if (idsToMark.isNotEmpty) {
-        await _sb.from('messages').update({'lu': true}).inFilter('id', idsToMark);
+        await _sb
+            .from('messages')
+            .update({'lu': true}).inFilter('id', idsToMark);
         _svc.unreadChanged.add(null);
       }
 
       if (!mounted) return;
       setState(() {
         _msgs = msgs;
-        _loading = false;
+        if (initial) _loading = false;
       });
       _scrollToEnd();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      if (initial) {
+        setState(() => _loading = false);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Erreur de chargement : $e")),
       );
@@ -255,7 +236,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         annonceTitre: widget.annonceTitre,
         contenu: text,
       );
-      await _loadAndMarkRead();
+      await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -277,7 +258,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         SnackBar(content: Text("Suppression impossible : $e")),
       );
     } finally {
-      await _loadAndMarkRead();
+      await _loadAndMarkRead(initial: false);
     }
   }
 
@@ -414,8 +395,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             child: Text(
                               "Aucune discussion pour cette annonce.\nÉcrivez un message pour commencer.",
                               textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(color: Colors.grey[600], fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 16),
                             ),
                           );
                         }
@@ -431,8 +412,9 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                                     const EdgeInsets.fromLTRB(12, 12, 12, 4),
                                 child: _AnnonceMessageCard(
                                   annonce: a,
-                                  // CORRECTION: utiliser un bloc qui retourne void
-                                  onTap: () { _openAnnonceDetail(a); },
+                                  onTap: () {
+                                    _openAnnonceDetail(a);
+                                  },
                                 ),
                               );
                             }

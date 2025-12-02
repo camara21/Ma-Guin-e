@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/user_provider.dart';
+import '../services/message_service.dart';
 
 import 'home_page.dart';
 import 'carte_page.dart';
@@ -62,19 +63,28 @@ class MainNavigationPage extends StatefulWidget {
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
 
+  // Service messages
+  final MessageService _messageService = MessageService();
+
   // Stream compteur non lus
   Stream<int>? _unreadStream;
 
-  // Stream direct sur Supabase, filtrage côté Flutter
-  Stream<int> _buildUnreadStream(String userId) {
-    final supa = Supabase.instance.client;
+  @override
+  void dispose() {
+    // Si un jour tu veux fermer les StreamController de MessageService :
+    // _messageService.disposeService();
+    super.dispose();
+  }
 
-    return supa.from('messages').stream(primaryKey: ['id']).map((rows) {
-      final unread = rows.where((m) {
-        return m['receiver_id'] == userId && m['lu'] == false;
-      }).length;
-      return unread;
-    });
+  /// Stream qui rafraîchit périodiquement le nombre de messages non lus
+  /// pour l'utilisateur connecté.
+  ///
+  /// Ici : toutes les 1 seconde.
+  /// Tu peux passer à 2 ou 3 secondes si tu veux alléger la charge.
+  Stream<int> _buildUnreadStream(String userId) {
+    return Stream.periodic(const Duration(seconds: 3))
+        .asyncMap((_) => _messageService.getUnreadMessagesCount(userId))
+        .distinct();
   }
 
   @override
@@ -128,7 +138,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             ),
 
             // ---------------------------------------------------------
-            // Onglet Messages avec badge temps réel
+            // Onglet Messages avec badge "polling" (rafraîchi en continu)
             // ---------------------------------------------------------
             BottomNavigationBarItem(
               label: 'Messages',
