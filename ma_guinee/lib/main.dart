@@ -31,10 +31,12 @@ import 'providers/prestataires_provider.dart';
 import 'providers/user_provider.dart';
 import 'theme/app_theme.dart';
 
+// navKey global (UN SEUL endroit)
+import 'navigation/nav_key.dart';
+
 // Hive boxes
 const String kAnnoncesBox = 'annonces_box';
 
-final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 String? _lastRoutePushed;
 void _pushUnique(String routeName) {
   if (_lastRoutePushed == routeName) return;
@@ -42,6 +44,7 @@ void _pushUnique(String routeName) {
   navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
+// Ancien mécanisme : on n’initialise PushService qu’une seule fois
 bool _askedPushOnce = false;
 void _askPushOnce() {
   if (_askedPushOnce) return;
@@ -292,12 +295,17 @@ Future<void> main() async {
         _subscribeUserNotifications(user.id);
         _subscribeAdminKick(user.id);
         unawaited(_startHeartbeat());
+        // → Initialise FCM / PushService comme avant
         _askPushOnce();
       }
 
       if (!RecoveryGuard.isActive) {
         await _goHomeBasedOnRole(userProvider);
       }
+
+      // 🔥 Si l’app a été lancée depuis une notif admin (état TERMINÉ),
+      // on affiche le popup APRÈS avoir ouvert Home / Welcome.
+      await PushService.instance.showLaunchAdminIfPending();
 
       Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
         final session = event.session;
@@ -318,11 +326,14 @@ Future<void> main() async {
 
           await userProvider.chargerUtilisateurConnecte();
 
-          _askPushOnce();
+          _askPushOnce(); // FCM pour user connecté
 
           if (!RecoveryGuard.isActive) {
             await _goHomeBasedOnRole(userProvider);
           }
+
+          // Cas très rare où une notif admin serait encore en attente
+          await PushService.instance.showLaunchAdminIfPending();
         } else {
           _unsubscribeUserNotifications();
           _unsubscribeAdminKick();

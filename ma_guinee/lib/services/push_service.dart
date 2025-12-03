@@ -18,59 +18,69 @@ class PushService {
   bool _initialized = false;
   String? _lastToken;
 
-  /// Appelé depuis main.dart : `PushService.instance.initAndRegister()`
+  // Payload admin si l'app a été lancée depuis un état "terminé"
+  Map<String, dynamic>? _launchAdminData;
+  String? _launchAdminTitle;
+  String? _launchAdminBody;
+
+  /// Appelé depuis main.dart
+  ///  - après runApp (session déjà existante)
+  ///  - et après login dans onAuthStateChange
   Future<void> initAndRegister() async {
-    // Ce service est uniquement pour mobile, on ignore le Web
     if (kIsWeb) {
-      debugPrint('[PushService] init ignoré sur Web.');
+      debugPrint('[PushService] Ignoré sur Web.');
+      return;
+    }
+
+    final user = _sb.auth.currentUser;
+    if (user == null) {
+      debugPrint('[PushService] init ignoré → utilisateur NON connecté.');
       return;
     }
 
     if (_initialized) {
-      debugPrint('[PushService] déjà initialisé, refresh token éventuel.');
-      await _refreshTokenIfNeeded();
+      debugPrint('[PushService] déjà initialisé → refresh token.');
+      await _refreshTokenAndSave();
       return;
     }
     _initialized = true;
 
-    debugPrint('[PushService] initialisation FCM...');
+    debugPrint('[PushService] Initialisation FCM (utilisateur connecté)...');
 
-    // Demande de permission (Android 13+ & iOS)
+    // Demande la permission SEULEMENT quand user est connecté
     final settings = await _fm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    debugPrint(
-      '[PushService] permission status = ${settings.authorizationStatus}',
-    );
+    debugPrint('[PushService] permission = ${settings.authorizationStatus}');
 
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('[PushService] permission refusée → pas de token.');
+      debugPrint('[PushService] Permission refusée → aucun token FCM.');
       return;
     }
 
-    // Token initial
-    await _refreshTokenIfNeeded();
+    await _refreshTokenAndSave();
 
-    // Ecoute des changements de token
     FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-      debugPrint('[PushService] onTokenRefresh = $token');
+      debugPrint('[PushService] Nouveau token FCM = $token');
       _lastToken = token;
       unawaited(_saveTokenToSupabase(token));
     });
 
-    // Messages FCM
     _setupForegroundListener();
     _setupClickRouting();
   }
 
-  /// Récupère le token FCM et le pousse en BDD si nécessaire.
-  Future<void> _refreshTokenIfNeeded() async {
+  // ============================================================
+  // TOKEN
+  // ============================================================
+
+  Future<void> _refreshTokenAndSave() async {
     final user = _sb.auth.currentUser;
     if (user == null) {
-      debugPrint('[PushService] pas de user connecté → skip token.');
+      debugPrint('[PushService] refresh ignoré → pas de user.');
       return;
     }
 
@@ -81,92 +91,145 @@ class PushService {
     }
 
     if (token == _lastToken) {
-      // Token identique, rien à faire
+      debugPrint('[PushService] Token FCM inchangé.');
       return;
     }
 
-    debugPrint('[PushService] FCM token courant = $token');
-
+    debugPrint('[PushService] Token FCM = $token');
     _lastToken = token;
+
     await _saveTokenToSupabase(token);
   }
 
-  /// Sauvegarde le token FCM dans `public.push_devices`.
-  ///
-  /// Stratégie : 1 seule ligne par user :
-  ///   - DELETE tous les anciens devices pour ce user
-  ///   - INSERT du nouveau device (android, enabled = true)
   Future<void> _saveTokenToSupabase(String token) async {
     final user = _sb.auth.currentUser;
     if (user == null) return;
 
     final uid = user.id;
-    const platform = 'android';
 
     try {
-      debugPrint('[PushService] enregistrement token pour user=$uid');
+      debugPrint('[PushService] Enregistrement du token pour user=$uid');
 
-      // 1) Supprimer tous les anciens devices de ce user
+      // un seul device par user
       await _sb.from('push_devices').delete().eq('user_id', uid);
 
-      // 2) Insérer le nouveau device unique
       await _sb.from('push_devices').insert({
         'user_id': uid,
         'token': token,
-        'platform': platform,
+        'platform': 'android',
         'enabled': true,
         'locale': 'fr_FR',
       });
 
-      debugPrint(
-        '[PushService] token enregistré en BDD ✅ (single row par user)',
-      );
-    } catch (e, st) {
-      debugPrint('[PushService] ERREUR enregistrement token: $e');
-      debugPrint('[PushService] stack: $st');
+      debugPrint('[PushService] token enregistré en BDD (unique) ✔️');
+    } catch (e) {
+      debugPrint('[PushService] ERREUR token: $e');
     }
   }
 
-  /// Messages reçus quand l’app est au premier plan.
-  /// Pour l’instant on log seulement, sans afficher de notif système.
+  // ============================================================
+  // FOREGROUND
+  // ============================================================
+
   void _setupForegroundListener() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint(
-        '[PushService] onMessage (foreground) data=${message.data} '
-        'notification=${message.notification}',
-      );
-      // Si tu veux plus tard afficher une bannière in-app ou rafraîchir un compteur,
-      // c’est ici qu’on le fera.
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      debugPrint('════════ FOREGROUND NOTIFICATION ════════');
+      debugPrint('data = ${message.data}');
+      debugPrint('notif = ${message.notification}');
+      debugPrint('═════════════════════════════════════════');
+
+      final data = message.data;
+      final isAdmin = PushNav.isAdminPayload(data);
+
+      if (isAdmin) {
+        final title =
+            data['title'] ?? message.notification?.title ?? 'Notification';
+        final body = data['body'] ?? message.notification?.body ?? '';
+
+        debugPrint('[PushService] → Popup admin (foreground)');
+        await PushNav.showAdminDialog(
+          title: title,
+          body: body,
+          data: data,
+        );
+        return;
+      }
+
+      debugPrint('[PushService] → Message normal foreground');
     });
   }
 
-  /// Routing quand l’utilisateur clique sur une notif FCM :
-  ///  - app en background
-  ///  - app lancée depuis un état "terminé"
+  // ============================================================
+  // BACKGROUND / TERMINATED
+  // ============================================================
+
   void _setupClickRouting() {
-    // App en background → clique sur la notif FCM
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      try {
-        final data = message.data;
-        debugPrint('[PushService] onMessageOpenedApp data=$data');
-        PushNav.openMessageFromData(data);
-      } catch (e, st) {
-        debugPrint('[PushService] erreur onMessageOpenedApp: $e');
-        debugPrint('[PushService] stack: $st');
+    // App en background → clic sur la notif
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+      final data = message.data;
+
+      if (PushNav.isAdminPayload(data)) {
+        final title =
+            data['title'] ?? message.notification?.title ?? 'Notification';
+        final body = data['body'] ?? message.notification?.body ?? '';
+
+        debugPrint('[PushService] → Popup admin (background click)');
+        await PushNav.showAdminDialog(
+          title: title,
+          body: body,
+          data: data,
+        );
+        return;
       }
+
+      // sinon : notif message (chat, etc.)
+      PushNav.openMessageFromData(data);
     });
 
-    // App lancée depuis une notif FCM (terminated → launch)
-    _fm.getInitialMessage().then((RemoteMessage? message) {
+    // App lancée depuis un état TERMINÉ (killed)
+    _fm.getInitialMessage().then((message) async {
       if (message == null) return;
-      try {
-        final data = message.data;
-        debugPrint('[PushService] getInitialMessage data=$data');
-        PushNav.openMessageFromData(data);
-      } catch (e, st) {
-        debugPrint('[PushService] erreur getInitialMessage: $e');
-        debugPrint('[PushService] stack: $st');
+
+      final data = message.data;
+
+      if (PushNav.isAdminPayload(data)) {
+        final title =
+            data['title'] ?? message.notification?.title ?? 'Notification';
+        final body =
+            data['body'] ?? message.notification?.body ?? 'Notification';
+
+        debugPrint(
+            '[PushService] Notif admin (terminated launch) → stockée en attente');
+        _launchAdminData = data;
+        _launchAdminTitle = title;
+        _launchAdminBody = body;
+        return;
       }
+
+      // autre type: message de chat, etc.
+      PushNav.openMessageFromData(data);
     });
+  }
+
+  /// À appeler depuis main.dart, APRÈS que Home / Welcome ont été ouverts.
+  /// Permet d'éviter le "flash" du popup avant Home.
+  Future<void> showLaunchAdminIfPending() async {
+    if (_launchAdminData == null) return;
+
+    final data = _launchAdminData!;
+    final title = _launchAdminTitle ?? 'Notification';
+    final body = _launchAdminBody ?? '';
+
+    // reset pour ne pas rejouer plusieurs fois
+    _launchAdminData = null;
+    _launchAdminTitle = null;
+    _launchAdminBody = null;
+
+    debugPrint('[PushService] → Affichage popup admin retardé (launch)');
+    await PushNav.showAdminDialog(
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }
