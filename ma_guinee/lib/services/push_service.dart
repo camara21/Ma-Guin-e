@@ -25,7 +25,7 @@ class PushService {
   bool _initialized = false;
   String? _lastToken;
 
-  // If app launched from a "admin" notification while terminated
+  // If app launched from an "admin" notification while terminated
   Map<String, dynamic>? _launchAdminData;
   String? _launchAdminTitle;
   String? _launchAdminBody;
@@ -33,7 +33,8 @@ class PushService {
   // Android channel id
   static const String _androidChannelId = 'messages_channel';
 
-  // Bannière in-app (foreground)
+  // Bannière in-app (foreground) — plus utilisée pour les messages,
+  // mais on la garde si tu veux la réactiver plus tard.
   OverlayEntry? _bannerEntry;
   Timer? _bannerTimer;
 
@@ -62,7 +63,7 @@ class PushService {
     // initialise le plugin local (idempotent)
     await _initLocalNotifications();
 
-    // demande permission (iOS) et obtient token
+    // iOS : permission
     final settings = await _fm.requestPermission(
       alert: true,
       badge: true,
@@ -105,7 +106,6 @@ class PushService {
         if (payload == null || payload.isEmpty) return;
         try {
           final Map<String, dynamic> data = jsonDecode(payload);
-          // route selon kind / admin payload
           if ((data['kind'] == 'message' || data['type'] == 'message')) {
             PushNav.openMessageFromData(data);
           } else if (PushNav.isAdminPayload(data)) {
@@ -135,9 +135,26 @@ class PushService {
         ?.createNotificationChannel(channel);
   }
 
-  /// Méthode publique pour afficher une notif locale depuis le code (Supabase realtime etc.)
+  /// Méthode publique pour afficher une notif locale depuis ton code.
+  /// Pour `kind == "message"`, si l'app est en foreground → on NE fait rien.
   void showLocalNotification(String? title, String? body,
       {Map<String, dynamic>? payload}) {
+    final kind =
+        (payload?['kind'] ?? payload?['type'])?.toString().toLowerCase();
+
+    if (kind == 'message') {
+      final state = WidgetsBinding.instance.lifecycleState;
+      final isForeground = state == AppLifecycleState.resumed;
+
+      if (isForeground) {
+        debugPrint(
+            '[PushService] showLocalNotification(message) ignoré (app en foreground)');
+        // pas de bannière, pas de notif système
+        return;
+      }
+      // App en arrière-plan → on laisse une vraie notif dans la barre
+    }
+
     _showLocalNotificationInternal(title, body, payload: payload);
   }
 
@@ -176,10 +193,9 @@ class PushService {
     try {
       debugPrint('[PushService] Enregistrement du token pour user=$uid');
 
-      // supprime anciens devices -> un device par user (simple)
+      // un device par user (simple)
       await _sb.from('push_devices').delete().eq('user_id', uid);
 
-      // platform proprement formatée
       String platform;
       switch (defaultTargetPlatform) {
         case TargetPlatform.iOS:
@@ -215,6 +231,7 @@ class PushService {
 
   // -------------------------
   // Bannière in-app (foreground)
+  // (plus utilisée pour les messages, mais gardée au cas où)
   // -------------------------
   void _showInAppMessageBanner(
     String title,
@@ -230,7 +247,6 @@ class PushService {
       final ctx =
           navKey.currentState?.overlay?.context ?? navKey.currentContext;
       if (ctx == null) {
-        // fallback : vraie notif locale
         _showLocalNotificationInternal(title, body, payload: payload);
         return;
       }
@@ -252,72 +268,66 @@ class PushService {
             right: 12,
             child: Material(
               color: Colors.transparent,
-              child: GestureDetector(
-                onTap: () {
-                  _bannerTimer?.cancel();
-                  _bannerEntry?.remove();
-                  _bannerEntry = null;
-                  // ouvrir directement la conversation
-                  PushNav.openMessageFromData(payload);
-                },
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 200),
-                  builder: (context, value, child) =>
-                      Opacity(opacity: value, child: child),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.chat_bubble_outline,
-                            color: Colors.white, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 200),
+                builder: (context, value, child) =>
+                    Opacity(opacity: value, child: child),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x22000000),
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.chat_bubble_outline,
+                        color: Color(0xFF113CFC),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
                               ),
-                              if (body.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    body,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 13,
-                                    ),
+                            ),
+                            if (body.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  body,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
                                   ),
                                 ),
-                            ],
-                          ),
+                              ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -352,23 +362,10 @@ class PushService {
       final data = _normalizeIncomingData(message.data);
       final kind = (data['kind'] ?? data['type'] ?? '').toString();
 
-      // 1) message chat -> bannière top (pas de notif système)
+      // 1) message chat → on NE fait rien (pas de bannière, pas de notif)
       if (kind == 'message') {
         debugPrint(
-            '[PushService] → FCM "message" foreground (bannière in-app, pas notif système)');
-
-        final title =
-            (data['title'] ?? data['titre'] ?? 'Nouveau message').toString();
-        final body = (data['body'] ?? data['contenu'] ?? '').toString();
-
-        final payload = <String, dynamic>{
-          'kind': 'message',
-          'title': title,
-          'body': body,
-          ...data,
-        };
-
-        _showInAppMessageBanner(title, body, payload: payload);
+            '[PushService] FCM "message" foreground → aucune notif (ignoré)');
         return;
       }
 
@@ -392,8 +389,11 @@ class PushService {
       final title =
           data['title'] ?? message.notification?.title ?? 'Notification';
       final body = data['body'] ?? message.notification?.body ?? '';
-      _showLocalNotificationInternal(title.toString(), body.toString(),
-          payload: data.isEmpty ? null : data);
+      _showLocalNotificationInternal(
+        title.toString(),
+        body.toString(),
+        payload: data.isEmpty ? null : data,
+      );
     });
   }
 
@@ -406,7 +406,7 @@ class PushService {
         title ?? 'Notification',
         body ?? '',
         NotificationDetails(
-          android: AndroidNotificationDetails(
+          android: const AndroidNotificationDetails(
             _androidChannelId,
             'Messages',
             importance: Importance.high,
@@ -514,7 +514,9 @@ class PushService {
             final decoded = jsonDecode(s);
             out[k] = decoded;
             return;
-          } catch (_) {}
+          } catch (_) {
+            // ignore parse error, keep string
+          }
         }
       }
       out[k] = v;
@@ -526,14 +528,16 @@ class PushService {
         try {
           final decoded = jsonDecode(nested);
           if (decoded is Map) {
-            decoded.forEach((k, v) {
-              if (!out.containsKey(k)) out[k] = v;
+            decoded.forEach((nk, nv) {
+              if (!out.containsKey(nk)) out[nk] = nv;
             });
           }
-        } catch (_) {}
+        } catch (_) {
+          // ignore
+        }
       } else if (nested is Map) {
-        nested.forEach((k, v) {
-          if (!out.containsKey(k)) out[k] = v;
+        (nested as Map).forEach((nk, nv) {
+          if (!out.containsKey(nk)) out[nk] = nv;
         });
       }
     }
