@@ -181,7 +181,8 @@ class PushNav {
         }
       }
 
-      // Si pas de messageRow mais payload contient suffisamment d'infos (sender/receiver), essayer de récupérer le dernier message entre eux
+      // Si pas de messageRow mais payload contient suffisamment d'infos (sender/receiver),
+      // essayer de récupérer le dernier message entre eux
       if (messageRow == null &&
           (senderId?.isNotEmpty ?? false) &&
           (receiverId?.isNotEmpty ?? false)) {
@@ -257,14 +258,18 @@ class PushNav {
         return;
       }
 
-      // Maintenant on a : contexte, otherId, et (optionnel) annonceId/logementId/prestataireId
-      // Construire navigation selon contexte
-      if (contexte == 'annonce' || contexte == 'logement') {
-        final ctxId = (annonceId ?? logementId ?? '').toString();
-        final titre = payload['annonce_titre'] ??
-            payload['title'] ??
-            payload['logement_titre'] ??
-            'Message';
+      // Normaliser le contexte en minuscules
+      contexte = (contexte ?? '').toLowerCase();
+
+      // =========================================================
+      //   ROUTAGE SELON CONTEXTE
+      // =========================================================
+
+      // 1) Annonce : on garde l'écran MessagesAnnoncePage
+      if (contexte == 'annonce') {
+        final ctxId = (annonceId ?? '').toString();
+        final titre =
+            payload['annonce_titre'] ?? payload['title'] ?? 'Message annonce';
         Navigator.of(ctx).push(
           MaterialPageRoute(
             builder: (_) => MessagesAnnoncePage(
@@ -278,6 +283,34 @@ class PushNav {
         return;
       }
 
+      // 2) Logement : utiliser le chat logement (MessageChatPage)
+      if (contexte == 'logement') {
+        // dans ta table, tu mets le logement dans annonce_id,
+        // donc logementId peut valoir soit logement_id, soit annonce_id
+        final ctxId =
+            (logementId?.isNotEmpty == true ? logementId : (annonceId ?? ''))
+                .toString();
+
+        final titre = payload['logement_titre'] ??
+            payload['annonce_titre'] ??
+            payload['title'] ??
+            'Logement';
+
+        Navigator.of(ctx).push(
+          MaterialPageRoute(
+            builder: (_) => MessageChatPage(
+              peerUserId: otherId!,
+              title: titre,
+              contextType: 'logement',
+              contextId: ctxId,
+              contextTitle: titre,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // 3) Prestataire
       if (contexte == 'prestataire') {
         final prestaId = prestataireId ?? '';
         final titre =
@@ -296,7 +329,7 @@ class PushNav {
         return;
       }
 
-      // Si contexte inconnu, ouvrir chat générique (prestataire fallback)
+      // 4) Contexte inconnu → fallback chat prestataire générique
       Navigator.of(ctx).push(
         MaterialPageRoute(
           builder: (_) => MessageChatPage(

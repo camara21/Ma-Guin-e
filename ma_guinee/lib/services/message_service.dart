@@ -230,11 +230,40 @@ class MessageService {
     required String logementTitre,
     required String contenu,
   }) async {
+    // On fiabilise le destinataire pour éviter le bug "1er message sans notif"
+    var finalReceiver = receiverId;
+
+    // Cas typique: receiverId vide ou erroné (= senderId) sur le 1er message
+    if (finalReceiver.isEmpty || finalReceiver == senderId) {
+      try {
+        final row = await _client
+            .from('annonces')
+            .select('utilisateur_id,owner_user_id')
+            .eq('id', logementId)
+            .maybeSingle();
+
+        if (row != null) {
+          final owner = (row['owner_user_id']?.toString() ?? '').trim();
+          final user = (row['utilisateur_id']?.toString() ?? '').trim();
+          finalReceiver = owner.isNotEmpty ? owner : user;
+        }
+      } catch (e) {
+        debugPrint(
+            '[MessageService] sendMessageToLogement: erreur résolution destinataire: $e');
+      }
+    }
+
+    // Si on n'a toujours pas de destinataire correct, on garde le receiverId passé.
+    if (finalReceiver.isEmpty) {
+      debugPrint(
+          '[MessageService] sendMessageToLogement: finalReceiver vide → pas de push FCM.');
+    }
+
     final messageRow = await _client
         .from('messages')
         .insert({
           'sender_id': senderId,
-          'receiver_id': receiverId,
+          'receiver_id': finalReceiver.isNotEmpty ? finalReceiver : receiverId,
           'contexte': 'logement',
           'annonce_id': logementId,
           'annonce_titre': logementTitre,
@@ -250,27 +279,32 @@ class MessageService {
     String? insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le destinataire (non bloquant)
-    try {
-      await _client.functions.invoke('push-send', body: {
-        'title': 'Nouveau message',
-        'body': contenu.isEmpty ? 'Vous avez reçu un nouveau message' : contenu,
-        'user_id': receiverId,
-        'data': {
-          'type': 'message',
-          'contexte': 'logement',
-          'sender_id': senderId,
-          'receiver_id': receiverId,
-          'annonce_id': logementId,
-          'logement_id': logementId,
-          'prestataire_id': '',
-          'annonce_titre': logementTitre,
-          'prestataire_name': '',
-          if (insertedId != null) 'message_id': insertedId,
-          'logement_titre': logementTitre,
-          'title': logementTitre,
-        },
-      });
-    } catch (_) {}
+    if (finalReceiver.isNotEmpty) {
+      try {
+        await _client.functions.invoke('push-send', body: {
+          'title': 'Nouveau message',
+          'body':
+              contenu.isEmpty ? 'Vous avez reçu un nouveau message' : contenu,
+          'user_id': finalReceiver,
+          'data': {
+            'type': 'message',
+            'contexte': 'logement',
+            'sender_id': senderId,
+            'receiver_id': finalReceiver,
+            'annonce_id': logementId,
+            'logement_id': logementId,
+            'prestataire_id': '',
+            'annonce_titre': logementTitre,
+            'prestataire_name': '',
+            if (insertedId != null) 'message_id': insertedId,
+            'logement_titre': logementTitre,
+            'title': logementTitre,
+          },
+        });
+      } catch (e) {
+        debugPrint('[MessageService] sendMessageToLogement push error: $e');
+      }
+    }
   }
 
   Future<void> sendMessageToPrestataire({

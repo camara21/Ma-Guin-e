@@ -13,6 +13,9 @@ import '../../routes.dart';
 import '../../providers/user_provider.dart';
 import '../../models/utilisateur_model.dart';
 
+// services messages
+import '../../services/message_service.dart';
+
 // pages
 import 'logement_edit_page.dart';
 import 'package:ma_guinee/pages/messages/message_chat_page.dart';
@@ -29,6 +32,9 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   final _svc = LogementService();
   final _page = PageController();
   final _sb = Supabase.instance.client;
+
+  // MessageService pour le 1er message + push FCM
+  final MessageService _msgSvc = MessageService();
 
   LogementModel? _bien;
   bool _loading = true;
@@ -271,6 +277,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     );
   }
 
+  /// Envoi du 1er message LOGEMENT via MessageService
+  /// => insert + push FCM dès le premier coup
   Future<void> _sendMessage({bool closeAfter = false}) async {
     final b = _bien;
     if (b == null) return;
@@ -287,33 +295,33 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
     setState(() => _sending = true);
     try {
-      await _sb.from('messages').insert({
-        'sender_id': me,
-        'receiver_id': b.userId,
-        'contexte': 'logement',
-        'annonce_id': b.id,
-        'annonce_titre': b.titre,
-        'contenu': body,
-        'date_envoi': DateTime.now().toIso8601String(),
-        'lu': false,
-      });
+      // IMPORTANT : on passe par MessageService pour déclencher la function push-send
+      await _msgSvc.sendMessageToLogement(
+        senderId: me,
+        receiverId: b.userId,
+        logementId: b.id,
+        logementTitre: b.titre,
+        contenu: body,
+      );
 
       if (!mounted) return;
 
       _msgCtrl.clear();
+
       if (closeAfter) {
         Navigator.of(context).maybePop();
         await Future.delayed(const Duration(milliseconds: 120));
       }
 
+      // On ouvre ensuite le chat logement (MessageChatPage)
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => MessageChatPage(
-            peerUserId: b.userId,
+            peerUserId: b.userId.toString(),
             title: b.titre,
             contextType: 'logement',
-            contextId: b.id,
+            contextId: b.id.toString(),
             contextTitle: b.titre,
           ),
         ),
