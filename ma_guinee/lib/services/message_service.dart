@@ -178,7 +178,6 @@ class MessageService {
     required String annonceTitre,
     required String contenu,
   }) async {
-    // Insert and return inserted row (select().maybeSingle())
     final messageRow = await _client
         .from('messages')
         .insert({
@@ -194,10 +193,8 @@ class MessageService {
         .select()
         .maybeSingle();
 
-    // Notify locally
     unreadChanged.add(null);
 
-    // Safe extract id
     String? insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le destinataire (non bloquant)
@@ -233,7 +230,6 @@ class MessageService {
     // On fiabilise le destinataire pour éviter le bug "1er message sans notif"
     var finalReceiver = receiverId;
 
-    // Cas typique: receiverId vide ou erroné (= senderId) sur le 1er message
     if (finalReceiver.isEmpty || finalReceiver == senderId) {
       try {
         final row = await _client
@@ -253,7 +249,6 @@ class MessageService {
       }
     }
 
-    // Si on n'a toujours pas de destinataire correct, on garde le receiverId passé.
     if (finalReceiver.isEmpty) {
       debugPrint(
           '[MessageService] sendMessageToLogement: finalReceiver vide → pas de push FCM.');
@@ -278,7 +273,6 @@ class MessageService {
 
     String? insertedId = _extractIdFromRow(messageRow);
 
-    // 🔔 Push FCM vers le destinataire (non bloquant)
     if (finalReceiver.isNotEmpty) {
       try {
         await _client.functions.invoke('push-send', body: {
@@ -360,7 +354,6 @@ class MessageService {
 
     String? insertedId = _extractIdFromRow(messageRow);
 
-    // 🔔 Push FCM vers le propriétaire du prestataire (non bloquant)
     try {
       await _client.functions.invoke('push-send', body: {
         'title': 'Nouveau message',
@@ -421,7 +414,6 @@ class MessageService {
           .eq('receiver_id', userId)
           .eq('lu', false);
 
-      // notifications
       try {
         await _client
             .from('notifications')
@@ -503,6 +495,8 @@ class MessageService {
         'peer_id': peerUserId,
       },
       onConflict: 'user_id,contexte,context_id,peer_id',
+      ignoreDuplicates:
+          true, // important pour éviter les erreurs "duplicate key"
     );
   }
 

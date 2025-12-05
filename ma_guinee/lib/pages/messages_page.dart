@@ -209,12 +209,10 @@ class _MessagesPageState extends State<MessagesPage> {
         final keyExact = _threadKey(ctx, ctxId, otherId);
         final keyEmpty = _threadKey(ctx, '', otherId);
 
-        final iAmReceiver = receiverId == myId;
-        final isPrestataire = ctx == 'prestataire';
-
         final isHidden =
             hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
-        if (isHidden && !(isPrestataire && iAmReceiver)) {
+        if (isHidden) {
+          // Fil masqué pour CE user, quel que soit le contexte
           continue;
         }
 
