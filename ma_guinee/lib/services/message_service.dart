@@ -28,6 +28,21 @@ class MessageService {
         : (m['deleted_for_receiver_at'] != null);
   }
 
+  String? _extractIdFromRow(dynamic row) {
+    if (row == null) return null;
+    if (row is Map<String, dynamic>) {
+      final idValue = row['id'];
+      if (idValue != null) return idValue.toString();
+      return null;
+    }
+    if (row is Map) {
+      final idValue = (row as Map)['id'];
+      if (idValue != null) return idValue.toString();
+      return null;
+    }
+    return null;
+  }
+
   // ---------------- Conversations ----------------
   Future<List<Map<String, dynamic>>> fetchUserConversations(
       String userId) async {
@@ -163,17 +178,27 @@ class MessageService {
     required String annonceTitre,
     required String contenu,
   }) async {
-    await _client.from('messages').insert({
-      'sender_id': senderId,
-      'receiver_id': receiverId,
-      'contexte': 'annonce',
-      'annonce_id': annonceId,
-      'annonce_titre': annonceTitre,
-      'contenu': contenu,
-      'date_envoi': DateTime.now().toIso8601String(),
-      'lu': false,
-    });
+    // Insert and return inserted row (select().maybeSingle())
+    final messageRow = await _client
+        .from('messages')
+        .insert({
+          'sender_id': senderId,
+          'receiver_id': receiverId,
+          'contexte': 'annonce',
+          'annonce_id': annonceId,
+          'annonce_titre': annonceTitre,
+          'contenu': contenu,
+          'date_envoi': DateTime.now().toIso8601String(),
+          'lu': false,
+        })
+        .select()
+        .maybeSingle();
+
+    // Notify locally
     unreadChanged.add(null);
+
+    // Safe extract id
+    String? insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le destinataire (non bloquant)
     try {
@@ -191,6 +216,7 @@ class MessageService {
           'prestataire_id': '',
           'annonce_titre': annonceTitre,
           'prestataire_name': '',
+          if (insertedId != null) 'message_id': insertedId,
           'title': annonceTitre,
         },
       });
@@ -204,17 +230,24 @@ class MessageService {
     required String logementTitre,
     required String contenu,
   }) async {
-    await _client.from('messages').insert({
-      'sender_id': senderId,
-      'receiver_id': receiverId,
-      'contexte': 'logement',
-      'annonce_id': logementId,
-      'annonce_titre': logementTitre,
-      'contenu': contenu,
-      'date_envoi': DateTime.now().toIso8601String(),
-      'lu': false,
-    });
+    final messageRow = await _client
+        .from('messages')
+        .insert({
+          'sender_id': senderId,
+          'receiver_id': receiverId,
+          'contexte': 'logement',
+          'annonce_id': logementId,
+          'annonce_titre': logementTitre,
+          'contenu': contenu,
+          'date_envoi': DateTime.now().toIso8601String(),
+          'lu': false,
+        })
+        .select()
+        .maybeSingle();
+
     unreadChanged.add(null);
+
+    String? insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le destinataire (non bloquant)
     try {
@@ -232,6 +265,7 @@ class MessageService {
           'prestataire_id': '',
           'annonce_titre': logementTitre,
           'prestataire_name': '',
+          if (insertedId != null) 'message_id': insertedId,
           'logement_titre': logementTitre,
           'title': logementTitre,
         },
@@ -273,17 +307,24 @@ class MessageService {
       }
     }
 
-    await _client.from('messages').insert({
-      'sender_id': senderId,
-      'receiver_id': resolvedReceiver,
-      'contexte': 'prestataire',
-      'prestataire_id': prestataireId,
-      'prestataire_name': prestataireName,
-      'contenu': contenu,
-      'date_envoi': DateTime.now().toIso8601String(),
-      'lu': false,
-    });
+    final messageRow = await _client
+        .from('messages')
+        .insert({
+          'sender_id': senderId,
+          'receiver_id': resolvedReceiver,
+          'contexte': 'prestataire',
+          'prestataire_id': prestataireId,
+          'prestataire_name': prestataireName,
+          'contenu': contenu,
+          'date_envoi': DateTime.now().toIso8601String(),
+          'lu': false,
+        })
+        .select()
+        .maybeSingle();
+
     unreadChanged.add(null);
+
+    String? insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le propriétaire du prestataire (non bloquant)
     try {
@@ -301,6 +342,7 @@ class MessageService {
           'prestataire_id': prestataireId,
           'annonce_titre': '',
           'prestataire_name': prestataireName,
+          if (insertedId != null) 'message_id': insertedId,
           'title': prestataireName,
         },
       });

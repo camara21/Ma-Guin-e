@@ -1,4 +1,3 @@
-// lib/pages/messages_prestataire_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -173,6 +172,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     _scrollToEnd();
 
     try {
+      // Utilise le service central (qui déclenche push-send côté serveur)
       await _svc.sendMessageToPrestataire(
         senderId: widget.senderId,
         receiverId: _resolvedReceiverId!, // résolu depuis la base
@@ -180,6 +180,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         prestataireName: widget.prestataireNom,
         contenu: texte,
       );
+
       // le polling rattrape, mais on force un refresh rapide
       await _loadAndMarkRead(initial: false);
     } catch (e) {

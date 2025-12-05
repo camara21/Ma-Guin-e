@@ -1,4 +1,3 @@
-// lib/pages/messages_annonce_page.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -236,6 +235,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         annonceTitre: widget.annonceTitre,
         contenu: text,
       );
+
+      // le polling rattrape, mais on force un refresh rapide
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;

@@ -1,6 +1,7 @@
 // lib/main.dart — PROD (Realtime + Heartbeat + FCM + RecoveryGuard)
-
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,20 +10,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
-// Hive (cache disque)
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'firebase_options.dart';
-import 'routes.dart'; // RecoveryGuard + AppRoutes
+import 'routes.dart';
 
-// Service push centralisé
 import 'services/push_service.dart';
 
-// nécessaires pour onGenerateInitialRoutes
 import 'pages/splash_screen.dart';
 import 'pages/auth/reset_password_flow.dart';
 
@@ -31,10 +28,10 @@ import 'providers/prestataires_provider.dart';
 import 'providers/user_provider.dart';
 import 'theme/app_theme.dart';
 
-// navKey global (UN SEUL endroit)
 import 'navigation/nav_key.dart';
+import 'navigation/push_nav.dart';
 
-// Hive boxes
+/// Hive boxes
 const String kAnnoncesBox = 'annonces_box';
 
 String? _lastRoutePushed;
@@ -44,7 +41,7 @@ void _pushUnique(String routeName) {
   navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
-// Ancien mécanisme : on n’initialise PushService qu’une seule fois
+/// Empêche double init PushService
 bool _askedPushOnce = false;
 void _askPushOnce() {
   if (_askedPushOnce) return;
@@ -52,81 +49,81 @@ void _askPushOnce() {
   unawaited(PushService.instance.initAndRegister());
 }
 
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
+/// Normalise/platifie la data entrante du FCM / payload server.
+Map<String, dynamic> _normalizeIncomingData(Map<String, dynamic>? raw) {
+  final Map<String, dynamic> out = {};
+  if (raw == null) return out;
 
-Future<void> _initLocalNotification() async {
-  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const iOS = DarwinInitializationSettings(
-    requestAlertPermission: false,
-    requestBadgePermission: false,
-    requestSoundPermission: false,
-  );
-  const settings = InitializationSettings(android: android, iOS: iOS);
-  await flutterLocalNotificationsPlugin.initialize(settings);
+  raw.forEach((k, v) {
+    if (v == null) return;
+    if (v is String) {
+      final s = v.trim();
+      if ((s.startsWith('{') && s.endsWith('}')) ||
+          (s.startsWith('[') && s.endsWith(']'))) {
+        try {
+          final decoded = jsonDecode(s);
+          out[k] = decoded;
+          return;
+        } catch (_) {}
+      }
+    }
+    out[k] = v;
+  });
+
+  final nested = out['data'];
+  if (nested != null) {
+    if (nested is String) {
+      try {
+        final decoded = jsonDecode(nested);
+        if (decoded is Map) {
+          decoded.forEach((k, v) {
+            if (!out.containsKey(k)) out[k] = v;
+          });
+        }
+      } catch (_) {}
+    } else if (nested is Map) {
+      nested.forEach((k, v) {
+        if (!out.containsKey(k)) out[k] = v;
+      });
+    }
+  }
+  return out;
 }
 
-Future<void> _createAndroidNotificationChannel() async {
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'messages_channel',
-    'Messages',
-    description: 'Notifications de messages',
-    importance: Importance.high,
-  );
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-}
-
-void _showNotification(String? title, String? body) {
-  flutterLocalNotificationsPlugin.show(
-    DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    title ?? 'Notification',
-    body ?? '',
-    const NotificationDetails(
-      android: AndroidNotificationDetails(
-        'messages_channel',
-        'Messages',
-        importance: Importance.high,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      ),
-    ),
-  );
-}
-
+// ------------------ Background handler top-level ------------------
+// IMPORTANT: fonction top-level et marquée vm:entry-point
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  if (message.notification == null) {
-    _showNotification(
-      message.data['title'] as String?,
-      message.data['body'] as String?,
-    );
-  }
+  // Initialise Firebase si nécessaire dans l'isolate de background
+  try {
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+  } catch (_) {}
+
+  // On ne doit pas afficher d'UI ici.
+  debugPrint(
+      '[main] background message received (minimal handling). data=${message.data}');
+  // Si tu souhaites effectuer des traitements légers (logs, analytics...), fais-le ici.
 }
 
-// realtime globals
-RealtimeChannel? _kicksChan;
 RealtimeChannel? _notifChan;
+RealtimeChannel? _kicksChan;
 Timer? _heartbeatTimer;
 
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
   try {
-    await Supabase.instance.client.rpc('update_heartbeat',
-        params: {'_device': kIsWeb ? 'web' : 'flutter'});
+    await Supabase.instance.client.rpc(
+      'update_heartbeat',
+      params: {'_device': kIsWeb ? 'web' : 'flutter'},
+    );
   } catch (_) {}
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
-      await Supabase.instance.client.rpc('update_heartbeat',
-          params: {'_device': kIsWeb ? 'web' : 'flutter'});
+      await Supabase.instance.client.rpc(
+        'update_heartbeat',
+        params: {'_device': kIsWeb ? 'web' : 'flutter'},
+      );
     } catch (_) {}
   });
 }
@@ -136,6 +133,7 @@ Future<void> _stopHeartbeat() async {
   _heartbeatTimer = null;
 }
 
+/// Souscription aux notifications CRUD table `notifications` (Supabase realtime)
 void _subscribeUserNotifications(String userId) {
   _notifChan?.unsubscribe();
   _notifChan = Supabase.instance.client
@@ -151,12 +149,17 @@ void _subscribeUserNotifications(String userId) {
         ),
         callback: (payload) {
           final n = payload.newRecord;
-          if (n != null) {
-            _showNotification(
-              (n['titre'] as String?) ?? 'Notification',
-              (n['contenu'] as String?) ?? '',
-            );
-          }
+          if (n == null) return;
+
+          // messages → push-send s'occupe (FCM). On ignore ici pour éviter doublon.
+          if (n['type']?.toString() == 'message') return;
+
+          // Déléguons l'affichage local/OS au PushService (centralisé)
+          PushService.instance.showLocalNotification(
+            n['titre'] ?? 'Notification',
+            n['contenu'] ?? '',
+            payload: n is Map ? Map<String, dynamic>.from(n) : null,
+          );
         },
       )
       .subscribe();
@@ -182,10 +185,13 @@ void _subscribeAdminKick(String userId) {
         ),
         callback: (payload) async {
           await Supabase.instance.client.auth.signOut();
-          _showNotification(
+          PushService.instance.showLocalNotification(
             'Déconnecté',
-            (payload.newRecord?['reason'] as String?) ??
+            payload.newRecord?['reason'] ??
                 'Votre session a été fermée par un administrateur.',
+            payload: payload.newRecord is Map
+                ? Map<String, dynamic>.from(payload.newRecord as Map)
+                : null,
           );
         },
       )
@@ -206,7 +212,7 @@ Future<bool> isCurrentUserAdmin() async {
         .select('role')
         .eq('id', uid)
         .maybeSingle();
-    final role = (data?['role'] as String?)?.toLowerCase();
+    final role = data?['role']?.toLowerCase();
     return role == 'admin' || role == 'owner';
   } catch (_) {
     return false;
@@ -214,7 +220,7 @@ Future<bool> isCurrentUserAdmin() async {
 }
 
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
-  final role = (userProv.utilisateur?.role ?? '').toLowerCase();
+  final role = userProv.utilisateur?.role?.toLowerCase() ?? '';
   final dest = (role == 'admin' || role == 'owner')
       ? AppRoutes.adminCenter
       : AppRoutes.mainNav;
@@ -223,12 +229,10 @@ Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
 
 bool _isRecoveryUrl(Uri uri) {
   final hasCode = uri.queryParameters['code'] != null;
-  final fragPath = uri.fragment.split('?').first;
-  final hasTypeRecovery = (uri.queryParameters['type'] ?? '') == 'recovery';
-  return (hasCode && fragPath.contains('reset_password')) || hasTypeRecovery;
+  final frag = uri.fragment.split('?').first;
+  final hasRecovery = (uri.queryParameters['type'] ?? '') == 'recovery';
+  return (hasCode && frag.contains('reset_password')) || hasRecovery;
 }
-
-// ——— main ———
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -279,23 +283,15 @@ Future<void> main() async {
         RecoveryGuard.activate();
       }
 
-      await _initLocalNotification();
-      await _createAndroidNotificationChannel();
-      await FirebaseMessaging.instance
-          .setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
+      // Charger utilisateur
       await userProvider.chargerUtilisateurConnecte();
-
       final user = Supabase.instance.client.auth.currentUser;
+
       if (user != null) {
         _subscribeUserNotifications(user.id);
         _subscribeAdminKick(user.id);
         unawaited(_startHeartbeat());
-        // → Initialise FCM / PushService comme avant
+        // Init pushService (demande permission, token, listeners) — centralisé
         _askPushOnce();
       }
 
@@ -303,10 +299,10 @@ Future<void> main() async {
         await _goHomeBasedOnRole(userProvider);
       }
 
-      // 🔥 Si l’app a été lancée depuis une notif admin (état TERMINÉ),
-      // on affiche le popup APRÈS avoir ouvert Home / Welcome.
+      // Affiche popup admin stockée si on a démarré depuis une notif admin
       await PushService.instance.showLaunchAdminIfPending();
 
+      // Ecoute changement d'auth (login / logout)
       Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
         final session = event.session;
 
@@ -314,6 +310,7 @@ Future<void> main() async {
           RecoveryGuard.activate();
           return;
         }
+
         if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
           return;
         }
@@ -323,59 +320,50 @@ Future<void> main() async {
           _subscribeUserNotifications(uid);
           _subscribeAdminKick(uid);
           await _startHeartbeat();
-
           await userProvider.chargerUtilisateurConnecte();
-
-          _askPushOnce(); // FCM pour user connecté
-
+          _askPushOnce();
           if (!RecoveryGuard.isActive) {
             await _goHomeBasedOnRole(userProvider);
           }
-
-          // Cas très rare où une notif admin serait encore en attente
           await PushService.instance.showLaunchAdminIfPending();
         } else {
           _unsubscribeUserNotifications();
           _unsubscribeAdminKick();
           await _stopHeartbeat();
-
           if (!RecoveryGuard.isActive) {
             _pushUnique(AppRoutes.welcome);
           }
         }
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[main] init error: $e');
+    }
   });
 }
 
-// —————————————————————
-//        APP
-// —————————————————————
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF0175C2), // ★★★ Fix anti-écran blanc ★★★
+      color: const Color(0xFF0175C2),
       child: MaterialApp(
         navigatorKey: navKey,
         debugShowCheckedModeBanner: false,
-        onGenerateInitialRoutes: (String _) {
+        onGenerateInitialRoutes: (_) {
           if (kIsWeb && _isRecoveryUrl(Uri.base)) {
             return [
               MaterialPageRoute(
                 settings: const RouteSettings(name: AppRoutes.resetPassword),
                 builder: (_) => const ResetPasswordPage(),
-              ),
+              )
             ];
           }
           return [
             MaterialPageRoute(
               settings: const RouteSettings(name: AppRoutes.splash),
               builder: (_) => const SplashScreen(),
-            ),
+            )
           ];
         },
         onGenerateRoute: AppRoutes.generateRoute,
@@ -387,11 +375,14 @@ class MyApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        supportedLocales: const [Locale('fr'), Locale('en')],
+        supportedLocales: const [
+          Locale('fr'),
+          Locale('en'),
+        ],
         locale: const Locale('fr'),
         builder: (context, child) {
           return ColoredBox(
-            color: const Color(0xFF0175C2), // ★★★ Empêche toute frame blanche
+            color: const Color(0xFF0175C2),
             child: child ?? const SizedBox.shrink(),
           );
         },

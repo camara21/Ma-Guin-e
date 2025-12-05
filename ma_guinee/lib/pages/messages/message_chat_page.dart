@@ -1,4 +1,3 @@
-// lib/pages/messages/message_chat_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +8,9 @@ import '../../models/logement_models.dart';
 
 // Détail logement
 import '../../pages/logement/logement_detail_page.dart';
+
+// MessageService
+import '../../services/message_service.dart';
 
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
@@ -35,6 +37,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
   // même pattern que la page détail
   final LogementService _logSvc = LogementService();
+  final MessageService _svc = MessageService();
 
   // état messages
   final _msgCtrl = TextEditingController();
@@ -84,8 +87,8 @@ class _MessageChatPageState extends State<MessageChatPage> {
       // première image (souvent déjà en URL publique via le service)
       String? imageUrl;
       if (bien.photos.isNotEmpty) {
-        final first =
-            bien.photos.firstWhere((p) => p.trim().isNotEmpty, orElse: () => '');
+        final first = bien.photos
+            .firstWhere((p) => p.trim().isNotEmpty, orElse: () => '');
         if (first.isNotEmpty) {
           imageUrl = first.startsWith('http')
               ? first
@@ -179,28 +182,27 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
     setState(() => _sending = true);
     try {
-      final data = <String, dynamic>{
-        'sender_id': me,
-        'receiver_id': widget.peerUserId,
-        'contexte': _ctx, // 'logement' OU 'prestataire'
-        'contenu': txt,
-        'date_envoi': DateTime.now().toIso8601String(),
-        'lu': false,
-      };
+      // Build optimistic UI? Here we keep current behaviour: service manages insert & push
       if (_ctx == 'prestataire') {
-        data['prestataire_id'] = widget.contextId;
-        if (widget.contextTitle != null) {
-          data['prestataire_name'] = widget.contextTitle;
-        }
+        await _svc.sendMessageToPrestataire(
+          senderId: me,
+          receiverId:
+              widget.peerUserId, // si known; service can resolve if empty
+          prestataireId: widget.contextId,
+          prestataireName: widget.contextTitle ?? '',
+          contenu: txt,
+        );
       } else {
-        // logement => stocké dans annonce_id
-        data['annonce_id'] = widget.contextId;
-        if (widget.contextTitle != null) {
-          data['annonce_titre'] = widget.contextTitle;
-        }
+        // logement => use sendMessageToLogement (stored in annonce_id)
+        await _svc.sendMessageToLogement(
+          senderId: me,
+          receiverId: widget.peerUserId,
+          logementId: widget.contextId,
+          logementTitre: widget.contextTitle ?? '',
+          contenu: txt,
+        );
       }
 
-      await _sb.from('messages').insert(data);
       _msgCtrl.clear();
 
       await Future.delayed(const Duration(milliseconds: 150));
@@ -233,12 +235,13 @@ class _MessageChatPageState extends State<MessageChatPage> {
               future: _offerFuture,
               builder: (context, snap) {
                 final off = snap.data;
-                if (snap.connectionState != ConnectionState.done || off == null) {
+                if (snap.connectionState != ConnectionState.done ||
+                    off == null) {
                   return const SizedBox(height: 4);
                 }
                 return Padding(
-                  padding:
-                      const EdgeInsets.only(bottom: 8, left: 12, right: 12, top: 10),
+                  padding: const EdgeInsets.only(
+                      bottom: 8, left: 12, right: 12, top: 10),
                   child: _OfferMessageBubble(
                     offer: off,
                     onTap: () {
@@ -368,8 +371,8 @@ class _OfferMessageBubble extends StatelessWidget {
                     width: 110,
                     height: 86,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        Container(width: 110, height: 86, color: Colors.grey.shade300),
+                    errorBuilder: (_, __, ___) => Container(
+                        width: 110, height: 86, color: Colors.grey.shade300),
                   ),
             const SizedBox(width: 10),
             Expanded(
