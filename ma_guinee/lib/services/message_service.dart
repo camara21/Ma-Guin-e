@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class MessageService {
   final _client = Supabase.instance.client;
 
-  // Notifications internes optionnelles
+  // Notifications internes optionnelles (badges, etc.)
   final StreamController<void> unreadChanged =
       StreamController<void>.broadcast();
   final ValueNotifier<int> optimisticUnreadDelta = ValueNotifier<int>(0);
@@ -43,7 +43,31 @@ class MessageService {
     return null;
   }
 
-  // ---------------- Conversations ----------------
+  // Dé-masquer un fil quand on renvoie un nouveau message
+  Future<void> _unhideThreadForUser({
+    required String userId,
+    required String contexte,
+    String? annonceId,
+    String? prestataireId,
+    required String peerUserId,
+  }) async {
+    final ctxId = (contexte == 'prestataire') ? prestataireId : annonceId;
+    if (ctxId == null || ctxId.isEmpty) return;
+
+    try {
+      await _client
+          .from('conversation_hidden')
+          .delete()
+          .eq('user_id', userId)
+          .eq('contexte', contexte)
+          .eq('context_id', ctxId)
+          .eq('peer_id', peerUserId);
+    } catch (_) {
+      // on ignore les erreurs ici
+    }
+  }
+
+  // ---------------- Conversations (liste principale) ----------------
   Future<List<Map<String, dynamic>>> fetchUserConversations(
       String userId) async {
     // A) tous les messages où je suis sender OU receiver
@@ -105,7 +129,7 @@ class MessageService {
     return list;
   }
 
-  // ---------------- Threads ----------------
+  // ---------------- Threads (par contexte) ----------------
   static const _colsThread = '''
     id,sender_id,receiver_id,contenu,lu,date_envoi,
     deleted_for_sender_at,deleted_for_receiver_at
@@ -145,12 +169,13 @@ class MessageService {
     return (raw as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
-  // Filtrage des messages masqués
+  // ---------- Threads visibles pour un user (filtrage, SANS re-tri Dart) ----------
   Future<List<Map<String, dynamic>>> fetchMessagesForAnnonceVisibleTo({
     required String viewerUserId,
     required String annonceId,
   }) async {
     final all = await fetchMessagesForAnnonce(annonceId);
+    // on garde l'ordre SQL, on filtre juste les messages "supprimés pour moi"
     return all.where((m) => !_isDeletedForMe(m, viewerUserId)).toList();
   }
 
@@ -171,6 +196,7 @@ class MessageService {
   }
 
   // ---------------- Envoi ----------------
+
   Future<void> sendMessageToAnnonce({
     required String senderId,
     required String receiverId,
@@ -195,7 +221,21 @@ class MessageService {
 
     unreadChanged.add(null);
 
-    String? insertedId = _extractIdFromRow(messageRow);
+    // Ré-ouverture du fil pour les 2
+    await _unhideThreadForUser(
+      userId: senderId,
+      contexte: 'annonce',
+      annonceId: annonceId,
+      peerUserId: receiverId,
+    );
+    await _unhideThreadForUser(
+      userId: receiverId,
+      contexte: 'annonce',
+      annonceId: annonceId,
+      peerUserId: senderId,
+    );
+
+    final insertedId = _extractIdFromRow(messageRow);
 
     // 🔔 Push FCM vers le destinataire (non bloquant)
     try {
@@ -271,7 +311,21 @@ class MessageService {
 
     unreadChanged.add(null);
 
-    String? insertedId = _extractIdFromRow(messageRow);
+    // Ré-ouverture du fil pour les 2 parties
+    await _unhideThreadForUser(
+      userId: senderId,
+      contexte: 'logement',
+      annonceId: logementId,
+      peerUserId: finalReceiver,
+    );
+    await _unhideThreadForUser(
+      userId: finalReceiver,
+      contexte: 'logement',
+      annonceId: logementId,
+      peerUserId: senderId,
+    );
+
+    final insertedId = _extractIdFromRow(messageRow);
 
     if (finalReceiver.isNotEmpty) {
       try {
@@ -301,6 +355,71 @@ class MessageService {
     }
   }
 
+  // Résolution robuste du destinataire pour les messages prestataire
+  Future<String> _resolvePrestataireReceiver({
+    required String senderId,
+    required String receiverId,
+    required String prestataireId,
+  }) async {
+    var resolved = receiverId.trim();
+
+    // Si déjà un autre user explicite → on garde
+    if (resolved.isNotEmpty && resolved != senderId) {
+      return resolved;
+    }
+
+    // 1) Essayer de récupérer le dernier message de ce fil pour trouver "l'autre"
+    try {
+      final last = await _client
+          .from('messages')
+          .select('sender_id,receiver_id')
+          .eq('contexte', 'prestataire')
+          .eq('prestataire_id', prestataireId)
+          .order('date_envoi', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (last != null) {
+        final s = (last['sender_id'] ?? '').toString();
+        final r = (last['receiver_id'] ?? '').toString();
+        final candidate = (s == senderId) ? r : s;
+        if (candidate.isNotEmpty && candidate != senderId) {
+          return candidate;
+        }
+      }
+    } catch (_) {
+      // on ignore, on a d'autres fallbacks
+    }
+
+    // 2) Fallback : propriétaire du prestataire (utilisateur_id / owner_user_id)
+    try {
+      final r = await _client
+          .from('prestataires')
+          .select('utilisateur_id,owner_user_id')
+          .eq('id', prestataireId)
+          .maybeSingle()
+          .catchError((_) => null);
+
+      if (r != null) {
+        final owner = (r['owner_user_id']?.toString() ?? '').trim();
+        final user = (r['utilisateur_id']?.toString() ?? '').trim();
+
+        final ownerFirst = owner.isNotEmpty && owner != senderId ? owner : user;
+        if (ownerFirst.isNotEmpty && ownerFirst != senderId) {
+          return ownerFirst;
+        }
+      }
+    } catch (_) {}
+
+    // 3) Dernier recours : si receiverId était différent de vide, on l'utilise quand même
+    if (receiverId.isNotEmpty && receiverId != senderId) {
+      return receiverId;
+    }
+
+    throw Exception(
+        "Impossible de déterminer le destinataire du message prestataire.");
+  }
+
   Future<void> sendMessageToPrestataire({
     required String senderId,
     required String receiverId,
@@ -308,32 +427,12 @@ class MessageService {
     required String prestataireName,
     required String contenu,
   }) async {
-    var resolvedReceiver = receiverId;
-
-    if (resolvedReceiver.isEmpty) {
-      final r1 = await _client
-          .from('prestataires')
-          .select('utilisateur_id')
-          .eq('id', prestataireId)
-          .maybeSingle()
-          .catchError((_) => null);
-
-      final r2 = await _client
-          .from('prestataires')
-          .select('owner_user_id')
-          .eq('id', prestataireId)
-          .maybeSingle()
-          .catchError((_) => null);
-
-      resolvedReceiver = (r1?['utilisateur_id']?.toString() ??
-          r2?['owner_user_id']?.toString() ??
-          '');
-
-      if (resolvedReceiver.isEmpty) {
-        throw Exception(
-            "Le prestataire $prestataireId n'a pas de propriétaire.");
-      }
-    }
+    // IMPORTANT : évite que le prestataire s’envoie le message à lui-même
+    final resolvedReceiver = await _resolvePrestataireReceiver(
+      senderId: senderId,
+      receiverId: receiverId,
+      prestataireId: prestataireId,
+    );
 
     final messageRow = await _client
         .from('messages')
@@ -352,7 +451,21 @@ class MessageService {
 
     unreadChanged.add(null);
 
-    String? insertedId = _extractIdFromRow(messageRow);
+    // Ré-ouverture du fil pour les 2 parties
+    await _unhideThreadForUser(
+      userId: senderId,
+      contexte: 'prestataire',
+      prestataireId: prestataireId,
+      peerUserId: resolvedReceiver,
+    );
+    await _unhideThreadForUser(
+      userId: resolvedReceiver,
+      contexte: 'prestataire',
+      prestataireId: prestataireId,
+      peerUserId: senderId,
+    );
+
+    final insertedId = _extractIdFromRow(messageRow);
 
     try {
       await _client.functions.invoke('push-send', body: {
@@ -435,7 +548,7 @@ class MessageService {
     }
   }
 
-  // ---------------- Suppression pour moi ----------------
+  // ---------------- Suppression pour moi (soft delete J+30) ----------------
   Future<void> deleteMessageForMe({
     required String messageId,
     required String currentUserId,
@@ -469,6 +582,7 @@ class MessageService {
 
     final patch = <String, dynamic>{
       'hard_delete_at': hardDeleteAt.toIso8601String(),
+      'lu': true, // pour ne plus compter dans les non-lus
       if (isSender) 'deleted_for_sender_at': now.toIso8601String(),
       if (isReceiver) 'deleted_for_receiver_at': now.toIso8601String(),
     };
@@ -477,7 +591,7 @@ class MessageService {
     unreadChanged.add(null);
   }
 
-  // ---------------- Masquage d’un fil ----------------
+  // ---------------- Masquage / suppression d’un fil ----------------
   Future<void> hideThread({
     required String userId,
     required String contexte,
@@ -487,17 +601,52 @@ class MessageService {
   }) async {
     final ctxId = (contexte == 'prestataire') ? prestataireId : annonceId;
 
-    await _client.from('conversation_hidden').upsert(
-      {
-        'user_id': userId,
-        'contexte': contexte,
-        'context_id': ctxId ?? '',
-        'peer_id': peerUserId,
-      },
-      onConflict: 'user_id,contexte,context_id,peer_id',
-      ignoreDuplicates:
-          true, // important pour éviter les erreurs "duplicate key"
-    );
+    // 1) Marquer tous les messages de CE fil comme supprimés pour cet utilisateur
+    try {
+      final ctxField =
+          (contexte == 'prestataire') ? 'prestataire_id' : 'annonce_id';
+
+      final rows = await _client
+          .from('messages')
+          .select('id,sender_id,receiver_id')
+          .eq('contexte', contexte)
+          .eq(ctxField, ctxId ?? '')
+          .or(
+            'and(sender_id.eq.$userId,receiver_id.eq.$peerUserId),'
+            'and(sender_id.eq.$peerUserId,receiver_id.eq.$userId)',
+          );
+
+      for (final r in (rows as List? ?? const [])) {
+        final id = r['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          await deleteMessageForMe(
+            messageId: id,
+            currentUserId: userId,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[MessageService] hideThread deleteForMe error: $e');
+    }
+
+    // 2) Enregistrer le masquage dans conversation_hidden (pour la liste)
+    try {
+      await _client.from('conversation_hidden').upsert(
+        {
+          'user_id': userId,
+          'contexte': contexte,
+          'context_id': ctxId ?? '',
+          'peer_id': peerUserId,
+        },
+        onConflict: 'user_id,contexte,context_id,peer_id',
+        ignoreDuplicates: true,
+      );
+    } catch (e) {
+      debugPrint(
+          '[MessageService] hideThread upsert conversation_hidden error: $e');
+    }
+
+    unreadChanged.add(null);
   }
 
   Future<Set<String>> fetchHiddenThreadKeys(String userId) async {

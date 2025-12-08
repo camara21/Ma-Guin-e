@@ -6,7 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
 import 'messages_annonce_page.dart'; // Chat ANNONCES
-import 'messages/message_chat_page.dart'; // Chat LOGEMENT & PRESTATAIRE
+import 'messages/message_chat_page.dart'; // Chat LOGEMENT
+import 'messages_prestataire_page.dart'; // Chat PRESTATAIRE
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
@@ -26,6 +27,9 @@ class _MessagesPageState extends State<MessagesPage> {
   bool _loading = true;
 
   final Map<String, String> _avatarCache = {};
+
+  // Conversations supprimées localement (pour éviter la réapparition)
+  final Set<String> _locallyDeletedThreadKeys = <String>{};
 
   // Polling périodique
   Timer? _pollTimer;
@@ -52,6 +56,17 @@ class _MessagesPageState extends State<MessagesPage> {
     final dd = d.day.toString().padLeft(2, '0');
     final mm = d.month.toString().padLeft(2, '0');
     return '$dd/$mm/${d.year}';
+  }
+
+  // même logique que MessageService._isDeletedForMe mais côté UI
+  bool _isDeletedForMeRow(Map<String, dynamic> m, String myId) {
+    final senderId = (m['sender_id'] ?? '').toString();
+    final isSender = senderId == myId;
+    if (isSender) {
+      return m['deleted_for_sender_at'] != null;
+    } else {
+      return m['deleted_for_receiver_at'] != null;
+    }
   }
 
   String _initials(Map<String, dynamic>? u) {
@@ -115,11 +130,7 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
-  String _threadKey(String contexte, dynamic ctxId, String otherId) =>
-      '$contexte-${ctxId ?? ''}-$otherId';
-
-  // ************ CORRECTION IMPORTANTE ************
-  // Contexte stabilisé avec fallback message.id pour ANNONCE / LOGEMENT
+  // ************ Contexte stabilisé avec fallback message.id ************
   String _ctxIdForMessage(Map<String, dynamic> msg) {
     final ctx = (msg['contexte'] ?? '').toString();
 
@@ -146,7 +157,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
     return msg['id'].toString(); // sécurité
   }
-  // ***********************************************
+  // ********************************************************************
 
   @override
   void initState() {
@@ -187,8 +198,8 @@ class _MessagesPageState extends State<MessagesPage> {
     }
 
     try {
+      // 1) On récupère TOUTES les conversations où je suis concerné
       final messages = await _messageService.fetchUserConversations(me.id);
-      final hiddenKeys = await _messageService.fetchHiddenThreadKeys(me.id);
 
       final grouped = <String, Map<String, dynamic>>{};
       final participantIds = <String>{};
@@ -196,34 +207,35 @@ class _MessagesPageState extends State<MessagesPage> {
       for (final raw in messages) {
         final msg = Map<String, dynamic>.from(raw as Map);
 
+        // NE JAMAIS MONTRER UN MESSAGE SUPPRIMÉ POUR MOI (3 contextes)
+        final String myId = me.id;
+        if (_isDeletedForMeRow(msg, myId)) {
+          continue;
+        }
+
         final String senderId = (msg['sender_id'] ?? '').toString();
         final String receiverId = (msg['receiver_id'] ?? '').toString();
-        final String myId = me.id;
         final String otherId = (senderId == myId) ? receiverId : senderId;
 
         if (otherId.isNotEmpty) participantIds.add(otherId);
 
         final ctx = (msg['contexte'] ?? '').toString();
         final ctxId = _ctxIdForMessage(msg);
+        final threadKey = '$ctx-$ctxId-$otherId';
 
-        final keyExact = _threadKey(ctx, ctxId, otherId);
-        final keyEmpty = _threadKey(ctx, '', otherId);
-
-        final isHidden =
-            hiddenKeys.contains(keyExact) || hiddenKeys.contains(keyEmpty);
-        if (isHidden) {
-          // Fil masqué pour CE user, quel que soit le contexte
+        // Si ce fil a été supprimé localement, on le cache définitivement
+        if (_locallyDeletedThreadKeys.contains(threadKey)) {
           continue;
         }
 
-        final gkey = '$ctx-$ctxId-$otherId';
-        if (!grouped.containsKey(gkey) ||
+        if (!grouped.containsKey(threadKey) ||
             _asDate(msg['date_envoi'])
-                .isAfter(_asDate(grouped[gkey]!['date_envoi']))) {
-          grouped[gkey] = msg;
+                .isAfter(_asDate(grouped[threadKey]!['date_envoi']))) {
+          grouped[threadKey] = msg;
         }
       }
 
+      // 2) Chargement des profils utilisateurs
       Map<String, Map<String, dynamic>> usersMap = {};
       if (participantIds.isNotEmpty) {
         List users;
@@ -253,10 +265,13 @@ class _MessagesPageState extends State<MessagesPage> {
         };
 
         for (final id in participantIds) {
-          unawaited(_resolveAvatarForUser(id));
+          _resolveAvatarForUser(id).then((_) {
+            if (mounted) setState(() {});
+          });
         }
       }
 
+      // 3) Tri des conversations par date du dernier message
       final list = grouped.values.toList()
         ..sort((a, b) =>
             _asDate(b['date_envoi']).compareTo(_asDate(a['date_envoi'])));
@@ -346,12 +361,24 @@ class _MessagesPageState extends State<MessagesPage> {
   Future<void> _deleteConversation({
     required Map<String, dynamic> convo,
     required String otherId,
+    bool removeLocal = false,
   }) async {
     final me = _sb.auth.currentUser?.id;
     if (me == null) return;
 
     final ctx = (convo['contexte'] ?? '').toString();
     final ctxId = _ctxIdForMessage(convo);
+    final localKey = '$ctx-$ctxId-$otherId';
+
+    // On marque ce fil comme supprimé pour toute la session
+    _locallyDeletedThreadKeys.add(localKey);
+
+    // IMPORTANT : retirer immédiatement du tree pour Dismissible
+    if (removeLocal && mounted) {
+      setState(() {
+        _conversations.remove(convo);
+      });
+    }
 
     try {
       await _messageService.hideThread(
@@ -363,13 +390,14 @@ class _MessagesPageState extends State<MessagesPage> {
       );
 
       if (!mounted) return;
-      setState(() => _conversations.remove(convo));
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Conversation supprimée.')));
+        const SnackBar(content: Text('Conversation supprimée.')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e')),
+      );
     }
   }
 
@@ -447,15 +475,15 @@ class _MessagesPageState extends State<MessagesPage> {
                         itemBuilder: (ctx, i) {
                           final m = list[i];
 
-                          final myId = me?.id ?? '';
+                          final meId = me?.id ?? '';
                           final senderId = (m['sender_id'] ?? '').toString();
                           final receiverId =
                               (m['receiver_id'] ?? '').toString();
                           final otherIdStr =
-                              (senderId == myId) ? receiverId : senderId;
+                              (senderId == meId) ? receiverId : senderId;
 
                           final isUnread =
-                              (receiverId == myId) && (m['lu'] != true);
+                              (receiverId == meId) && (m['lu'] != true);
 
                           final utilisateur = _utilisateurs[otherIdStr];
                           final interlocutorName = (utilisateur != null)
@@ -472,9 +500,9 @@ class _MessagesPageState extends State<MessagesPage> {
                           final directUrl = _rawUrl(utilisateur);
                           String? photoUrl = directUrl ?? _avatarCache[userId];
                           if (photoUrl == null) {
-                            unawaited(_resolveAvatarForUser(userId).then((_) {
+                            _resolveAvatarForUser(userId).then((_) {
                               if (mounted) setState(() {});
-                            }));
+                            });
                           }
 
                           final convKey = ValueKey<String>([
@@ -487,8 +515,14 @@ class _MessagesPageState extends State<MessagesPage> {
                             key: convKey,
                             direction: DismissDirection.endToStart,
                             confirmDismiss: (_) => _confirmDelete(),
-                            onDismissed: (_) =>
-                                _deleteConversation(convo: m, otherId: userId),
+                            onDismissed: (_) {
+                              // suppression locale immédiate + cache local
+                              _deleteConversation(
+                                convo: m,
+                                otherId: userId,
+                                removeLocal: true,
+                              );
+                            },
                             background: Container(
                               color: Colors.red,
                               alignment: Alignment.centerRight,
@@ -502,7 +536,10 @@ class _MessagesPageState extends State<MessagesPage> {
                                 final ok = await _confirmDelete();
                                 if (ok) {
                                   await _deleteConversation(
-                                      convo: m, otherId: userId);
+                                    convo: m,
+                                    otherId: userId,
+                                    removeLocal: true,
+                                  );
                                 }
                               },
                               leading: Stack(
@@ -565,6 +602,7 @@ class _MessagesPageState extends State<MessagesPage> {
 
                                 final contexte =
                                     (m['contexte'] ?? '').toString();
+                                final myId = meId;
 
                                 if (contexte == 'annonce') {
                                   final annonceId =
@@ -604,10 +642,8 @@ class _MessagesPageState extends State<MessagesPage> {
                                     MaterialPageRoute(
                                       builder: (_) => MessageChatPage(
                                         peerUserId: userId,
-                                        title: logementTitre,
-                                        contextType: 'logement',
-                                        contextId: logementId,
-                                        contextTitle: logementTitre,
+                                        logementId: logementId,
+                                        logementTitre: logementTitre,
                                       ),
                                     ),
                                   );
@@ -621,12 +657,11 @@ class _MessagesPageState extends State<MessagesPage> {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => MessageChatPage(
-                                        peerUserId: userId,
-                                        title: titre,
-                                        contextType: 'prestataire',
-                                        contextId: prestataireId,
-                                        contextTitle: titre,
+                                      builder: (_) => MessagesPrestatairePage(
+                                        prestataireId: prestataireId,
+                                        prestataireNom: titre,
+                                        receiverId: userId,
+                                        senderId: myId,
                                       ),
                                     ),
                                   );

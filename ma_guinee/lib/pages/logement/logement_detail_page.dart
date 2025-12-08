@@ -313,16 +313,14 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         await Future.delayed(const Duration(milliseconds: 120));
       }
 
-      // On ouvre ensuite le chat logement (MessageChatPage)
+      // On ouvre ensuite le chat logement (MessageChatPage logement-only)
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => MessageChatPage(
             peerUserId: b.userId.toString(),
-            title: b.titre,
-            contextType: 'logement',
-            contextId: b.id.toString(),
-            contextTitle: b.titre,
+            logementId: b.id.toString(),
+            logementTitre: b.titre,
           ),
         ),
       );

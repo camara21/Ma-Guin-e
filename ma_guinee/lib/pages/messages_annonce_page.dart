@@ -1,3 +1,4 @@
+// lib/pages/messages/message_annonce_page.dart (ou messages_annonce_page.dart)
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -37,7 +38,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
 
   late Future<_AnnonceCard?> _annonceFuture;
 
-  // Polling périodique (comme logement)
+  // Polling périodique
   Timer? _pollTimer;
 
   // ====== URL publique + bucket ======
@@ -50,6 +51,78 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     return _sb.storage.from(bucket).getPublicUrl(objectPath);
   }
   // ===================================
+
+  // ===== Helpers temps (affichage) =====
+  DateTime _asDate(dynamic v) {
+    if (v is DateTime) return v.toLocal();
+    if (v is String) {
+      final d = DateTime.tryParse(v);
+      if (d != null) return d.toLocal();
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final day = DateTime(d.year, d.month, d.day);
+
+    if (_sameDay(day, today)) return "Aujourd'hui";
+    if (_sameDay(day, yesterday)) return "Hier";
+
+    const weekDays = [
+      'lun.',
+      'mar.',
+      'mer.',
+      'jeu.',
+      'ven.',
+      'sam.',
+      'dim.',
+    ];
+    const months = [
+      'janv.',
+      'févr.',
+      'mars',
+      'avr.',
+      'mai',
+      'juin',
+      'juil.',
+      'août',
+      'sept.',
+      'oct.',
+      'nov.',
+      'déc.',
+    ];
+    final wd = weekDays[day.weekday - 1];
+    final month = months[day.month - 1];
+    return '$wd ${day.day} $month';
+  }
+
+  String _timeLabel(DateTime d) {
+    final h = d.hour.toString().padLeft(2, '0');
+    final m = d.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  List<_ChatEntry> _buildChatEntries(List<Map<String, dynamic>> msgs) {
+    final List<_ChatEntry> entries = [];
+    DateTime? lastDay;
+    for (final m in msgs) {
+      final dt = _asDate(m['date_envoi']);
+      final day = DateTime(dt.year, dt.month, dt.day);
+      if (lastDay == null || !_sameDay(day, lastDay)) {
+        entries.add(_ChatDate(day));
+        lastDay = day;
+      }
+      entries.add(_ChatMessage(m));
+    }
+    return entries;
+  }
+  // ================================================
 
   @override
   void initState() {
@@ -70,7 +143,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      // pas de spinner à chaque poll
       _loadAndMarkRead(initial: false);
     });
   }
@@ -85,7 +157,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           .maybeSingle();
 
       if (row == null) {
-        // fallback minimal
         return _AnnonceCard(
           id: widget.annonceId,
           titre: widget.annonceTitre,
@@ -95,7 +166,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         );
       }
 
-      // images : List<String> | List<Map> | JSON string
       List<String> images = const <String>[];
       final rawImages = row['images'];
 
@@ -124,10 +194,9 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         try {
           final parsed = jsonDecode(rawImages);
           images = _stringifyList(parsed);
-        } catch (_) {/* ignore */}
+        } catch (_) {}
       }
 
-      // chemin -> URL publique
       final String? image =
           images.isNotEmpty ? _publicUrl(_annonceBucket, images.first) : null;
 
@@ -155,21 +224,28 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // Charger l'historique + marquer LU
+  // Chargement + marquage LU
   Future<void> _loadAndMarkRead({bool initial = false}) async {
     if (!mounted) return;
     if (initial) {
       setState(() => _loading = true);
     }
     try {
+      final currentUser = _sb.auth.currentUser;
+      final viewerId = currentUser?.id ?? widget.senderId;
+
+      final previousLastId =
+          _msgs.isNotEmpty ? _msgs.last['id']?.toString() : null;
+
       final msgs = await _svc.fetchMessagesForAnnonceVisibleTo(
-        viewerUserId: widget.senderId,
+        viewerUserId: viewerId,
         annonceId: widget.annonceId,
       );
 
+      // marquer lus
       final idsToMark = <String>[];
       for (final m in msgs) {
-        final isForMe = (m['receiver_id']?.toString() == widget.senderId);
+        final isForMe = (m['receiver_id']?.toString() == viewerId);
         final notRead = (m['lu'] == false || m['lu'] == null);
         if (isForMe && notRead) {
           final id = m['id']?.toString();
@@ -185,10 +261,15 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
 
       if (!mounted) return;
       setState(() {
+        // ordre directement celui de la base (id ASC) → ne bouge jamais
         _msgs = msgs;
         if (initial) _loading = false;
       });
-      _scrollToEnd();
+
+      final newLastId = _msgs.isNotEmpty ? _msgs.last['id']?.toString() : null;
+      if (initial || previousLastId != newLastId) {
+        _scrollToEnd();
+      }
     } catch (e) {
       if (!mounted) return;
       if (initial) {
@@ -214,15 +295,17 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     if (text.isEmpty) return;
     _ctrl.clear();
 
+    final now = DateTime.now();
+
     // UI optimiste
     setState(() {
       _msgs.add({
-        'id': -1,
+        'id': -1, // temporaire, remplacé au prochain poll
         'sender_id': widget.senderId,
         'receiver_id': widget.receiverId,
         'contenu': text,
         'lu': true,
-        'date_envoi': DateTime.now().toIso8601String(),
+        'date_envoi': now.toIso8601String(),
       });
     });
     _scrollToEnd();
@@ -236,7 +319,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         contenu: text,
       );
 
-      // le polling rattrape, mais on force un refresh rapide
+      // le polling va recharger la vraie ligne (id auto)
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
@@ -246,12 +329,15 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // Supprimer POUR MOI (soft delete J+30)
+  // Supprimer POUR MOI un seul message
   Future<void> _deleteForMe(String messageId) async {
+    final currentUser = _sb.auth.currentUser;
+    final meId = currentUser?.id ?? widget.senderId;
+
     try {
       await _svc.deleteMessageForMe(
         messageId: messageId,
-        currentUserId: widget.senderId,
+        currentUserId: meId,
       );
     } catch (e) {
       if (!mounted) return;
@@ -263,7 +349,60 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     }
   }
 
-  // Ouvrir détail annonce (fallback si RLS/supprimée)
+  // Supprimer TOUTE la discussion pour moi
+  Future<void> _deleteWholeThread() async {
+    final currentUser = _sb.auth.currentUser;
+    if (currentUser == null) return;
+
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Supprimer la discussion ?'),
+            content: const Text(
+              "Cette discussion sera masquée pour vous (l'historique sera effacé de votre vue). "
+              "Vous pourrez toujours réécrire plus tard sur cette annonce.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Supprimer la discussion'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    final myId = currentUser.id;
+    final otherId =
+        (myId == widget.senderId) ? widget.receiverId : widget.senderId;
+
+    try {
+      await _svc.hideThread(
+        userId: myId,
+        contexte: 'annonce',
+        annonceId: widget.annonceId,
+        prestataireId: null,
+        peerUserId: otherId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de la suppression : $e")),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
+  // Ouvrir détail annonce
   Future<void> _openAnnonceDetail(_AnnonceCard a) async {
     final row =
         await _sb.from('annonces').select().eq('id', a.id).maybeSingle();
@@ -277,7 +416,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       return;
     }
 
-    // Fallback local si introuvable
     final minimalJson = <String, dynamic>{
       'id': a.id,
       'titre': a.titre,
@@ -296,10 +434,34 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     );
   }
 
+  Widget _dateSeparator(DateTime day) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(height: 1)),
+          const SizedBox(width: 8),
+          Text(
+            _dayLabel(day),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(child: Divider(height: 1)),
+        ],
+      ),
+    );
+  }
+
   // Bulle + long-press supprimer pour moi
   Widget _bubble(Map<String, dynamic> m) {
     final me = m['sender_id']?.toString() == widget.senderId;
     final myColor = me ? const Color(0xFF113CFC) : const Color(0xFFF3F5FA);
+    final dt = _asDate(m['date_envoi']);
+    final time = _timeLabel(dt);
 
     return Align(
       alignment: me ? Alignment.centerRight : Alignment.centerLeft,
@@ -312,7 +474,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                 builder: (_) => AlertDialog(
                   title: const Text('Supprimer ce message ?'),
                   content: const Text(
-                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. L'autre personne le verra encore jusque-là.",
+                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                    "L'autre personne le verra encore jusque-là.",
                   ),
                   actions: [
                     TextButton(
@@ -331,15 +494,15 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.78),
           margin: EdgeInsets.only(
-              top: 7, bottom: 7, left: me ? 40 : 12, right: me ? 12 : 40),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              top: 6, bottom: 6, left: me ? 40 : 12, right: me ? 12 : 40),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: myColor,
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(me ? 16 : 6),
-              bottomRight: Radius.circular(me ? 6 : 16),
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(me ? 18 : 8),
+              bottomRight: Radius.circular(me ? 8 : 18),
             ),
             boxShadow: [
               if (me)
@@ -349,10 +512,27 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                     offset: const Offset(0, 1))
             ],
           ),
-          child: Text(
-            (m['contenu'] ?? '').toString(),
-            style: TextStyle(
-                color: me ? Colors.white : Colors.black87, fontSize: 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                (m['contenu'] ?? '').toString(),
+                style: TextStyle(
+                    color: me ? Colors.white : Colors.black87, fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: (me ? Colors.white : Colors.black87)
+                        .withOpacity(me ? 0.8 : 0.6),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -378,6 +558,13 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
               color: bleuMaGuinee, fontWeight: FontWeight.bold, fontSize: 17),
         ),
         iconTheme: const IconThemeData(color: bleuMaGuinee),
+        actions: [
+          IconButton(
+            tooltip: 'Supprimer la discussion',
+            icon: const Icon(Icons.delete_outline, color: bleuMaGuinee),
+            onPressed: _deleteWholeThread,
+          ),
+        ],
       ),
       body: SafeArea(
         child: _loading
@@ -389,9 +576,10 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                       future: _annonceFuture,
                       builder: (context, snap) {
                         final hasCard = (snap.data != null);
-                        final total = _msgs.length + (hasCard ? 1 : 0);
+                        final chatEntries = _buildChatEntries(_msgs);
+                        final total = chatEntries.length + (hasCard ? 1 : 0);
 
-                        if (!hasCard && _msgs.isEmpty) {
+                        if (!hasCard && chatEntries.isEmpty) {
                           return Center(
                             child: Text(
                               "Aucune discussion pour cette annonce.\nÉcrivez un message pour commencer.",
@@ -405,12 +593,12 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                         return ListView.builder(
                           controller: _scroll,
                           itemCount: total,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                           itemBuilder: (_, i) {
                             if (hasCard && i == 0) {
                               final a = snap.data!;
                               return Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                                padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
                                 child: _AnnonceMessageCard(
                                   annonce: a,
                                   onTap: () {
@@ -419,8 +607,14 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                                 ),
                               );
                             }
-                            final m = _msgs[i - (hasCard ? 1 : 0)];
-                            return _bubble(m);
+
+                            final entry = chatEntries[i - (hasCard ? 1 : 0)];
+                            if (entry is _ChatDate) {
+                              return _dateSeparator(entry.day);
+                            } else if (entry is _ChatMessage) {
+                              return _bubble(entry.message);
+                            }
+                            return const SizedBox.shrink();
                           },
                         );
                       },
@@ -473,7 +667,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
   }
 }
 
-// Modèles / widgets
+// ----- Modèles / widgets -----
 class _AnnonceCard {
   final String id;
   final String titre;
@@ -572,4 +766,17 @@ class _AnnonceMessageCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ----- Modèle interne pour la liste -----
+abstract class _ChatEntry {}
+
+class _ChatDate extends _ChatEntry {
+  final DateTime day;
+  _ChatDate(this.day);
+}
+
+class _ChatMessage extends _ChatEntry {
+  final Map<String, dynamic> message;
+  _ChatMessage(this.message);
 }

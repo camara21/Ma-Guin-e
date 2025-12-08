@@ -8,8 +8,10 @@ import 'nav_key.dart';
 import '../routes.dart';
 
 // Messages
-import '../pages/messages_annonce_page.dart';
-import '../pages/messages/message_chat_page.dart';
+import '../pages/messages_annonce_page.dart'; // Chat ANNONCES
+import '../pages/messages/message_chat_page.dart'; // Chat LOGEMENT
+import '../pages/messages_prestataire_page.dart'; // Chat PRESTATAIRE
+import '../pages/messages_page.dart'; // Liste des messages
 
 // Popup Admin
 import '../admin/admin_popup_page.dart';
@@ -134,14 +136,8 @@ class PushNav {
           payload['receiverId'] ??
           payload['to'] ??
           payload['user_id'];
-      String? annonceId = payload['annonce_id'] ??
-          payload['annonceId'] ??
-          payload['logement_id'] ??
-          payload['logementId'];
-      String? logementId = payload['logement_id'] ??
-          payload['logementId'] ??
-          payload['annonce_id'] ??
-          payload['annonceId'];
+      String? annonceId = payload['annonce_id'] ?? payload['annonceId'];
+      String? logementId = payload['logement_id'] ?? payload['logementId'];
       String? prestataireId = payload['prestataire_id'] ??
           payload['prestataireId'] ??
           payload['context_id'];
@@ -162,7 +158,7 @@ class PushNav {
         otherId = (receiverId == myId) ? null : receiverId;
       }
 
-      // Si payload contient message_id -> tenter de récupérer le message par id (prioritaire)
+      // ====== 1) si message_id présent → récupérer la ligne messages ======
       Map<String, dynamic>? messageRow;
       if (messageId != null && messageId.isNotEmpty) {
         try {
@@ -181,8 +177,7 @@ class PushNav {
         }
       }
 
-      // Si pas de messageRow mais payload contient suffisamment d'infos (sender/receiver),
-      // essayer de récupérer le dernier message entre eux
+      // ====== 2) sinon : essayer de récupérer le dernier message entre sender/receiver ======
       if (messageRow == null &&
           (senderId?.isNotEmpty ?? false) &&
           (receiverId?.isNotEmpty ?? false)) {
@@ -202,7 +197,7 @@ class PushNav {
         }
       }
 
-      // Si on a messageRow on s'en sert ; sinon on utilisera la payload directe quand possible ; sinon fallback DB (dernier reçu)
+      // ====== 3) si on a messageRow → fiabiliser les champs ======
       if (messageRow != null) {
         contexte = (messageRow['contexte'] ?? contexte ?? '').toString();
         senderId = (messageRow['sender_id'] ?? senderId ?? '').toString();
@@ -215,7 +210,7 @@ class PushNav {
             (messageRow['prestataire_id'] ?? prestataireId ?? '').toString();
       }
 
-      // Si toujours pas d'otherId et messageRow absent, fallback : dernier message reçu par moi
+      // ====== 4) fallback : dernier message que j'ai reçu ======
       if ((otherId == null || otherId.isEmpty) && messageRow == null) {
         try {
           final rows = await sb
@@ -246,7 +241,7 @@ class PushNav {
         }
       }
 
-      // final safety: recalc otherId if possible
+      // recalcul sécurité
       if ((otherId == null || otherId.isEmpty) &&
           (senderId?.isNotEmpty ?? false)) {
         otherId = (senderId == myId) ? receiverId : senderId;
@@ -258,24 +253,25 @@ class PushNav {
         return;
       }
 
-      // Normaliser le contexte en minuscules
+      // Normaliser
       contexte = (contexte ?? '').toLowerCase();
+      final String peerId = otherId;
 
       // =========================================================
       //   ROUTAGE SELON CONTEXTE
       // =========================================================
 
-      // 1) Annonce : on garde l'écran MessagesAnnoncePage
+      // 1) Annonce : page MessagesAnnoncePage
       if (contexte == 'annonce') {
         final ctxId = (annonceId ?? '').toString();
-        final titre =
-            payload['annonce_titre'] ?? payload['title'] ?? 'Message annonce';
+        final titre = payload['annonce_titre'] ?? payload['title'] ?? 'Annonce';
+
         Navigator.of(ctx).push(
           MaterialPageRoute(
             builder: (_) => MessagesAnnoncePage(
               annonceId: ctxId,
               annonceTitre: titre,
-              receiverId: otherId!,
+              receiverId: peerId,
               senderId: myId,
             ),
           ),
@@ -283,10 +279,9 @@ class PushNav {
         return;
       }
 
-      // 2) Logement : utiliser le chat logement (MessageChatPage)
+      // 2) Logement : chat logement dédié MessageChatPage
       if (contexte == 'logement') {
-        // dans ta table, tu mets le logement dans annonce_id,
-        // donc logementId peut valoir soit logement_id, soit annonce_id
+        // dans la base, tu peux avoir logement_id OU annonce_id
         final ctxId =
             (logementId?.isNotEmpty == true ? logementId : (annonceId ?? ''))
                 .toString();
@@ -299,46 +294,38 @@ class PushNav {
         Navigator.of(ctx).push(
           MaterialPageRoute(
             builder: (_) => MessageChatPage(
-              peerUserId: otherId!,
-              title: titre,
-              contextType: 'logement',
-              contextId: ctxId,
-              contextTitle: titre,
+              peerUserId: peerId,
+              logementId: ctxId,
+              logementTitre: titre,
             ),
           ),
         );
         return;
       }
 
-      // 3) Prestataire
+      // 3) Prestataire : page MessagesPrestatairePage
       if (contexte == 'prestataire') {
-        final prestaId = prestataireId ?? '';
+        final prestaId = (prestataireId ?? '').toString();
         final titre =
             payload['prestataire_name'] ?? payload['title'] ?? 'Prestataire';
+
         Navigator.of(ctx).push(
           MaterialPageRoute(
-            builder: (_) => MessageChatPage(
-              peerUserId: otherId!,
-              title: titre,
-              contextType: 'prestataire',
-              contextId: prestaId,
-              contextTitle: titre,
+            builder: (_) => MessagesPrestatairePage(
+              prestataireId: prestaId,
+              prestataireNom: titre,
+              receiverId: peerId,
+              senderId: myId,
             ),
           ),
         );
         return;
       }
 
-      // 4) Contexte inconnu → fallback chat prestataire générique
+      // 4) Contexte inconnu → fallback sur liste des messages
       Navigator.of(ctx).push(
         MaterialPageRoute(
-          builder: (_) => MessageChatPage(
-            peerUserId: otherId!,
-            title: payload['title'] ?? 'Conversation',
-            contextType: 'prestataire',
-            contextId: prestataireId ?? '',
-            contextTitle: payload['title'] ?? 'Conversation',
-          ),
+          builder: (_) => const MessagesPage(),
         ),
       );
     } catch (e) {

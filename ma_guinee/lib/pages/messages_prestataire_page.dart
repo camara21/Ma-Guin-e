@@ -1,3 +1,4 @@
+// lib/pages/messages_prestataire_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,9 +7,8 @@ import '../services/message_service.dart';
 class MessagesPrestatairePage extends StatefulWidget {
   final String prestataireId; // id du prestataire (contexte)
   final String prestataireNom; // titre AppBar
-  final String
-      receiverId; // id de l'autre utilisateur (peut être vide/obsolète)
-  final String senderId; // mon id
+  final String receiverId; // id de l'autre utilisateur (peer)
+  final String senderId; // mon id (fallback si auth.currentUser absent)
 
   const MessagesPrestatairePage({
     super.key,
@@ -33,18 +33,36 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   List<Map<String, dynamic>> _msgs = <Map<String, dynamic>>[];
   bool _loading = true;
 
-  // Résolution du destinataire (source de vérité = prestataires.utilisateur_id)
-  String? _resolvedReceiverId;
-  bool _peerMissing = false; // pas de compte lié => envoi désactivé
-  bool _ready = false;
-
   // Polling périodique
   Timer? _pollTimer;
+
+  // Id de l’utilisateur courant (auth) avec fallback sur senderId
+  String get _meId => _sb.auth.currentUser?.id ?? widget.senderId;
+
+  // L’autre utilisateur du fil (peer)
+  String get _peerId => widget.receiverId;
+
+  // ===== Helpers temps =====
+  DateTime _asDate(dynamic v) {
+    if (v is DateTime) return v.toLocal();
+    if (v is String) {
+      final d = DateTime.tryParse(v);
+      if (d != null) return d.toLocal();
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  String _timeLabel(DateTime d) {
+    final h = d.hour.toString().padLeft(2, '0');
+    final m = d.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
 
   @override
   void initState() {
     super.initState();
-    _bootstrap(); // résout receiver + charge messages
+    _loadAndMarkRead(initial: true);
+    _startPolling();
   }
 
   @override
@@ -53,32 +71,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  /// Lit toujours `prestataires.utilisateur_id`,
-  /// puis charge l'historique et marque *lu*.
-  Future<void> _bootstrap() async {
-    try {
-      final row = await _sb
-          .from('prestataires')
-          .select('utilisateur_id')
-          .eq('id', widget.prestataireId)
-          .maybeSingle();
-
-      final dbUid = (row?['utilisateur_id'] as String?)?.trim();
-
-      if (dbUid == null || dbUid.isEmpty) {
-        _peerMissing = true; // pas de compte lié -> interdire l’envoi
-        _resolvedReceiverId = null;
-      } else {
-        _resolvedReceiverId = dbUid; // on s’aligne sur la base
-      }
-
-      await _loadAndMarkRead(initial: true);
-      _startPolling();
-    } finally {
-      if (mounted) setState(() => _ready = true);
-    }
   }
 
   void _startPolling() {
@@ -91,19 +83,39 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   // Charger l'historique VISIBLE POUR MOI + marquer *lu*
   Future<void> _loadAndMarkRead({bool initial = false}) async {
     if (!mounted) return;
+    final viewerId = _meId;
+    if (viewerId.isEmpty) return;
+
     if (initial) {
       setState(() => _loading = true);
     }
+
     try {
-      final msgs = await _svc.fetchMessagesForPrestataireVisibleTo(
-        viewerUserId: widget.senderId,
+      final previousLastId =
+          _msgs.isNotEmpty ? _msgs.last['id']?.toString() : null;
+
+      // On récupère tous les messages pour ce prestataire visibles pour moi
+      final all = await _svc.fetchMessagesForPrestataireVisibleTo(
+        viewerUserId: viewerId,
         prestataireId: widget.prestataireId,
       );
 
-      // marquer *lu* les messages reçus par moi
+      // On ne garde QUE le fil entre moi et _peerId
+      final peerId = _peerId;
+      final msgs = all.where((m) {
+        final s = (m['sender_id'] ?? '').toString();
+        final r = (m['receiver_id'] ?? '').toString();
+        if (peerId.isEmpty) {
+          // cas dégradé: on ne connaît pas le peer → on montre tout
+          return true;
+        }
+        return (s == viewerId && r == peerId) || (s == peerId && r == viewerId);
+      }).toList();
+
+      // marquer *lu* les messages reçus par moi dans CE fil
       final idsAValider = <String>[
         for (final m in msgs)
-          if ((m['receiver_id']?.toString() == widget.senderId) &&
+          if ((m['receiver_id']?.toString() == viewerId) &&
               (m['lu'] == false || m['lu'] == null))
             m['id']?.toString() ?? ''
       ]..removeWhere((e) => e.isEmpty);
@@ -117,10 +129,15 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
       if (!mounted) return;
       setState(() {
+        // ordre fourni par le service (id ASC) → ne bouge plus
         _msgs = msgs;
         if (initial) _loading = false;
       });
-      _scrollToEnd();
+
+      final newLastId = _msgs.isNotEmpty ? _msgs.last['id']?.toString() : null;
+      if (initial || previousLastId != newLastId) {
+        _scrollToEnd();
+      }
     } catch (e) {
       if (!mounted) return;
       if (initial) {
@@ -140,30 +157,32 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     });
   }
 
-  // Envoi message
+  // Envoi message (client OU prestataire)
   Future<void> _envoyer() async {
     final texte = _ctrl.text.trim();
     if (texte.isEmpty) return;
 
-    // Ne jamais tenter l'insert si pas de compte relié (évite P0001)
-    if (_peerMissing ||
-        _resolvedReceiverId == null ||
-        _resolvedReceiverId!.isEmpty) {
+    final meId = _meId;
+    final peerId =
+        _peerId; // l'autre utilisateur du fil (client ou prestataire)
+
+    if (meId.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("Ce prestataire n'a pas encore de compte relié.")),
+            content: Text("Connectez-vous pour envoyer un message.")),
       );
       return;
     }
 
     _ctrl.clear();
 
-    // affichage optimiste
+    // affichage optimiste (toujours à la fin)
     setState(() {
       _msgs.add({
         'id': -1,
-        'sender_id': widget.senderId,
-        'receiver_id': _resolvedReceiverId,
+        'sender_id': meId,
+        'receiver_id': peerId,
         'contenu': texte,
         'lu': true,
         'date_envoi': DateTime.now().toIso8601String(),
@@ -174,8 +193,9 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     try {
       // Utilise le service central (qui déclenche push-send côté serveur)
       await _svc.sendMessageToPrestataire(
-        senderId: widget.senderId,
-        receiverId: _resolvedReceiverId!, // résolu depuis la base
+        senderId: meId,
+        receiverId:
+            peerId, // NON vide → le service ne renverra plus vers moi-même
         prestataireId: widget.prestataireId,
         prestataireName: widget.prestataireNom,
         contenu: texte,
@@ -185,23 +205,62 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur d'envoi : $e")));
+
+      var msg = "Erreur d'envoi : $e";
+      if (e.toString().contains("n'a pas de propriétaire")) {
+        msg = "Ce prestataire n'a pas encore de compte relié.";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
     }
   }
 
-  // Soft delete du fil pour MOI (masquer la conversation)
+  // Soft delete du fil pour MOI (masquer/supprimer la conversation)
   Future<void> _masquerConversationPourMoi() async {
+    final me = _sb.auth.currentUser;
+    final myId = me?.id ?? widget.senderId;
+
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Supprimer la discussion ?'),
+            content: const Text(
+              "Cette discussion sera masquée pour vous. "
+              "L'historique ne s'affichera plus dans vos messages, "
+              "mais vous pourrez toujours écrire à nouveau à ce prestataire.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Supprimer la discussion'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    final peerId = _peerId;
+
     try {
       await _svc.hideThread(
-        userId: widget.senderId,
+        userId: myId,
         contexte: 'prestataire',
         prestataireId: widget.prestataireId,
-        peerUserId: _resolvedReceiverId ?? widget.receiverId,
+        annonceId: null,
+        peerUserId: peerId,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Conversation masquée.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conversation supprimée.')),
+      );
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
@@ -211,41 +270,68 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     }
   }
 
-  // Bulle
+  // Bulle (style cohérent avec MessagesAnnoncePage / Facebook-like)
   Widget _bulleMessage(Map<String, dynamic> m) {
     const bleu = Color(0xFF113CFC);
-    const prestataireColor = Color(0xFF10B981); // *** Couleur prestataire ***
+    const gris = Color(0xFFF3F5FA);
 
-    final moi = m['sender_id']?.toString() == widget.senderId;
-    final bg = moi ? bleu : prestataireColor;
-    final fg = Colors.white;
+    final meId = _meId;
+    final moi = m['sender_id']?.toString() == meId;
+
+    final bg = moi ? bleu : gris;
+    final textColor = moi ? Colors.white : Colors.black87;
+
+    final dt = _asDate(m['date_envoi']);
+    final time = _timeLabel(dt);
 
     return Align(
       alignment: moi ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-        padding: const EdgeInsets.all(14),
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+        margin: EdgeInsets.only(
+          top: 6,
+          bottom: 6,
+          left: moi ? 40 : 12,
+          right: moi ? 12 : 40,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(moi ? 16 : 6),
-            bottomRight: Radius.circular(moi ? 6 : 16),
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(moi ? 18 : 8),
+            bottomRight: Radius.circular(moi ? 8 : 18),
           ),
           boxShadow: [
             if (moi)
               BoxShadow(
-                  color: Colors.blue.shade100,
-                  blurRadius: 2,
-                  offset: const Offset(0, 1)),
+                color: Colors.blue.shade100,
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
           ],
         ),
-        child: Text(
-          (m['contenu'] ?? '').toString(),
-          style: TextStyle(color: fg, fontSize: 15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              (m['contenu'] ?? '').toString(),
+              style: TextStyle(color: textColor, fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: textColor.withOpacity(moi ? 0.8 : 0.6),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -255,12 +341,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   Widget build(BuildContext context) {
     const bleu = Color(0xFF113CFC);
 
-    if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final inputEnabled = !_peerMissing &&
-        (_resolvedReceiverId != null && _resolvedReceiverId!.isNotEmpty);
+    final inputEnabled = _sb.auth.currentUser != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
@@ -282,7 +363,9 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(
-                  value: 'hide', child: Text('Masquer cette conversation')),
+                value: 'hide',
+                child: Text('Supprimer cette conversation'),
+              ),
             ],
           ),
         ],
@@ -294,17 +377,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
             // Aperçu carte + avatar du prestataire
             _PrestatairePreviewHeader(prestataireId: widget.prestataireId),
 
-            if (_peerMissing)
-              Container(
-                width: double.infinity,
-                color: Colors.amber.shade100,
-                padding: const EdgeInsets.all(12),
-                child: const Text(
-                  "Ce prestataire n'a pas encore de compte relié. "
-                  "L'envoi de messages est temporairement désactivé.",
-                  style: TextStyle(fontSize: 13),
-                ),
-              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -314,7 +386,9 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                             "Aucune discussion.\nÉcrivez un message pour commencer.",
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                                color: Colors.grey[600], fontSize: 16),
+                              color: Colors.grey[600],
+                              fontSize: 16,
+                            ),
                           ),
                         )
                       : ListView.builder(
@@ -340,7 +414,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
                         decoration: InputDecoration(
                           hintText: inputEnabled
                               ? "Écrire un message…"
-                              : "Envoi indisponible pour ce prestataire",
+                              : "Envoi indisponible (connectez-vous)",
                           border: InputBorder.none,
                         ),
                         minLines: 1,
@@ -463,14 +537,16 @@ class _PrestatairePreviewHeaderState extends State<_PrestatairePreviewHeader> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: bleu,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    )),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: bleu,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 if (subtitle.isNotEmpty)
                   Text(
                     subtitle,
