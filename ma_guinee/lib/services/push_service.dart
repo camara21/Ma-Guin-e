@@ -33,8 +33,7 @@ class PushService {
   // Android channel id
   static const String _androidChannelId = 'messages_channel';
 
-  // Bannière in-app (foreground) — plus utilisée pour les messages,
-  // mais on la garde si tu veux la réactiver plus tard.
+  // Bannière in-app (foreground)
   OverlayEntry? _bannerEntry;
   Timer? _bannerTimer;
 
@@ -102,6 +101,12 @@ class PushService {
     await _localNotif.initialize(
       settings,
       onDidReceiveNotificationResponse: (NotificationResponse resp) {
+        // On ne traite QUE le clic sur la notification
+        if (resp.notificationResponseType !=
+            NotificationResponseType.selectedNotification) {
+          return;
+        }
+
         final payload = resp.payload;
         if (payload == null || payload.isEmpty) return;
         try {
@@ -153,6 +158,15 @@ class PushService {
         return;
       }
       // App en arrière-plan → on laisse une vraie notif dans la barre
+    }
+
+    // Si titre ET corps sont vides → on ne montre rien (évite la notif vide)
+    final t = title?.trim() ?? '';
+    final b = body?.trim() ?? '';
+    if (t.isEmpty && b.isEmpty) {
+      debugPrint(
+          '[PushService] showLocalNotification ignoré (titre + corps vides)');
+      return;
     }
 
     _showLocalNotificationInternal(title, body, payload: payload);
@@ -231,7 +245,6 @@ class PushService {
 
   // -------------------------
   // Bannière in-app (foreground)
-  // (plus utilisée pour les messages, mais gardée au cas où)
   // -------------------------
   void _showInAppMessageBanner(
     String title,
@@ -401,10 +414,19 @@ class PushService {
   void _showLocalNotificationInternal(String? title, String? body,
       {Map<String, dynamic>? payload}) {
     try {
+      // Garde-fou global : si titre ET corps vides → ne rien afficher
+      final t = title?.trim() ?? '';
+      final b = body?.trim() ?? '';
+      if (t.isEmpty && b.isEmpty) {
+        debugPrint(
+            '[PushService] _showLocalNotificationInternal ignoré (titre + corps vides)');
+        return;
+      }
+
       _localNotif.show(
         DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        title ?? 'Notification',
-        body ?? '',
+        t.isEmpty ? 'Notification' : t,
+        b,
         NotificationDetails(
           android: const AndroidNotificationDetails(
             _androidChannelId,
