@@ -4,22 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Service & modèles logement (même source que la page détail)
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
-
-// Détail logement
 import '../../pages/logement/logement_detail_page.dart';
-
-// MessageService
 import '../../services/message_service.dart';
+import '../../widgets/message_bubble.dart';
 
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
     super.key,
-    required this.peerUserId, // id de l'interlocuteur
-    required this.logementId, // id du logement (annonce_id)
-    required this.logementTitre, // titre de l’annonce/logement
+    required this.peerUserId,
+    required this.logementId,
+    required this.logementTitre,
   });
 
   final String peerUserId;
@@ -36,7 +32,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
   final LogementService _logSvc = LogementService();
   final MessageService _svc = MessageService();
 
-  // état messages
   final TextEditingController _msgCtrl = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
@@ -44,7 +39,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
   bool _loading = true;
   Timer? _pollTimer;
 
-  // Carte (en-tête)
   late Future<_Offer?> _offerFuture;
 
   String? get _myId => _sb.auth.currentUser?.id;
@@ -105,8 +99,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     return t.format(ctx);
   }
 
-  /// Construit une liste d’entrées avec séparateurs de date
-  /// IMPORTANT : on ne trie plus → on respecte l’ordre d’arrivée (date_envoi ASC)
   List<_ChatEntry> _buildEntries() {
     final List<_ChatEntry> entries = [];
     DateTime? lastDay;
@@ -126,9 +118,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     return entries;
   }
 
-  /// Scroll auto vers le bas :
-  /// - forcé quand on ouvre ou qu’on envoie
-  /// - sinon uniquement si l’utilisateur est déjà proche du bas
   void _scrollToEnd({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
@@ -138,7 +127,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
       final distanceFromBottom = max - current;
 
       if (!force && distanceFromBottom > 80) {
-        // l’utilisateur lit plus haut → on ne touche pas
         return;
       }
 
@@ -150,7 +138,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     });
   }
 
-  // ====== HEADER LOGEMENT (utilise le service, getById -> LogementModel?) ======
   Future<_Offer?> _fetchLogementHeaderViaService(String id) async {
     try {
       final LogementModel? bien = await _logSvc.getById(id);
@@ -165,7 +152,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
         );
       }
 
-      // première image
       String? imageUrl;
       if (bien.photos.isNotEmpty) {
         final first = bien.photos
@@ -181,7 +167,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
         }
       }
 
-      // libellé prix identique aux pages logement
       String? prixLabel;
       final v = bien.prixGnf;
       if (v != null) {
@@ -216,8 +201,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     }
   }
 
-  // ====================== CYCLE DE VIE ======================
-
   @override
   void initState() {
     super.initState();
@@ -241,8 +224,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     });
   }
 
-  // ================= MESSAGES : CHARGEMENT =================
-
   Future<void> _loadAndMarkRead({bool initial = false}) async {
     final me = _myId;
     if (!mounted) return;
@@ -262,13 +243,11 @@ class _MessageChatPageState extends State<MessageChatPage> {
       final previousLastId =
           _msgs.isNotEmpty ? _msgs.last['id']?.toString() : null;
 
-      // Logement => messages.contexte = 'logement' ET annonce_id = logementId
       final msgs = await _svc.fetchMessagesForLogementVisibleTo(
         viewerUserId: me,
         logementId: widget.logementId,
       );
 
-      // Marquer comme lus pour moi
       final idsToMark = <String>[];
       for (final m in msgs) {
         final isForMe = (m['receiver_id']?.toString() == me);
@@ -287,7 +266,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
       if (!mounted) return;
       setState(() {
-        // ordre date_envoi ASC fourni par le service → on ne re-trie pas ici
         _msgs = msgs;
         if (initial) _loading = false;
       });
@@ -301,12 +279,9 @@ class _MessageChatPageState extends State<MessageChatPage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      // silencieux pour l’utilisateur (on gère la connexion globalement)
       debugPrint('[MessageChatPage] _loadAndMarkRead error: $e');
     }
   }
-
-  // ================= MESSAGES : ENVOI =================
 
   Future<void> _send() async {
     final me = _myId;
@@ -323,7 +298,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
     _msgCtrl.clear();
 
-    // UI optimiste (ajout en fin de liste)
     setState(() {
       _msgs.add({
         'id': -1,
@@ -331,7 +305,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
         'receiver_id': widget.peerUserId,
         'contenu': txt,
         'contexte': 'logement',
-        'annonce_id': widget.logementId, // logement = annonce_id
+        'annonce_id': widget.logementId,
         'lu': true,
         'date_envoi': DateTime.now().toIso8601String(),
       });
@@ -347,16 +321,13 @@ class _MessageChatPageState extends State<MessageChatPage> {
         contenu: txt,
       );
 
-      // refresh rapide, sans casser le scroll si l’utilisateur lit
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
-      // pas de message d’erreur technique, on log seulement
       debugPrint('[MessageChatPage] _send error: $e');
     }
   }
 
-  // Suppression POUR MOI d’un seul message
   Future<void> _deleteForMe(String messageId) async {
     final me = _myId;
     if (me == null) return;
@@ -379,7 +350,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
     }
   }
 
-  // Suppression / masquage DE TOUTE la conversation pour MOI
   Future<void> _deleteWholeConversation() async {
     final me = _myId;
     if (me == null) return;
@@ -433,110 +403,6 @@ class _MessageChatPageState extends State<MessageChatPage> {
       debugPrint('[MessageChatPage] _deleteWholeConversation error: $e');
     }
   }
-
-  // Bulle avec gestion long-press (supprimer pour moi)
-  Widget _bubble(Map<String, dynamic> m) {
-    const bleu = Color(0xFF113CFC);
-    const gris = Color(0xFFF3F5FA);
-
-    final meId = _myId;
-    final isMine = (m['sender_id']?.toString() == meId);
-
-    final bg = isMine ? bleu : gris;
-    final fg = isMine ? Colors.white : Colors.black87;
-
-    final dt = _asDate(m['date_envoi']);
-    final time = _timeLabel(context, dt);
-
-    return Row(
-      mainAxisAlignment:
-          isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onLongPress: () async {
-            final id = m['id']?.toString();
-            if (id == null || id == '-1') return;
-            final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Supprimer ce message ?'),
-                    content: const Text(
-                      "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
-                      "L'autre personne le verra encore jusque-là.",
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Annuler'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Supprimer pour moi'),
-                      ),
-                    ],
-                  ),
-                ) ??
-                false;
-            if (ok) await _deleteForMe(id);
-          },
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
-            ),
-            child: Container(
-              margin: EdgeInsets.only(
-                top: 6,
-                bottom: 6,
-                left: isMine ? 40 : 12,
-                right: isMine ? 12 : 40,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isMine ? 18 : 8),
-                  bottomRight: Radius.circular(isMine ? 8 : 18),
-                ),
-                boxShadow: [
-                  if (isMine)
-                    BoxShadow(
-                      color: Colors.blue.shade100,
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    (m['contenu'] ?? '').toString(),
-                    style: TextStyle(color: fg, fontSize: 15),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Text(
-                      time,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: fg.withOpacity(isMine ? .8 : .6),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ===================== BUILD =====================
 
   @override
   Widget build(BuildContext context) {
@@ -632,7 +498,46 @@ class _MessageChatPageState extends State<MessageChatPage> {
                             }
 
                             final msgEntry = entry as _MessageEntry;
-                            return _bubble(msgEntry.msg);
+                            final m = msgEntry.msg;
+                            final isMine = m['sender_id']?.toString() == _myId;
+                            final dt = _asDate(m['date_envoi']);
+                            final time = _timeLabel(context, dt);
+
+                            return MessageBubble(
+                              isMe: isMine,
+                              text: (m['contenu'] ?? '').toString(),
+                              timeLabel: time,
+                              onLongPress: () async {
+                                final id = m['id']?.toString();
+                                if (id == null || id == '-1') return;
+                                final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text(
+                                            'Supprimer ce message ?'),
+                                        content: const Text(
+                                          "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                                          "L'autre personne le verra encore jusque-là.",
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context, false),
+                                            child: const Text('Annuler'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context, true),
+                                            child: const Text(
+                                                'Supprimer pour moi'),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    false;
+                                if (ok) await _deleteForMe(id);
+                              },
+                            );
                           },
                         );
                       },
@@ -793,8 +698,6 @@ class _Offer {
   });
 }
 
-// ===== Entries pour le ListView =====
-
 abstract class _ChatEntry {
   const _ChatEntry();
 }
@@ -828,7 +731,10 @@ class _DateChip extends StatelessWidget {
             ),
             child: Text(
               label,
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black87,
+              ),
             ),
           ),
         ],

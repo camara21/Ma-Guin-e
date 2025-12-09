@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/message_service.dart';
+import '../widgets/message_bubble.dart';
 
 class MessagesPrestatairePage extends StatefulWidget {
   final String prestataireId; // id du prestataire (contexte)
@@ -54,10 +55,70 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final day = DateTime(d.year, d.month, d.day);
+
+    if (_sameDay(day, today)) return "Aujourd'hui";
+    if (_sameDay(day, yesterday)) return "Hier";
+
+    const weekDays = [
+      'lun.',
+      'mar.',
+      'mer.',
+      'jeu.',
+      'ven.',
+      'sam.',
+      'dim.',
+    ];
+    const months = [
+      'janv.',
+      'févr.',
+      'mars',
+      'avr.',
+      'mai',
+      'juin',
+      'juil.',
+      'août',
+      'sept.',
+      'oct.',
+      'nov.',
+      'déc.',
+    ];
+    final wd = weekDays[day.weekday - 1];
+    final month = months[day.month - 1];
+    return '$wd ${day.day} $month';
+  }
+
   String _timeLabel(DateTime d) {
     final h = d.hour.toString().padLeft(2, '0');
     final m = d.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  /// Construit la liste d’entrées (séparateur de date + messages)
+  List<_ChatEntry> _buildEntries() {
+    final List<_ChatEntry> entries = [];
+    DateTime? lastDay;
+
+    for (final m in _msgs) {
+      final dt = _asDate(m['date_envoi']);
+      final day = DateTime(dt.year, dt.month, dt.day);
+
+      if (lastDay == null || !_sameDay(day, lastDay)) {
+        entries.add(_DateSeparatorEntry(day));
+        lastDay = day;
+      }
+
+      entries.add(_MessageEntry(m));
+    }
+
+    return entries;
   }
 
   @override
@@ -108,7 +169,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         final s = (m['sender_id'] ?? '').toString();
         final r = (m['receiver_id'] ?? '').toString();
         if (peerId.isEmpty) {
-          // cas dégradé: on ne connaît pas le peer → on montre tout
           return true;
         }
         return (s == viewerId && r == peerId) || (s == peerId && r == viewerId);
@@ -131,7 +191,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
       if (!mounted) return;
       setState(() {
-        // ordre fourni par le service (date_envoi ASC) → ne bouge plus
         _msgs = msgs;
         if (initial) _loading = false;
       });
@@ -145,7 +204,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      // silencieux pour l'utilisateur, log seulement en debug
       debugPrint('[MessagesPrestatairePage] _loadAndMarkRead error: $e');
     }
   }
@@ -187,8 +245,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     if (texte.isEmpty) return;
 
     final meId = _meId;
-    final peerId =
-        _peerId; // l'autre utilisateur du fil (client ou prestataire)
+    final peerId = _peerId;
 
     if (meId.isEmpty) {
       if (!mounted) return;
@@ -202,7 +259,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
     _ctrl.clear();
 
-    // affichage optimiste (toujours à la fin)
+    // affichage optimiste
     setState(() {
       _msgs.add({
         'id': -1,
@@ -216,7 +273,6 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     _scrollToEnd();
 
     try {
-      // Utilise le service central (qui déclenche push-send côté serveur)
       await _svc.sendMessageToPrestataire(
         senderId: meId,
         receiverId: peerId,
@@ -225,12 +281,10 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         contenu: texte,
       );
 
-      // le polling rattrape, mais on force un refresh rapide
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
 
-      // On ne montre que le cas fonctionnel "pas de propriétaire"
       if (e.toString().contains("n'a pas de propriétaire")) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -238,13 +292,12 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
           ),
         );
       } else {
-        // sinon silencieux (connexion, timeout, etc.)
         debugPrint('[MessagesPrestatairePage] _envoyer error: $e');
       }
     }
   }
 
-  // Soft delete du fil pour MOI (masquer/supprimer la conversation)
+  // Soft delete du fil pour MOI
   Future<void> _masquerConversationPourMoi() async {
     final me = _sb.auth.currentUser;
     final myId = me?.id ?? widget.senderId;
@@ -301,100 +354,74 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     }
   }
 
-  // Bulle (style cohérent avec les autres pages, s'adapte au contenu)
-  Widget _bulleMessage(Map<String, dynamic> m) {
-    const bleu = Color(0xFF113CFC);
-    const gris = Color(0xFFF3F5FA);
+  /// Liste des messages avec séparateurs de date
+  Widget _buildMessagesList() {
+    final entries = _buildEntries();
 
-    final meId = _meId;
-    final moi = m['sender_id']?.toString() == meId;
-
-    final bg = moi ? bleu : gris;
-    final textColor = moi ? Colors.white : Colors.black87;
-
-    final dt = _asDate(m['date_envoi']);
-    final time = _timeLabel(dt);
-
-    return Align(
-      alignment: moi ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () async {
-          final id = m['id']?.toString();
-          if (id == null || id == '-1') return;
-          final ok = await showDialog<bool>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Supprimer ce message ?'),
-                  content: const Text(
-                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
-                    "L'autre personne le verra encore jusque-là.",
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Annuler'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Supprimer pour moi'),
-                    ),
-                  ],
-                ),
-              ) ??
-              false;
-          if (ok) await _deleteForMe(id);
-        },
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-          ),
-          margin: EdgeInsets.only(
-            top: 6,
-            bottom: 6,
-            left: moi ? 40 : 12,
-            right: moi ? 12 : 40,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(moi ? 18 : 8),
-              bottomRight: Radius.circular(moi ? 8 : 18),
-            ),
-            boxShadow: [
-              if (moi)
-                BoxShadow(
-                  color: Colors.blue.shade100,
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                (m['contenu'] ?? '').toString(),
-                style: TextStyle(color: textColor, fontSize: 15),
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Text(
-                  time,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: textColor.withOpacity(moi ? 0.8 : 0.6),
-                  ),
-                ),
-              ),
-            ],
+    if (entries.isEmpty) {
+      return Center(
+        child: Text(
+          "Aucune discussion.\nÉcrivez un message pour commencer.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 16,
           ),
         ),
-      ),
+      );
+    }
+
+    return ListView.builder(
+      controller: _scroll,
+      itemCount: entries.length,
+      itemBuilder: (_, i) {
+        final entry = entries[i];
+
+        if (entry is _DateSeparatorEntry) {
+          return _DateChip(label: _dayLabel(entry.day));
+        }
+
+        final msgEntry = entry as _MessageEntry;
+        final m = msgEntry.msg;
+        final meId = _meId;
+        final moi = m['sender_id']?.toString() == meId;
+        final dt = _asDate(m['date_envoi']);
+        final time = _timeLabel(dt);
+
+        return MessageBubble(
+          isMe: moi,
+          text: (m['contenu'] ?? '').toString(),
+          timeLabel: time,
+          onLongPress: () async {
+            final id = m['id']?.toString();
+            if (id == null || id == '-1') return;
+            final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Supprimer ce message ?'),
+                    content: const Text(
+                      "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                      "L'autre personne le verra encore jusque-là.",
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Supprimer pour moi'),
+                      ),
+                    ],
+                  ),
+                ) ??
+                false;
+            if (ok && id.isNotEmpty) {
+              await _deleteForMe(id);
+            }
+          },
+        );
+      },
     );
   }
 
@@ -435,28 +462,11 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       body: SafeArea(
         child: Column(
           children: [
-            // Aperçu carte + avatar du prestataire
             _PrestatairePreviewHeader(prestataireId: widget.prestataireId),
-
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : (_msgs.isEmpty
-                      ? Center(
-                          child: Text(
-                            "Aucune discussion.\nÉcrivez un message pour commencer.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 16,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scroll,
-                          itemCount: _msgs.length,
-                          itemBuilder: (_, i) => _bulleMessage(_msgs[i]),
-                        )),
+                  : _buildMessagesList(),
             ),
             Container(
               color: Colors.white,
@@ -622,6 +632,53 @@ class _PrestatairePreviewHeaderState extends State<_PrestatairePreviewHeader> {
             ),
           ),
           const Icon(Icons.chevron_right_rounded, color: bleu),
+        ],
+      ),
+    );
+  }
+}
+
+// ===== Modèles d’entrées + chip date =====
+
+abstract class _ChatEntry {
+  const _ChatEntry();
+}
+
+class _DateSeparatorEntry extends _ChatEntry {
+  final DateTime day;
+  const _DateSeparatorEntry(this.day);
+}
+
+class _MessageEntry extends _ChatEntry {
+  final Map<String, dynamic> msg;
+  const _MessageEntry(this.msg);
+}
+
+class _DateChip extends StatelessWidget {
+  const _DateChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black87,
+              ),
+            ),
+          ),
         ],
       ),
     );

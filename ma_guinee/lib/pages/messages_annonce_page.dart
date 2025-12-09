@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/message_service.dart';
 import 'annonce_detail_page.dart';
 import '../models/annonce_model.dart';
+import '../widgets/message_bubble.dart';
 
 class MessagesAnnoncePage extends StatefulWidget {
   final String annonceId;
@@ -275,7 +276,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      // Silencieux pour l'utilisateur, log uniquement en debug
       debugPrint('[MessagesAnnoncePage] _loadAndMarkRead error: $e');
     }
   }
@@ -318,11 +318,9 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         contenu: text,
       );
 
-      // le polling va recharger la vraie ligne (id auto)
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
-      // Silencieux pour l'utilisateur
       debugPrint('[MessagesAnnoncePage] _send error: $e');
     }
   }
@@ -339,7 +337,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       );
     } catch (e) {
       if (!mounted) return;
-      // Message simple, sans détails techniques
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Suppression impossible. Veuillez réessayer."),
@@ -461,100 +458,6 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     );
   }
 
-  // Bulle + long-press supprimer pour moi (s’adapte au texte)
-  Widget _bubble(Map<String, dynamic> m) {
-    final me = m['sender_id']?.toString() == widget.senderId;
-    final myColor = me ? const Color(0xFF113CFC) : const Color(0xFFF3F5FA);
-    final dt = _asDate(m['date_envoi']);
-    final time = _timeLabel(dt);
-
-    return Align(
-      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () async {
-          final id = m['id']?.toString();
-          if (id == null || id == '-1') return;
-          final ok = await showDialog<bool>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Supprimer ce message ?'),
-                  content: const Text(
-                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
-                    "L'autre personne le verra encore jusque-là.",
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Annuler'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Supprimer pour moi'),
-                    ),
-                  ],
-                ),
-              ) ??
-              false;
-          if (ok) await _deleteForMe(id);
-        },
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-          ),
-          margin: EdgeInsets.only(
-            top: 6,
-            bottom: 6,
-            left: me ? 40 : 12,
-            right: me ? 12 : 40,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: myColor,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(me ? 18 : 8),
-              bottomRight: Radius.circular(me ? 8 : 18),
-            ),
-            boxShadow: [
-              if (me)
-                BoxShadow(
-                  color: Colors.blue.shade100,
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                (m['contenu'] ?? '').toString(),
-                style: TextStyle(
-                  color: me ? Colors.white : Colors.black87,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Text(
-                  time,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: (me ? Colors.white : Colors.black87)
-                        .withOpacity(me ? 0.8 : 0.6),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     const bleuMaGuinee = Color(0xFF113CFC);
@@ -633,7 +536,47 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             if (entry is _ChatDate) {
                               return _dateSeparator(entry.day);
                             } else if (entry is _ChatMessage) {
-                              return _bubble(entry.message);
+                              final m = entry.message;
+                              final me =
+                                  m['sender_id']?.toString() == widget.senderId;
+                              final dt = _asDate(m['date_envoi']);
+                              final time = _timeLabel(dt);
+
+                              return MessageBubble(
+                                isMe: me,
+                                text: (m['contenu'] ?? '').toString(),
+                                timeLabel: time,
+                                onLongPress: () async {
+                                  final id = m['id']?.toString();
+                                  if (id == null || id == '-1') return;
+                                  final ok = await showDialog<bool>(
+                                        context: context,
+                                        builder: (_) => AlertDialog(
+                                          title: const Text(
+                                              'Supprimer ce message ?'),
+                                          content: const Text(
+                                            "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                                            "L'autre personne le verra encore jusque-là.",
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text('Annuler'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: const Text(
+                                                  'Supprimer pour moi'),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ??
+                                      false;
+                                  if (ok) await _deleteForMe(id);
+                                },
+                              );
                             }
                             return const SizedBox.shrink();
                           },
