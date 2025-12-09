@@ -1,6 +1,7 @@
-// lib/pages/messages/message_annonce_page.dart (ou messages_annonce_page.dart)
+// lib/pages/messages_annonce_page.dart
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -261,8 +262,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
 
       if (!mounted) return;
       setState(() {
-        // ordre directement celui de la base (id ASC) → ne bouge jamais
-        _msgs = msgs;
+        _msgs = msgs; // ordre base (date_envoi ASC) → stable
         if (initial) _loading = false;
       });
 
@@ -275,9 +275,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur de chargement : $e")),
-      );
+      // Silencieux pour l'utilisateur, log uniquement en debug
+      debugPrint('[MessagesAnnoncePage] _loadAndMarkRead error: $e');
     }
   }
 
@@ -323,9 +322,8 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'envoi du message : $e")),
-      );
+      // Silencieux pour l'utilisateur
+      debugPrint('[MessagesAnnoncePage] _send error: $e');
     }
   }
 
@@ -341,9 +339,13 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
       );
     } catch (e) {
       if (!mounted) return;
+      // Message simple, sans détails techniques
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Suppression impossible : $e")),
+        const SnackBar(
+          content: Text("Suppression impossible. Veuillez réessayer."),
+        ),
       );
+      debugPrint('[MessagesAnnoncePage] _deleteForMe error: $e');
     } finally {
       await _loadAndMarkRead(initial: false);
     }
@@ -359,8 +361,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
           builder: (_) => AlertDialog(
             title: const Text('Supprimer la discussion ?'),
             content: const Text(
-              "Cette discussion sera masquée pour vous (l'historique sera effacé de votre vue). "
-              "Vous pourrez toujours réécrire plus tard sur cette annonce.",
+              "Voulez-vous supprimer cette conversation ?",
             ),
             actions: [
               TextButton(
@@ -393,8 +394,12 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de la suppression : $e")),
+        const SnackBar(
+          content: Text(
+              "Erreur lors de la suppression. Veuillez réessayer plus tard."),
+        ),
       );
+      debugPrint('[MessagesAnnoncePage] _deleteWholeThread error: $e');
       return;
     }
 
@@ -456,7 +461,7 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
     );
   }
 
-  // Bulle + long-press supprimer pour moi
+  // Bulle + long-press supprimer pour moi (s’adapte au texte)
   Widget _bubble(Map<String, dynamic> m) {
     final me = m['sender_id']?.toString() == widget.senderId;
     final myColor = me ? const Color(0xFF113CFC) : const Color(0xFFF3F5FA);
@@ -479,11 +484,13 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                   ),
                   actions: [
                     TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Annuler')),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annuler'),
+                    ),
                     TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Supprimer pour moi')),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Supprimer pour moi'),
+                    ),
                   ],
                 ),
               ) ??
@@ -492,9 +499,14 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         },
         child: Container(
           constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78),
+            maxWidth: MediaQuery.of(context).size.width * 0.78,
+          ),
           margin: EdgeInsets.only(
-              top: 6, bottom: 6, left: me ? 40 : 12, right: me ? 12 : 40),
+            top: 6,
+            bottom: 6,
+            left: me ? 40 : 12,
+            right: me ? 12 : 40,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: myColor,
@@ -507,18 +519,22 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
             boxShadow: [
               if (me)
                 BoxShadow(
-                    color: Colors.blue.shade100,
-                    blurRadius: 2,
-                    offset: const Offset(0, 1))
+                  color: Colors.blue.shade100,
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
             ],
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 (m['contenu'] ?? '').toString(),
                 style: TextStyle(
-                    color: me ? Colors.white : Colors.black87, fontSize: 15),
+                  color: me ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                ),
               ),
               const SizedBox(height: 4),
               Align(
@@ -555,7 +571,10 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
         title: Text(
           widget.annonceTitre,
           style: const TextStyle(
-              color: bleuMaGuinee, fontWeight: FontWeight.bold, fontSize: 17),
+            color: bleuMaGuinee,
+            fontWeight: FontWeight.bold,
+            fontSize: 17,
+          ),
         ),
         iconTheme: const IconThemeData(color: bleuMaGuinee),
         actions: [
@@ -585,7 +604,9 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                               "Aucune discussion pour cette annonce.\nÉcrivez un message pour commencer.",
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                  color: Colors.grey[600], fontSize: 16),
+                                color: Colors.grey[600],
+                                fontSize: 16,
+                              ),
                             ),
                           );
                         }
@@ -622,8 +643,10 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                   ),
                   Container(
                     color: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
@@ -654,8 +677,11 @@ class _MessagesAnnoncePageState extends State<MessagesAnnoncePage> {
                             padding: const EdgeInsets.all(13),
                             elevation: 2,
                           ),
-                          child: const Icon(Icons.send,
-                              color: Colors.white, size: 20),
+                          child: const Icon(
+                            Icons.send,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
                       ],
                     ),
@@ -714,14 +740,20 @@ class _AnnonceMessageCard extends StatelessWidget {
             children: [
               (annonce.imageUrl == null || annonce.imageUrl!.isEmpty)
                   ? Container(
-                      width: 110, height: 86, color: Colors.grey.shade300)
+                      width: 110,
+                      height: 86,
+                      color: Colors.grey.shade300,
+                    )
                   : Image.network(
                       annonce.imageUrl!,
                       width: 110,
                       height: 86,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
-                          width: 110, height: 86, color: Colors.grey.shade300),
+                        width: 110,
+                        height: 86,
+                        color: Colors.grey.shade300,
+                      ),
                     ),
               const SizedBox(width: 10),
               Expanded(
@@ -734,8 +766,10 @@ class _AnnonceMessageCard extends StatelessWidget {
                         annonce.titre.isEmpty ? 'Annonce' : annonce.titre,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(fontWeight: FontWeight.w700, color: fg),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
                       ),
                       if (annonce.prixLabel != null) ...[
                         const SizedBox(height: 4),
@@ -749,8 +783,10 @@ class _AnnonceMessageCard extends StatelessWidget {
                       ],
                       const SizedBox(height: 2),
                       if (annonce.ville.isNotEmpty)
-                        Text(annonce.ville,
-                            style: TextStyle(color: fg.withOpacity(.75))),
+                        Text(
+                          annonce.ville,
+                          style: TextStyle(color: fg.withOpacity(.75)),
+                        ),
                     ],
                   ),
                 ),

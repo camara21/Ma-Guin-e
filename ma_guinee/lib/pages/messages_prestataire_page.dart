@@ -1,7 +1,9 @@
 // lib/pages/messages_prestataire_page.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/message_service.dart';
 
 class MessagesPrestatairePage extends StatefulWidget {
@@ -27,8 +29,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
   final _svc = MessageService();
   final _sb = Supabase.instance.client;
 
-  final _ctrl = TextEditingController();
-  final _scroll = ScrollController();
+  final TextEditingController _ctrl = TextEditingController();
+  final ScrollController _scroll = ScrollController();
 
   List<Map<String, dynamic>> _msgs = <Map<String, dynamic>>[];
   bool _loading = true;
@@ -129,7 +131,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
       if (!mounted) return;
       setState(() {
-        // ordre fourni par le service (id ASC) → ne bouge plus
+        // ordre fourni par le service (date_envoi ASC) → ne bouge plus
         _msgs = msgs;
         if (initial) _loading = false;
       });
@@ -143,9 +145,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur de chargement : $e")),
-      );
+      // silencieux pour l'utilisateur, log seulement en debug
+      debugPrint('[MessagesPrestatairePage] _loadAndMarkRead error: $e');
     }
   }
 
@@ -155,6 +156,29 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
+  }
+
+  // Suppression POUR MOI d’un seul message
+  Future<void> _deleteForMe(String messageId) async {
+    final meId = _meId;
+    if (meId.isEmpty) return;
+
+    try {
+      await _svc.deleteMessageForMe(
+        messageId: messageId,
+        currentUserId: meId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Suppression impossible. Veuillez réessayer."),
+        ),
+      );
+      debugPrint('[MessagesPrestatairePage] _deleteForMe error: $e');
+    } finally {
+      await _loadAndMarkRead(initial: false);
+    }
   }
 
   // Envoi message (client OU prestataire)
@@ -170,7 +194,8 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("Connectez-vous pour envoyer un message.")),
+          content: Text("Connectez-vous pour envoyer un message."),
+        ),
       );
       return;
     }
@@ -194,8 +219,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
       // Utilise le service central (qui déclenche push-send côté serveur)
       await _svc.sendMessageToPrestataire(
         senderId: meId,
-        receiverId:
-            peerId, // NON vide → le service ne renverra plus vers moi-même
+        receiverId: peerId,
         prestataireId: widget.prestataireId,
         prestataireName: widget.prestataireNom,
         contenu: texte,
@@ -206,14 +230,17 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     } catch (e) {
       if (!mounted) return;
 
-      var msg = "Erreur d'envoi : $e";
+      // On ne montre que le cas fonctionnel "pas de propriétaire"
       if (e.toString().contains("n'a pas de propriétaire")) {
-        msg = "Ce prestataire n'a pas encore de compte relié.";
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Ce prestataire n'a pas encore de compte relié."),
+          ),
+        );
+      } else {
+        // sinon silencieux (connexion, timeout, etc.)
+        debugPrint('[MessagesPrestatairePage] _envoyer error: $e');
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
     }
   }
 
@@ -227,9 +254,7 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
           builder: (_) => AlertDialog(
             title: const Text('Supprimer la discussion ?'),
             content: const Text(
-              "Cette discussion sera masquée pour vous. "
-              "L'historique ne s'affichera plus dans vos messages, "
-              "mais vous pourrez toujours écrire à nouveau à ce prestataire.",
+              "Voulez-vous supprimer cette conversation ?",
             ),
             actions: [
               TextButton(
@@ -265,12 +290,18 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : $e')),
+        const SnackBar(
+          content: Text(
+            'Erreur lors de la suppression. Veuillez réessayer plus tard.',
+          ),
+        ),
       );
+      debugPrint(
+          '[MessagesPrestatairePage] _masquerConversationPourMoi error: $e');
     }
   }
 
-  // Bulle (style cohérent avec MessagesAnnoncePage / Facebook-like)
+  // Bulle (style cohérent avec les autres pages, s'adapte au contenu)
   Widget _bulleMessage(Map<String, dynamic> m) {
     const bleu = Color(0xFF113CFC);
     const gris = Color(0xFFF3F5FA);
@@ -286,52 +317,82 @@ class _MessagesPrestatairePageState extends State<MessagesPrestatairePage> {
 
     return Align(
       alignment: moi ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        margin: EdgeInsets.only(
-          top: 6,
-          bottom: 6,
-          left: moi ? 40 : 12,
-          right: moi ? 12 : 40,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(moi ? 18 : 8),
-            bottomRight: Radius.circular(moi ? 8 : 18),
+      child: GestureDetector(
+        onLongPress: () async {
+          final id = m['id']?.toString();
+          if (id == null || id == '-1') return;
+          final ok = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Supprimer ce message ?'),
+                  content: const Text(
+                    "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                    "L'autre personne le verra encore jusque-là.",
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annuler'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Supprimer pour moi'),
+                    ),
+                  ],
+                ),
+              ) ??
+              false;
+          if (ok) await _deleteForMe(id);
+        },
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.78,
           ),
-          boxShadow: [
-            if (moi)
-              BoxShadow(
-                color: Colors.blue.shade100,
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              (m['contenu'] ?? '').toString(),
-              style: TextStyle(color: textColor, fontSize: 15),
+          margin: EdgeInsets.only(
+            top: 6,
+            bottom: 6,
+            left: moi ? 40 : 12,
+            right: moi ? 12 : 40,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(moi ? 18 : 8),
+              bottomRight: Radius.circular(moi ? 8 : 18),
             ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                time,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: textColor.withOpacity(moi ? 0.8 : 0.6),
+            boxShadow: [
+              if (moi)
+                BoxShadow(
+                  color: Colors.blue.shade100,
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                (m['contenu'] ?? '').toString(),
+                style: TextStyle(color: textColor, fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: textColor.withOpacity(moi ? 0.8 : 0.6),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

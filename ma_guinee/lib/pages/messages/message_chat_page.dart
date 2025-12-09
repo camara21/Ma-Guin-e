@@ -1,5 +1,6 @@
 // lib/pages/messages/message_chat_page.dart
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -105,7 +106,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
   }
 
   /// Construit une liste d’entrées avec séparateurs de date
-  /// IMPORTANT : on ne trie plus → on respecte l’ordre d’arrivée (id ASC)
+  /// IMPORTANT : on ne trie plus → on respecte l’ordre d’arrivée (date_envoi ASC)
   List<_ChatEntry> _buildEntries() {
     final List<_ChatEntry> entries = [];
     DateTime? lastDay;
@@ -164,7 +165,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
         );
       }
 
-      // première image (souvent déjà en URL publique via le service)
+      // première image
       String? imageUrl;
       if (bien.photos.isNotEmpty) {
         final first = bien.photos
@@ -244,8 +245,14 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
   Future<void> _loadAndMarkRead({bool initial = false}) async {
     final me = _myId;
-    if (me == null) return;
     if (!mounted) return;
+
+    if (me == null) {
+      if (initial) {
+        setState(() => _loading = false);
+      }
+      return;
+    }
 
     if (initial) {
       setState(() => _loading = true);
@@ -280,7 +287,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
       if (!mounted) return;
       setState(() {
-        // ordre id ASC fourni par le service → on ne re-trie pas ici
+        // ordre date_envoi ASC fourni par le service → on ne re-trie pas ici
         _msgs = msgs;
         if (initial) _loading = false;
       });
@@ -294,9 +301,8 @@ class _MessageChatPageState extends State<MessageChatPage> {
       if (initial) {
         setState(() => _loading = false);
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de chargement : $e')),
-      );
+      // silencieux pour l’utilisateur (on gère la connexion globalement)
+      debugPrint('[MessageChatPage] _loadAndMarkRead error: $e');
     }
   }
 
@@ -345,9 +351,31 @@ class _MessageChatPageState extends State<MessageChatPage> {
       await _loadAndMarkRead(initial: false);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'envoi du message : $e")),
+      // pas de message d’erreur technique, on log seulement
+      debugPrint('[MessageChatPage] _send error: $e');
+    }
+  }
+
+  // Suppression POUR MOI d’un seul message
+  Future<void> _deleteForMe(String messageId) async {
+    final me = _myId;
+    if (me == null) return;
+
+    try {
+      await _svc.deleteMessageForMe(
+        messageId: messageId,
+        currentUserId: me,
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Suppression impossible. Veuillez réessayer."),
+        ),
+      );
+      debugPrint('[MessageChatPage] _deleteForMe error: $e');
+    } finally {
+      await _loadAndMarkRead(initial: false);
     }
   }
 
@@ -361,8 +389,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
           builder: (_) => AlertDialog(
             title: const Text('Supprimer la discussion ?'),
             content: const Text(
-              "Cette discussion sera supprimée de votre boîte de messages "
-              "pour ce logement. Vous pourrez toujours renvoyer un message plus tard.",
+              "Voulez-vous supprimer cette conversation ?",
             ),
             actions: [
               TextButton(
@@ -397,9 +424,116 @@ class _MessageChatPageState extends State<MessageChatPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : $e')),
+        const SnackBar(
+          content: Text(
+            'Erreur lors de la suppression. Veuillez réessayer plus tard.',
+          ),
+        ),
       );
+      debugPrint('[MessageChatPage] _deleteWholeConversation error: $e');
     }
+  }
+
+  // Bulle avec gestion long-press (supprimer pour moi)
+  Widget _bubble(Map<String, dynamic> m) {
+    const bleu = Color(0xFF113CFC);
+    const gris = Color(0xFFF3F5FA);
+
+    final meId = _myId;
+    final isMine = (m['sender_id']?.toString() == meId);
+
+    final bg = isMine ? bleu : gris;
+    final fg = isMine ? Colors.white : Colors.black87;
+
+    final dt = _asDate(m['date_envoi']);
+    final time = _timeLabel(context, dt);
+
+    return Row(
+      mainAxisAlignment:
+          isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onLongPress: () async {
+            final id = m['id']?.toString();
+            if (id == null || id == '-1') return;
+            final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Supprimer ce message ?'),
+                    content: const Text(
+                      "Il sera supprimé pour vous maintenant et définitivement de la base après 30 jours. "
+                      "L'autre personne le verra encore jusque-là.",
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Supprimer pour moi'),
+                      ),
+                    ],
+                  ),
+                ) ??
+                false;
+            if (ok) await _deleteForMe(id);
+          },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78,
+            ),
+            child: Container(
+              margin: EdgeInsets.only(
+                top: 6,
+                bottom: 6,
+                left: isMine ? 40 : 12,
+                right: isMine ? 12 : 40,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(isMine ? 18 : 8),
+                  bottomRight: Radius.circular(isMine ? 8 : 18),
+                ),
+                boxShadow: [
+                  if (isMine)
+                    BoxShadow(
+                      color: Colors.blue.shade100,
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (m['contenu'] ?? '').toString(),
+                    style: TextStyle(color: fg, fontSize: 15),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: fg.withOpacity(isMine ? .8 : .6),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // ===================== BUILD =====================
@@ -407,16 +541,29 @@ class _MessageChatPageState extends State<MessageChatPage> {
   @override
   Widget build(BuildContext context) {
     const bleu = Color(0xFF113CFC);
-    const gris = Color(0xFFF8F8FB);
+    const fond = Color(0xFFF8F8FB);
 
     return Scaffold(
-      backgroundColor: gris,
+      backgroundColor: fond,
       appBar: AppBar(
-        title: Text(widget.logementTitre),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: bleu),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          widget.logementTitre,
+          style: const TextStyle(
+            color: bleu,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: bleu),
         actions: [
           IconButton(
             tooltip: 'Supprimer la conversation',
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Icons.delete_outline, color: bleu),
             onPressed: _deleteWholeConversation,
           ),
         ],
@@ -485,15 +632,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
                             }
 
                             final msgEntry = entry as _MessageEntry;
-                            final m = msgEntry.msg;
-                            final mine = (m['sender_id']?.toString() == _myId);
-                            final date = _asDate(m['date_envoi']);
-
-                            return _Bubble(
-                              isMine: mine,
-                              body: (m['contenu'] ?? '').toString(),
-                              time: _timeLabel(context, date),
-                            );
+                            return _bubble(msgEntry.msg);
                           },
                         );
                       },
@@ -506,22 +645,22 @@ class _MessageChatPageState extends State<MessageChatPage> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: _msgCtrl,
-                              minLines: 1,
-                              maxLines: 5,
-                              textInputAction: TextInputAction.send,
-                              onSubmitted: (_) => _send(),
-                              decoration: InputDecoration(
-                                hintText: 'Écrire un message…',
-                                filled: true,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 12,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F5FA),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              child: TextField(
+                                controller: _msgCtrl,
+                                minLines: 1,
+                                maxLines: 5,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => _send(),
+                                decoration: const InputDecoration(
+                                  hintText: 'Écrire un message…',
+                                  border: InputBorder.none,
                                 ),
                               ),
                             ),
@@ -628,79 +767,6 @@ class _OfferMessageBubble extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(right: 8),
               child: Icon(Icons.chevron_right_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({
-    required this.isMine,
-    required this.body,
-    required this.time,
-  });
-
-  final bool isMine;
-  final String body;
-  final String time;
-
-  @override
-  Widget build(BuildContext context) {
-    const bleu = Color(0xFF113CFC);
-    const gris = Color(0xFFF3F5FA);
-
-    final bg = isMine ? bleu : gris;
-    final fg = isMine ? Colors.white : Colors.black87;
-
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: EdgeInsets.only(
-          top: 6,
-          bottom: 6,
-          left: isMine ? 40 : 12,
-          right: isMine ? 12 : 40,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(isMine ? 18 : 8),
-            bottomRight: Radius.circular(isMine ? 8 : 18),
-          ),
-          boxShadow: [
-            if (isMine)
-              BoxShadow(
-                color: Colors.blue.shade100,
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              body,
-              style: TextStyle(color: fg),
-            ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                time,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: fg.withOpacity(isMine ? .8 : .6),
-                ),
-              ),
             ),
           ],
         ),

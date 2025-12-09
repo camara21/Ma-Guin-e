@@ -395,9 +395,15 @@ class _MessagesPageState extends State<MessagesPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      // Message générique, pas d’erreur technique lisible
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : $e')),
+        const SnackBar(
+          content: Text(
+            'Impossible de supprimer la conversation pour le moment. Réessayez plus tard.',
+          ),
+        ),
       );
+      debugPrint('deleteConversation error: $e');
     }
   }
 
