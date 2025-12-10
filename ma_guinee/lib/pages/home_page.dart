@@ -18,6 +18,9 @@ import 'package:ma_guinee/pages/jobs/job_home_page.dart';
 // ✅ ANP a son propre bloc
 import '../anp/anp_home_page.dart';
 
+// ✅ Annonces (pour pré-chargement)
+import 'annonces_page.dart';
+
 /// --- Palette locale (indépendante) ---
 const _kMainPrimary = Color(0xFF0077B6);
 const _kMainSecondary = Color(0xFF00B4D8);
@@ -59,6 +62,9 @@ class _HomePageState extends State<HomePage> {
 
     // ⬇️ Enregistrement push centralisé (permissions + token + upsert + refresh)
     PushService.instance.initAndRegister();
+
+    // ⬇️ Pré-chargement des annonces dès l’arrivée sur Home
+    _preloadAnnonces();
   }
 
   @override
@@ -71,6 +77,16 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _notifSub?.cancel();
     super.dispose();
+  }
+
+  // ====== PRELOAD ANNONCES ======
+  Future<void> _preloadAnnonces() async {
+    try {
+      await AnnoncesPage.preload();
+      // pas de setState ici : on ne fait que remplir le cache en arrière-plan
+    } catch (_) {
+      // en cas d’erreur réseau on ne casse pas Home
+    }
   }
 
   // ====== CGU / Notifications locales ======

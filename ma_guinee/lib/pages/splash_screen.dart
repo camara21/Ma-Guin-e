@@ -20,8 +20,8 @@ class _SplashScreenState extends State<SplashScreen>
   bool _navigated = false;
 
   // Animations
-  late final AnimationController _barCtl;   // défilement de la barre
-  late final AnimationController _glowCtl;  // halo du logo
+  late final AnimationController _barCtl; // défilement de la barre
+  late final AnimationController _glowCtl; // halo du logo
   late final Animation<double> _glowScale;
   late final Animation<double> _glowOpacity;
 
@@ -145,7 +145,10 @@ class _SplashScreenState extends State<SplashScreen>
                                 decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
                                   gradient: RadialGradient(
-                                    colors: [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+                                    colors: [
+                                      Color(0xFFFFFFFF),
+                                      Color(0x00FFFFFF)
+                                    ],
                                     stops: [0.0, 1.0],
                                   ),
                                 ),

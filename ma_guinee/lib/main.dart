@@ -31,6 +31,9 @@ import 'theme/app_theme.dart';
 import 'navigation/nav_key.dart';
 import 'navigation/push_nav.dart';
 
+// ✅ Annonces (pré-chargement global)
+import 'pages/annonces_page.dart';
+
 /// Hive boxes
 const String kAnnoncesBox = 'annonces_box';
 
@@ -293,6 +296,9 @@ Future<void> main() async {
         unawaited(_startHeartbeat());
         // Init pushService (demande permission, token, listeners) — centralisé
         _askPushOnce();
+
+        // ✅ Pré-chargement annonces pour session déjà connectée
+        unawaited(AnnoncesPage.preload());
       }
 
       if (!RecoveryGuard.isActive) {
@@ -322,6 +328,10 @@ Future<void> main() async {
           await _startHeartbeat();
           await userProvider.chargerUtilisateurConnecte();
           _askPushOnce();
+
+          // ✅ Pré-chargement annonces au moment du login
+          unawaited(AnnoncesPage.preload());
+
           if (!RecoveryGuard.isActive) {
             await _goHomeBasedOnRole(userProvider);
           }

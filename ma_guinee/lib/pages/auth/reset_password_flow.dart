@@ -1,4 +1,3 @@
-// lib/pages/auth/reset_password_flow.dart
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../routes.dart'; // RecoveryGuard (déclaré dans routes.dart)
 import '../../navigation/nav_key.dart'; // ✅ navKey global
 import '../../utils/error_messages_fr.dart'; // ⬅️ traduction FR des erreurs
+
+// 🔵 même bleu que Splash & Login
+const _kAuthPrimary = Color(0xFF0175C2);
 
 /// -------- Helpers
 String _resetRedirectUrl() {
@@ -128,6 +130,15 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _sending ? null : _sendReset,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kAuthPrimary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28), // bouton rond
+                    ),
+                    elevation: 2,
+                  ),
                   child: _sending
                       ? const SizedBox(
                           height: 18,
@@ -335,6 +346,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: _busy ? null : _updatePassword,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _kAuthPrimary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          elevation: 2,
+                        ),
                         child: _busy
                             ? const SizedBox(
                                 height: 18,

@@ -16,7 +16,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  static const _primary = Color(0xFF0077B6);
+  // 🔵 Bleu = même que SplashScreen (0xFF0175C2)
+  static const _primary = Color(0xFF0175C2);
   static const _onPrimary = Color(0xFFFFFFFF);
 
   final _formKey = GlobalKey<FormState>();
@@ -196,14 +197,19 @@ class _LoginPageState extends State<LoginPage> {
                     _ServiceDialMinimal(
                       size: 150,
                       icons: [
-                        Icons.restaurant,
-                        Icons.hotel,
-                        Icons.local_hospital,
-                        Icons.attractions,
-                        Icons.confirmation_num,
-                        Icons.shopping_bag,
-                        Icons.work_outline,
-                        Icons.map,
+                        Icons.location_on_rounded, // ANP
+                        Icons.campaign, // Annonces
+                        Icons.handyman_rounded, // Prestataires
+                        Icons.account_balance, // Services Admin
+                        Icons.restaurant, // Restaurants
+                        Icons.mosque, // Lieux de culte
+                        Icons.theaters, // Divertissement
+                        Icons.travel_explore_rounded, // Tourisme
+                        Icons.local_hospital, // Santé
+                        Icons.hotel, // Hôtels
+                        Icons.apartment_rounded, // Logement
+                        Icons.work_outline, // Wali fen
+                        Icons.confirmation_num, // Billetterie
                       ],
                     ),
                     SizedBox(height: 14),
@@ -330,7 +336,7 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 // -----------------------------------------------------------
-// VISUEL DES ICÔNES — inchangé
+// VISUEL DES ICÔNES — roue centrale
 // -----------------------------------------------------------
 
 class _ServiceDialMinimal extends StatelessWidget {
@@ -344,7 +350,7 @@ class _ServiceDialMinimal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconCount = icons.length.clamp(0, 12);
+    final iconCount = icons.length;
 
     return SizedBox(
       width: size,
@@ -372,7 +378,11 @@ class _ServiceDialMinimal extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Icon(icons[i], size: 18, color: Color(0xFF0E67B2)),
+                child: Icon(
+                  icons[i],
+                  size: 18,
+                  color: const Color(0xFF0175C2), // 🔵 même bleu que _primary
+                ),
               ),
             );
           }),

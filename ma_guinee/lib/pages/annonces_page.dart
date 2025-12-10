@@ -14,6 +14,45 @@ import 'annonce_detail_page.dart';
 class AnnoncesPage extends StatefulWidget {
   const AnnoncesPage({Key? key}) : super(key: key);
 
+  /// ---------------------------------------------------------
+  ///  PRÉ-CHARGEMENT GLOBAL (à appeler dès la connexion)
+  /// ---------------------------------------------------------
+  ///
+  /// Exemple d’utilisation après login / au démarrage :
+  ///
+  ///   await AnnoncesPage.preload();
+  ///
+  static Future<void> preload() async {
+    try {
+      final supa = Supabase.instance.client;
+
+      final raw = await supa.from('annonces').select('''
+            *,
+            proprietaire:utilisateurs!annonces_user_id_fkey (
+              id, prenom, nom, photo_url,
+              annonces:annonces!annonces_user_id_fkey ( count )
+            )
+          ''').order('date_creation', ascending: false);
+
+      final list = (raw as List).cast<Map<String, dynamic>>();
+
+      // met en cache mémoire pour toutes les instances
+      _AnnoncesPageState.setGlobalCache(list);
+
+      // Sauvegarde disque (si la box est déjà ouverte)
+      try {
+        if (Hive.isBoxOpen('annonces_box')) {
+          final box = Hive.box('annonces_box');
+          await box.put('annonces', list);
+        }
+      } catch (_) {
+        // pas grave si Hive n'est pas prêt, c'est du confort
+      }
+    } catch (_) {
+      // silencieux : c'est du pré-chargement en arrière-plan
+    }
+  }
+
   @override
   State<AnnoncesPage> createState() => _AnnoncesPageState();
 }
@@ -35,10 +74,18 @@ class _AnnoncesPageState extends State<AnnoncesPage>
   // Cache global en mémoire pour toute l'app (instantané au retour)
   static List<Map<String, dynamic>> _cacheAnnonces = [];
 
+  /// Permet au `preload()` statique de pousser des données dans le cache
+  static void setGlobalCache(List<Map<String, dynamic>> list) {
+    _cacheAnnonces = List<Map<String, dynamic>>.from(list);
+  }
+
   // données
   List<Map<String, dynamic>> _allAnnonces = [];
   bool _loading = true;
   String? _error;
+
+  // Pour éviter le "flash" Aucune annonce trouvée avant la fin du 1er appel réseau
+  bool _initialFetchDone = false;
 
   // favoris (cache local)
   final Set<String> _favIds = <String>{};
@@ -92,7 +139,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
       // ignore, on tombera sur le cache mémoire ou réseau
     }
 
-    // 2) Si pas de cache disque mais cache mémoire dispo (même session)
+    // 2) Si pas de cache disque mais cache mémoire dispo (même session / preload)
     if (_allAnnonces.isEmpty && _cacheAnnonces.isNotEmpty) {
       _allAnnonces = List<Map<String, dynamic>>.from(_cacheAnnonces);
       _loading = false;
@@ -117,12 +164,14 @@ class _AnnoncesPageState extends State<AnnoncesPage>
 
   // ========= DATA =========
   Future<void> _loadAnnonces() async {
-    if (_allAnnonces.isEmpty) {
+    // si on n'a rien du tout, on déclenche un vrai état "chargement"
+    if (_allAnnonces.isEmpty && _cacheAnnonces.isEmpty) {
       setState(() {
         _loading = true;
         _error = null;
       });
     } else {
+      // on a déjà quelque chose à l'écran (cache), on rafraîchit en silence
       _loading = true;
       _error = null;
     }
@@ -139,7 +188,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
 
       final list = (raw as List).cast<Map<String, dynamic>>();
 
-      // Met à jour le cache mémoire
+      // Met à jour le cache mémoire (global)
       _cacheAnnonces = List<Map<String, dynamic>>.from(list);
 
       // Sauvegarde sur disque (Hive) pour les prochains lancements
@@ -157,12 +206,14 @@ class _AnnoncesPageState extends State<AnnoncesPage>
         _allAnnonces = list;
         _loading = false;
         _error = null;
+        _initialFetchDone = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = '$e';
         _loading = false;
+        _initialFetchDone = true;
       });
     }
   }
@@ -385,6 +436,10 @@ class _AnnoncesPageState extends State<AnnoncesPage>
       return (first is int) ? first : int.tryParse(first.toString()) ?? 0;
     }();
 
+    // id pour favoris
+    final String annonceId = (data['id'] ?? '').toString();
+    final bool isFav = annonceId.isNotEmpty && _favIds.contains(annonceId);
+
     return Card(
       color: _cardBg,
       elevation: 1,
@@ -417,24 +472,52 @@ class _AnnoncesPageState extends State<AnnoncesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image homogène + cache disque
+            // IMAGE : ratio plus haut pour montrer davantage la photo + cœur favoris
             AspectRatio(
-              aspectRatio: 16 / 11,
-              child: CachedNetworkImage(
-                imageUrl: images.isNotEmpty
-                    ? images.first
-                    : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: Colors.grey[200]),
-                errorWidget: (_, __, ___) => Container(
-                  color: Colors.grey[200],
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.image_not_supported,
-                    size: 40,
-                    color: Colors.grey,
+              aspectRatio: 4 / 3,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: images.isNotEmpty
+                        ? images.first
+                        : 'https://via.placeholder.com/600x400?text=Photo+indisponible',
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(color: Colors.grey[200]),
+                    errorWidget: (_, __, ___) => Container(
+                      color: Colors.grey[200],
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.image_not_supported,
+                        size: 40,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ),
-                ),
+                  if (annonceId.isNotEmpty)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: ClipOval(
+                        child: Material(
+                          color: Colors.white.withOpacity(0.92),
+                          child: InkWell(
+                            onTap: () {
+                              _toggleFavori(annonceId);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Icon(
+                                isFav ? Icons.favorite : Icons.favorite_border,
+                                size: 20,
+                                color: isFav ? _brandRed : Colors.grey.shade500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -566,7 +649,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 16 / 11,
+            aspectRatio: 4 / 3,
             child: Container(color: Colors.grey.shade300),
           ),
           Expanded(
@@ -638,19 +721,19 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
     final itemWidth = usableWidth / cols;
 
-    // Hauteur image (fixe par ratio 16/11)
-    final imageH = itemWidth * (11 / 16);
+    // Hauteur image (fixe par ratio 4/3 pour montrer plus la photo)
+    final imageH = itemWidth * (3 / 4);
 
     // Hauteur “texte + vendeur”.
     double infoH;
     if (itemWidth < 220) {
-      infoH = 136;
+      infoH = 134;
     } else if (itemWidth < 280) {
-      infoH = 128;
+      infoH = 126;
     } else if (itemWidth < 340) {
-      infoH = 122;
+      infoH = 120;
     } else {
-      infoH = 118;
+      infoH = 116;
     }
 
     final totalH = imageH + infoH;
@@ -672,8 +755,10 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
     // Skeleton uniquement si on charge ET qu'on n'a pas encore de données
-    final bool showSkeleton =
-        _loading && _allAnnonces.isEmpty && _cacheAnnonces.isEmpty;
+    final bool showSkeleton = !_initialFetchDone &&
+        _loading &&
+        _allAnnonces.isEmpty &&
+        _cacheAnnonces.isEmpty;
 
     return Scaffold(
       backgroundColor: _pageBg,
@@ -790,7 +875,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                             ),
                           ),
                         )
-                      else if (annonces.isEmpty)
+                      else if (!_loading && annonces.isEmpty)
                         const SliverFillRemaining(
                           hasScrollBody: false,
                           child: Center(child: Text('Aucune annonce trouvée.')),
@@ -818,22 +903,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        elevation: 2,
-        backgroundColor: _cardBg,
-        foregroundColor: _brandRed,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CreateAnnoncePage()),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Déposer une annonce'),
-        shape: const StadiumBorder(
-          side: BorderSide(color: _brandRed, width: 1),
-        ),
-      ),
     );
   }
 }

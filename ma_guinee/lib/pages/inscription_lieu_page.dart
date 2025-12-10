@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
@@ -11,8 +12,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 // ---- Couleurs globales ----
-const Color danger = Color(0xFFCE1126);          // rouge suppression
-const Color defaultPrimary = Color(0xFF1E3A8A);  // fallback (bleu annonces)
+const Color danger = Color(0xFFCE1126); // rouge suppression
+const Color defaultPrimary = Color(0xFF1E3A8A); // fallback (bleu annonces)
 
 class InscriptionLieuPage extends StatefulWidget {
   final Map<String, dynamic>? lieu;
@@ -46,16 +47,11 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   // État localisation
   bool _detectingPosition = false;
-  bool _modeManuel = false;
-
-  // champs lat/lng pour le mode manuel
-  final TextEditingController _latCtrl = TextEditingController();
-  final TextEditingController _lngCtrl = TextEditingController();
 
   // nom du bucket Supabase
   final String _bucket = 'lieux-photos';
 
-  // Centre par défaut (Conakry)
+  // Centre par défaut (Conakry) pour fallback si besoin
   static const LatLng _defaultCenter = LatLng(9.6412, -13.5784);
 
   final List<String> _typesLieu = ['divertissement', 'culte', 'tourisme'];
@@ -80,6 +76,18 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       'Montagne'
     ],
   };
+
+  // ---------- Détection du type d’appareil ----------
+  bool get _isMobile {
+    if (kIsWeb) return false;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return true;
+      default:
+        return false;
+    }
+  }
 
   // ---------- Palette par type ----------
   Color get _primaryColor {
@@ -119,24 +127,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     sousCategorie = l['sous_categorie'] ?? '';
     description = l['description'] ?? '';
     contact = l['contact'] ?? '';
-    latitude = l['latitude'] != null ? double.tryParse('${l['latitude']}') : null;
-    longitude = l['longitude'] != null ? double.tryParse('${l['longitude']}') : null;
+    latitude =
+        l['latitude'] != null ? double.tryParse('${l['latitude']}') : null;
+    longitude =
+        l['longitude'] != null ? double.tryParse('${l['longitude']}') : null;
     if (l['images'] is List && (l['images'] as List).isNotEmpty) {
       _uploadedImages = List<String>.from(l['images']);
     }
-    _syncLatLngCtrls();
-  }
-
-  @override
-  void dispose() {
-    _latCtrl.dispose();
-    _lngCtrl.dispose();
-    super.dispose();
-  }
-
-  void _syncLatLngCtrls() {
-    _latCtrl.text = latitude != null ? latitude!.toStringAsFixed(6) : '';
-    _lngCtrl.text = longitude != null ? longitude!.toStringAsFixed(6) : '';
   }
 
   // ------------------ Localisation robuste ------------------
@@ -153,7 +150,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           content: const Text(
               "Pour plus de précision, placez-vous à l’intérieur de l’établissement avant de détecter la position."),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
           ],
         ),
       );
@@ -161,7 +161,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       // 1) Service activé ?
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _showError("La localisation est désactivée sur l’appareil. Veuillez l’activer.");
+        _showError(
+            "La localisation est désactivée sur l’appareil. Veuillez l’activer.");
       }
 
       // 2) Permissions
@@ -170,11 +171,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied) {
-        _showError("Permission de localisation refusée. Autorisez-la pour détecter votre position.");
+        _showError(
+            "Permission de localisation refusée. Autorisez-la pour détecter votre position.");
         return;
       }
       if (perm == LocationPermission.deniedForever) {
-        _showError("La permission de localisation est bloquée. Ouvrez les réglages pour l’autoriser.");
+        _showError(
+            "La permission de localisation est bloquée. Ouvrez les réglages pour l’autoriser.");
         if (!kIsWeb) {
           unawaited(Geolocator.openAppSettings());
           unawaited(Geolocator.openLocationSettings());
@@ -199,7 +202,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       } catch (_) {
         position = await Geolocator.getLastKnownPosition();
         if (position == null) {
-          _showError("Impossible d’obtenir la position pour le moment. Veuillez réessayer.");
+          _showError(
+              "Impossible d’obtenir la position pour le moment. Veuillez réessayer.");
           return;
         }
       }
@@ -208,11 +212,16 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       String? adr;
       String? city;
       try {
-        final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
         if (placemarks.isNotEmpty) {
           final p = placemarks.first;
           adr = _formatAdresse(p);
-          city = _nonVide(p.locality) ?? _nonVide(p.subAdministrativeArea) ?? _nonVide(p.administrativeArea);
+          city = _nonVide(p.locality) ??
+              _nonVide(p.subAdministrativeArea) ??
+              _nonVide(p.administrativeArea);
         }
       } catch (_) {}
 
@@ -221,12 +230,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         longitude = position?.longitude;
         if (adr != null && adr.trim().isNotEmpty) adresse = adr;
         if (city != null && city.trim().isNotEmpty) ville = city;
-        _syncLatLngCtrls();
       });
 
-      _showInfo("Position détectée avec succès.");
+      _showInfo(
+          "Position détectée. Vous pouvez maintenant ajuster le point exact sur la carte.");
     } catch (_) {
-      _showError("Une erreur est survenue lors de la localisation. Veuillez réessayer.");
+      _showError(
+          "Une erreur est survenue lors de la localisation. Veuillez réessayer.");
     } finally {
       if (mounted) setState(() => _detectingPosition = false);
     }
@@ -236,7 +246,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     final lat = latitude;
     final lng = longitude;
     if (lat == null || lng == null) {
-      _showError("Veuillez d’abord choisir un point sur la carte ou saisir des coordonnées.");
+      _showError(
+          "Détectez d’abord votre position puis ajustez éventuellement le point sur la carte.");
       return;
     }
     try {
@@ -250,7 +261,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
               _nonVide(p.administrativeArea) ??
               ville;
         });
-        _showInfo("Adresse déduite à partir des coordonnées.");
+        _showInfo("Adresse mise à jour à partir de la position.");
       } else {
         _showError("Aucune adresse trouvée pour ces coordonnées.");
       }
@@ -264,7 +275,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       if (_nonVide(p.street) != null) _nonVide(p.street)!,
       if (_nonVide(p.postalCode) != null) _nonVide(p.postalCode)!,
       if (_nonVide(p.locality) != null) _nonVide(p.locality)!,
-      if (_nonVide(p.administrativeArea) != null) _nonVide(p.administrativeArea)!,
+      if (_nonVide(p.administrativeArea) != null)
+        _nonVide(p.administrativeArea)!,
       if (_nonVide(p.country) != null) _nonVide(p.country)!,
     ];
     return parts.join(', ');
@@ -316,12 +328,18 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   Future<String?> _uploadOne(Uint8List bytes, String userId) async {
     try {
-      final mime = lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
+      final mime =
+          lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
       String ext = 'bin';
-      if (mime.contains('jpeg')) ext = 'jpg';
-      else if (mime.contains('png')) ext = 'png';
-      else if (mime.contains('webp')) ext = 'webp';
-      else if (mime.contains('gif')) ext = 'gif';
+      if (mime.contains('jpeg')) {
+        ext = 'jpg';
+      } else if (mime.contains('png')) {
+        ext = 'png';
+      } else if (mime.contains('webp')) {
+        ext = 'webp';
+      } else if (mime.contains('gif')) {
+        ext = 'gif';
+      }
 
       final ts = DateTime.now().millisecondsSinceEpoch;
       final objectPath = 'u/$userId/$ts.$ext';
@@ -332,8 +350,9 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
             fileOptions: FileOptions(upsert: true, contentType: mime),
           );
 
-      final publicUrl =
-          Supabase.instance.client.storage.from(_bucket).getPublicUrl(objectPath);
+      final publicUrl = Supabase.instance.client.storage
+          .from(_bucket)
+          .getPublicUrl(objectPath);
 
       return publicUrl;
     } catch (e) {
@@ -354,6 +373,39 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     return urls;
   }
 
+  // ---------- Vérif quota : 1 lieu par type ----------
+  Future<Map<String, dynamic>?> _findLieuByType(
+    String userId,
+    String typeLieu, {
+    dynamic excludeId,
+  }) async {
+    try {
+      // On construit d’abord le builder avec les filtres de base
+      var query = Supabase.instance.client
+          .from('lieux')
+          .select('id, nom, type')
+          .eq('user_id', userId)
+          .eq('type', typeLieu);
+
+      // Si on doit exclure un id (édition)
+      if (excludeId != null) {
+        query = query.neq('id', excludeId);
+      }
+
+      // On applique le limit à la fin
+      final res = await query.limit(1);
+
+      if (res is List && res.isNotEmpty) {
+        final row = res.first;
+        if (row is Map<String, dynamic>) return row;
+        return Map<String, dynamic>.from(row as Map);
+      }
+    } catch (e) {
+      debugPrint('Erreur vérification lieu par type: $e');
+    }
+    return null;
+  }
+
   // ---------- ENREGISTREMENT ----------
 
   Future<void> _enregistrerLieu() async {
@@ -361,7 +413,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     if (form == null || !form.validate()) return;
 
     if (latitude == null || longitude == null) {
-      _showError("Veuillez définir la position (détection automatique ou carte).");
+      _showError(
+          "Veuillez détecter votre position puis ajuster le point exact sur la carte.");
       return;
     }
     if (type == null || (type ?? '').isEmpty) {
@@ -373,13 +426,51 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       return;
     }
 
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      _showError("Utilisateur non connecté.");
+      return;
+    }
+
+    final existingId = widget.lieu != null ? widget.lieu!['id'] : null;
+
+    // Règle métier:
+    // - Création : 1 seul lieu par type (divertissement, culte, tourisme)
+    // - Édition   : on interdit de changer vers un type déjà utilisé par un autre lieu.
+    final existingSameType =
+        await _findLieuByType(userId, type!, excludeId: existingId);
+
+    if (existingSameType != null) {
+      final nomExistant =
+          (existingSameType['nom'] ?? '').toString().trim().isEmpty
+              ? 'Sans nom'
+              : existingSameType['nom'].toString();
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Lieu déjà enregistré'),
+          content: Text(
+            'Vous avez déjà un lieu de type "$type" enregistré :\n'
+            '"$nomExistant".\n\n'
+            'Chaque utilisateur peut créer au maximum un lieu de type divertissement, '
+            'un lieu de type culte et un lieu de type tourisme.\n\n'
+            'Si vous avez plusieurs lieux à gérer, merci de nous contacter '
+            'depuis votre rubrique Aide.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _isUploading = true);
     try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) {
-        throw Exception("Utilisateur non connecté.");
-      }
-
       // Upload des nouvelles images si besoin
       if (_localPreviews.isNotEmpty) {
         final newUrls = await _uploadImages();
@@ -403,10 +494,11 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         'user_id': userId,
       };
 
-      final existingId = widget.lieu != null ? widget.lieu!['id'] : null;
-
       if (existingId != null) {
-        await Supabase.instance.client.from('lieux').update(data).eq('id', existingId);
+        await Supabase.instance.client
+            .from('lieux')
+            .update(data)
+            .eq('id', existingId);
       } else {
         await Supabase.instance.client.from('lieux').insert(data);
       }
@@ -419,13 +511,19 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           content: Text(existingId != null
               ? "Lieu mis à jour avec succès."
               : "Lieu enregistré avec succès."),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
         ),
       );
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint("Erreur enregistrement : $e");
-      _showError("Une erreur est survenue lors de l’enregistrement. Veuillez réessayer.");
+      _showError(
+          "Une erreur est survenue lors de l’enregistrement. Veuillez réessayer.");
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -436,7 +534,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   @override
   Widget build(BuildContext context) {
     final enEdition = widget.lieu != null;
-    final showMap = _modeManuel || (latitude != null && longitude != null);
+    final isMobile = _isMobile;
+
+    // Inscription initiale obligatoire sur mobile
+    final canSave = isMobile || enEdition;
+
+    // On n’affiche la carte qu’après avoir une position (ou si lieu déjà géolocalisé)
+    final showMap = latitude != null && longitude != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -450,19 +554,46 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           key: _formKey,
           child: Column(
             children: [
-              // Boutons localisation
+              if (!isMobile) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade700),
+                  ),
+                  child: Text(
+                    enEdition
+                        ? "Pour garantir une géolocalisation fiable, l’enregistrement initial de ce lieu a été fait avec un téléphone. Vous pouvez modifier les informations ci-dessous, mais la position doit rester cohérente."
+                        : "L’inscription d’un lieu doit être réalisée avec votre téléphone pour une géolocalisation précise. Merci d’ouvrir l’application sur mobile et de refaire cette étape.",
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+
+              // Bouton localisation
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _modeManuel ? null : (_detectingPosition ? null : _recupererPosition),
+                      onPressed: (!isMobile || _detectingPosition)
+                          ? null
+                          : _recupererPosition,
                       icon: _detectingPosition
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Icon(Icons.my_location),
-                      label: Text(_detectingPosition ? "Détection en cours…" : "Détecter ma position"),
+                      label: Text(_detectingPosition
+                          ? "Détection en cours…"
+                          : "Détecter ma position"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primaryColor,
                         foregroundColor: Colors.white,
@@ -471,17 +602,18 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 8),
-              SwitchListTile.adaptive(
-                value: _modeManuel,
-                onChanged: (v) => setState(() => _modeManuel = v),
-                title: const Text("Définir la position manuellement"),
-                subtitle: const Text("Touchez la carte pour placer le marqueur"),
-                activeColor: _primaryColor,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Après la détection, vous pourrez déplacer le marqueur sur la carte pour ajuster votre position exacte (entrée, parking, etc.).",
+                  style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                ),
               ),
 
               if (showMap) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Container(
                   decoration: BoxDecoration(
                     color: _secondaryTint,
@@ -492,29 +624,31 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     height: 240,
                     child: FlutterMap(
                       options: MapOptions(
-                        // ✅ API v6+ : initialCenter / initialZoom
                         initialCenter: LatLng(
                           latitude ?? _defaultCenter.latitude,
                           longitude ?? _defaultCenter.longitude,
                         ),
-                        initialZoom: (latitude != null) ? 16 : 12,
+                        initialZoom: 16,
                         onTap: (tapPosition, point) {
-                          if (!_modeManuel) {
-                            _showInfo("Activez le mode manuel pour déplacer le marqueur.");
+                          // Ajustement manuel direct sur la carte, uniquement sur mobile
+                          if (!isMobile) return;
+                          if (latitude == null || longitude == null) {
+                            _showInfo(
+                                "Détectez d’abord votre position avec le bouton au-dessus.");
                             return;
                           }
                           setState(() {
                             latitude = point.latitude;
                             longitude = point.longitude;
-                            _syncLatLngCtrls();
                           });
                           _showInfo(
-                              "Position choisie : ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}");
+                              "Position ajustée : ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}");
                         },
                       ),
                       children: [
                         TileLayer(
-                          urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          urlTemplate:
+                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                           subdomains: const ['a', 'b', 'c'],
                         ),
                         if (latitude != null && longitude != null)
@@ -524,7 +658,11 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                                 width: 40,
                                 height: 40,
                                 point: LatLng(latitude!, longitude!),
-                                child: Icon(Icons.location_on, color: _primaryColor, size: 40),
+                                child: Icon(
+                                  Icons.location_on,
+                                  color: _primaryColor,
+                                  size: 40,
+                                ),
                               ),
                             ],
                           ),
@@ -532,53 +670,46 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-
-                // Saisie manuelle lat/lng
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _latCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(signed: true, decimal: true),
-                        decoration: const InputDecoration(labelText: 'Latitude'),
-                        onChanged: (v) {
-                          final d = double.tryParse(v.replaceAll(',', '.'));
-                          setState(() => latitude = d);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _lngCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(signed: true, decimal: true),
-                        decoration: const InputDecoration(labelText: 'Longitude'),
-                        onChanged: (v) {
-                          final d = double.tryParse(v.replaceAll(',', '.'));
-                          setState(() => longitude = d);
-                        },
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Astuce : déplacez le marqueur sur l’endroit exact (porte d’entrée, accueil…).",
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
-                    onPressed: _reverseGeocodeFromLatLng,
+                    onPressed: (latitude == null || longitude == null)
+                        ? null
+                        : _reverseGeocodeFromLatLng,
                     icon: const Icon(Icons.place),
-                    label: const Text("Déduire l’adresse depuis les coordonnées"),
+                    label: const Text(
+                      "Mettre à jour l’adresse depuis la position",
+                    ),
                   ),
                 ),
-              ],
-
-              if (latitude != null && longitude != null && !_modeManuel) ...[
                 const SizedBox(height: 6),
-                Text("Latitude : ${latitude!.toStringAsFixed(6)}"),
-                Text("Longitude : ${longitude!.toStringAsFixed(6)}"),
+                if (latitude != null && longitude != null) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Latitude : ${latitude!.toStringAsFixed(6)}",
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Longitude : ${longitude!.toStringAsFixed(6)}",
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
+                ],
               ],
 
               const SizedBox(height: 10),
@@ -604,14 +735,22 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
               TextFormField(
                 initialValue: nom,
                 decoration: const InputDecoration(labelText: "Nom du lieu"),
-                validator: (v) => v == null || v.isEmpty ? "Champ requis" : null,
+                validator: (v) =>
+                    v == null || v.isEmpty ? "Champ requis" : null,
                 onChanged: (v) => nom = v,
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 value: type,
                 decoration: const InputDecoration(labelText: "Type de lieu"),
-                items: _typesLieu.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                items: _typesLieu
+                    .map(
+                      (t) => DropdownMenuItem(
+                        value: t,
+                        child: Text(t),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (v) => setState(() {
                   type = v;
                   sousCategorie = '';
@@ -623,7 +762,12 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                 decoration: const InputDecoration(labelText: "Sous-catégorie"),
                 items: type != null
                     ? (sousCategoriesParType[type!] ?? [])
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(c),
+                          ),
+                        )
                         .toList()
                     : [],
                 onChanged: (v) => setState(() => sousCategorie = v ?? ''),
@@ -651,18 +795,22 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
                 onChanged: (v) => description = v,
               ),
               const SizedBox(height: 20),
-              _isUploading
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton.icon(
-                      onPressed: _enregistrerLieu,
-                      icon: const Icon(Icons.save),
-                      label: Text(enEdition ? "Mettre à jour" : "Enregistrer"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
+
+              if (_isUploading)
+                const CircularProgressIndicator()
+              else
+                ElevatedButton.icon(
+                  onPressed: canSave ? _enregistrerLieu : null,
+                  icon: const Icon(Icons.save),
+                  label: Text(
+                    enEdition ? "Mettre à jour" : "Enregistrer",
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
             ],
           ),
         ),
@@ -675,30 +823,37 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
     // Photos déjà uploadées
     for (final url in _uploadedImages) {
-      tiles.add(_PhotoTile(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.network(url, fit: BoxFit.cover),
+      tiles.add(
+        _PhotoTile(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(url, fit: BoxFit.cover),
+          ),
+          onRemove: () => _removeUploadedImage(url),
         ),
-        onRemove: () => _removeUploadedImage(url),
-      ));
+      );
     }
 
     // Nouvelles photos (préviews mémoire)
     for (final li in _localPreviews) {
-      tiles.add(_PhotoTile(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.memory(li.bytes, fit: BoxFit.cover),
+      tiles.add(
+        _PhotoTile(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(li.bytes, fit: BoxFit.cover),
+          ),
+          onRemove: () => _removeLocalPreview(li),
         ),
-        onRemove: () => _removeLocalPreview(li),
-      ));
+      );
     }
 
     if (tiles.isEmpty) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: Text("Aucune photo sélectionnée", style: TextStyle(color: Colors.grey[700])),
+        child: Text(
+          "Aucune photo sélectionnée",
+          style: TextStyle(color: Colors.grey[700]),
+        ),
       );
     }
 
@@ -721,7 +876,12 @@ class _LocalImage {
 class _PhotoTile extends StatelessWidget {
   final Widget child;
   final VoidCallback onRemove;
-  const _PhotoTile({super.key, required this.child, required this.onRemove});
+
+  const _PhotoTile({
+    super.key,
+    required this.child,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -742,7 +902,11 @@ class _PhotoTile extends StatelessWidget {
           right: -8,
           child: IconButton(
             onPressed: onRemove,
-            icon: const Icon(Icons.close, size: 20, color: danger),
+            icon: const Icon(
+              Icons.close,
+              size: 20,
+              color: danger,
+            ),
             splashRadius: 16,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),

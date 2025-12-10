@@ -1,7 +1,8 @@
 import 'dart:io' show File;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -25,9 +26,9 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
   final _picker = ImagePicker();
 
   // ===== Palette Hôtels (spécifique à cette page) =====
-  static const Color hotelsPrimary   = Color(0xFF264653);
+  static const Color hotelsPrimary = Color(0xFF264653);
   static const Color hotelsSecondary = Color(0xFF2A9D8F);
-  static const Color onPrimary       = Colors.white;
+  static const Color onPrimary = Colors.white;
 
   String nom = '';
   String adresse = '';
@@ -44,6 +45,20 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
   final List<XFile> _pickedImages = [];
   static const String _bucket = 'hotel-photos';
+
+  // Centre par défaut (Conakry) si jamais
+  static const LatLng _defaultCenter = LatLng(9.6412, -13.5784);
+
+  bool get _isMobile {
+    if (kIsWeb) return false;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return true;
+      default:
+        return false;
+    }
+  }
 
   @override
   void initState() {
@@ -64,32 +79,55 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
   // -------------------- Localisation --------------------
   Future<void> _detectLocation() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "Astuce : placez-vous à l’intérieur de l’hôtel pour enregistrer sa position exacte.",
-        ),
-        duration: Duration(seconds: 2),
-      ),
-    );
-
+    if (_gettingLocation) return;
     setState(() => _gettingLocation = true);
+
     try {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Astuce localisation"),
+          content: const Text(
+            "Pour plus de précision, placez-vous à l’intérieur de l’hôtel avant de détecter la position.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+
       if (!await Geolocator.isLocationServiceEnabled()) {
-        throw 'Service de localisation désactivé';
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Le service de localisation est désactivé. Activez le GPS puis réessayez.',
+            ),
+          ),
+        );
+        return;
       }
 
-      var perm = await Geolocator.checkPermission();
+      LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        throw 'Permission refusée';
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permission de localisation refusée. Autorisez-la dans les paramètres pour continuer.',
+            ),
+          ),
+        );
+        return;
       }
 
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
+        desiredAccuracy: LocationAccuracy.best,
       );
       latitude = pos.latitude;
       longitude = pos.longitude;
@@ -111,21 +149,69 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         }
       } catch (_) {}
 
-      setState(() {});
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text("Position récupérée. Touchez la carte pour ajuster si besoin."),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Position récupérée. Touchez la carte pour ajuster le point exact si besoin.",
+            ),
+          ),
+        );
+      }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur localisation : $e')),
       );
     } finally {
-      setState(() => _gettingLocation = false);
+      if (mounted) setState(() => _gettingLocation = false);
+    }
+  }
+
+  Future<void> _reverseGeocodeFromLatLng() async {
+    final lat = latitude;
+    final lng = longitude;
+    if (lat == null || lng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Détectez d’abord la position puis ajustez le marqueur sur la carte.",
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        setState(() {
+          adresse = [
+            p.street,
+            p.subLocality,
+            p.locality,
+            p.administrativeArea,
+            p.country
+          ].where((e) => (e != null && e!.trim().isNotEmpty)).join(', ');
+          ville = p.locality ?? ville;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Adresse mise à jour à partir de la position."),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Aucune adresse trouvée pour ces coordonnées."),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Impossible de déduire l’adresse : $e")),
+      );
     }
   }
 
@@ -143,24 +229,36 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       return FutureBuilder<Uint8List>(
         future: f.readAsBytes(),
         builder: (_, snap) {
-          if (snap.connectionState != ConnectionState.done) {
+          if (snap.connectionState != ConnectionState.done ||
+              snap.data == null) {
             return const SizedBox(
               width: 70,
               height: 70,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             );
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(snap.data!,
-                width: 70, height: 70, fit: BoxFit.cover),
+            child: Image.memory(
+              snap.data!,
+              width: 70,
+              height: 70,
+              fit: BoxFit.cover,
+            ),
           );
         },
       );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.file(File(f.path), width: 70, height: 70, fit: BoxFit.cover),
+      child: Image.file(
+        File(f.path),
+        width: 70,
+        height: 70,
+        fit: BoxFit.cover,
+      ),
     );
   }
 
@@ -175,15 +273,41 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
 
       if (kIsWeb) {
         final bytes = await img.readAsBytes();
-        await storage.uploadBinary(objectPath, bytes,
-            fileOptions: const FileOptions(upsert: true));
+        await storage.uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
       } else {
-        await storage.upload(objectPath, File(img.path),
-            fileOptions: const FileOptions(upsert: true));
+        await storage.upload(
+          objectPath,
+          File(img.path),
+          fileOptions: const FileOptions(upsert: true),
+        );
       }
       urls.add(storage.getPublicUrl(objectPath));
     }
     return urls;
+  }
+
+  // ---------- Vérification : un seul hôtel par compte ----------
+  Future<Map<String, dynamic>?> _findHotelForUser(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('hotels')
+          .select('id, nom')
+          .eq('user_id', uid)
+          .limit(1);
+
+      if (res is List && res.isNotEmpty) {
+        final row = res.first;
+        if (row is Map<String, dynamic>) return row;
+        return Map<String, dynamic>.from(row as Map);
+      }
+    } catch (e) {
+      debugPrint('Erreur vérification hôtel pour utilisateur: $e');
+    }
+    return null;
   }
 
   // -------------------- Enregistrement --------------------
@@ -193,7 +317,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Cliquez sur "Détecter ma position" ou choisissez manuellement sur la carte.'),
+            'Cliquez sur "Détecter ma position" puis ajustez sur la carte si besoin.',
+          ),
         ),
       );
       return;
@@ -205,6 +330,39 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid == null) throw 'Utilisateur non connecté';
+
+      // Règle métier : 1 hôtel par compte
+      if (widget.hotel == null) {
+        final existingHotel = await _findHotelForUser(uid);
+        if (existingHotel != null) {
+          final nomExistant =
+              (existingHotel['nom'] ?? '').toString().trim().isEmpty
+                  ? 'Hôtel existant'
+                  : existingHotel['nom'].toString();
+
+          if (!mounted) return;
+          await showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Hôtel déjà enregistré'),
+              content: Text(
+                'Vous avez déjà un hôtel enregistré avec ce compte :\n'
+                '"$nomExistant".\n\n'
+                'Chaque compte peut gérer un seul hôtel directement dans l’application.\n\n'
+                'Si vous avez plusieurs hôtels à gérer, merci de nous contacter '
+                'depuis votre rubrique Aide.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+      }
 
       final urls = await _uploadImages(uid);
 
@@ -235,8 +393,9 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
               content: const Text("Hôtel enregistré avec succès."),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("OK")),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
+                ),
               ],
             ),
           );
@@ -253,8 +412,9 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
               content: const Text("Hôtel mis à jour avec succès."),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("OK")),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
+                ),
               ],
             ),
           );
@@ -264,6 +424,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Erreur : $e')));
     } finally {
@@ -274,6 +435,15 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
   // -------------------- UI --------------------
   @override
   Widget build(BuildContext context) {
+    final enEdition = widget.hotel != null;
+    final isMobile = _isMobile;
+
+    // Inscription initiale obligatoire sur mobile
+    final canSave = isMobile || enEdition;
+
+    // Carte visible uniquement si lat/lng existent (géoloc ou édition)
+    final showMap = latitude != null && longitude != null;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(
@@ -291,44 +461,110 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                 key: _formKey,
                 child: ListView(
                   children: [
+                    if (!isMobile) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.shade700),
+                        ),
+                        child: Text(
+                          enEdition
+                              ? "Pour garantir une géolocalisation fiable, l’enregistrement initial de cet hôtel a été fait avec un téléphone. Vous pouvez modifier les informations ci-dessous, mais la position doit rester cohérente."
+                              : "L’inscription d’un hôtel doit être réalisée avec votre téléphone pour une géolocalisation précise. Merci d’ouvrir l’application sur mobile et de refaire cette étape.",
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
                     const Text(
                       "Placez-vous dans l’hôtel pour enregistrer sa position exacte.",
                       style: TextStyle(color: Colors.blueGrey, fontSize: 13.5),
                     ),
                     const SizedBox(height: 9),
                     ElevatedButton.icon(
-                      onPressed: _gettingLocation ? null : _detectLocation,
+                      onPressed: (!isMobile || _gettingLocation)
+                          ? null
+                          : _detectLocation,
                       icon: const Icon(Icons.location_on),
-                      label: Text(
-                          _gettingLocation ? 'Recherche en cours…' : 'Détecter ma position'),
+                      label: Text(_gettingLocation
+                          ? 'Recherche en cours…'
+                          : 'Détecter ma position'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: hotelsPrimary,
                         foregroundColor: onPrimary,
                       ),
                     ),
-                    if (latitude != null && longitude != null) ...[
-                      const SizedBox(height: 6),
-                      Text('Latitude : $latitude'),
-                      Text('Longitude : $longitude'),
-                      if (adresse.isNotEmpty) Text('Adresse : $adresse'),
-                      const SizedBox(height: 12),
-                      const Text("Position sur la carte :",
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Après la détection, vous pourrez déplacer le marqueur sur la carte pour ajuster la position exacte (entrée, accueil, parking…).",
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade800),
+                      ),
+                    ),
+                    if (showMap) ...[
+                      const SizedBox(height: 10),
+                      if (adresse.isNotEmpty)
+                        Text('Adresse : $adresse',
+                            style: const TextStyle(fontSize: 13)),
+                      if (latitude != null && longitude != null) ...[
+                        Text(
+                          'Latitude  : ${latitude!.toStringAsFixed(6)}',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black87),
+                        ),
+                        Text(
+                          'Longitude : ${longitude!.toStringAsFixed(6)}',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black87),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
                       SizedBox(
                         height: 220,
                         child: FlutterMap(
                           options: MapOptions(
-                            initialCenter: LatLng(latitude!, longitude!),
+                            initialCenter: LatLng(
+                              latitude ?? _defaultCenter.latitude,
+                              longitude ?? _defaultCenter.longitude,
+                            ),
                             initialZoom: 16.0,
                             onTap: (tapPosition, point) {
+                              // Ajustement manuel direct sur mobile uniquement
+                              if (!isMobile) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "L’ajustement précis de la position se fait depuis l’application mobile.",
+                                    ),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (latitude == null || longitude == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "Cliquez d’abord sur “Détecter ma position”.",
+                                    ),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
                               setState(() {
                                 latitude = point.latitude;
                                 longitude = point.longitude;
                               });
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text("Position ajustée manuellement."),
+                                  content:
+                                      Text("Position ajustée manuellement."),
                                   duration: Duration(milliseconds: 900),
                                 ),
                               );
@@ -340,18 +576,35 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                                   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                               subdomains: const ['a', 'b', 'c'],
                             ),
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  width: 40.0,
-                                  height: 40.0,
-                                  point: LatLng(latitude!, longitude!),
-                                  child: const Icon(Icons.location_on,
-                                      color: Colors.red, size: 40),
-                                ),
-                              ],
-                            ),
+                            if (latitude != null && longitude != null)
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    width: 40.0,
+                                    height: 40.0,
+                                    point: LatLng(latitude!, longitude!),
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.red,
+                                      size: 40,
+                                    ),
+                                  ),
+                                ],
+                              ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: (latitude == null || longitude == null)
+                              ? null
+                              : _reverseGeocodeFromLatLng,
+                          icon: const Icon(Icons.place),
+                          label: const Text(
+                            "Mettre à jour l’adresse depuis la position",
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -380,8 +633,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     ),
                     TextFormField(
                       initialValue: telephone,
-                      decoration:
-                          const InputDecoration(labelText: 'Téléphone'),
+                      decoration: const InputDecoration(labelText: 'Téléphone'),
                       keyboardType: TextInputType.phone,
                       validator: (v) =>
                           (v == null || v.isEmpty) ? 'Champ requis' : null,
@@ -397,7 +649,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     TextFormField(
                       initialValue: prix,
                       decoration: const InputDecoration(
-                          labelText: 'Prix moyen (ex: 500 000 GNF)'),
+                        labelText: 'Prix moyen (ex: 500 000 GNF)',
+                      ),
                       onSaved: (v) => prix = v ?? '',
                     ),
                     const SizedBox(height: 10),
@@ -409,15 +662,21 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                           value: etoiles,
                           onChanged: (v) => setState(() => etoiles = v!),
                           items: [1, 2, 3, 4, 5]
-                              .map((e) => DropdownMenuItem(
-                                  value: e, child: Text('$e ★')))
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text('$e ★'),
+                                ),
+                              )
                               .toList(),
                         ),
                       ],
                     ),
                     const SizedBox(height: 18),
-                    const Text('Photos de l’hôtel :',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Photos de l’hôtel :',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 8,
@@ -435,8 +694,11 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close,
-                                        size: 14, color: Colors.white),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -459,16 +721,18 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
-                      onPressed: _save,
+                      onPressed: canSave ? _save : null,
                       icon: const Icon(Icons.save),
                       label: Text(
-                          widget.hotel == null ? 'Enregistrer' : 'Mettre à jour'),
+                        widget.hotel == null ? 'Enregistrer' : 'Mettre à jour',
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: hotelsPrimary,
                         foregroundColor: onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ],

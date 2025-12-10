@@ -336,7 +336,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       child: ElevatedButton(
                         onPressed: _soumettreInscription,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0077B6), // mainPrimary
+                          backgroundColor:
+                              const Color(0xFF0077B6), // mainPrimary
                           foregroundColor: const Color(0xFFFFFFFF), // onPrimary
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(

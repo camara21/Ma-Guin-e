@@ -155,16 +155,17 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
   }
 
   // ---------- Header images + actions ----------
-  Widget _imagesHeader() {
+  Widget _imagesHeader({double? height}) {
     final photos = widget.annonce.images.map(_publicUrl).toList();
     final hasImages = photos.isNotEmpty;
 
     final screenW = MediaQuery.of(context).size.width;
     // Ratio 4/3 : plus de hauteur, rendu plus "pro"
-    final double headerH = screenW * 3 / 4;
+    final double headerH = height ?? screenW * 3 / 4;
 
     return SizedBox(
       height: headerH,
+      width: double.infinity,
       child: Stack(
         alignment: Alignment.bottomCenter,
         children: [
@@ -292,7 +293,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
             PhotoViewGallery.builder(
               itemCount: photos.length,
               pageController: PageController(initialPage: index),
-              // Pas de spinner ici non plus
               loadingBuilder: (context, event) => const SizedBox.shrink(),
               builder: (_, i) => PhotoViewGalleryPageOptions(
                 imageProvider: CachedNetworkImageProvider(photos[i]),
@@ -412,7 +412,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
                       'reported_by': _meId!,
                       'reason': selected,
                       'details':
-                          ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
+                          ctrl.text.trim().isNotEmpty ? ctrl.text.trim() : null,
                       'ville': a.ville,
                       'titre': a.titre,
                       'prix': a.prix,
@@ -477,7 +477,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
           );
         }
 
-        // Chargement : pas de spinner, seulement skeleton
         if (snap.connectionState != ConnectionState.done) {
           return _vendeurSkeleton();
         }
@@ -551,7 +550,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
           );
         }
         if (snap.connectionState != ConnectionState.done) {
-          // Pas de spinner ici non plus
           return const SizedBox.shrink();
         }
         final list =
@@ -739,7 +737,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
           );
         }
 
-        // Chargement : skeleton horizontal, pas de spinner
         if (snap.connectionState != ConnectionState.done) {
           return _similairesSkeleton();
         }
@@ -856,7 +853,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
 
   // ---------- Utils ----------
   String _normalizePhone(String raw) {
-    // Conserve uniquement + et chiffres pour le schéma tel:
     return raw.replaceAll(RegExp(r'[^0-9\+]'), '');
   }
 
@@ -881,7 +877,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
         ),
         child: Row(
           children: [
-            // Message : OUTLINE rouge
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -914,7 +909,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
               ),
             ),
             const SizedBox(width: 12),
-            // Contacter : utilise EXCLUSIVEMENT le téléphone de l’annonce
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -931,7 +925,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
                   ),
                 ),
                 onPressed: () async {
-                  final telRaw = a.telephone; // <- vient de l'annonce
+                  final telRaw = a.telephone;
                   final tel = _normalizePhone(telRaw);
                   if (tel.isEmpty) {
                     _snack(
@@ -965,82 +959,92 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage>
 
     return Scaffold(
       backgroundColor: _bg,
-      body: Column(
-        children: [
-          _imagesHeader(),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-              children: [
-                Text(
-                  a.titre,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: kText,
-                  ),
-                ),
-                const SizedBox(height: 8),
+      bottomNavigationBar: _bottomActions(),
+      body: CustomScrollView(
+        slivers: [
+          // Image principale qui scrolle avec le reste (style Facebook)
+          SliverToBoxAdapter(
+            child: _imagesHeader(),
+          ),
 
-                // Prix + Ville + Vues
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '${_fmtInt(a.prix)} ${a.devise}',
-                              style: const TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                color: kText,
+          // Contenu de la fiche
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    a.titre,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: kText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Prix + Ville + Vues
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: '${_fmtInt(a.prix)} ${a.devise}',
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  color: kText,
+                                ),
                               ),
-                            ),
-                            TextSpan(
-                              text: '  •  ${a.ville}',
+                              TextSpan(
+                                text: '  •  ${a.ville}',
+                                style: const TextStyle(
+                                    fontSize: 16, color: kText2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.remove_red_eye_outlined,
+                                size: 18, color: kText2),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_fmtInt(_views)} vues',
                               style:
-                                  const TextStyle(fontSize: 16, color: kText2),
+                                  const TextStyle(fontSize: 13, color: kText2),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.remove_red_eye_outlined,
-                              size: 18, color: kText2),
-                          const SizedBox(width: 4),
-                          Text('${_fmtInt(_views)} vues',
-                              style:
-                                  const TextStyle(fontSize: 13, color: kText2)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
 
-                const SizedBox(height: 16),
-                Text(a.description, style: const TextStyle(color: kText)),
-                const SizedBox(height: 18),
-                const Divider(height: 1, color: kCardStroke),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 16),
+                  Text(a.description, style: const TextStyle(color: kText)),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1, color: kCardStroke),
+                  const SizedBox(height: 18),
 
-                _buildVendeurComplet(),
-                const SizedBox(height: 6),
+                  _buildVendeurComplet(),
+                  const SizedBox(height: 6),
 
-                _buildAutresDuVendeur(),
-                const SizedBox(height: 12),
+                  _buildAutresDuVendeur(),
+                  const SizedBox(height: 12),
 
-                _buildAnnoncesSimilaires(),
-                const SizedBox(height: 12),
-              ],
+                  _buildAnnoncesSimilaires(),
+                  const SizedBox(height: 32), // petit espace avant le bas
+                ],
+              ),
             ),
           ),
-          _bottomActions(),
         ],
       ),
     );
