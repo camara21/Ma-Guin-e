@@ -38,10 +38,22 @@ import 'pages/annonces_page.dart';
 const String kAnnoncesBox = 'annonces_box';
 
 String? _lastRoutePushed;
+
+/// Navigation centralisée avec protection contre les doubles push.
+/// Si le navigator n'est pas encore prêt, on replanifie automatiquement.
 void _pushUnique(String routeName) {
   if (_lastRoutePushed == routeName) return;
+
+  final state = navKey.currentState;
+  if (state == null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pushUnique(routeName);
+    });
+    return;
+  }
+
   _lastRoutePushed = routeName;
-  navKey.currentState?.pushNamedAndRemoveUntil(routeName, (_) => false);
+  state.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
 /// Empêche double init PushService
@@ -97,16 +109,15 @@ Map<String, dynamic> _normalizeIncomingData(Map<String, dynamic>? raw) {
 // IMPORTANT: fonction top-level et marquée vm:entry-point
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Initialise Firebase si nécessaire dans l'isolate de background
   try {
     await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform);
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   } catch (_) {}
 
-  // On ne doit pas afficher d'UI ici.
   debugPrint(
-      '[main] background message received (minimal handling). data=${message.data}');
-  // Si tu souhaites effectuer des traitements légers (logs, analytics...), fais-le ici.
+    '[main] background message received (minimal handling). data=${message.data}',
+  );
 }
 
 RealtimeChannel? _notifChan;
@@ -154,10 +165,9 @@ void _subscribeUserNotifications(String userId) {
           final n = payload.newRecord;
           if (n == null) return;
 
-          // messages → push-send s'occupe (FCM). On ignore ici pour éviter doublon.
+          // type "message" → push-send + FCM gèrent déjà, on évite les doublons
           if (n['type']?.toString() == 'message') return;
 
-          // Déléguons l'affichage local/OS au PushService (centralisé)
           PushService.instance.showLocalNotification(
             n['titre'] ?? 'Notification',
             n['contenu'] ?? '',
@@ -230,11 +240,113 @@ Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   _pushUnique(dest);
 }
 
+/// Détection URL de recovery (WEB uniquement)
 bool _isRecoveryUrl(Uri uri) {
   final hasCode = uri.queryParameters['code'] != null;
   final frag = uri.fragment.split('?').first;
   final hasRecovery = (uri.queryParameters['type'] ?? '') == 'recovery';
   return (hasCode && frag.contains('reset_password')) || hasRecovery;
+}
+
+/// Bootstrap global: charge l’utilisateur, démarre heartbeat + notifs, etc.
+Future<void> _bootstrap(UserProvider userProvider) async {
+  try {
+    // WEB : si on arrive directement sur l’URL de recovery
+    if (kIsWeb && _isRecoveryUrl(Uri.base)) {
+      RecoveryGuard.activate();
+      // La navigation vers ResetPasswordPage est gérée dans MyApp.onGenerateInitialRoutes
+    }
+
+    // Charger utilisateur côté app
+    await userProvider.chargerUtilisateurConnecte();
+    final session = Supabase.instance.client.auth.currentSession;
+    final user = session?.user;
+
+    if (user != null) {
+      _subscribeUserNotifications(user.id);
+      _subscribeAdminKick(user.id);
+      unawaited(_startHeartbeat());
+      _askPushOnce();
+
+      // Pré-chargement annonces pour session déjà connectée
+      unawaited(AnnoncesPage.preload());
+
+      if (!RecoveryGuard.isActive) {
+        await _goHomeBasedOnRole(userProvider);
+      }
+    } else {
+      // Pas connecté → on va sur l’écran de connexion
+      if (!RecoveryGuard.isActive) {
+        _pushUnique(AppRoutes.welcome);
+      }
+    }
+
+    // Affiche popup admin stockée si on a démarré depuis une notif admin
+    await PushService.instance.showLaunchAdminIfPending();
+
+    // ============================================================
+    //   LISTENER AUTH GLOBAL (login / logout / recovery)
+    // ============================================================
+    Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
+      final session = event.session;
+      debugPrint('[auth] event=${event.event} user=${session?.user.id}');
+
+      // 1) Lien de réinitialisation ouvert (mobile ou web)
+      if (event.event == AuthChangeEvent.passwordRecovery) {
+        RecoveryGuard.activate();
+
+        // Mobile → on pousse explicitement la page de nouveau mot de passe
+        if (!kIsWeb) {
+          _pushUnique(AppRoutes.resetPassword);
+        }
+
+        // Web → ResetPassword est déjà l’initialRoute via _isRecoveryUrl
+        return;
+      }
+
+      // 2) Déconnexion (manuelle ou après reset de mot de passe)
+      if (event.event == AuthChangeEvent.signedOut) {
+        _unsubscribeUserNotifications();
+        _unsubscribeAdminKick();
+        await _stopHeartbeat();
+
+        // On sort systématiquement du mode recovery
+        RecoveryGuard.deactivate();
+
+        // Sécurité : après n’importe quelle déconnexion,
+        // on revient sur l’écran de connexion/accueil.
+        _pushUnique(AppRoutes.welcome);
+        return;
+      }
+
+      // 3) Pendant le flow recovery, on ignore les signedIn intermédiaires
+      if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
+        return;
+      }
+
+      // 4) Utilisateur connecté (login normal)
+      if (session?.user != null) {
+        final uid = session!.user.id;
+        _subscribeUserNotifications(uid);
+        _subscribeAdminKick(uid);
+        await _startHeartbeat();
+
+        await userProvider.chargerUtilisateurConnecte();
+        _askPushOnce();
+
+        // Pré-chargement annonces au moment du login
+        unawaited(AnnoncesPage.preload());
+
+        if (!RecoveryGuard.isActive) {
+          await _goHomeBasedOnRole(userProvider);
+        }
+
+        await PushService.instance.showLaunchAdminIfPending();
+      }
+    });
+  } catch (e) {
+    debugPrint('[main] init error: $e');
+  }
 }
 
 Future<void> main() async {
@@ -248,23 +360,43 @@ Future<void> main() async {
 
   if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler,
+    );
   }
 
-  await Supabase.initialize(
-    url: const String.fromEnvironment(
-      'SUPABASE_URL',
-      defaultValue: 'https://zykbcgqgkdsguirjvwxg.supabase.co',
-    ),
-    anonKey: const String.fromEnvironment(
-      'SUPABASE_ANON_KEY',
-      defaultValue:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5a2JjZ3Fna2RzZ3Vpcmp2d3hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwMTEsImV4cCI6MjA2ODM1OTAxMX0.R-iSxRy-vFvmmE80EdI2AlZCKqgADvLd9_luvrLQL-E',
-    ),
+  // =======================
+  //   INIT SUPABASE
+  // =======================
+  const supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://zykbcgqgkdsguirjvwxg.supabase.co',
   );
+  const supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5a2JjZ3Fna2RzZ3Vpcmp2d3hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwMTEsImV4cCI6MjA2ODM1OTAxMX0.R-iSxRy-vFvmmE80EdI2AlZCKqgADvLd9_luvrLQL-E',
+  );
+
+  if (kIsWeb) {
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+    );
+  } else {
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+      ),
+    );
+  }
 
   final userProvider = UserProvider();
 
@@ -274,85 +406,22 @@ Future<void> main() async {
         ChangeNotifierProvider<UserProvider>.value(value: userProvider),
         ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
         ChangeNotifierProvider(
-            create: (_) => PrestatairesProvider()..loadPrestataires()),
+          create: (_) => PrestatairesProvider()..loadPrestataires(),
+        ),
       ],
       child: const MyApp(),
     ),
   );
 
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    try {
-      if (kIsWeb && _isRecoveryUrl(Uri.base)) {
-        RecoveryGuard.activate();
-      }
-
-      // Charger utilisateur
-      await userProvider.chargerUtilisateurConnecte();
-      final user = Supabase.instance.client.auth.currentUser;
-
-      if (user != null) {
-        _subscribeUserNotifications(user.id);
-        _subscribeAdminKick(user.id);
-        unawaited(_startHeartbeat());
-        // Init pushService (demande permission, token, listeners) — centralisé
-        _askPushOnce();
-
-        // ✅ Pré-chargement annonces pour session déjà connectée
-        unawaited(AnnoncesPage.preload());
-      }
-
-      if (!RecoveryGuard.isActive) {
-        await _goHomeBasedOnRole(userProvider);
-      }
-
-      // Affiche popup admin stockée si on a démarré depuis une notif admin
-      await PushService.instance.showLaunchAdminIfPending();
-
-      // Ecoute changement d'auth (login / logout)
-      Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
-        final session = event.session;
-
-        if (event.event == AuthChangeEvent.passwordRecovery) {
-          RecoveryGuard.activate();
-          return;
-        }
-
-        if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
-          return;
-        }
-
-        if (session?.user != null) {
-          final uid = session!.user.id;
-          _subscribeUserNotifications(uid);
-          _subscribeAdminKick(uid);
-          await _startHeartbeat();
-          await userProvider.chargerUtilisateurConnecte();
-          _askPushOnce();
-
-          // ✅ Pré-chargement annonces au moment du login
-          unawaited(AnnoncesPage.preload());
-
-          if (!RecoveryGuard.isActive) {
-            await _goHomeBasedOnRole(userProvider);
-          }
-          await PushService.instance.showLaunchAdminIfPending();
-        } else {
-          _unsubscribeUserNotifications();
-          _unsubscribeAdminKick();
-          await _stopHeartbeat();
-          if (!RecoveryGuard.isActive) {
-            _pushUnique(AppRoutes.welcome);
-          }
-        }
-      });
-    } catch (e) {
-      debugPrint('[main] init error: $e');
-    }
+  // On lance le bootstrap une fois que l'arbre est monté
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _bootstrap(userProvider);
   });
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -361,19 +430,20 @@ class MyApp extends StatelessWidget {
         navigatorKey: navKey,
         debugShowCheckedModeBanner: false,
         onGenerateInitialRoutes: (_) {
+          // WEB → si on a une URL de recovery, on démarre directement sur ResetPasswordPage
           if (kIsWeb && _isRecoveryUrl(Uri.base)) {
             return [
               MaterialPageRoute(
                 settings: const RouteSettings(name: AppRoutes.resetPassword),
                 builder: (_) => const ResetPasswordPage(),
-              )
+              ),
             ];
           }
           return [
             MaterialPageRoute(
               settings: const RouteSettings(name: AppRoutes.splash),
               builder: (_) => const SplashScreen(),
-            )
+            ),
           ];
         },
         onGenerateRoute: AppRoutes.generateRoute,

@@ -75,20 +75,26 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>L’app peut enregistrer des fichiers (images ou PDF) dans votre photothèque.</string>
 
-	<!-- 🎙️ Micro (optionnel, utile pour enregistrement vidéo/audio) -->
+	<!-- 🎙️ Micro -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Le micro est utilisé lors des enregistrements vidéo si nécessaire.</string>
 
-	<!-- 🔔 Notifications Push (Firebase Cloud Messaging) -->
+	<!-- 🔔 Notifications Push -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
-	<key>UIBackgroundModes</key>
+
+	<!-- 🔥 DEEP LINK SONEYA -->
+	<key>CFBundleURLTypes</key>
 	<array>
-		<string>remote-notification</string>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>soneya</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>soneya</string>
+			</array>
+		</dict>
 	</array>
 
-	<!-- ✅ Support du système de scène (iOS 13+) -->
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 </dict>
 </plist>

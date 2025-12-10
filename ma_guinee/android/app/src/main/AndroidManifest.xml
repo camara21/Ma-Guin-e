@@ -12,8 +12,6 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-
-    <!-- Permission indispensable pour Firebase -->
     <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE"/>
 
     <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
@@ -38,19 +36,37 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- Lancement normal Flutter -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- ========================================================= -->
+            <!-- 🔥 DEEP LINK SONEYA POUR RESET PASSWORD SUPABASE          -->
+            <!-- ========================================================= -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!-- URL capturée : soneya://auth/reset_password -->
+                <data
+                    android:scheme="soneya"
+                    android:host="auth"
+                    android:pathPrefix="/reset_password" />
+            </intent-filter>
+            <!-- ========================================================= -->
+
         </activity>
 
-        <!-- CANAL PAR DÉFAUT DES NOTIFICATIONS FCM -->
+        <!-- CANAL NOTIFS FCM -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="messages_channel" />
 
-        <!-- FirebaseMessagingService OBLIGATOIRE -->
+        <!-- Firebase Messaging Service -->
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">
