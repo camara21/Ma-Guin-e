@@ -31,7 +31,7 @@ String frMessageFromError(Object error, [StackTrace? _]) {
     return "Réponse invalide du serveur. Réessaie plus tard.";
   }
 
-  // --- Cas classiques Flutter/Dart
+  // --- Cas classiques Flutter/Dart (analyse du texte brut)
   final msg = error.toString().toLowerCase();
 
   // timeouts
@@ -63,7 +63,7 @@ String frMessageFromError(Object error, [StackTrace? _]) {
     return "Erreur serveur (500). Réessaie plus tard.";
   }
 
-  // fallback
+  // fallback global
   if (kDebugMode) {
     // En dev on garde l’info brute pour le debug
     return "Erreur : $error";
@@ -73,6 +73,19 @@ String frMessageFromError(Object error, [StackTrace? _]) {
 
 String _frHttp(String code, String message) {
   final m = message.toLowerCase();
+
+  // RLS / permissions
+  if (m.contains('row-level security') || m.contains('rls')) {
+    return "Accès refusé par la politique de sécurité.";
+  }
+
+  // Contrainte d'unicité (duplicate key)
+  if (m.contains('duplicate key') &&
+      m.contains('unique') &&
+      m.contains('constraint')) {
+    return "Cet enregistrement existe déjà.";
+  }
+
   if (code == '404' || m.contains('not found')) {
     return "Ressource introuvable (404).";
   }
@@ -85,15 +98,29 @@ String _frHttp(String code, String message) {
   if (code == '500' || m.contains('server error')) {
     return "Erreur serveur (500). Réessaie plus tard.";
   }
-  return "Erreur : $message";
+
+  // fallback HTTP
+  if (kDebugMode) {
+    return "Erreur HTTP : $message";
+  }
+  return "Une erreur serveur est survenue. Réessaie.";
 }
 
 String _frAuth(String raw) {
   final msg = raw.toLowerCase().trim();
 
+  // ===================== CAS SPÉCIFIQUES =====================
+
+  // --- Mot de passe identique à l'ancien ---
+  if (msg.contains('new password should be different from the old password') ||
+      (msg.contains('new password') && msg.contains('old password'))) {
+    return "Le nouveau mot de passe doit être différent de l'ancien.";
+  }
+
   // --- Identifiants invalides / mauvais mot de passe ---
   if (msg.contains('invalid login') ||
       msg.contains('invalid credentials') ||
+      msg.contains('invalid email or password') ||
       msg.contains('invalid email or password')) {
     return "E-mail ou mot de passe incorrect.";
   }
@@ -116,12 +143,15 @@ String _frAuth(String raw) {
   }
 
   // --- Adresse e-mail invalide ---
-  if (msg.contains('invalid email') || msg.contains('email is not valid')) {
+  if (msg.contains('invalid email') ||
+      msg.contains('email is not valid') ||
+      (msg.contains('email') && msg.contains('invalid'))) {
     return "Adresse e-mail invalide.";
   }
 
-  // --- Mots de passe qui ne correspondent pas (reset password) ---
-  if (msg.contains('passwords do not match')) {
+  // --- Mots de passe qui ne correspondent pas ---
+  if (msg.contains('passwords do not match') ||
+      msg.contains('confirm password') && msg.contains('match')) {
     return "Les mots de passe ne correspondent pas.";
   }
 
@@ -129,13 +159,26 @@ String _frAuth(String raw) {
   if (msg.contains('password') &&
       (msg.contains('too short') ||
           msg.contains('at least') ||
+          msg.contains('6 characters') ||
           msg.contains('length'))) {
     return "Mot de passe trop court. Il doit contenir au moins 6 caractères.";
   }
 
-  // --- Mot de passe trop faible ---
+  // --- Mot de passe trop faible / complexité ---
   if (msg.contains('password') && msg.contains('weak')) {
     return "Mot de passe trop faible.";
+  }
+  if (msg.contains('password') &&
+      (msg.contains('one number') ||
+          msg.contains('uppercase') ||
+          msg.contains('lowercase') ||
+          msg.contains('special character'))) {
+    return "Mot de passe trop faible. Utilise des lettres, chiffres et symboles.";
+  }
+
+  // --- Mot de passe déjà utilisé récemment ---
+  if (msg.contains('previously used password')) {
+    return "Tu as déjà utilisé ce mot de passe récemment. Choisis-en un autre.";
   }
 
   // --- Session / token expiré ---
@@ -148,8 +191,19 @@ String _frAuth(String raw) {
 
   // --- Lien de reset / magic link expiré ---
   if (msg.contains('link is no longer valid') ||
-      msg.contains('link has expired')) {
+      msg.contains('link has expired') ||
+      (msg.contains('recovery') && msg.contains('expired'))) {
     return "Lien expiré. Relance la procédure.";
+  }
+
+  // --- OTP / code de vérification ---
+  if (msg.contains('otp') && msg.contains('expired')) {
+    return "Code expiré. Demande un nouveau code.";
+  }
+  if (msg.contains('invalid otp') ||
+      msg.contains('invalid code') ||
+      msg.contains('incorrect code')) {
+    return "Code de vérification invalide.";
   }
 
   // --- Trop de tentatives (rate limit) ---
@@ -159,7 +213,20 @@ String _frAuth(String raw) {
     return "Trop de tentatives. Réessaie un peu plus tard.";
   }
 
-  // fallback : première lettre en majuscule + point
-  final cleaned = raw.endsWith('.') ? raw : '$raw.';
-  return cleaned[0].toUpperCase() + cleaned.substring(1);
+  // --- Actions non autorisées / RLS ---
+  if (msg.contains('not allowed') ||
+      msg.contains('permission denied') ||
+      msg.contains('insufficient permissions')) {
+    return "Action non autorisée.";
+  }
+
+  // ===================== FALLBACK AUTH =====================
+
+  if (kDebugMode) {
+    // En dev: on garde le message original pour t'aider à mapper les nouveaux cas
+    return "Erreur d'authentification : $raw";
+  }
+
+  // En prod: message générique 100% FR, pas d'anglais brut
+  return "Une erreur d'authentification est survenue. Réessaie.";
 }
