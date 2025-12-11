@@ -1,11 +1,12 @@
 // lib/utils/error_messages_fr.dart
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Renvoie un message d'erreur en FR prêt à afficher à l'utilisateur.
-/// Tu peux l'utiliser partout: SnackBar, Dialog, etc.
+/// À utiliser partout : SnackBar, Dialog, etc.
 String frMessageFromError(Object error, [StackTrace? _]) {
   // --- Cas Supabase (Auth/API)
   if (error is AuthException) {
@@ -22,6 +23,9 @@ String frMessageFromError(Object error, [StackTrace? _]) {
   }
   if (error is SocketException) {
     return "Aucune connexion Internet. Vérifie le réseau puis réessaie.";
+  }
+  if (error is TimeoutException) {
+    return "Délai dépassé. Le serveur ne répond pas.";
   }
   if (error is FormatException) {
     return "Réponse invalide du serveur. Réessaie plus tard.";
@@ -87,37 +91,72 @@ String _frHttp(String code, String message) {
 String _frAuth(String raw) {
   final msg = raw.toLowerCase().trim();
 
-  // messages Supabase fréquents
-  if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
-    return "Identifiants invalides.";
+  // --- Identifiants invalides / mauvais mot de passe ---
+  if (msg.contains('invalid login') ||
+      msg.contains('invalid credentials') ||
+      msg.contains('invalid email or password')) {
+    return "E-mail ou mot de passe incorrect.";
   }
-  if (msg.contains('email not confirmed') || msg.contains('email not confirmed')) {
+
+  // --- E-mail non confirmé ---
+  if (msg.contains('email not confirmed')) {
     return "E-mail non confirmé. Vérifie ta boîte mail.";
   }
+
+  // --- Utilisateur déjà existant ---
   if (msg.contains('user already registered') ||
-      msg.contains('already registered')) {
-    return "Cet utilisateur existe déjà.";
+      msg.contains('already registered') ||
+      msg.contains('user already exists')) {
+    return "Un compte existe déjà avec cette adresse e-mail.";
   }
+
+  // --- Utilisateur introuvable ---
   if (msg.contains('user not found')) {
     return "Utilisateur introuvable.";
   }
-  if (msg.contains('invalid email') || msg.contains('email')) {
+
+  // --- Adresse e-mail invalide ---
+  if (msg.contains('invalid email') || msg.contains('email is not valid')) {
     return "Adresse e-mail invalide.";
   }
+
+  // --- Mots de passe qui ne correspondent pas (reset password) ---
+  if (msg.contains('passwords do not match')) {
+    return "Les mots de passe ne correspondent pas.";
+  }
+
+  // --- Mot de passe trop court / longueur ---
+  if (msg.contains('password') &&
+      (msg.contains('too short') ||
+          msg.contains('at least') ||
+          msg.contains('length'))) {
+    return "Mot de passe trop court. Il doit contenir au moins 6 caractères.";
+  }
+
+  // --- Mot de passe trop faible ---
   if (msg.contains('password') && msg.contains('weak')) {
     return "Mot de passe trop faible.";
   }
-  if (msg.contains('password') && msg.contains('length')) {
-    return "Mot de passe trop court.";
-  }
-  if (msg.contains('token') && msg.contains('expired')) {
-    return "Lien expiré. Relance la procédure.";
-  }
-  if (msg.contains('refresh token') && msg.contains('not found')) {
+
+  // --- Session / token expiré ---
+  if (msg.contains('token has expired') ||
+      msg.contains('jwt expired') ||
+      (msg.contains('session') && msg.contains('expire')) ||
+      (msg.contains('refresh token') && msg.contains('not found'))) {
     return "Session expirée. Connecte-toi de nouveau.";
   }
-  if (msg.contains('rate limit')) {
-    return "Trop de tentatives. Réessaie plus tard.";
+
+  // --- Lien de reset / magic link expiré ---
+  if (msg.contains('link is no longer valid') ||
+      msg.contains('link has expired')) {
+    return "Lien expiré. Relance la procédure.";
+  }
+
+  // --- Trop de tentatives (rate limit) ---
+  if (msg.contains('rate limit') ||
+      msg.contains('too many requests') ||
+      msg.contains('for security purposes, you can only request this after')) {
+    return "Trop de tentatives. Réessaie un peu plus tard.";
   }
 
   // fallback : première lettre en majuscule + point

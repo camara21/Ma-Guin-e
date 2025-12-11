@@ -316,7 +316,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
 
   /// ===========================================================
   /// Mise à jour du mot de passe
-  ///  -> après succès, redirection DIRECTE vers l’écran /login
+  ///  -> après succès, redirection DIRECTE vers la home (/main)
+  ///     sans passer par la page de login
   /// ===========================================================
   Future<void> _updatePassword() async {
     if (!_formKey.currentState!.validate()) return;
@@ -325,26 +326,29 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     try {
       final pwd = _pwd1Ctrl.text.trim();
 
+      // 1) Mise à jour du mot de passe via la session "recovery"
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: pwd),
       );
 
       if (!mounted) return;
+
+      // 2) Message d’info en FR
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Mot de passe mis à jour. Connecte-toi avec ton nouveau mot de passe.',
+            'Mot de passe mis à jour. Tu es maintenant connecté avec ton nouveau mot de passe.',
           ),
         ),
       );
 
-      // 🔴 IMPORTANT :
-      // On ne dépend plus du listener global pour la navigation.
-      // On envoie directement vers la page de connexion.
-      //
-      // La route '/login' correspond à AppRoutes.login.
+      // 3) 👉 Nouveau comportement :
+      //    - on NE fait PAS signOut
+      //    - on NE va PAS sur /login
+      //    - on envoie directement vers la navigation principale (/main)
+      //    - on vide la stack pour éviter de revenir sur l’écran de reset
       Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login',
+        '/main', // correspond à AppRoutes.mainNav
         (_) => false,
       );
     } catch (e, st) {

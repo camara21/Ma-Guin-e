@@ -1,5 +1,4 @@
 // lib/routes.dart — Routes + RecoveryGuard
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -547,8 +546,19 @@ class AppRoutes {
         : <String, dynamic>{};
   }
 
-  static MaterialPageRoute _page(Widget child) =>
-      MaterialPageRoute(builder: (_) => child);
+  // ✅ Transitions plus fluides (fade) pour toutes les pages "normales"
+  static PageRoute _page(Widget child) {
+    return PageRouteBuilder(
+      pageBuilder: (_, __, ___) => child,
+      transitionsBuilder: (_, animation, __, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 220),
+    );
+  }
 
   static MaterialPageRoute _error(String msg) => MaterialPageRoute(
         builder: (_) => Scaffold(
@@ -557,6 +567,7 @@ class AppRoutes {
         ),
       );
 
+  /// ✅ Gate utilisateur simplifié : plus de blocage lié à RecoveryGuard.
   static MaterialPageRoute _userProtected(
     Widget Function(UtilisateurModel) builder,
   ) {
@@ -565,19 +576,17 @@ class AppRoutes {
         final user =
             Provider.of<UserProvider>(context, listen: false).utilisateur;
 
-        if (user == null && RecoveryGuard.isActive) {
-          // Pendant le reset: ne pas pousser /login
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
         if (user == null) {
+          // Utilisateur non connecté → redirection propre vers /login
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (ModalRoute.of(context)?.settings.name != login) {
-              Navigator.pushNamed(context, login);
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                login,
+                (route) => false,
+              );
             }
           });
+
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
