@@ -1,11 +1,6 @@
 // lib/services/employeur_service.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Service Employeur prÃ©Â©Ã†â€™Âªt pour prod.
-/// SchÃ©Â©Ã†â€™Â©ma attendu:
-/// - Table public.employeurs { id uuid PK, proprietaire uuid FK->auth.users, nom text, ... }
-/// - Index unique: CREATE UNIQUE INDEX ON public.employeurs(proprietaire);
-/// - RLS: SELECT/INSERT/UPDATE pour authenticated oÃ©Â©Ã†â€™Â¹ proprietaire = auth.uid()
 class EmployeurService {
   EmployeurService({SupabaseClient? client})
       : _sb = client ?? Supabase.instance.client;
@@ -14,11 +9,11 @@ class EmployeurService {
 
   String _currentUserIdOrThrow() {
     final uid = _sb.auth.currentUser?.id;
-    if (uid == null) throw StateError('Utilisateur non connectÃ©Â©Ã†â€™Â©');
+    if (uid == null) throw StateError('Utilisateur non connecté');
     return uid;
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Lecture Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ===================== Lecture / consultation =====================
 
   /// ID de l'employeur de l'utilisateur courant (ou null).
   Future<String?> getEmployeurId() async {
@@ -31,30 +26,31 @@ class EmployeurService {
           .maybeSingle();
       return row == null ? null : (row['id'] as String);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  /// Ligne employeur complÃ©Â©Ã†â€™Â¨te (ou null).
+  /// Ligne employeur complète (ou null).
   Future<Map<String, dynamic>?> getEmployeurRow() async {
     try {
       final uid = _currentUserIdOrThrow();
       final row = await _sb
           .from('employeurs')
-          .select() // <- pas de gÃ©Â©Ã†â€™Â©nÃ©Â©Ã†â€™Â©rique
+          .select() // <- pas de générique
           .eq('proprietaire', uid)
           .maybeSingle();
       return row == null ? null : Map<String, dynamic>.from(row as Map);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Indique si l'utilisateur courant a déjà un employeur.
   Future<bool> isEmployeur() async => (await getEmployeurId()) != null;
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ CrÃ©Â©Ã†â€™Â©ation / Upsert Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ===================== Création / Upsert =====================
 
-  /// CrÃ©Â©Ã†â€™Â©e (si absent) ou rÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â¨re l'employeur, et retourne son **id**.
+  /// Crée (si absent) ou récupère l'employeur, et retourne son **id**.
   Future<String> ensureEmployeurId({
     required String nom,
     String? telephone,
@@ -66,6 +62,7 @@ class EmployeurService {
     try {
       final uid = _currentUserIdOrThrow();
 
+      // Si un employeur existe déjà pour cet utilisateur, on renvoie son id.
       final exist = await getEmployeurId();
       if (exist != null) return exist;
 
@@ -86,15 +83,15 @@ class EmployeurService {
           .from('employeurs')
           .upsert(payload, onConflict: 'proprietaire')
           .select('id')
-          .single(); // renvoie l'id mÃ©Â©Ã†â€™Âªme si update
+          .single(); // renvoie l'id même en cas de mise à jour
 
       return row['id'] as String;
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  /// Upsert et renvoie la ligne complÃ©Â©Ã†â€™Â¨te.
+  /// Upsert et renvoie la ligne complète de l'employeur.
   Future<Map<String, dynamic>> upsertEmployeur({
     required String nom,
     String? telephone,
@@ -121,22 +118,22 @@ class EmployeurService {
       final row = await _sb
           .from('employeurs')
           .upsert(payload, onConflict: 'proprietaire')
-          .select() // <- pas de gÃ©Â©Ã†â€™Â©nÃ©Â©Ã†â€™Â©rique
+          .select() // <- pas de générique
           .single();
 
       return Map<String, dynamic>.from(row as Map);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Mise Ã©Â©Ã†â€™  jour partielle Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ===================== Mise à jour partielle =====================
 
-  /// Met Ã©Â©Ã†â€™  jour des champs de l'employeur et renvoie la ligne.
+  /// Met à jour certains champs de l'employeur et renvoie la ligne.
   Future<Map<String, dynamic>> updateEmployeur(
       Map<String, dynamic> changes) async {
     if (changes.isEmpty) {
-      throw ArgumentError('Aucun champ Ã©Â©Ã†â€™  mettre Ã©Â©Ã†â€™  jour');
+      throw ArgumentError('Aucun champ à mettre à jour');
     }
     try {
       final uid = _currentUserIdOrThrow();
@@ -144,19 +141,22 @@ class EmployeurService {
           .from('employeurs')
           .update(changes)
           .eq('proprietaire', uid)
-          .select() // <- pas de gÃ©Â©Ã†â€™Â©nÃ©Â©Ã†â€™Â©rique
+          .select() // <- pas de générique
           .single();
 
       return Map<String, dynamic>.from(row as Map);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  // Helpers pratiques
+  // ===================== Helpers pratiques =====================
+
+  /// Met à jour uniquement le nom de l'employeur.
   Future<Map<String, dynamic>> updateNom(String nom) =>
       updateEmployeur({'nom': nom});
 
+  /// Met à jour les coordonnées (téléphone, email, ville, commune).
   Future<Map<String, dynamic>> updateCoordonnees({
     String? telephone,
     String? email,
@@ -170,7 +170,7 @@ class EmployeurService {
         if (commune != null) 'commune': commune,
       });
 
-  /// S'assure qu'un employeur existe (crÃ©Â©Ã†â€™Â©ation si besoin) et renvoie son id.
+  /// S'assure qu'un employeur existe (création si besoin) et renvoie son id.
   Future<String> assertEmployeurExists({required String nomParDefaut}) =>
       ensureEmployeurId(nom: nomParDefaut);
 }

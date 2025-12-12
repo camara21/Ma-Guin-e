@@ -50,8 +50,11 @@ class AnnonceCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              "${annonce.ville} Ã©Â©Â¢â‚¬Å¡Â¬Â¢ ${annonce.categorie}",
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              "${annonce.ville} • ${annonce.categorie}",
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
             ),
           ],
         ),

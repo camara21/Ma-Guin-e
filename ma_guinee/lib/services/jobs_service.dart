@@ -6,7 +6,8 @@ import '../models/job_models.dart';
 class JobsService {
   final sb = Supabase.instance.client;
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ CANDIDAT Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // =============================== CANDIDAT ===============================
+
   Future<List<EmploiModel>> chercher({
     String? q,
     String? ville,
@@ -18,6 +19,8 @@ class JobsService {
   }) async {
     try {
       final term = (q ?? '').trim();
+
+      // Protection contre les caractères spéciaux dans LIKE
       final pattern = term.isEmpty
           ? null
           : '%${term.replaceAll('%', r'\%').replaceAll(',', r'\,')}%';
@@ -40,22 +43,26 @@ class JobsService {
           .toList()
           .cast<EmploiModel>();
     } catch (_) {
-      return <EmploiModel>[];
+      return <EmploiModel>[]; // En cas d’erreur, renvoyer une liste vide
     }
   }
 
+  /// Récupère une offre d’emploi par ID
   Future<EmploiModel?> emploiById(String id) async {
     final r = await sb.from('emplois').select().eq('id', id).maybeSingle();
     if (r == null) return null;
     return EmploiModel.from(Map<String, dynamic>.from(r));
   }
 
+  /// Récupère les données de l’employeur lié à une offre
   Future<Map<String, dynamic>?> employeur(String id) async {
     final r = await sb.from('employeurs').select().eq('id', id).maybeSingle();
     return r == null ? null : Map<String, dynamic>.from(r);
   }
 
-  // ----- Favoris (candidat)
+  // ---------------------------- Favoris candidat ----------------------------
+
+  /// Ajoute ou retire un emploi des favoris
   Future<void> toggleFavori(String emploiId, bool save) async {
     if (save) {
       await sb.from('emplois_enregistres').upsert({'emploi_id': emploiId});
@@ -64,6 +71,7 @@ class JobsService {
     }
   }
 
+  /// Vérifie si un emploi est enregistré comme favori
   Future<bool> isFavori(String emploiId) async {
     final r = await sb
         .from('emplois_enregistres')
@@ -73,7 +81,7 @@ class JobsService {
     return r != null;
   }
 
-  /// Renvoie lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢ensemble des IDs dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢offres enregistrÃ©Â©Ã†â€™Â©es par lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢utilisateur courant.
+  /// Renvoie tous les IDs des offres enregistrées par l’utilisateur
   Future<Set<String>> favorisIds() async {
     final List rows = await sb.from('emplois_enregistres').select('emploi_id');
     return rows
@@ -82,6 +90,7 @@ class JobsService {
         .toSet();
   }
 
+  /// Renvoie la candidature de l’utilisateur pour une offre spécifique
   Future<CandidatureModel?> maCandidature(String emploiId) async {
     final r = await sb
         .from('candidatures')
@@ -92,8 +101,7 @@ class JobsService {
     return CandidatureModel.from(Map<String, dynamic>.from(r));
   }
 
-  /// DÃ©Â©Ã†â€™Â©pose une candidature. Respecte la policy:
-  /// INSERT CHECK (candidat = auth.uid()).
+  /// Dépose une candidature (respecte la policy : candidat = auth.uid())
   Future<void> postuler({
     required String emploiId,
     String? cvUrl,
@@ -104,11 +112,11 @@ class JobsService {
     String? prenom,
   }) async {
     final uid = sb.auth.currentUser?.id;
-    if (uid == null) throw 'Utilisateur non connectÃ©Â©Ã†â€™Â©';
+    if (uid == null) throw 'Utilisateur non connecté';
 
     await sb.from('candidatures').insert({
       'emploi_id': emploiId,
-      'candidat': uid, // important pour la RLS si pas de default
+      'candidat': uid,
       'cv_url': cvUrl,
       'lettre': lettre,
       'telephone': telephone,
@@ -118,21 +126,24 @@ class JobsService {
     });
   }
 
-  /// Upload du CV (PDF) dans le bucket privÃ©Â©Ã†â€™Â© "cv" Ã©Â©Â¢â€šÂ¬ â€šÂ¬â€žÂ¢ renvoie le path privÃ©Â©Ã†â€™Â©.
+  /// Upload du CV PDF dans le bucket privé "cv"
   Future<String> uploadCv(Uint8List bytes, {String filename = 'cv.pdf'}) async {
     final uid = sb.auth.currentUser?.id;
-    if (uid == null) throw 'Utilisateur non connectÃ©Â©Ã†â€™Â©';
+    if (uid == null) throw 'Utilisateur non connecté';
     final path = '$uid/$filename';
+
     await sb.storage.from('cv').uploadBinary(
           path,
           bytes,
           fileOptions: const FileOptions(upsert: true),
         );
+
     return path;
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ EMPLOYEUR Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
-  /// Liste des offres de lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢employeur courant (RPC basÃ©Â©Ã†â€™Â©e sur auth.uid()).
+  // ============================= EMPLOYEUR =============================
+
+  /// Liste les offres de l’employeur courant (via RPC mes_offres_employeur)
   Future<List<EmploiModel>> mesOffres() async {
     final rows = await sb.rpc('mes_offres_employeur');
     final list = (rows as List?) ?? const [];
@@ -141,24 +152,28 @@ class JobsService {
         .toList();
   }
 
+  /// Crée une nouvelle offre d’emploi
   Future<String> creerOffre(Map<String, dynamic> payload) async {
     final r = await sb.from('emplois').insert(payload).select('id').single();
     return (r['id'] as String);
   }
 
+  /// Met à jour une offre existante
   Future<void> majOffre(String id, Map<String, dynamic> payload) async {
     await sb.from('emplois').update(payload).eq('id', id);
   }
 
-  /// Suppression dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢une offre (autorisÃ©Â©Ã†â€™Â© par la policy DELETE propriÃ©Â©Ã†â€™Â©taire).
+  /// Supprime une offre (policy DELETE propriétaire requise)
   Future<void> supprimerOffre(String id) async {
     await sb.from('emplois').delete().eq('id', id).select('id').maybeSingle();
   }
 
+  /// Active ou désactive une offre (champ actif)
   Future<void> setActif(String id, bool actif) async {
     await sb.from('emplois').update({'actif': actif}).eq('id', id);
   }
 
+  /// Liste les candidatures reçues pour une offre
   Future<List<Map<String, dynamic>>> candidaturesRecues(String emploiId) async {
     final List data = await sb
         .from('candidatures')
@@ -169,12 +184,13 @@ class JobsService {
     return data.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
+  /// Change le statut d’une candidature (ex: accepté / refusé / en attente)
   Future<void> setStatutCandidature(String candId, String statut) async {
     await sb.from('candidatures').update({'statut': statut}).eq('id', candId);
   }
 }
 
-/// Petite extension pratique pour appliquer un filtre si la valeur n'est pas nulle
+/// Extension pratique qui applique un filtre uniquement si la valeur n’est pas nulle
 extension _FilterIfNotNull on PostgrestFilterBuilder {
   PostgrestFilterBuilder ifNotNull<T>(
     T? value,

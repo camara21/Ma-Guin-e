@@ -13,6 +13,7 @@ class PrestatairesProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
+  /// Charger tous les prestataires depuis la base
   Future<void> loadPrestataires() async {
     _loading = true;
     _error = null;
@@ -29,20 +30,20 @@ class PrestatairesProvider extends ChangeNotifier {
           .toList();
     } catch (e, st) {
       _error = e.toString();
-      debugPrint('loadPrestataires error: $e\n$st');
+      debugPrint('Erreur loadPrestataires : $e\n$st');
     } finally {
       _loading = false;
       notifyListeners();
     }
   }
 
-  /// Filtre par mÃ©Â©Ã†â€™Â©tier exact (insensible Ã©Â©Ã†â€™  la casse)
+  /// Filtrer par métier exact (insensible à la casse)
   List<PrestataireModel> byMetier(String metier) {
     final m = metier.toLowerCase();
     return _prestataires.where((p) => p.metier.toLowerCase() == m).toList();
   }
 
-  /// Recherche global
+  /// Recherche globale (métier, catégorie, ville)
   List<PrestataireModel> search(String q) {
     final s = q.toLowerCase();
     return _prestataires.where((p) {

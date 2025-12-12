@@ -43,6 +43,11 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
   bool _fav = false;
 
+  // Recommandations
+  bool _loadingReco = false;
+  String? _recoError;
+  final List<_RecoBien> _reco = [];
+
   // Compose (message)
   final _msgCtrl = TextEditingController();
   bool _sending = false;
@@ -87,7 +92,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   Future<void> _load() async {
-    // PLUS DE LOADER — affichage immédiat
+    // PAS DE LOADER BLOQUANT — affichage immédiat
     setState(() {
       _loading = true;
       _error = null;
@@ -114,6 +119,19 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         _fav = fav;
         _loading = false; // Mais pas de spinner
       });
+
+      // ✅ Charge les recommandations après affichage (corrige l’erreur)
+      if (data != null) {
+        _loadRecommendations(data);
+      } else {
+        if (mounted) {
+          setState(() {
+            _reco.clear();
+            _recoError = null;
+            _loadingReco = false;
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -278,7 +296,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   }
 
   /// Envoi du 1er message LOGEMENT via MessageService
-  /// => insert + push FCM dès le premier coup
   Future<void> _sendMessage({bool closeAfter = false}) async {
     final b = _bien;
     if (b == null) return;
@@ -295,7 +312,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
     setState(() => _sending = true);
     try {
-      // IMPORTANT : on passe par MessageService pour déclencher la function push-send
       await _msgSvc.sendMessageToLogement(
         senderId: me,
         receiverId: b.userId,
@@ -313,7 +329,6 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
         await Future.delayed(const Duration(milliseconds: 120));
       }
 
-      // On ouvre ensuite le chat logement (MessageChatPage logement-only)
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -376,14 +391,145 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
     }
   }
 
+  // ✅ Format prix PRO: . tous les 3 chiffres + million/milliard (pluriel)
   String _formatPrice(num? value, LogementMode mode) {
     if (value == null) return 'Prix à discuter';
-    if (value >= 1000000) {
-      final m = (value / 1000000).toStringAsFixed(1).replaceAll('.0', '');
-      return mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
+
+    final suffix = mode == LogementMode.achat ? 'GNF' : 'GNF / mois';
+    final v = value.isFinite ? value : 0;
+    final abs = v.abs();
+
+    if (abs >= 1000000000) {
+      final b = v / 1000000000;
+      final s = _trimDec(b, 1);
+      final unit = (b.abs() == 1) ? 'milliard' : 'milliards';
+      return '$s $unit $suffix';
     }
-    final s = value.toStringAsFixed(0);
-    return mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
+
+    if (abs >= 1000000) {
+      final m = v / 1000000;
+      final s = _trimDec(m, 1);
+      final unit = (m.abs() == 1) ? 'million' : 'millions';
+      return '$s $unit $suffix';
+    }
+
+    return '${_withDots(v.round())} $suffix';
+  }
+
+  static String _trimDec(num x, int decimals) {
+    final s = x.toStringAsFixed(decimals);
+    if (s.endsWith('.0')) return s.substring(0, s.length - 2);
+    return s;
+  }
+
+  static String _withDots(int n) {
+    final neg = n < 0;
+    var s = n.abs().toString();
+    final out = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final left = s.length - i;
+      out.write(s[i]);
+      if (left > 1 && left % 3 == 1) out.write('.');
+    }
+    return neg ? '-${out.toString()}' : out.toString();
+  }
+
+  // ======= RECOMMANDATIONS =======
+  Future<void> _loadRecommendations(LogementModel b) async {
+    final ville = (b.ville ?? '').trim();
+    if (ville.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _reco.clear();
+        _recoError = null;
+        _loadingReco = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _loadingReco = true;
+      _recoError = null;
+      _reco.clear();
+    });
+
+    try {
+      final rows = await _sb
+          .from('logements')
+          .select(
+              'id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
+          .eq('ville', ville)
+          .neq('id', b.id)
+          .order('cree_le', ascending: false)
+          .limit(10);
+
+      final list = <_RecoBien>[];
+      if (rows is List) {
+        for (final r in rows) {
+          if (r is! Map) continue;
+          final m = Map<String, dynamic>.from(r);
+
+          final String id = (m['id'] ?? '').toString();
+          if (id.trim().isEmpty) continue;
+
+          final String titre = (m['titre'] ?? '').toString();
+          final String modeRaw = (m['mode'] ?? '').toString().toLowerCase();
+          final String catRaw = (m['categorie'] ?? '').toString().toLowerCase();
+
+          final num? prix = (m['prix_gnf'] is num)
+              ? (m['prix_gnf'] as num)
+              : num.tryParse((m['prix_gnf'] ?? '').toString());
+          final String? commune = (m['commune'] ?? '').toString().trim().isEmpty
+              ? null
+              : (m['commune'] ?? '').toString().trim();
+          final String? villeR = (m['ville'] ?? '').toString().trim().isEmpty
+              ? null
+              : (m['ville'] ?? '').toString().trim();
+
+          String? photo;
+          final lp = m['logement_photos'];
+          if (lp is List && lp.isNotEmpty) {
+            final items = lp
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+            items.sort((a, b) {
+              final pa = (a['position'] as num?)?.toInt() ?? 0;
+              final pb = (b['position'] as num?)?.toInt() ?? 0;
+              return pa.compareTo(pb);
+            });
+            final u = (items.first['url'] ?? '').toString().trim();
+            if (u.isNotEmpty) photo = u;
+          }
+
+          list.add(_RecoBien(
+            id: id,
+            titre: titre,
+            modeRaw: modeRaw,
+            categorieRaw: catRaw,
+            prixGnf: prix,
+            ville: villeR,
+            commune: commune,
+            imageUrl: photo,
+          ));
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _reco
+          ..clear()
+          ..addAll(list);
+        _loadingReco = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _recoError = e.toString();
+        _loadingReco = false;
+      });
+    }
   }
 
   // ======= PARTAGER & SIGNALER =======
@@ -480,8 +626,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: _sendingReport
                       ? null
@@ -595,10 +740,8 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
           ),
         ],
       ),
-
-      // === SUPPRESSION DU SPINNER ===
+      // pas de spinner
       body: _error != null ? _errorBox(_error!) : _buildDetailInstant(b),
-
       floatingActionButton: (_error != null || !_isOwner)
           ? null
           : FloatingActionButton.extended(
@@ -614,14 +757,12 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
   // === Page instantanée ===
   Widget _buildDetailInstant(LogementModel? b) {
     if (b == null) {
-      // page vide instantanée sans spinner
       return ListView(
         padding: EdgeInsets.zero,
         children: [
           AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(color: Colors.grey.shade200),
-          ),
+              aspectRatio: 16 / 9,
+              child: Container(color: Colors.grey.shade200)),
         ],
       );
     }
@@ -708,6 +849,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                             : b.description!.trim(),
                         style: const TextStyle(fontSize: 14, height: 1.4),
                       ),
+
+                      // ✅ Recommandations sous la description
+                      _recommendationsBlock(b),
+                      const SizedBox(height: 18),
                     ],
                   ),
                 ),
@@ -739,8 +884,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                         side: BorderSide(color: _accent),
                         foregroundColor: _accent,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: _openMessages,
                       icon: const Icon(Icons.forum_outlined),
@@ -755,8 +899,7 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: _callOwner,
                       icon: const Icon(Icons.call),
@@ -764,6 +907,90 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _recommendationsBlock(LogementModel b) {
+    final ville = (b.ville ?? '').trim();
+    if (ville.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 18),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                "Autres logements à $ville",
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (_loadingReco)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_recoError != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF2F4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFFCCD6)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Impossible de charger les recommandations.",
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final bb = _bien;
+                    if (bb != null) _loadRecommendations(bb);
+                  },
+                  child: const Text("Réessayer"),
+                ),
+              ],
+            ),
+          )
+        else if (!_loadingReco && _reco.isEmpty)
+          const Text("Aucune recommandation pour le moment.",
+              style: TextStyle(color: Colors.black54))
+        else
+          SizedBox(
+            height: 200,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _reco.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => _RecoCard(
+                item: _reco[i],
+                accent: _accent,
+                formatPrice: (p, isAchat) => _formatPrice(
+                  p,
+                  isAchat ? LogementMode.achat : LogementMode.location,
+                ),
+                onTap: () {
+                  Navigator.pushNamed(context, AppRoutes.logementDetail,
+                      arguments: _reco[i].id);
+                },
               ),
             ),
           ),
@@ -880,9 +1107,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
                       photos[i],
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Icon(
-                          Icons.broken_image_outlined,
-                          size: 80,
-                          color: Colors.white54),
+                        Icons.broken_image_outlined,
+                        size: 80,
+                        color: Colors.white54,
+                      ),
                     ),
                   ),
                 ),
@@ -983,9 +1211,10 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
               Text(msg, textAlign: TextAlign.center),
               const SizedBox(height: 10),
               ElevatedButton.icon(
-                  onPressed: _load,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text("Réessayer")),
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Réessayer"),
+              ),
             ],
           ),
         ),
@@ -993,4 +1222,212 @@ class _LogementDetailPageState extends State<LogementDetailPage> {
 
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+}
+
+// ===================== MODELES UI RECO =====================
+
+class _RecoBien {
+  final String id;
+  final String titre;
+  final String modeRaw; // 'achat' | 'location'
+  final String categorieRaw;
+  final num? prixGnf;
+  final String? ville;
+  final String? commune;
+  final String? imageUrl;
+
+  const _RecoBien({
+    required this.id,
+    required this.titre,
+    required this.modeRaw,
+    required this.categorieRaw,
+    required this.prixGnf,
+    required this.ville,
+    required this.commune,
+    required this.imageUrl,
+  });
+
+  bool get isAchat => modeRaw.toLowerCase() == 'achat';
+
+  String get modeTxt => isAchat ? 'Achat' : 'Location';
+
+  String get catTxt {
+    switch (categorieRaw.toLowerCase()) {
+      case 'maison':
+        return 'Maison';
+      case 'appartement':
+        return 'Appartement';
+      case 'studio':
+        return 'Studio';
+      case 'terrain':
+        return 'Terrain';
+      default:
+        return 'Autres';
+    }
+  }
+
+  String get locTxt {
+    final parts = <String>[];
+    if ((ville ?? '').trim().isNotEmpty) parts.add(ville!.trim());
+    if ((commune ?? '').trim().isNotEmpty) parts.add(commune!.trim());
+    return parts.join(' • ');
+  }
+}
+
+class _RecoCard extends StatelessWidget {
+  final _RecoBien item;
+  final Color accent;
+  final String Function(num? price, bool isAchat) formatPrice;
+  final VoidCallback onTap;
+
+  const _RecoCard({
+    required this.item,
+    required this.accent,
+    required this.formatPrice,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final price = formatPrice(item.prixGnf, item.isAchat);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 260,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: item.imageUrl != null && item.imageUrl!.trim().isNotEmpty
+                    ? Image.network(
+                        item.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey.shade200,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.broken_image_outlined,
+                              color: Colors.black26, size: 38),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.home_outlined,
+                            color: Colors.black26, size: 44),
+                      ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(.10),
+                          Colors.black.withOpacity(.20),
+                        ],
+                        stops: const [0.55, 0.82, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 10,
+                top: 10,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(.40),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    item.modeTxt,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: Colors.white.withOpacity(.18), width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.titre,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          height: 1.08,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text(item.catTxt,
+                              style: TextStyle(
+                                  color: Colors.white.withOpacity(.95),
+                                  fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(.10),
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: Colors.white.withOpacity(.22)),
+                        ),
+                        child: Text(
+                          price,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: accent, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      if (item.locTxt.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          item.locTxt,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(.92),
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

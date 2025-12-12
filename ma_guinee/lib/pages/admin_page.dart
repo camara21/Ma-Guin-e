@@ -39,12 +39,12 @@ class Demarche {
 // ================== Données (photos Conakry) ==================
 // Remplace ces URLs par tes propres images (ex: Supabase public URLs)
 final List<String> kConakryPhotos = [
-  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide1.png",
-  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide4.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/v1.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/valide11.png",
   "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide3.png",
   "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide2.png",
   "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide.png",
-  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide5.png",
+  "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide10.png",
   "https://zykbcgqgkdsguirjvwxg.supabase.co/storage/v1/object/public/admin-demarches/Valide9.png",
 ];
 

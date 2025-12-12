@@ -1,6 +1,7 @@
 // lib/pages/logement/logement_home_page.dart
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -38,7 +39,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
   static const int _pageSize = 20;
   final ScrollController _scrollCtrl = ScrollController();
 
-  // Cache global en mémoire (comme AnnoncesPage._cacheAnnonces)
+  // Cache global en mémoire
   static List<LogementModel> _cacheFeed = [];
 
   final List<LogementModel> _feed = [];
@@ -51,11 +52,18 @@ class _LogementHomePageState extends State<LogementHomePage> {
   List<Map<String, dynamic>> _favoris = [];
   List<Map<String, dynamic>> _mine = [];
 
+  // ✅ Favoris (IDs) pour icône coeur sur carte
+  final Set<String> _favIds = <String>{};
+
+  // ✅ FAB “retour en haut”
+  bool _showToTopFab = false;
+  static const double _kFabShowAfterPx = 520;
+
   // -------- Hero / Carousel --------
   final PageController _heroCtrl = PageController();
   int _heroIndex = 0;
   Timer? _heroTimer;
-  int? _pendingHeroIndex; // si on veut changer de page avant l’attache
+  int? _pendingHeroIndex;
 
   static const List<String> _heroImages = [
     'https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=1600&auto=format&fit=crop',
@@ -75,22 +83,17 @@ class _LogementHomePageState extends State<LogementHomePage> {
   void initState() {
     super.initState();
 
-    _attachInfiniteScroll();
-
-    // 1) Essayer de charger depuis le cache disque (Hive) -> ouverture app instantanée
+    _scrollCtrl.addListener(_onScrollChanged);
     _tryLoadFromCache();
 
-    // 2) Si pas de cache disque mais cache mémoire dispo (même session)
     if (_feed.isEmpty && _cacheFeed.isNotEmpty) {
       _feed.addAll(_cacheFeed);
       _loading = false;
       _hasMore = true;
     }
 
-    // 3) Requête réseau en arrière-plan pour rafraîchir les données
     _reloadAll();
 
-    // Auto-slide du hero
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final next = (_heroIndex + 1) % _heroImages.length;
@@ -98,35 +101,51 @@ class _LogementHomePageState extends State<LogementHomePage> {
     });
   }
 
+  void _onScrollChanged() {
+    if (!_scrollCtrl.hasClients) return;
+
+    final px = _scrollCtrl.position.pixels;
+    final shouldShow = px >= _kFabShowAfterPx;
+
+    if (shouldShow != _showToTopFab) {
+      setState(() => _showToTopFab = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   void _tryLoadFromCache() {
     try {
-      if (Hive.isBoxOpen('logement_feed_box')) {
-        final box = Hive.box('logement_feed_box');
-        final cached = box.get('logements') as List?;
-        if (cached != null && cached.isNotEmpty) {
-          final items = cached
-              .whereType<Map>()
-              .map(
-                (e) => LogementModel.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ),
-              )
-              .toList();
+      if (!Hive.isBoxOpen('logement_feed_box')) return;
+      final box = Hive.box('logement_feed_box');
 
-          _cacheFeed = List<LogementModel>.from(items);
+      final cached = box.get('logements');
+      if (cached is! List || cached.isEmpty) return;
 
-          setState(() {
-            _feed
-              ..clear()
-              ..addAll(items);
-            _loading = false;
-            _hasMore = true;
-          });
-        }
-      }
-    } catch (_) {
-      // on ignore, ça ne doit pas casser l'affichage
-    }
+      final items = cached
+          .whereType<Map>()
+          .map((e) => LogementModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false);
+
+      if (items.isEmpty) return;
+
+      _cacheFeed = List<LogementModel>.from(items);
+
+      setState(() {
+        _feed
+          ..clear()
+          ..addAll(items);
+        _loading = false;
+        _hasMore = true;
+      });
+    } catch (_) {}
   }
 
   void _animateHeroTo(int index) {
@@ -141,8 +160,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (_pendingHeroIndex != null && _heroCtrl.hasClients) {
-          _heroCtrl
-              .jumpToPage(_pendingHeroIndex!.clamp(0, _heroImages.length - 1));
+          _heroCtrl.jumpToPage(
+            _pendingHeroIndex!.clamp(0, _heroImages.length - 1),
+          );
           _pendingHeroIndex = null;
         }
       });
@@ -154,28 +174,16 @@ class _LogementHomePageState extends State<LogementHomePage> {
     _heroTimer?.cancel();
     _heroCtrl.dispose();
     _searchCtrl.dispose();
+    _scrollCtrl.removeListener(_onScrollChanged);
     _scrollCtrl.dispose();
     super.dispose();
   }
 
   // =================================== DATA ===================================
 
-  void _attachInfiniteScroll() {
-    _scrollCtrl.addListener(() {
-      if (_scrollCtrl.position.pixels >=
-              _scrollCtrl.position.maxScrollExtent - 300 &&
-          !_loadingMore &&
-          !_loading &&
-          _hasMore) {
-        _loadMore();
-      }
-    });
-  }
-
   Future<void> _reloadAll() async {
     if (!mounted) return;
 
-    // Comme pour Annonces : on ne vide pas la liste si on a déjà des données
     setState(() {
       _loading = true;
       _error = null;
@@ -184,11 +192,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
     try {
       final firstPageF = _fetchPage(offset: 0);
-      final favF = _loadFavoris();
+      final favF = _loadFavoris(); // ✅ met aussi _favIds
       final mineF = _loadMine();
 
       final results = await Future.wait([firstPageF, favF, mineF]);
-
       final pageItems = results[0] as List<LogementModel>;
 
       if (!mounted) return;
@@ -202,10 +209,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
         _loading = false;
       });
 
-      // Met à jour le cache mémoire
       _cacheFeed = List<LogementModel>.from(pageItems);
-
-      // Sauvegarde disque (Hive) pour les prochains lancements
       await _saveFeedToDisk(pageItems);
     } catch (e) {
       if (!mounted) return;
@@ -220,28 +224,28 @@ class _LogementHomePageState extends State<LogementHomePage> {
     try {
       if (!Hive.isBoxOpen('logement_feed_box')) return;
       final box = Hive.box('logement_feed_box');
-      await box.put(
-        'logements',
-        items.map((e) => e.toJson()).toList(),
-      );
-    } catch (_) {
-      // ne casse pas l'UI
-    }
+      await box.put('logements', items.map((e) => e.toJson()).toList());
+    } catch (_) {}
   }
 
   Future<void> _loadMore() async {
-    if (!_hasMore) return;
+    if (_loadingMore || _loading || !_hasMore) return;
+
     setState(() => _loadingMore = true);
     try {
       final items = await _fetchPage(offset: _feed.length);
+      if (!mounted) return;
+
       setState(() {
         _feed.addAll(items);
         _hasMore = items.length == _pageSize;
       });
 
-      // Met à jour le cache mémoire + disque avec le feed étendu
       _cacheFeed = List<LogementModel>.from(_feed);
       await _saveFeedToDisk(_feed);
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Erreur chargement : $e');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -250,6 +254,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
   LogementSearchParams _paramsForCurrentFilters({required int offset}) {
     final mode =
         (_mode == 'achat') ? LogementMode.achat : LogementMode.location;
+
     LogementCategorie? cat;
     switch (_categorie) {
       case 'maison':
@@ -265,8 +270,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
         cat = LogementCategorie.terrain;
         break;
       default:
-        cat = null; // 'tous'
+        cat = null; // tous
     }
+
     return LogementSearchParams(
       mode: mode,
       categorie: cat,
@@ -284,9 +290,9 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   String? _currentUserId() {
     try {
-      final u = context.read<UserProvider?>()?.utilisateur;
-      final id = (u as UtilisateurModel?)?.id;
-      if (id != null && id.toString().isNotEmpty) return id.toString();
+      final up = context.read<UserProvider?>();
+      final id = up?.utilisateur?.id?.toString();
+      if (id != null && id.trim().isNotEmpty) return id.trim();
     } catch (_) {}
     final sid = _sb.auth.currentUser?.id;
     return (sid != null && sid.isNotEmpty) ? sid : null;
@@ -294,7 +300,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   Future<List<Map<String, dynamic>>> _loadFavoris() async {
     final uid = _currentUserId();
-    if (uid == null) return [];
+    if (uid == null) {
+      _favIds.clear();
+      return [];
+    }
+
     final favRows = await _sb
         .from('logement_favoris')
         .select('logement_id, cree_le')
@@ -305,6 +315,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
         .map((e) => (e as Map)['logement_id']?.toString())
         .whereType<String>()
         .toList(growable: false);
+
+    _favIds
+      ..clear()
+      ..addAll(ids);
+
     if (ids.isEmpty) return [];
 
     final rows = await _sb
@@ -320,30 +335,121 @@ class _LogementHomePageState extends State<LogementHomePage> {
   Future<List<Map<String, dynamic>>> _loadMine() async {
     final uid = _currentUserId();
     if (uid == null) return [];
+
     final rows = await _sb
         .from('logements')
         .select(
             'id, titre, mode, categorie, prix_gnf, ville, commune, cree_le, logement_photos(url, position)')
         .eq('user_id', uid)
         .order('cree_le', ascending: false);
+
     return (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> _toggleFav(String logementId) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      _snack('Veuillez vous connecter pour ajouter aux favoris.');
+      return;
+    }
+
+    final wasFav = _favIds.contains(logementId);
+
+    setState(() {
+      if (wasFav) {
+        _favIds.remove(logementId);
+      } else {
+        _favIds.add(logementId);
+      }
+    });
+
+    try {
+      if (wasFav) {
+        await _sb
+            .from('logement_favoris')
+            .delete()
+            .eq('user_id', uid)
+            .eq('logement_id', logementId);
+      } else {
+        await _sb.from('logement_favoris').insert({
+          'user_id': uid,
+          'logement_id': logementId,
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasFav) {
+          _favIds.add(logementId);
+        } else {
+          _favIds.remove(logementId);
+        }
+      });
+      _snack('Erreur favoris : $e');
+    }
+  }
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  // ✅ Bottom sheet “Filtres” (home)
+  Future<void> _openHomeFilters() async {
+    final res = await showModalBottomSheet<_HomeFilterResult>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) => _HomeFiltersSheet(
+        initialMode: _mode,
+        initialCategorie: _categorie,
+        primary: _primary,
+        accent: _accent,
+      ),
+    );
+
+    if (res == null) return;
+
+    setState(() {
+      _mode = res.mode;
+      _categorie = res.categorie;
+    });
+    _reloadAll();
+  }
+
+  void _openMap() {
+    final args = <String, dynamic>{
+      'mode': _mode,
+      if (_categorie != 'tous') 'categorie': _categorie,
+      if (_searchCtrl.text.trim().isNotEmpty) 'q': _searchCtrl.text.trim(),
+    };
+    Navigator.pushNamed(context, AppRoutes.logementMap, arguments: args);
+  }
+
+  void _openListAdvanced() {
+    final args = <String, dynamic>{
+      'q': _searchCtrl.text.trim(),
+      'mode': _mode,
+      if (_categorie != 'tous') 'categorie': _categorie,
+    };
+    Navigator.pushNamed(context, AppRoutes.logementList, arguments: args);
   }
 
   // =================================== UI ===================================
 
   @override
   Widget build(BuildContext context) {
-    // clamp léger du textScale
     final media = MediaQuery.of(context);
-    final mf = media.textScaleFactor.clamp(1.0, 1.15);
-
+    final double mf = media.textScaleFactor.clamp(1.0, 1.15).toDouble();
     final padding = media.size.width > 600 ? 20.0 : 12.0;
 
-    // Skeleton uniquement si on charge ET qu'on n'a pas encore de données
     final bool showSkeleton = _loading && _feed.isEmpty && _cacheFeed.isEmpty;
+    final muted = _isDark ? Colors.white70 : Colors.black54;
 
     return MediaQuery(
-      data: media.copyWith(textScaleFactor: mf.toDouble()),
+      data: media.copyWith(textScaleFactor: mf),
       child: Scaffold(
         backgroundColor: _isDark ? const Color(0xFF0F172A) : _neutralBg,
         appBar: AppBar(
@@ -380,52 +486,219 @@ class _LogementHomePageState extends State<LogementHomePage> {
               const SizedBox(height: 16),
               _quickActions(),
               const SizedBox(height: 22),
-
-              // ====== FEED ======
               if (showSkeleton)
                 _skeletonGrid(context)
               else if (_error != null && _feed.isEmpty)
                 _errorBox(_error!)
               else ...[
-                _sectionTitle("Tous les biens"),
+                _sectionTitle(
+                  "Tous les biens",
+                  trailing: TextButton.icon(
+                    onPressed: _openHomeFilters,
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: const Text("Filtres"),
+                    style: TextButton.styleFrom(foregroundColor: _primary),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 _gridFeed(_feed),
-                const SizedBox(height: 12),
-                _loadingMore
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    : (!_hasMore
-                        ? const Center(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                "— Fin de la liste —",
-                                style: TextStyle(color: Colors.black45),
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink()),
-                const SizedBox(height: 80),
+                const SizedBox(height: 14),
+                _paginationFooter(muted),
+                const SizedBox(height: 40),
               ],
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: _ctaGreen,
-          onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
-              .then((_) => _reloadAll()),
-          icon: const Icon(Icons.add_home_work_outlined),
-          label: const Text("Publier un bien"),
+        floatingActionButton: IgnorePointer(
+          ignoring: !_showToTopFab,
+          child: AnimatedOpacity(
+            opacity: _showToTopFab ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: AnimatedScale(
+              scale: _showToTopFab ? 1 : 0.95,
+              duration: const Duration(milliseconds: 180),
+              child: FloatingActionButton(
+                heroTag: 'logementHomeToTop',
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                onPressed: _scrollToTop,
+                child: const Icon(Icons.keyboard_arrow_up_rounded, size: 30),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  // ================== END DRAWER (menu) ==================
+  Widget _paginationFooter(Color muted) {
+    final isEmpty = _feed.isEmpty && !_loading;
+
+    if (_loadingMore) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 10),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_hasMore && !isEmpty) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  onPressed: _loadMore,
+                  icon: const Icon(Icons.expand_more_rounded),
+                  label: const Text(
+                    "Charger plus",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: const BorderSide(color: _primary),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _openHomeFilters,
+                child: const Icon(Icons.tune_rounded),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: const BorderSide(color: _primary),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _openMap,
+                child: const Icon(Icons.map_outlined),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _openListAdvanced,
+            icon: const Icon(Icons.search_rounded),
+            label: Text(
+              "Recherche avancée",
+              style: TextStyle(color: _primary, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.05),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            isEmpty
+                ? "Aucun résultat pour ces filtres."
+                : "— Fin de la liste —",
+            style: TextStyle(color: muted, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _openHomeFilters,
+                icon: const Icon(Icons.tune_rounded),
+                label: const Text("Filtres"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: const BorderSide(color: _primary),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _openMap,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text("Carte"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: const BorderSide(color: _primary),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () =>
+                    Navigator.pushNamed(context, AppRoutes.logementEdit)
+                        .then((_) => _reloadAll()),
+                icon: const Icon(Icons.add_home_work_outlined),
+                label: const Text("Publier"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _ctaGreen,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _scrollToTop,
+            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+            label: Text(
+              "Retour en haut",
+              style: TextStyle(color: _primary, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================== END DRAWER ==================
   Widget _buildEndDrawer() {
     UtilisateurModel? user;
     try {
@@ -546,31 +819,20 @@ class _LogementHomePageState extends State<LogementHomePage> {
             controller: _heroCtrl,
             itemCount: _heroImages.length,
             onPageChanged: (i) => setState(() => _heroIndex = i),
-            itemBuilder: (_, i) => LayoutBuilder(
-              builder: (context, c) {
-                final w = c.maxWidth;
-                final h = c.maxHeight;
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _FadeInNetworkImage(
-                      url: _heroImages[i],
-                      cacheWidth: w.isFinite ? (w * 2).round() : null,
-                      cacheHeight: h.isFinite ? (h * 2).round() : null,
-                      cover: true,
+            itemBuilder: (_, i) => Stack(
+              fit: StackFit.expand,
+              children: [
+                _FadeInNetworkImage(url: _heroImages[i], cover: true),
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xAA0D3B66), Color(0x660A2C4C)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xAA0D3B66), Color(0x660A2C4C)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                  ),
+                ),
+              ],
             ),
           ),
           const Positioned(
@@ -605,12 +867,7 @@ class _LogementHomePageState extends State<LogementHomePage> {
               }),
             ),
           ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: _searchField(),
-          ),
+          Positioned(left: 12, right: 12, bottom: 12, child: _searchField()),
         ],
       ),
     );
@@ -656,13 +913,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
           },
           selectedColor: _accent,
           labelStyle: TextStyle(
-            color: _mode == "location" ? Colors.white : Colors.black87,
-          ),
+              color: _mode == "location" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
           shape: StadiumBorder(
             side: BorderSide(
-              color: _mode == "location" ? _accent : Colors.black12,
-            ),
+                color: _mode == "location" ? _accent : Colors.black12),
           ),
         ),
         const SizedBox(width: 10),
@@ -675,13 +930,11 @@ class _LogementHomePageState extends State<LogementHomePage> {
           },
           selectedColor: _accent,
           labelStyle: TextStyle(
-            color: _mode == "achat" ? Colors.white : Colors.black87,
-          ),
+              color: _mode == "achat" ? Colors.white : Colors.black87),
           backgroundColor: Colors.white,
           shape: StadiumBorder(
-            side: BorderSide(
-              color: _mode == "achat" ? _accent : Colors.black12,
-            ),
+            side:
+                BorderSide(color: _mode == "achat" ? _accent : Colors.black12),
           ),
         ),
       ],
@@ -689,22 +942,22 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   Widget _categoriesBar() {
-    final cats = const [
-      (Icons.grid_view, 'Tous', 'tous'),
-      (Icons.home, 'Maison', 'maison'),
-      (Icons.apartment, 'Appartement', 'appartement'),
-      (Icons.meeting_room, 'Studio', 'studio'),
-      (Icons.park, 'Terrain', 'terrain'),
+    const cats = <_CatItem>[
+      _CatItem(Icons.grid_view, 'Tous', 'tous'),
+      _CatItem(Icons.home, 'Maison', 'maison'),
+      _CatItem(Icons.apartment, 'Appartement', 'appartement'),
+      _CatItem(Icons.meeting_room, 'Studio', 'studio'),
+      _CatItem(Icons.park, 'Terrain', 'terrain'),
     ];
 
     return Row(
       children: List.generate(cats.length, (i) {
-        final (icon, label, id) = cats[i];
-        final selected = _categorie == id;
+        final item = cats[i];
+        final selected = _categorie == item.id;
         return Expanded(
           child: InkWell(
             onTap: () {
-              setState(() => _categorie = id);
+              setState(() => _categorie = item.id);
               _reloadAll();
             },
             child: Column(
@@ -713,15 +966,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: selected ? _accent : Colors.white,
-                  child: Icon(
-                    icon,
-                    size: 22,
-                    color: selected ? Colors.white : _primary,
-                  ),
+                  child: Icon(item.icon,
+                      size: 22, color: selected ? Colors.white : _primary),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  label,
+                  item.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12),
@@ -751,8 +1001,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
           ),
           onPressed: () => Navigator.pushNamed(context, AppRoutes.logementEdit)
               .then((_) => _reloadAll()),
-          icon: const Icon(Icons.add),
-          label: const Text("Publier"),
+          icon: const Icon(Icons.add_home_work_outlined),
+          label: const Text("Publier un bien"),
         ),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -762,9 +1012,21 @@ class _LogementHomePageState extends State<LogementHomePage> {
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
-          onPressed: () => Navigator.pushNamed(context, AppRoutes.logementMap),
+          onPressed: _openMap,
           icon: const Icon(Icons.map_outlined),
           label: const Text("Carte"),
+        ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _primary,
+            side: const BorderSide(color: _primary),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          onPressed: _openHomeFilters,
+          icon: const Icon(Icons.tune_rounded),
+          label: const Text("Filtres"),
         ),
       ],
     );
@@ -787,69 +1049,72 @@ class _LogementHomePageState extends State<LogementHomePage> {
     );
   }
 
-  // ---------- Skeleton grid (cold start uniquement) ----------
+  int _crossCountFor(double screenW) {
+    if (screenW < 600) return 1;
+    return max(2, (screenW / 360).floor());
+  }
+
+  // ✅ CORRECTION DEFINITIVE : carte plus haute => plus d’espace texte => plus de bande jaune/noir
+  double _aspectRatioFor(double screenW) {
+    // PLUS PETIT = PLUS HAUT (height = width / ratio)
+    if (screenW < 600) return 0.95; // mobile : plus haut
+    return 1.15; // grand écran : un peu plus haut aussi
+  }
+
   Widget _skeletonGrid(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0;
-    final itemW = (screenW - totalHGap - 24 /* padding list */) / crossCount;
-    final itemH = itemW * (11 / 16) + 120.0;
-    final ratio = itemW / itemH;
+    final crossCount = _crossCountFor(screenW);
+    final ratio = _aspectRatioFor(screenW);
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 14,
         childAspectRatio: ratio,
       ),
-      itemCount: 6,
+      itemCount: 4,
       itemBuilder: (_, __) => const _SkeletonBienCard(),
     );
   }
 
-  // ---------- GRILLE responsive (espaces serrés) ----------
   Widget _gridFeed(List<LogementModel> items) {
-    if (items.isEmpty) {
-      return _emptyCard("Aucun bien pour ces filtres");
-    }
+    if (items.isEmpty) return _emptyCard("Aucun bien pour ces filtres");
 
     final screenW = MediaQuery.of(context).size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0;
-    final itemW = (screenW - totalHGap - 24 /*padding list*/) / crossCount;
-    final itemH = itemW * (11 / 16) + 120.0;
-    final ratio = itemW / itemH;
+    final crossCount = _crossCountFor(screenW);
+    final ratio = _aspectRatioFor(screenW);
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 14,
         childAspectRatio: ratio,
       ),
-      cacheExtent: 1000,
+      cacheExtent: 1200,
       itemCount: items.length,
-      itemBuilder: (_, i) => _BienCardTight(bien: items[i]),
+      itemBuilder: (_, i) {
+        final b = items[i];
+        final isFav = _favIds.contains(b.id);
+        return _BienCardLuxury(
+          bien: b,
+          isFav: isFav,
+          onToggleFav: () => _toggleFav(b.id),
+        );
+      },
     );
   }
 
-  // Helpers
   Widget _emptyCard(String msg) => Container(
         height: 120,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-        ),
+            color: Colors.white, borderRadius: BorderRadius.circular(14)),
         child: Text(msg, style: const TextStyle(color: Colors.black54)),
       );
 
@@ -872,139 +1137,349 @@ class _LogementHomePageState extends State<LogementHomePage> {
       );
 }
 
-// ======================== Carte logement adaptative ===========================
-class _BienCardTight extends StatelessWidget {
+// ------------------- BottomSheet “Filtres” HOME -------------------
+
+class _HomeFilterResult {
+  final String mode;
+  final String categorie;
+  const _HomeFilterResult({required this.mode, required this.categorie});
+}
+
+class _HomeFiltersSheet extends StatefulWidget {
+  const _HomeFiltersSheet({
+    required this.initialMode,
+    required this.initialCategorie,
+    required this.primary,
+    required this.accent,
+  });
+
+  final String initialMode;
+  final String initialCategorie;
+  final Color primary;
+  final Color accent;
+
+  @override
+  State<_HomeFiltersSheet> createState() => _HomeFiltersSheetState();
+}
+
+class _HomeFiltersSheetState extends State<_HomeFiltersSheet> {
+  late String _mode;
+  late String _cat;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.initialMode; // location | achat
+    _cat = widget.initialCategorie; // tous | maison | ...
+  }
+
+  void _reset() {
+    setState(() {
+      _mode = 'location';
+      _cat = 'tous';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final padding = MediaQuery.of(context).viewInsets.bottom + 16;
+
+    const cats = <_CatItem>[
+      _CatItem(Icons.grid_view, 'Tous', 'tous'),
+      _CatItem(Icons.home, 'Maison', 'maison'),
+      _CatItem(Icons.apartment, 'Appartement', 'appartement'),
+      _CatItem(Icons.meeting_room, 'Studio', 'studio'),
+      _CatItem(Icons.park, 'Terrain', 'terrain'),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: padding, left: 16, right: 16, top: 16),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(3)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "Filtres",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 14),
+            const Text("Type d’opération"),
+            const SizedBox(height: 8),
+            Wrap(spacing: 10, children: [
+              ChoiceChip(
+                label: const Text('Location'),
+                selected: _mode == 'location',
+                selectedColor: widget.accent,
+                labelStyle:
+                    TextStyle(color: _mode == 'location' ? Colors.white : null),
+                onSelected: (_) => setState(() => _mode = 'location'),
+              ),
+              ChoiceChip(
+                label: const Text('Achat'),
+                selected: _mode == 'achat',
+                selectedColor: widget.accent,
+                labelStyle:
+                    TextStyle(color: _mode == 'achat' ? Colors.white : null),
+                onSelected: (_) => setState(() => _mode = 'achat'),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            const Text("Catégorie"),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                for (final c in cats)
+                  ChoiceChip(
+                    label: Text(c.label),
+                    selected: _cat == c.id,
+                    selectedColor: widget.accent,
+                    labelStyle:
+                        TextStyle(color: _cat == c.id ? Colors.white : null),
+                    onSelected: (_) => setState(() => _cat = c.id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: widget.primary),
+                      foregroundColor: widget.primary,
+                    ),
+                    onPressed: _reset,
+                    child: const Text('Réinitialiser'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: widget.accent,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Appliquer'),
+                    onPressed: () {
+                      Navigator.pop(
+                        context,
+                        _HomeFilterResult(mode: _mode, categorie: _cat),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Petit modèle pour catégories
+class _CatItem {
+  final IconData icon;
+  final String label;
+  final String id;
+  const _CatItem(this.icon, this.label, this.id);
+}
+
+// ======================== Carte logement : LUXE ===========================
+class _BienCardLuxury extends StatelessWidget {
   final LogementModel bien;
-  const _BienCardTight({required this.bien});
+  final bool isFav;
+  final VoidCallback onToggleFav;
+
+  const _BienCardLuxury({
+    required this.bien,
+    required this.isFav,
+    required this.onToggleFav,
+  });
 
   static const _accent = Color(0xFFE0006D);
-  static const _primary = Color(0xFF0D3B66);
-  static const _neutralBg = Color(0xFFF5F7FB);
+
+  // Nettoyage robuste : enlève \n/\r + espaces multiples (souvent présent dans les seeds SQL)
+  static String _clean(String s) {
+    return s
+        .replaceAll(RegExp(r'[\r\n]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
 
   @override
   Widget build(BuildContext context) {
     final image = (bien.photos.isNotEmpty) ? bien.photos.first : null;
-    final mode = bien.mode == LogementMode.achat ? 'Achat' : 'Location';
-    final cat = _labelCat(bien.categorie);
+    final modeTxt = bien.mode == LogementMode.achat ? 'Achat' : 'Location';
+    final catTxt = _labelCat(bien.categorie);
+
     final price = (bien.prixGnf != null)
         ? _formatPrice(bien.prixGnf!, bien.mode)
-        : 'Prix à discuter';
+        : (bien.mode == LogementMode.achat
+            ? 'Prix à discuter'
+            : 'Loyer à discuter');
+
     final loc = [
-      if (bien.ville != null) bien.ville!,
-      if (bien.commune != null) bien.commune!,
+      if ((bien.ville ?? '').trim().isNotEmpty) bien.ville!.trim(),
+      if ((bien.commune ?? '').trim().isNotEmpty) bien.commune!.trim(),
     ].join(' • ');
 
-    return InkWell(
-      onTap: () {
-        if (bien.id.isEmpty) return;
-        Navigator.pushNamed(
-          context,
-          AppRoutes.logementDetail,
-          arguments: bien.id,
-        );
-      },
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 1.5,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, c) {
-                  final w = c.maxWidth;
-                  final h = w * (11 / 16);
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (image == null || image.isEmpty)
-                        Container(
-                          color: Colors.grey.shade200,
-                          child: const Icon(
-                            Icons.image,
-                            size: 46,
-                            color: Colors.black26,
-                          ),
-                        )
-                      else
-                        _FadeInNetworkImage(
-                          url: image,
-                          cacheWidth: w.isFinite ? (w * 2).round() : null,
-                          cacheHeight: h.isFinite ? (h * 2).round() : null,
-                          cover: true,
-                        ),
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.45),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            mode,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
+    final safeTitle = _clean(bien.titre);
+    final safeLoc = _clean(loc);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: () {
+          if (bien.id.isEmpty) return;
+          Navigator.pushNamed(context, AppRoutes.logementDetail,
+              arguments: bien.id);
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.black.withOpacity(.06), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.10),
+                blurRadius: 22,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: LayoutBuilder(
+              builder: (ctx, c) {
+                // ✅ CORRECTION DEFINITIVE : plus d’espace pour le texte (même si titre long)
+                final ts = MediaQuery.textScaleFactorOf(context);
+                final panelH = min(
+                  c.maxHeight,
+                  max(c.maxHeight * 0.48,
+                      190.0 * ts), // panel plus haut + min garanti
+                );
+
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: (image != null && image.isNotEmpty)
+                          ? _FadeInNetworkImage(url: image, cover: true)
+                          : Container(
+                              color: const Color(0xFF101010),
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.home_outlined,
+                                  size: 56, color: Colors.white54),
                             ),
-                          ),
+                    ),
+                    Positioned(
+                      left: 14,
+                      top: 14,
+                      child: _TopPill(
+                        text: modeTxt,
+                        icon: Icons.swap_horiz_rounded,
+                      ),
+                    ),
+                    Positioned(
+                      right: 14,
+                      top: 14,
+                      child: _FavButton(
+                        active: isFav,
+                        onTap: onToggleFav,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: panelH,
+                      child: _LuxuryGlassPanel(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(22),
+                          topRight: Radius.circular(22),
+                          bottomLeft: Radius.circular(28),
+                          bottomRight: Radius.circular(28),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              safeTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                height: 1.08,
+                                letterSpacing: -.2,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    catTxt,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(.92),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                _PricePill(text: price),
+                              ],
+                            ),
+                            const Spacer(),
+                            if (safeLoc.isNotEmpty)
+                              Row(
+                                children: [
+                                  Icon(Icons.place,
+                                      size: 18,
+                                      color: Colors.white.withOpacity(.92)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      safeLoc,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(.92),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
                         ),
                       ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    bien.titre,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      _chip(mode),
-                      _chip(cat),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    price,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _accent,
-                      fontWeight: FontWeight.bold,
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    loc,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+                  ],
+                );
+              },
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1026,83 +1501,69 @@ class _BienCardTight extends StatelessWidget {
   }
 
   static String _formatPrice(num value, LogementMode mode) {
-    if (value >= 1000000) {
-      final m = (value / 1000000)
-          .toStringAsFixed(1)
-          .replaceAll('.0', '')
-          .replaceAll(',', '.');
-      return mode == LogementMode.achat ? '$m M GNF' : '$m M GNF / mois';
+    final suffix = mode == LogementMode.achat ? 'GNF' : 'GNF / mois';
+    final v = value.isFinite ? value : 0;
+
+    if (v.abs() >= 1000000000) {
+      final b = v / 1000000000;
+      final s = _trimDec(b, 1);
+      return '$s milliard $suffix';
     }
-    final s = value.toStringAsFixed(0);
-    return mode == LogementMode.achat ? '$s GNF' : '$s GNF / mois';
+
+    if (v.abs() >= 1000000) {
+      final m = v / 1000000;
+      final s = _trimDec(m, 1);
+      return '$s million $suffix';
+    }
+
+    final s = _withDots(v.round());
+    return '$s $suffix';
   }
 
-  static Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: _neutralBg,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(text, style: const TextStyle(fontSize: 12)),
-      );
+  static String _trimDec(num x, int decimals) {
+    final s = x.toStringAsFixed(decimals);
+    if (s.endsWith('.0')) return s.substring(0, s.length - 2);
+    return s;
+  }
+
+  static String _withDots(int n) {
+    final neg = n < 0;
+    var s = n.abs().toString();
+    final out = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final left = s.length - i;
+      out.write(s[i]);
+      if (left > 1 && left % 3 == 1) out.write('.');
+    }
+    return neg ? '-${out.toString()}' : out.toString();
+  }
 }
 
-// ----------------- Skeleton Card --------------------
-class _SkeletonBienCard extends StatelessWidget {
-  const _SkeletonBienCard();
+class _TopPill extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  const _TopPill({required this.text, required this.icon});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 1.5,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(.40),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(.18), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: 16 / 11,
-            child: Container(color: Colors.grey.shade200),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 14,
-                  width: 150,
-                  color: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Container(
-                      height: 18,
-                      width: 60,
-                      color: Colors.grey.shade200,
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      height: 18,
-                      width: 70,
-                      color: Colors.grey.shade200,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  height: 14,
-                  width: 90,
-                  color: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  height: 12,
-                  width: 120,
-                  color: Colors.grey.shade200,
-                ),
-              ],
+          Icon(icon, size: 16, color: Colors.white.withOpacity(.95)),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -1111,7 +1572,191 @@ class _SkeletonBienCard extends StatelessWidget {
   }
 }
 
-// ----------------- Image réseau avec fade-in SANS SPINNER -----------------
+class _FavButton extends StatelessWidget {
+  final bool active;
+  final VoidCallback onTap;
+  const _FavButton({required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withOpacity(.30),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(.18), width: 1),
+          ),
+          child: Icon(
+            active ? Icons.favorite : Icons.favorite_border,
+            color: active ? const Color(0xFFE0006D) : Colors.white,
+            size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PricePill extends StatelessWidget {
+  final String text;
+  const _PricePill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(.22), width: 1),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFFE0006D),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LuxuryGlassPanel extends StatelessWidget {
+  final Widget child;
+  final BorderRadius borderRadius;
+  final EdgeInsets padding;
+
+  const _LuxuryGlassPanel({
+    required this.child,
+    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
+    this.padding = const EdgeInsets.fromLTRB(14, 12, 14, 12),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.08),
+          borderRadius: borderRadius,
+          border: Border.all(color: Colors.white.withOpacity(.18), width: 1),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(color: Colors.white.withOpacity(.06)),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withOpacity(.10),
+                        Colors.white.withOpacity(.05),
+                        Colors.transparent,
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.30, 0.62, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: IgnorePointer(
+                child: Container(
+                    height: 1.2, color: Colors.white.withOpacity(.22)),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  margin: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    borderRadius: borderRadius,
+                    border: Border.all(
+                        color: Colors.white.withOpacity(.08), width: 1),
+                  ),
+                ),
+              ),
+            ),
+            Padding(padding: padding, child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonBienCard extends StatelessWidget {
+  const _SkeletonBienCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 1.8,
+      borderRadius: BorderRadius.circular(28),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (_, c) {
+          // ✅ identique au vrai panel : évite les sauts visuels
+          final ts = MediaQuery.textScaleFactorOf(context);
+          final panelH = min(
+            c.maxHeight,
+            max(c.maxHeight * 0.48, 190.0 * ts),
+          );
+
+          return Stack(
+            children: [
+              Positioned.fill(child: Container(color: Colors.grey.shade300)),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: panelH,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.30),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(22),
+                      topRight: Radius.circular(22),
+                      bottomLeft: Radius.circular(28),
+                      bottomRight: Radius.circular(28),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _FadeInNetworkImage extends StatefulWidget {
   final String url;
   final int? cacheWidth;
@@ -1135,6 +1780,7 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
     vsync: this,
     duration: const Duration(milliseconds: 220),
   );
+
   late final Animation<double> _fade =
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
 
@@ -1158,18 +1804,13 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
       cacheWidth: widget.cacheWidth,
       cacheHeight: widget.cacheHeight,
       filterQuality: FilterQuality.high,
-
-      // Chargement : image grise SANS spinner
       loadingBuilder: (ctx, child, ev) {
         if (ev == null) {
-          _ctrl.forward();
+          if (_ctrl.status != AnimationStatus.completed) _ctrl.forward();
           return FadeTransition(opacity: _fade, child: child);
         }
-        return Container(
-          color: Colors.grey.shade200,
-        );
+        return Container(color: Colors.grey.shade200);
       },
-
       errorBuilder: (_, __, ___) => Container(
         color: Colors.grey.shade200,
         alignment: Alignment.center,

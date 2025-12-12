@@ -3,32 +3,35 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class ApiService {
   static final SupabaseClient _client = Supabase.instance.client;
 
-  /// RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â©rer la rÃ©Â©Ã†â€™Â©fÃ©Â©Ã†â€™Â©rence Supabase
+  /// Récupérer la référence Supabase
   static SupabaseClient get client => _client;
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂ Auth utils
+  /// Utilitaires d'authentification
   static bool get isLoggedIn => _client.auth.currentUser != null;
 
   static String? get currentUserId => _client.auth.currentUser?.id;
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œâ€šÂ¬Ã…Â¾ Exemple : rÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â©rer un tableau gÃ©Â©Ã†â€™Â©nÃ©Â©Ã†â€™Â©rique
+  /// Exemple : récupérer un tableau générique
   static Future<List<Map<String, dynamic>>> fetchTable(String table) async {
     final response = await _client.from(table).select();
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œâ€šÂ¬Ã…Â¾ Exemple : insÃ©Â©Ã†â€™Â©rer un enregistrement
+  /// Exemple : insérer un enregistrement
   static Future<void> insert(String table, Map<String, dynamic> data) async {
     await _client.from(table).insert(data);
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œâ€šÂ¬Ã…Â¾ Exemple : mettre Ã©Â©Ã†â€™  jour un enregistrement
+  /// Exemple : mettre à jour un enregistrement
   static Future<void> update(
-      String table, String id, Map<String, dynamic> data) async {
+    String table,
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     await _client.from(table).update(data).eq('id', id);
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬â‚¬Ââ€šÂ¬Ã‹Å“ Supprimer un Ã©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©ment
+  /// Supprimer un élément
   static Future<void> delete(String table, String id) async {
     await _client.from(table).delete().eq('id', id);
   }

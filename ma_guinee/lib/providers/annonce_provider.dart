@@ -9,7 +9,7 @@ class AnnonceProvider extends ChangeNotifier {
   List<AnnonceModel> get annonces => _annonces;
   bool get isLoading => _isLoading;
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ââ€šÂ¬Ã…Â¾ Charger toutes les annonces
+  /// Charger toutes les annonces
   Future<void> loadAnnonces() async {
     _isLoading = true;
     notifyListeners();
@@ -24,7 +24,7 @@ class AnnonceProvider extends ChangeNotifier {
     }
   }
 
-  /// Ã©Â©Â¢Ã©â€¦Â¾â€šÂ¬Â¢ Ajouter une annonce
+  /// Ajouter une annonce
   Future<void> addAnnonce(AnnonceModel annonce) async {
     try {
       await AnnonceService.addAnnonce(annonce);
@@ -36,7 +36,7 @@ class AnnonceProvider extends ChangeNotifier {
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬â‚¬Ââ€šÂ¬Ã‹Å“ Supprimer une annonce
+  /// Supprimer une annonce
   Future<void> deleteAnnonce(String id) async {
     try {
       await AnnonceService.deleteAnnonce(id);
@@ -48,7 +48,7 @@ class AnnonceProvider extends ChangeNotifier {
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂ Filtrer par catÃ©Â©Ã†â€™Â©gorie
+  /// Filtrer les annonces par catégorie
   List<AnnonceModel> filterByCategorie(String categorie) {
     if (categorie.toLowerCase() == 'tous') return _annonces;
     return _annonces
@@ -56,7 +56,7 @@ class AnnonceProvider extends ChangeNotifier {
         .toList();
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂ Annonces par utilisateur
+  /// Récupérer les annonces d'un utilisateur donné
   List<AnnonceModel> annoncesByUser(String userId) {
     return _annonces
         .where((a) => a.userId.toLowerCase() == userId.toLowerCase())

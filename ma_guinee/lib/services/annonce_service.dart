@@ -5,7 +5,7 @@ import 'package:ma_guinee/services/api_service.dart';
 class AnnonceService {
   static const String table = 'annonces';
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ââ€šÂ¬Ã…Â¾ RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â©rer toutes les annonces (les plus rÃ©Â©Ã†â€™Â©centes dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢abord)
+  /// Récupérer toutes les annonces (les plus récentes en premier)
   static Future<List<AnnonceModel>> getAllAnnonces() async {
     try {
       final response = await ApiService.client
@@ -19,42 +19,42 @@ class AnnonceService {
           .map((e) => AnnonceModel.fromJson(e))
           .toList();
     } catch (e) {
-      debugPrint("Erreur getAllAnnonces: $e");
+      debugPrint("Erreur getAllAnnonces : $e");
       return [];
     }
   }
 
-  /// Ã©Â©Â¢Ã©â€¦Â¾â€šÂ¬Â¢ Ajouter une annonce
+  /// Ajouter une annonce
   static Future<void> addAnnonce(AnnonceModel annonce) async {
     try {
       await ApiService.insert(table, annonce.toJson());
     } catch (e) {
-      debugPrint("Erreur addAnnonce: $e");
-      rethrow; // Remonter l'erreur pour gestion Ã©Â©Ã†â€™Â©ventuelle
+      debugPrint("Erreur addAnnonce : $e");
+      rethrow; // Remonter l'erreur pour une gestion éventuelle
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œÂ Mettre Ã©Â©Ã†â€™  jour une annonce
+  /// Mettre à jour une annonce
   static Future<void> updateAnnonce(String id, AnnonceModel annonce) async {
     try {
       await ApiService.update(table, id, annonce.toJson());
     } catch (e) {
-      debugPrint("Erreur updateAnnonce: $e");
+      debugPrint("Erreur updateAnnonce : $e");
       rethrow;
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬â‚¬Ââ€šÂ¬Ã‹Å“ Supprimer une annonce
+  /// Supprimer une annonce
   static Future<void> deleteAnnonce(String id) async {
     try {
       await ApiService.delete(table, id);
     } catch (e) {
-      debugPrint("Erreur deleteAnnonce: $e");
+      debugPrint("Erreur deleteAnnonce : $e");
       rethrow;
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂ Annonces par catÃ©Â©Ã†â€™Â©gorie
+  /// Récupérer les annonces par catégorie
   static Future<List<AnnonceModel>> getByCategorie(String categorie) async {
     try {
       final response = await ApiService.client
@@ -69,12 +69,12 @@ class AnnonceService {
           .map((e) => AnnonceModel.fromJson(e))
           .toList();
     } catch (e) {
-      debugPrint("Erreur getByCategorie: $e");
+      debugPrint("Erreur getByCategorie : $e");
       return [];
     }
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã‹Å“Â¤ Annonces dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢un utilisateur
+  /// Récupérer les annonces d'un utilisateur
   static Future<List<AnnonceModel>> getByUser(String userId) async {
     try {
       final response = await ApiService.client
@@ -89,7 +89,7 @@ class AnnonceService {
           .map((e) => AnnonceModel.fromJson(e))
           .toList();
     } catch (e) {
-      debugPrint("Erreur getByUser: $e");
+      debugPrint("Erreur getByUser : $e");
       return [];
     }
   }

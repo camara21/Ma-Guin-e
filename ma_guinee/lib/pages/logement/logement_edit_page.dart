@@ -1,6 +1,8 @@
 // lib/pages/logement/logement_edit_page.dart
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter_map/flutter_map.dart';
@@ -42,7 +44,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
   late TextEditingController _surface;
   late TextEditingController _phone;
 
-  // Choix utilisateur (pas de valeur par défaut)
+  // Choix utilisateur
   int? _chambres;
   LogementMode? _mode;
   LogementCategorie? _cat;
@@ -52,6 +54,21 @@ class _LogementEditPageState extends State<LogementEditPage> {
   double? _lng;
   final _mapCtrl = MapController();
 
+  // Plan / Satellite
+  bool _satellite = false;
+
+  // Sécurité zoom
+  static const double _kMinZoom = 2.0;
+  static const double _kMaxZoom = 19.0;
+
+  // Tuiles
+  static const String _tileUrlNormal =
+      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+  static const List<String> _tileSubdomainsNormal = ['a', 'b', 'c', 'd'];
+
+  static const String _tileUrlSatellite =
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
   // Photos
   static const _kMaxPhotos = 10;
   final List<_PhotoItem> _photos = [];
@@ -59,7 +76,6 @@ class _LogementEditPageState extends State<LogementEditPage> {
   bool _saving = false;
   bool _loadedFromRouteArg = false;
 
-  // Cycle UI
   @override
   void initState() {
     super.initState();
@@ -72,13 +88,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
     _surface = TextEditingController();
     _phone = TextEditingController();
 
-    // Pré-remplissage immédiat si on reçoit déjà un modèle
     if (widget.existing != null) {
       _prefillFrom(widget.existing!);
     }
   }
 
-  // Charge depuis les arguments de route : id (String) ou modèle
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -90,13 +104,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
     if (args is LogementModel) {
       _prefillFrom(args);
     } else if (args is String && args.trim().isNotEmpty) {
-      // Un ID → requête DB
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         try {
           final m = await _svc.getById(args);
           if (m != null && mounted) {
             _prefillFrom(m);
-            // Lit aussi le téléphone dans la colonne dédiée si besoin
             final tel = await _svc.getContactPhone(m.id);
             if (mounted && (tel ?? '').isNotEmpty) _phone.text = tel!;
           }
@@ -110,7 +122,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
   void _prefillFrom(LogementModel e) {
     _titre.text = e.titre;
     _desc.text = e.description ?? '';
-    _prix.text = e.prixGnf?.toString() ?? '';
+    _prix.text = _formatThousandsFromNum(e.prixGnf);
+
     _ville.text = e.ville ?? '';
     _commune.text = e.commune ?? '';
     _adresse.text = e.adresse ?? '';
@@ -158,11 +171,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
             const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       );
 
-  // UI
   @override
   Widget build(BuildContext context) {
+    final routeArg = ModalRoute.of(context)?.settings.arguments;
     final isEdit = widget.existing != null ||
-        (ModalRoute.of(context)?.settings.arguments is String);
+        (routeArg is String && routeArg.trim().isNotEmpty);
 
     return Scaffold(
       backgroundColor: _bg,
@@ -208,9 +221,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
                                 child: Text("Achat")),
                           ],
                           onChanged: (v) => setState(() => _mode = v),
-                          decoration: _dec(
-                              "Type d’opération *",
-                              hint: "Sélectionner…"),
+                          decoration:
+                              _dec("Type d’opération *", hint: "Sélectionner…"),
                           validator: (v) =>
                               v == null ? "Choisir le type" : null,
                         ),
@@ -237,8 +249,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
                                 child: Text("Autres")),
                           ],
                           onChanged: (v) => setState(() => _cat = v),
-                          decoration: _dec("Catégorie *",
-                              hint: "Sélectionner…"),
+                          decoration:
+                              _dec("Catégorie *", hint: "Sélectionner…"),
                           validator: (v) =>
                               v == null ? "Choisir la catégorie" : null,
                         ),
@@ -251,8 +263,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
                       Expanded(
                         child: TextFormField(
                           controller: _prix,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            ThousandsDotFormatter(),
+                          ],
                           decoration: _dec("Prix / Loyer (GNF)"),
                         ),
                       ),
@@ -310,8 +325,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   TextFormField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
-                    decoration:
-                        _dec("Téléphone de contact *", hint: "+224 6x xx xx xx"),
+                    decoration: _dec("Téléphone de contact *",
+                        hint: "+224 6x xx xx xx"),
                     validator: (v) {
                       final val = v?.trim() ?? '';
                       if (val.isEmpty) return "Numéro requis";
@@ -345,8 +360,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
     );
   }
 
-  // Localisation
+  // ===================== Localisation =====================
+
   Widget _localisationCard() {
+    final hasPos = _lat != null && _lng != null;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -374,13 +392,26 @@ class _LogementEditPageState extends State<LogementEditPage> {
                 label: const Text("Localiser"),
               ),
               const SizedBox(width: 10),
-              if (_lat != null && _lng != null)
-                Text(
+              if (hasPos)
+                Expanded(
+                  child: Text(
                     '(${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)})',
-                    style: const TextStyle(color: Colors.black54)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              ToggleButtons(
+                isSelected: [_satellite == false, _satellite == true],
+                onPressed: (i) => setState(() => _satellite = (i == 1)),
+                borderRadius: BorderRadius.circular(10),
+                constraints: const BoxConstraints(minHeight: 36, minWidth: 72),
+                children: const [Text('Plan'), Text('Satellite')],
+              ),
             ],
           ),
-          if (_lat != null && _lng != null) ...[
+          if (hasPos) ...[
             const SizedBox(height: 10),
             SizedBox(
               height: 220,
@@ -391,16 +422,14 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   options: MapOptions(
                     initialCenter: LatLng(_lat!, _lng!),
                     initialZoom: 16,
-
-                    // Clic simple : déplacer le repère
+                    minZoom: _kMinZoom,
+                    maxZoom: _kMaxZoom,
                     onTap: (tapPos, latLng) {
                       setState(() {
                         _lat = latLng.latitude;
                         _lng = latLng.longitude;
                       });
                     },
-
-                    // Appui long : déplacer + recentrer/zoomer
                     onLongPress: (tapPos, latLng) {
                       setState(() {
                         _lat = latLng.latitude;
@@ -412,9 +441,11 @@ class _LogementEditPageState extends State<LogementEditPage> {
                   children: [
                     TileLayer(
                       urlTemplate:
-                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      subdomains: const ['a', 'b', 'c'],
-                      userAgentPackageName: 'com.example.app',
+                          _satellite ? _tileUrlSatellite : _tileUrlNormal,
+                      subdomains: _satellite ? const [] : _tileSubdomainsNormal,
+                      maxZoom: _kMaxZoom,
+                      maxNativeZoom: _satellite ? 18 : 19,
+                      userAgentPackageName: 'com.soneya.app',
                     ),
                     MarkerLayer(
                       markers: [
@@ -431,6 +462,14 @@ class _LogementEditPageState extends State<LogementEditPage> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: _openMapFullscreen,
+                icon: const Icon(Icons.fullscreen),
+                label: const Text("Ouvrir la carte en plein écran"),
+              ),
+            ),
             const SizedBox(height: 6),
             const Text(
               "Astuce : touchez la carte pour déplacer le repère. "
@@ -445,13 +484,13 @@ class _LogementEditPageState extends State<LogementEditPage> {
 
   Future<void> _pickLocation() async {
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         _snack("Active d’abord la localisation (GPS).");
         return;
       }
 
-      LocationPermission p = await Geolocator.checkPermission();
+      var p = await Geolocator.checkPermission();
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
       }
@@ -462,7 +501,8 @@ class _LogementEditPageState extends State<LogementEditPage> {
       }
 
       final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.best);
+        desiredAccuracy: LocationAccuracy.best,
+      );
 
       setState(() {
         _lat = pos.latitude;
@@ -477,7 +517,37 @@ class _LogementEditPageState extends State<LogementEditPage> {
     }
   }
 
-  // Photos
+  Future<void> _openMapFullscreen() async {
+    if (_lat == null || _lng == null) return;
+
+    final initial = LatLng(_lat!, _lng!);
+
+    final _MapFullResult? res =
+        await Navigator.of(context).push<_MapFullResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _LogementMapFullScreenPage(
+          pointInitial: initial,
+          satelliteInitial: _satellite,
+        ),
+      ),
+    );
+
+    if (res == null) return;
+
+    setState(() {
+      _lat = res.point.latitude;
+      _lng = res.point.longitude;
+      _satellite = res.satellite;
+    });
+
+    try {
+      _mapCtrl.move(LatLng(_lat!, _lng!), 16);
+    } catch (_) {}
+  }
+
+  // ===================== Photos =====================
+
   Widget _photosSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,15 +653,15 @@ class _LogementEditPageState extends State<LogementEditPage> {
     setState(() {});
   }
 
-  // Save
+  // ===================== Save =====================
+
   Future<void> _save() async {
     final form = _form.currentState;
     if (form == null) return;
     if (!form.validate()) return;
 
     if (_mode == null || _cat == null) {
-      _snack(
-          "Merci de choisir le type d’opération et la catégorie.");
+      _snack("Merci de choisir le type d’opération et la catégorie.");
       return;
     }
 
@@ -605,8 +675,7 @@ class _LogementEditPageState extends State<LogementEditPage> {
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         mode: _mode!,
         categorie: _cat!,
-        prixGnf:
-            _prix.text.trim().isEmpty ? null : num.tryParse(_prix.text.trim()),
+        prixGnf: _parseGnf(_prix.text),
         ville: _ville.text.trim().isEmpty ? null : _ville.text.trim(),
         commune: _commune.text.trim().isEmpty ? null : _commune.text.trim(),
         adresse: _adresse.text.trim().isEmpty ? null : _adresse.text.trim(),
@@ -622,17 +691,14 @@ class _LogementEditPageState extends State<LogementEditPage> {
             _phone.text.trim().isEmpty ? null : _phone.text.trim(),
       );
 
-      // Détecte édition vs création
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       final bool isEditing = widget.existing != null ||
           (routeArg is String && routeArg.trim().isNotEmpty);
 
       String id;
       if (!isEditing) {
-        // Création
         id = await _svc.create(model);
       } else {
-        // Édition
         id = widget.existing?.id ?? (routeArg is String ? routeArg : 'new');
         if (id == 'new' || id.trim().isEmpty) {
           id = await _svc.create(model);
@@ -641,11 +707,9 @@ class _LogementEditPageState extends State<LogementEditPage> {
         }
       }
 
-      // Contact (sécurité si colonne séparée)
       final tel = _phone.text.trim();
       if (tel.isNotEmpty) await _svc.update(id, {'contact_telephone': tel});
 
-      // Upload photos → URLs
       final urls = <String>[];
       for (var i = 0; i < _photos.length; i++) {
         final p = _photos[i];
@@ -662,13 +726,10 @@ class _LogementEditPageState extends State<LogementEditPage> {
         }
       }
 
-      // Sauvegarde de l’ordre
       await _svc.setPhotos(id, urls);
 
       if (!mounted) return;
-      _snack(!isEditing
-          ? "Annonce créée"
-          : "Annonce mise à jour");
+      _snack(!isEditing ? "Annonce créée" : "Annonce mise à jour");
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -681,9 +742,219 @@ class _LogementEditPageState extends State<LogementEditPage> {
   void _snack(String m) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
+
+  // ===================== Helpers prix =====================
+
+  num? _parseGnf(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final cleaned = s.replaceAll('.', '').replaceAll(' ', '');
+    return num.tryParse(cleaned);
+  }
+
+  String _formatThousandsFromNum(num? n) {
+    if (n == null) return '';
+    final v = n.round();
+    final s = v.toString();
+    final reg = RegExp(r'\B(?=(\d{3})+(?!\d))');
+    return s.replaceAllMapped(reg, (m) => '.');
+  }
 }
 
-// Petit overlay de chargement
+// ===================== Plein écran carte (comme ANP) =====================
+
+class _MapFullResult {
+  final LatLng point;
+  final bool satellite;
+  _MapFullResult(this.point, this.satellite);
+}
+
+class _LogementMapFullScreenPage extends StatefulWidget {
+  const _LogementMapFullScreenPage({
+    super.key,
+    required this.pointInitial,
+    required this.satelliteInitial,
+  });
+
+  final LatLng pointInitial;
+  final bool satelliteInitial;
+
+  @override
+  State<_LogementMapFullScreenPage> createState() =>
+      _LogementMapFullScreenPageState();
+}
+
+class _LogementMapFullScreenPageState
+    extends State<_LogementMapFullScreenPage> {
+  static const double _kMinZoom = 2.0;
+  static const double _kMaxZoom = 19.0;
+
+  static const String _tileUrlNormal =
+      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+  static const List<String> _tileSubdomainsNormal = ['a', 'b', 'c', 'd'];
+
+  static const String _tileUrlSatellite =
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+  final MapController _ctrl = MapController();
+  late LatLng _point;
+  late bool _satellite;
+
+  @override
+  void initState() {
+    super.initState();
+    _point = widget.pointInitial;
+    _satellite = widget.satelliteInitial;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ctrl.move(_point, 18);
+    });
+  }
+
+  void _onTap(TapPosition tapPosition, LatLng latLng) {
+    setState(() => _point = latLng);
+  }
+
+  void _validate() {
+    Navigator.of(context)
+        .pop<_MapFullResult>(_MapFullResult(_point, _satellite));
+  }
+
+  Widget _toggle() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _satellite = false),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _satellite ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Plan",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _satellite ? Colors.black87 : const Color(0xFF0B3A6A),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () => setState(() => _satellite = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _satellite ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                "Satellite",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _satellite ? const Color(0xFF0B3A6A) : Colors.black87,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0B3A6A),
+        foregroundColor: Colors.white,
+        title: const Text("Ajuster la position"),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Center(child: _toggle()),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: FlutterMap(
+              mapController: _ctrl,
+              options: MapOptions(
+                initialCenter: _point,
+                initialZoom: 18,
+                minZoom: _kMinZoom,
+                maxZoom: _kMaxZoom,
+                onTap: _onTap,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: _satellite ? _tileUrlSatellite : _tileUrlNormal,
+                  subdomains: _satellite ? const [] : _tileSubdomainsNormal,
+                  maxZoom: _kMaxZoom,
+                  maxNativeZoom: _satellite ? 18 : 19,
+                  userAgentPackageName: 'com.soneya.app',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _point,
+                      width: 52,
+                      height: 52,
+                      child: const Icon(
+                        Icons.location_on,
+                        color: Colors.red,
+                        size: 44,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _validate,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE1005A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                  ),
+                  child: const Text(
+                    "Valider cette position",
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===================== Overlay de chargement =====================
+
 class PositionedFillLoading extends StatelessWidget {
   const PositionedFillLoading({super.key});
   @override
@@ -697,10 +968,31 @@ class PositionedFillLoading extends StatelessWidget {
   }
 }
 
-// Type interne
+// ===================== Types internes =====================
+
 class _PhotoItem {
   _PhotoItem({this.bytes, this.url, this.name});
   final Uint8List? bytes;
   final String? url;
   final String? name;
+}
+
+// Formatter : 50000 -> 50.000
+class ThousandsDotFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return const TextEditingValue(text: '');
+
+    final formatted = digits.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (m) => '.',
+    );
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }

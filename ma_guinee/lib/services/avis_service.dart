@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AvisService {
   final _supabase = Supabase.instance.client;
 
-  /// Ajoute ou modifie un avis (empÃ©Â©Ã†â€™Âªche les doublons via upsert)
+  /// Ajoute ou modifie un avis (empêche les doublons via upsert)
   Future<void> ajouterOuModifierAvis({
     required String contexte,
     required String cibleId,
@@ -13,24 +13,29 @@ class AvisService {
   }) async {
     if (!_isUuid(cibleId)) {
       throw Exception(
-          "Ã©Â©Â¢ÂÃ©â€¦â‚¬â„¢ Le champ cibleId doit Ã©Â©Ã†â€™Âªtre un UUID valide. ReÃ©Â©Ã†â€™Â§u : $cibleId");
+        "Le champ cibleId doit être un UUID valide. Reçu : $cibleId",
+      );
     }
 
     if (!_isUuid(utilisateurId)) {
       throw Exception(
-          "Ã©Â©Â¢ÂÃ©â€¦â‚¬â„¢ Le champ utilisateurId doit Ã©Â©Ã†â€™Âªtre un UUID valide. ReÃ©Â©Ã†â€™Â§u : $utilisateurId");
+        "Le champ utilisateurId doit être un UUID valide. Reçu : $utilisateurId",
+      );
     }
 
-    await _supabase.from('avis').upsert({
-      'utilisateur_id': utilisateurId,
-      'contexte': contexte,
-      'cible_id': cibleId,
-      'note': note,
-      'commentaire': commentaire,
-    }, onConflict: 'utilisateur_id,contexte,cible_id');
+    await _supabase.from('avis').upsert(
+      {
+        'utilisateur_id': utilisateurId,
+        'contexte': contexte,
+        'cible_id': cibleId,
+        'note': note,
+        'commentaire': commentaire,
+      },
+      onConflict: 'utilisateur_id,contexte,cible_id',
+    );
   }
 
-  /// RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â¨re les avis pour une cible donnÃ©Â©Ã†â€™Â©e (prestataire, resto, etc.)
+  /// Récupère les avis pour une cible donnée (prestataire, resto, etc.)
   Future<List<Map<String, dynamic>>> recupererAvis({
     required String contexte,
     required String cibleId,
@@ -38,7 +43,8 @@ class AvisService {
     final response = await _supabase
         .from('avis')
         .select(
-            'note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)')
+          'note, commentaire, created_at, utilisateurs(nom, prenom, photo_url)',
+        )
         .eq('contexte', contexte)
         .eq('cible_id', cibleId)
         .order('created_at', ascending: false);
@@ -46,7 +52,7 @@ class AvisService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Calcule la note moyenne
+  /// Calcule la note moyenne pour une cible donnée
   Future<double> noteMoyenne(String contexte, String cibleId) async {
     final response = await _supabase
         .from('avis')
@@ -59,7 +65,7 @@ class AvisService {
     return notes.reduce((a, b) => a + b) / notes.length;
   }
 
-  /// VÃ©Â©Ã†â€™Â©rifie si l'utilisateur a dÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  laissÃ©Â©Ã†â€™Â© un avis
+  /// Vérifie si l'utilisateur a déjà laissé un avis
   Future<Map<String, dynamic>?> avisUtilisateur({
     required String contexte,
     required String cibleId,
@@ -76,7 +82,7 @@ class AvisService {
     return res;
   }
 
-  /// Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ââ€šÂ¬â€žÂ¢ VÃ©Â©Ã†â€™Â©rifie si la chaÃ©Â©Ã†â€™Â®ne est un UUID valide
+  /// Vérifie si la chaîne est un UUID valide
   bool _isUuid(String id) {
     final uuidRegExp = RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',

@@ -9,13 +9,13 @@ class LogementListPage extends StatefulWidget {
   const LogementListPage({
     super.key,
     this.initialQuery,
-    this.initialMode = LogementMode.location,
-    this.initialCategorie = LogementCategorie.autres,
+    this.initialMode = LogementMode.location, // défaut = Location
+    this.initialCategorie, // défaut = Tous (null)
   });
 
   final String? initialQuery;
   final LogementMode initialMode;
-  final LogementCategorie initialCategorie;
+  final LogementCategorie? initialCategorie; // null = Tous
 
   @override
   State<LogementListPage> createState() => _LogementListPageState();
@@ -26,6 +26,13 @@ class _LogementListPageState extends State<LogementListPage> {
   final _qCtrl = TextEditingController();
   final _scroll = ScrollController();
 
+  // ✅ sentinel pour pouvoir "set null" même si copyWith ignore les null
+  static const Object _unset = Object();
+
+  // Defaults UX
+  static const LogementMode _kDefaultMode = LogementMode.location;
+  static const LogementCategorie? _kDefaultCategorie = null; // Tous
+
   // État / filtres
   late LogementSearchParams _params;
   List<LogementModel> _items = [];
@@ -35,8 +42,8 @@ class _LogementListPageState extends State<LogementListPage> {
   String? _error;
 
   // Thème "Action Logement"
-  Color get _primary => const Color(0xFF0B3A6A); // bleu profond (header)
-  Color get _accent => const Color(0xFFE1005A); // fuchsia (actions/prix/FAB)
+  Color get _primary => const Color(0xFF0B3A6A);
+  Color get _accent => const Color(0xFFE1005A);
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _bg => _isDark ? const Color(0xFF0F172A) : Colors.white;
   Color get _fill =>
@@ -47,15 +54,27 @@ class _LogementListPageState extends State<LogementListPage> {
   @override
   void initState() {
     super.initState();
+
+    // ✅ IMPORTANT : ne jamais pré-sélectionner "Autres"
+    // Si on reçoit "autres" (ancien défaut), on le traite comme "Tous" (null)
+    final LogementCategorie? effectiveCat =
+        (widget.initialCategorie == LogementCategorie.autres)
+            ? null
+            : widget.initialCategorie;
+
     _params = LogementSearchParams(
       q: widget.initialQuery,
-      mode: widget.initialMode,
-      categorie: widget.initialCategorie,
+      mode: widget.initialMode, // défaut location
+      categorie: effectiveCat, // ✅ autres -> null (Tous)
       orderBy: 'cree_le',
       ascending: false,
       limit: 20,
       offset: 0,
     );
+
+    // sécurité
+    _params = _paramsSet(mode: _params.mode ?? _kDefaultMode);
+
     _qCtrl.text = widget.initialQuery ?? '';
     _fetch(reset: true);
     _scroll.addListener(_onScroll);
@@ -66,6 +85,60 @@ class _LogementListPageState extends State<LogementListPage> {
     _qCtrl.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  // ✅ Rebuild complet des params avec support explicite des null
+  LogementSearchParams _paramsSet({
+    Object? q = _unset,
+    Object? mode = _unset,
+    Object? categorie = _unset,
+    Object? ville = _unset,
+    Object? commune = _unset,
+    Object? prixMin = _unset,
+    Object? prixMax = _unset,
+    Object? surfaceMin = _unset,
+    Object? surfaceMax = _unset,
+    Object? chambres = _unset,
+    Object? orderBy = _unset,
+    Object? ascending = _unset,
+    Object? limit = _unset,
+    Object? offset = _unset,
+  }) {
+    final double? prixMinD = (prixMin == _unset)
+        ? (_params.prixMin?.toDouble())
+        : ((prixMin as num?)?.toDouble());
+    final double? prixMaxD = (prixMax == _unset)
+        ? (_params.prixMax?.toDouble())
+        : ((prixMax as num?)?.toDouble());
+    final double? surfaceMinD = (surfaceMin == _unset)
+        ? (_params.surfaceMin?.toDouble())
+        : ((surfaceMin as num?)?.toDouble());
+    final double? surfaceMaxD = (surfaceMax == _unset)
+        ? (_params.surfaceMax?.toDouble())
+        : ((surfaceMax as num?)?.toDouble());
+
+    return LogementSearchParams(
+      q: q == _unset ? _params.q : q as String?,
+      mode: mode == _unset ? _params.mode : mode as LogementMode?,
+      categorie: categorie == _unset
+          ? _params.categorie
+          : categorie as LogementCategorie?,
+      ville: ville == _unset ? _params.ville : ville as String?,
+      commune: commune == _unset ? _params.commune : commune as String?,
+
+      prixMin: prixMinD,
+      prixMax: prixMaxD,
+      surfaceMin: surfaceMinD,
+      surfaceMax: surfaceMaxD,
+
+      chambres: chambres == _unset ? _params.chambres : chambres as int?,
+
+      // non-nullables
+      orderBy: orderBy == _unset ? _params.orderBy : orderBy as String,
+      ascending: ascending == _unset ? _params.ascending : ascending as bool,
+      limit: limit == _unset ? _params.limit : limit as int,
+      offset: offset == _unset ? _params.offset : offset as int,
+    );
   }
 
   void _onScroll() {
@@ -83,13 +156,14 @@ class _LogementListPageState extends State<LogementListPage> {
       _error = null;
       if (reset) {
         _hasMore = true;
-        _params = _params.copyWith(offset: 0);
+        _params = _paramsSet(offset: 0);
         if (!_refreshing) _items = [];
       }
     });
 
     try {
       final list = await _svc.search(_params);
+      if (!mounted) return;
       setState(() {
         if (reset) {
           _items = list;
@@ -97,9 +171,10 @@ class _LogementListPageState extends State<LogementListPage> {
           _items.addAll(list);
         }
         _hasMore = list.length == _params.limit;
-        _params = _params.copyWith(offset: _params.offset + list.length);
+        _params = _paramsSet(offset: _params.offset + list.length);
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -111,8 +186,6 @@ class _LogementListPageState extends State<LogementListPage> {
     await _fetch(reset: true);
     if (mounted) setState(() => _refreshing = false);
   }
-
-  // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
@@ -133,20 +206,17 @@ class _LogementListPageState extends State<LogementListPage> {
             onSelected: (v) {
               switch (v) {
                 case 'recent':
-                  _params =
-                      _params.copyWith(orderBy: 'cree_le', ascending: false);
+                  _params = _paramsSet(orderBy: 'cree_le', ascending: false);
                   break;
                 case 'prix_asc':
-                  _params =
-                      _params.copyWith(orderBy: 'prix_gnf', ascending: true);
+                  _params = _paramsSet(orderBy: 'prix_gnf', ascending: true);
                   break;
                 case 'prix_desc':
-                  _params =
-                      _params.copyWith(orderBy: 'prix_gnf', ascending: false);
+                  _params = _paramsSet(orderBy: 'prix_gnf', ascending: false);
                   break;
                 case 'surface_desc':
-                  _params = _params.copyWith(
-                      orderBy: 'superficie_m2', ascending: false);
+                  _params =
+                      _paramsSet(orderBy: 'superficie_m2', ascending: false);
                   break;
               }
               _fetch(reset: true);
@@ -179,9 +249,7 @@ class _LogementListPageState extends State<LogementListPage> {
                       itemCount: _items.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) {
-                        if (i >= _items.length) {
-                          return _loadMoreTile();
-                        }
+                        if (i >= _items.length) return _loadMoreTile();
                         return _bienTile(_items[i]);
                       },
                     ),
@@ -208,7 +276,7 @@ class _LogementListPageState extends State<LogementListPage> {
             child: TextField(
               controller: _qCtrl,
               onSubmitted: (_) {
-                _params = _params.copyWith(q: _qCtrl.text, offset: 0);
+                _params = _paramsSet(q: _qCtrl.text.trim(), offset: 0);
                 _fetch(reset: true);
               },
               decoration: InputDecoration(
@@ -235,61 +303,75 @@ class _LogementListPageState extends State<LogementListPage> {
     );
   }
 
+  /// Chips UNIQUEMENT si filtre ≠ défaut
   Widget _activeFiltersBar() {
     final chips = <Widget>[];
 
-    if (_params.mode != null) {
+    final curMode = _params.mode ?? _kDefaultMode;
+
+    // Mode : seulement si Achat (car défaut Location)
+    if (curMode != _kDefaultMode) {
       chips.add(_tag(
-        _params.mode == LogementMode.achat ? "Achat" : "Location",
+        "Achat",
         onClear: () {
-          _params = _params.copyWith(mode: null, offset: 0);
+          _params = _paramsSet(mode: _kDefaultMode, offset: 0);
           _fetch(reset: true);
         },
       ));
     }
+
+    // Catégorie : seulement si catégorie choisie (car défaut Tous = null)
     if (_params.categorie != null) {
-      chips.add(_tag(_labelCat(_params.categorie!), onClear: () {
-        _params = _params.copyWith(categorie: null, offset: 0);
+      chips.add(_tag(
+        _labelCat(_params.categorie!),
+        onClear: () {
+          _params = _paramsSet(categorie: _kDefaultCategorie, offset: 0);
+          _fetch(reset: true);
+        },
+      ));
+    }
+
+    if ((_params.ville ?? '').trim().isNotEmpty) {
+      chips.add(_tag(_params.ville!.trim(), onClear: () {
+        _params = _paramsSet(ville: null, offset: 0);
         _fetch(reset: true);
       }));
     }
-    if ((_params.ville ?? '').isNotEmpty) {
-      chips.add(_tag(_params.ville!, onClear: () {
-        _params = _params.copyWith(ville: null, offset: 0);
+
+    if ((_params.commune ?? '').trim().isNotEmpty) {
+      chips.add(_tag(_params.commune!.trim(), onClear: () {
+        _params = _paramsSet(commune: null, offset: 0);
         _fetch(reset: true);
       }));
     }
-    if ((_params.commune ?? '').isNotEmpty) {
-      chips.add(_tag(_params.commune!, onClear: () {
-        _params = _params.copyWith(commune: null, offset: 0);
-        _fetch(reset: true);
-      }));
-    }
+
     if (_params.prixMin != null || _params.prixMax != null) {
       final min = _params.prixMin?.toStringAsFixed(0) ?? '0';
       final max = _params.prixMax?.toStringAsFixed(0) ?? '∞';
       chips.add(_tag('Prix : $min–$max GNF', onClear: () {
-        _params = _params.copyWith(prixMin: null, prixMax: null, offset: 0);
+        _params = _paramsSet(prixMin: null, prixMax: null, offset: 0);
         _fetch(reset: true);
       }));
     }
+
     if (_params.surfaceMin != null || _params.surfaceMax != null) {
       final min = _params.surfaceMin?.toStringAsFixed(0) ?? '0';
       final max = _params.surfaceMax?.toStringAsFixed(0) ?? '∞';
       chips.add(_tag('Surface : $min–$max m²', onClear: () {
-        _params =
-            _params.copyWith(surfaceMin: null, surfaceMax: null, offset: 0);
+        _params = _paramsSet(surfaceMin: null, surfaceMax: null, offset: 0);
         _fetch(reset: true);
       }));
     }
+
     if (_params.chambres != null && _params.chambres! > 0) {
       chips.add(_tag('${_params.chambres} ch', onClear: () {
-        _params = _params.copyWith(chambres: null, offset: 0);
+        _params = _paramsSet(chambres: null, offset: 0);
         _fetch(reset: true);
       }));
     }
 
     if (chips.isEmpty) return const SizedBox.shrink();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       scrollDirection: Axis.horizontal,
@@ -305,30 +387,28 @@ class _LogementListPageState extends State<LogementListPage> {
   }
 
   Widget _bienTile(LogementModel b) {
-    final price = (b.prixGnf != null)
-        ? (b.mode == LogementMode.achat
-            ? '${b.prixGnf!.toStringAsFixed(0)} GNF'
-            : '${b.prixGnf!.toStringAsFixed(0)} GNF / mois')
-        : 'Prix à discuter';
+    final price = _formatPrice(b.prixGnf, b.mode);
 
     return InkWell(
-      onTap: () {
-        Navigator.pushNamed(context, AppRoutes.logementDetail, arguments: b.id);
-      },
+      onTap: () => Navigator.pushNamed(
+        context,
+        AppRoutes.logementDetail,
+        arguments: b.id,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 6))
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            )
           ],
         ),
         child: Row(
           children: [
-            // image
             Container(
               width: 110,
               height: 92,
@@ -364,8 +444,9 @@ class _LogementListPageState extends State<LogementListPage> {
                       spacing: 6,
                       runSpacing: -6,
                       children: [
-                        _miniChip(
-                            b.mode == LogementMode.achat ? 'Achat' : 'Location'),
+                        _miniChip(b.mode == LogementMode.achat
+                            ? 'Achat'
+                            : 'Location'),
                         _miniChip(_labelCat(b.categorie)),
                         if (b.chambres != null) _miniChip('${b.chambres} ch'),
                         if (b.superficieM2 != null)
@@ -378,7 +459,10 @@ class _LogementListPageState extends State<LogementListPage> {
                             color: _accent, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 2),
                     Text(
-                      [b.ville, b.commune].whereType<String>().join(' • '),
+                      [b.ville, b.commune]
+                          .whereType<String>()
+                          .where((s) => s.trim().isNotEmpty)
+                          .join(' • '),
                       style:
                           const TextStyle(color: Colors.black54, fontSize: 12),
                     ),
@@ -408,8 +492,6 @@ class _LogementListPageState extends State<LogementListPage> {
     return const SizedBox.shrink();
   }
 
-  // --------------- Filtres ---------------
-
   void _openFilters() async {
     final res = await showModalBottomSheet<LogementSearchParams>(
       context: context,
@@ -424,31 +506,29 @@ class _LogementListPageState extends State<LogementListPage> {
         chipBg: _chipBg,
       ),
     );
+
     if (res != null) {
-      _params = res.copyWith(offset: 0);
+      _params = res;
       _fetch(reset: true);
     }
   }
 
-  // --------------- Helpers UI ---------------
-
-  Widget _softBtn(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
+  Widget _softBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: _chipBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
+            color: _chipBg, borderRadius: BorderRadius.circular(12)),
         child: Row(children: [
           Icon(icon, size: 18, color: _primary),
           const SizedBox(width: 6),
-          Text(label)
+          Text(label),
         ]),
       ),
     );
@@ -467,9 +547,7 @@ class _LogementListPageState extends State<LogementListPage> {
   Widget _miniChip(String t) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: _chipBg,
-          borderRadius: BorderRadius.circular(8),
-        ),
+            color: _chipBg, borderRadius: BorderRadius.circular(8)),
         child: Text(t, style: const TextStyle(fontSize: 12)),
       );
 
@@ -486,6 +564,45 @@ class _LogementListPageState extends State<LogementListPage> {
       case LogementCategorie.autres:
         return 'Autres';
     }
+  }
+
+  String _formatPrice(num? value, LogementMode mode) {
+    if (value == null) return 'Prix à discuter';
+    final suffix = mode == LogementMode.achat ? 'GNF' : 'GNF / mois';
+    final v = value.isFinite ? value : 0;
+    final abs = v.abs();
+
+    if (abs >= 1000000000) {
+      final b = v / 1000000000;
+      final s = _trimDec(b, 1);
+      final unit = (b.abs() == 1) ? 'milliard' : 'milliards';
+      return '$s $unit $suffix';
+    }
+    if (abs >= 1000000) {
+      final m = v / 1000000;
+      final s = _trimDec(m, 1);
+      final unit = (m.abs() == 1) ? 'million' : 'millions';
+      return '$s $unit $suffix';
+    }
+    return '${_withDots(v.round())} $suffix';
+  }
+
+  static String _trimDec(num x, int decimals) {
+    final s = x.toStringAsFixed(decimals);
+    if (s.endsWith('.0')) return s.substring(0, s.length - 2);
+    return s;
+  }
+
+  static String _withDots(int n) {
+    final neg = n < 0;
+    var s = n.abs().toString();
+    final out = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final left = s.length - i;
+      out.write(s[i]);
+      if (left > 1 && left % 3 == 1) out.write('.');
+    }
+    return neg ? '-${out.toString()}' : out.toString();
   }
 
   Widget _errorBox(String msg) => Center(
@@ -509,20 +626,18 @@ class _LogementListPageState extends State<LogementListPage> {
           ),
         ),
       );
-
-  void _showSnack(String s) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
-  }
 }
 
 // ------------------- BottomSheet Filtres -------------------
 
 class _FiltersSheet extends StatefulWidget {
-  const _FiltersSheet(
-      {required this.initial,
-      required this.primary,
-      required this.accent,
-      required this.chipBg});
+  const _FiltersSheet({
+    required this.initial,
+    required this.primary,
+    required this.accent,
+    required this.chipBg,
+  });
+
   final LogementSearchParams initial;
   final Color primary;
   final Color accent;
@@ -535,8 +650,10 @@ class _FiltersSheet extends StatefulWidget {
 class _FiltersSheetState extends State<_FiltersSheet> {
   late LogementMode? _mode;
   late LogementCategorie? _cat;
+
   late TextEditingController _ville;
   late TextEditingController _commune;
+
   double _prixMin = 0;
   double _prixMax = 0;
   double _surfMin = 0;
@@ -546,8 +663,13 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   @override
   void initState() {
     super.initState();
-    _mode = widget.initial.mode;
-    _cat = widget.initial.categorie;
+    _mode = widget.initial.mode ?? LogementMode.location;
+
+    // ✅ ici aussi : si initial.categorie == autres, on l’affiche comme Tous (null)
+    _cat = (widget.initial.categorie == LogementCategorie.autres)
+        ? null
+        : widget.initial.categorie;
+
     _ville = TextEditingController(text: widget.initial.ville ?? '');
     _commune = TextEditingController(text: widget.initial.commune ?? '');
     _prixMin = (widget.initial.prixMin ?? 0).toDouble();
@@ -564,9 +686,24 @@ class _FiltersSheetState extends State<_FiltersSheet> {
     super.dispose();
   }
 
+  void _resetToDefaults() {
+    setState(() {
+      _mode = LogementMode.location;
+      _cat = null; // Tous
+      _ville.clear();
+      _commune.clear();
+      _prixMin = 0;
+      _prixMax = 0;
+      _surfMin = 0;
+      _surfMax = 0;
+      _chambres = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.of(context).viewInsets.bottom + 16;
+
     return Padding(
       padding: EdgeInsets.only(bottom: padding, left: 16, right: 16, top: 16),
       child: SingleChildScrollView(
@@ -575,18 +712,17 @@ class _FiltersSheetState extends State<_FiltersSheet> {
           children: [
             Center(
               child: Container(
-                  width: 42,
-                  height: 5,
-                  decoration: BoxDecoration(
-                      color: Colors.black12,
-                      borderRadius: BorderRadius.circular(3))),
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(3)),
+              ),
             ),
             const SizedBox(height: 12),
             const Text("Filtres",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-
-            // Mode
             const Text("Type d’opération"),
             const SizedBox(height: 8),
             Wrap(spacing: 10, children: [
@@ -608,21 +744,19 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                     color: _mode == LogementMode.achat ? Colors.white : null),
                 onSelected: (_) => setState(() => _mode = LogementMode.achat),
               ),
-              ChoiceChip(
-                label: const Text('Peu importe'),
-                selected: _mode == null,
-                selectedColor: widget.accent,
-                labelStyle:
-                    TextStyle(color: _mode == null ? Colors.white : null),
-                onSelected: (_) => setState(() => _mode = null),
-              ),
             ]),
             const SizedBox(height: 16),
-
-            // Catégorie
             const Text("Catégorie"),
             const SizedBox(height: 8),
             Wrap(spacing: 10, children: [
+              ChoiceChip(
+                label: const Text('Tous'),
+                selected: _cat == null,
+                selectedColor: widget.accent,
+                labelStyle:
+                    TextStyle(color: _cat == null ? Colors.white : null),
+                onSelected: (_) => setState(() => _cat = null),
+              ),
               for (final c in LogementCategorie.values)
                 ChoiceChip(
                   label: Text(_labelCat(c)),
@@ -631,18 +765,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   labelStyle: TextStyle(color: _cat == c ? Colors.white : null),
                   onSelected: (_) => setState(() => _cat = c),
                 ),
-              ChoiceChip(
-                label: const Text('Aucune'),
-                selected: _cat == null,
-                selectedColor: widget.accent,
-                labelStyle:
-                    TextStyle(color: _cat == null ? Colors.white : null),
-                onSelected: (_) => setState(() => _cat = null),
-              ),
             ]),
             const SizedBox(height: 16),
-
-            // Ville/commune
             Row(
               children: [
                 Expanded(
@@ -663,8 +787,6 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Prix
             const Text("Prix (GNF)"),
             const SizedBox(height: 8),
             Row(
@@ -689,8 +811,6 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Surface
             const Text("Superficie (m²)"),
             const SizedBox(height: 8),
             Row(
@@ -715,8 +835,6 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Chambres
             const Text("Chambres"),
             const SizedBox(height: 8),
             DropdownButton<int>(
@@ -733,7 +851,6 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               onChanged: (v) => setState(() => _chambres = v ?? 0),
             ),
             const SizedBox(height: 20),
-
             Row(
               children: [
                 Expanded(
@@ -742,7 +859,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       side: BorderSide(color: widget.primary),
                       foregroundColor: widget.primary,
                     ),
-                    onPressed: () => Navigator.pop(context, widget.initial),
+                    onPressed: _resetToDefaults,
                     child: const Text('Réinitialiser'),
                   ),
                 ),
@@ -759,8 +876,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       Navigator.pop(
                         context,
                         widget.initial.copyWith(
-                          mode: _mode,
-                          categorie: _cat,
+                          mode: _mode ?? LogementMode.location,
+                          categorie: _cat, // null = Tous
                           ville: _ville.text.trim().isEmpty
                               ? null
                               : _ville.text.trim(),
@@ -772,6 +889,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                           surfaceMin: _surfMin > 0 ? _surfMin : null,
                           surfaceMax: _surfMax > 0 ? _surfMax : null,
                           chambres: _chambres > 0 ? _chambres : null,
+                          offset: 0,
                         ),
                       );
                     },

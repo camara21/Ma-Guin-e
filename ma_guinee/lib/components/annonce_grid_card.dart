@@ -54,8 +54,11 @@ class AnnonceGridCard extends StatelessWidget {
                       width: double.infinity,
                       height: 110,
                       color: Colors.grey.shade100,
-                      child: const Icon(Icons.image_outlined,
-                          size: 40, color: Colors.grey),
+                      child: const Icon(
+                        Icons.image_outlined,
+                        size: 40,
+                        color: Colors.grey,
+                      ),
                     ),
             ),
             // Titre
@@ -84,14 +87,14 @@ class AnnonceGridCard extends StatelessWidget {
                 ),
               ),
             ),
-            // CatÃ©Â©Ã†â€™Â©gorie, Ville et favori en bas
+            // Catégorie, ville et favori en bas
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Infos Ã©Â©Ã†â€™  gauche
+                    // Infos à gauche
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +118,7 @@ class AnnonceGridCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    // Bouton favori Ã©Â©Ã†â€™  droite
+                    // Bouton favori à droite
                     GestureDetector(
                       onTap: onToggleFavori,
                       child: Container(
@@ -124,7 +127,7 @@ class AnnonceGridCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
-                          boxShadow: [
+                          boxShadow: const [
                             BoxShadow(
                               color: Colors.black12,
                               blurRadius: 3,
@@ -137,7 +140,7 @@ class AnnonceGridCard extends StatelessWidget {
                               : Icons.favorite_border,
                           color: annonce.estFavori == true
                               ? Colors.red
-                              : Colors.grey.shade600,
+                              : Colors.grey,
                           size: 21,
                         ),
                       ),

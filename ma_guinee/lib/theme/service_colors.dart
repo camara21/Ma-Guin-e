@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 class ServiceColors {
-  // APP / Accueil
+  // Application / Accueil
   static const Color mainPrimary = Color(0xFF0077B6);
   static const Color mainSecondary = Color(0xFF00B4D8);
   static const Color mainOnPrimary = Color(0xFFFFFFFF);
   static const Color mainOnSecondary = Color(0xFF000000);
 
-  // SantÃ©Â©Ã†â€™Â©
+  // Santé
   static const Color santePrimary = Color(0xFF009460);
   static const Color santeSecondary = Color(0xFF4CAF50);
   static const Color santeOnPrimary = Color(0xFFFFFFFF);
@@ -25,13 +25,13 @@ class ServiceColors {
   static const Color tourismeOnPrimary = Color(0xFF000000);
   static const Color tourismeOnSecondary = Color(0xFF000000);
 
-  // HÃ©Â©Ã†â€™Â´tels
+  // Hôtels
   static const Color hotelsPrimary = Color(0xFF264653);
   static const Color hotelsSecondary = Color(0xFF2A9D8F);
   static const Color hotelsOnPrimary = Color(0xFFFFFFFF);
   static const Color hotelsOnSecondary = Color(0xFFFFFFFF);
 
-  // Events / Billetterie
+  // Événements / Billetterie
   static const Color eventPrimary = Color(0xFF7B2CBF);
   static const Color eventSecondary = Color(0xFFB5179E);
   static const Color eventOnPrimary = Color(0xFFFFFFFF);
@@ -79,7 +79,7 @@ class ServiceColors {
   static const Color aideOnPrimary = Color(0xFFFFFFFF);
   static const Color aideOnSecondary = Color(0xFF000000);
 
-  // Ã©Â©Ã†â€™â€šÂ¬Â°ducation
+  // Éducation
   static const Color educationPrimary = Color(0xFF14532D);
   static const Color educationSecondary = Color(0xFF22C55E);
   static const Color educationOnPrimary = Color(0xFFFFFFFF);
@@ -91,13 +91,13 @@ class ServiceColors {
   static const Color commerceOnPrimary = Color(0xFFFFFFFF);
   static const Color commerceOnSecondary = Color(0xFF000000);
 
-  // Admin
+  // Administration
   static const Color adminPrimary = Color(0xFF111827);
   static const Color adminSecondary = Color(0xFF374151);
   static const Color adminOnPrimary = Color(0xFFFFFFFF);
   static const Color adminOnSecondary = Color(0xFFFFFFFF);
 
-  // Neutres
+  // Couleurs neutres
   static const Color neutralBg = Color(0xFFF7F7F9);
   static const Color neutralSurface = Color(0xFFFFFFFF);
   static const Color neutralBorder = Color(0xFFE5E7EB);

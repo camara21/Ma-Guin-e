@@ -8,7 +8,7 @@ class FavorisProvider extends ChangeNotifier {
   List<String> get favoris => _favorisIds;
   bool get isLoading => _isLoading;
 
-  /// Charge tous les favoris de l'utilisateur connectÃ©Â©Ã†â€™Â©
+  /// Charger tous les favoris de l'utilisateur connecté
   Future<void> loadFavoris() async {
     _isLoading = true;
     notifyListeners();
@@ -36,10 +36,10 @@ class FavorisProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// VÃ©Â©Ã†â€™Â©rifie si une annonce est dans les favoris
+  /// Vérifier si une annonce est dans les favoris
   bool estFavori(String annonceId) => _favorisIds.contains(annonceId);
 
-  /// Ajoute/Supprime un favori cÃ©Â©Ã†â€™Â´tÃ©Â©Ã†â€™Â© base ET local
+  /// Ajouter ou supprimer un favori (base de données + local)
   Future<void> toggleFavori(String annonceId) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
@@ -53,7 +53,7 @@ class FavorisProvider extends ChangeNotifier {
           .eq('annonce_id', annonceId);
       _favorisIds.remove(annonceId);
     } else {
-      // Ajouter dans la base
+      // Ajouter le favori en base
       await Supabase.instance.client.from('favoris').insert({
         'utilisateur_id': user.id,
         'annonce_id': annonceId,
@@ -64,7 +64,7 @@ class FavorisProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// RÃ©Â©Ã†â€™Â©initialiser les favoris (utile lors de la dÃ©Â©Ã†â€™Â©connexion)
+  /// Réinitialiser les favoris (utile lors de la déconnexion)
   void clear() {
     _favorisIds.clear();
     notifyListeners();

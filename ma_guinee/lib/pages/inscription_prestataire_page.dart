@@ -18,15 +18,16 @@ class InscriptionPrestatairePage extends StatefulWidget {
 class _InscriptionPrestatairePageState
     extends State<InscriptionPrestatairePage> {
   // ==== Palette Prestataire (teal) ====
-  static const Color kTeal       = Color(0xFF0EA5A4); // primaire
-  static const Color kTealDark   = Color(0xFF0B8A89); // gradient start
-  static const Color kTealLight  = Color(0xFF14B8A6); // gradient end / accents
-  static const Color kBgSoft     = Color(0xFFF8F8FB);
+  static const Color kTeal = Color(0xFF0EA5A4); // primaire
+  static const Color kTealDark = Color(0xFF0B8A89); // gradient start
+  static const Color kTealLight = Color(0xFF14B8A6); // gradient end / accents
+  static const Color kBgSoft = Color(0xFFF8F8FB);
 
   final _formKey = GlobalKey<FormState>();
 
   // Champs
-  String? _selectedJob;
+  String? _selectedCategory; // domaine (ex: Technologies & Digital)
+  String? _selectedJob; // métier (ex: Ingénieur logiciel)
   String _city = '';
   String _description = '';
 
@@ -225,9 +226,28 @@ class _InscriptionPrestatairePageState
           .maybeSingle();
 
       if (row != null) {
+        final existingCategory = (row['category'] ?? '').toString();
+        final existingJob = (row['metier'] ?? '').toString();
+
         setState(() {
           _hasExisting = true;
-          _selectedJob = (row['metier'] ?? '') as String?;
+
+          // Domaine
+          if (existingCategory.isNotEmpty &&
+              _categories.containsKey(existingCategory)) {
+            _selectedCategory = existingCategory;
+          } else {
+            _selectedCategory = null;
+          }
+
+          // Métier
+          if (_selectedCategory != null &&
+              _categories[_selectedCategory]!.contains(existingJob)) {
+            _selectedJob = existingJob;
+          } else {
+            _selectedJob = null;
+          }
+
           _city = (row['ville'] ?? '').toString();
           _description = (row['description'] ?? '').toString();
 
@@ -235,8 +255,9 @@ class _InscriptionPrestatairePageState
           _prestatairePhone = existingPhone;
 
           if (existingPhone.startsWith(kDialCode)) {
-            _nationalNumber =
-                existingPhone.substring(kDialCode.length).replaceAll(RegExp(r'\D'), '');
+            _nationalNumber = existingPhone
+                .substring(kDialCode.length)
+                .replaceAll(RegExp(r'\D'), '');
           } else {
             _nationalNumber = existingPhone.replaceAll(RegExp(r'\D'), '');
           }
@@ -261,7 +282,8 @@ class _InscriptionPrestatairePageState
     final row = {
       'utilisateur_id': user.id,
       'metier': _selectedJob,
-      'category': _categoryForJob(_selectedJob),
+      'category':
+          _selectedCategory ?? _categoryForJob(_selectedJob), // fallback
       'ville': _city.trim(),
       'description': _description.trim(),
       'phone': normalizedPhone,
@@ -278,10 +300,15 @@ class _InscriptionPrestatairePageState
           .maybeSingle();
 
       if (existing != null) {
-        await supa.from('prestataires').update(row).eq('utilisateur_id', user.id);
+        await supa
+            .from('prestataires')
+            .update(row)
+            .eq('utilisateur_id', user.id);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vos informations prestataire ont été mises à jour.')),
+          const SnackBar(
+            content: Text('Vos informations prestataire ont été mises à jour.'),
+          ),
         );
         Navigator.pop(context, true);
         return;
@@ -297,10 +324,16 @@ class _InscriptionPrestatairePageState
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
         try {
-          await supa.from('prestataires').update(row).eq('utilisateur_id', user.id);
+          await supa
+              .from('prestataires')
+              .update(row)
+              .eq('utilisateur_id', user.id);
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Vos informations prestataire ont été mises à jour.')),
+            const SnackBar(
+              content:
+                  Text('Vos informations prestataire ont été mises à jour.'),
+            ),
           );
           Navigator.pop(context, true);
           return;
@@ -325,7 +358,11 @@ class _InscriptionPrestatairePageState
     final user = context.watch<UserProvider>().utilisateur;
     if (user == null) {
       return const Scaffold(
-        body: Center(child: Text('Connectez-vous pour vous inscrire en tant que prestataire.')),
+        body: Center(
+          child: Text(
+            'Connectez-vous pour vous inscrire en tant que prestataire.',
+          ),
+        ),
       );
     }
 
@@ -340,211 +377,297 @@ class _InscriptionPrestatairePageState
           style: TextStyle(color: kTeal, fontWeight: FontWeight.bold),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              // Bandeau info (gradient teal)
-              Container(
-                padding: const EdgeInsets.all(16),
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: const LinearGradient(
-                    colors: [kTealDark, kTealLight],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.09),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isSmallWidth = constraints.maxWidth < 360;
+          final horizontalPadding = isSmallWidth ? 12.0 : 18.0;
+          final verticalPadding = constraints.maxHeight < 650 ? 12.0 : 22.0;
+
+          return Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            child: Form(
+              key: _formKey,
+              child: ListView(
+                children: [
+                  // Bandeau info (gradient teal)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      gradient: const LinearGradient(
+                        colors: [kTealDark, kTealLight],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.09),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.white,
-                      child: Icon(Icons.engineering, color: kTeal, size: 32),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Prestataire : ${user.prenom} ${user.nom}',
-                              style: const TextStyle(
+                    child: Row(
+                      children: [
+                        const CircleAvatar(
+                          radius: 28,
+                          backgroundColor: Colors.white,
+                          child: Icon(
+                            Icons.engineering,
+                            color: kTeal,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Prestataire : ${user.prenom} ${user.nom}',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16.5)),
-                          Text('Tel compte : ${user.telephone}',
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 13.5)),
-                          Text(user.email,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 13.5)),
-                        ],
-                      ),
-                    ),
-                    if (_hasExisting)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(.2),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Text('Déjà inscrit',
-                            style: TextStyle(color: Colors.white)),
-                      ),
-                  ],
-                ),
-              ),
-
-              // Photo activité (teal)
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _isUploading ? null : _pickImage,
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: kTeal, width: 2),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      backgroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.photo_camera, color: kTeal),
-                    label: Text(
-                      _isUploading ? 'Chargement...' : 'Photo activité',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: kTeal,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (_uploadedImageUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(9),
-                      child: Image.network(
-                        _uploadedImageUrl!,
-                        width: 63,
-                        height: 63,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 18),
-
-              // Métier
-              DropdownButtonFormField<String>(
-                value: _selectedJob,
-                decoration: _inputDecoration('Sélectionnez un métier'),
-                items: _categories.entries
-                    .expand((entry) => entry.value.map(
-                          (job) => DropdownMenuItem<String>(
-                            value: job,
-                            child: Text('${entry.key} • $job'),
+                                  fontSize: 16.5,
+                                ),
+                              ),
+                              Text(
+                                'Tel compte : ${user.telephone}',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                              Text(
+                                user.email,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ],
                           ),
-                        ))
-                    .toList(),
-                onChanged: (val) => setState(() => _selectedJob = val),
-                validator: (v) =>
-                    v == null ? 'Veuillez sélectionner un métier' : null,
-              ),
-              if (_selectedJob != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6, bottom: 12),
-                  child: Text(
-                    'Catégorie détectée : ${_categoryForJob(_selectedJob)}',
-                    style: const TextStyle(fontSize: 14, color: Colors.black54),
+                        ),
+                        if (_hasExisting)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(.2),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Text(
+                              'Déjà inscrit',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
 
-              // Ville
-              TextFormField(
-                initialValue: _city.isEmpty ? null : _city,
-                decoration: _inputDecoration('Ville'),
-                onChanged: (v) => _city = v,
-                validator: (v) => v == null || v.isEmpty ? 'Ville requise' : null,
-              ),
-              const SizedBox(height: 13),
+                  // Photo activité (teal) - responsive
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          onPressed: _isUploading ? null : _pickImage,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: kTeal, width: 2),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isSmallWidth ? 8 : 10,
+                              vertical: 6,
+                            ),
+                            backgroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.photo_camera, color: kTeal),
+                          label: Text(
+                            _isUploading ? 'Chargement...' : 'Photo activité',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: kTeal,
+                              fontSize: isSmallWidth ? 15 : 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_uploadedImageUrl != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(9),
+                          child: Image.network(
+                            _uploadedImageUrl!,
+                            width: 63,
+                            height: 63,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
 
-              // Téléphone prestataire (+224 fixe)
-              TextFormField(
-                initialValue: _nationalNumber.isEmpty ? null : _nationalNumber,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9\s\-]')),
+                  // Domaine (catégorie)
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _selectedCategory,
+                    decoration: _inputDecoration('Sélectionnez un domaine'),
+                    items: _categories.keys
+                        .map(
+                          (cat) => DropdownMenuItem<String>(
+                            value: cat,
+                            child: Text(cat),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedCategory = val;
+                        _selectedJob = null; // reset métier
+                      });
+                    },
+                    validator: (v) =>
+                        v == null ? 'Veuillez sélectionner un domaine' : null,
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Métier dans le domaine choisi
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _selectedJob,
+                    decoration: _inputDecoration('Sélectionnez un métier'),
+                    items: (_selectedCategory == null)
+                        ? const <DropdownMenuItem<String>>[]
+                        : _categories[_selectedCategory]!
+                            .map(
+                              (job) => DropdownMenuItem<String>(
+                                value: job,
+                                child: Text(job),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: _selectedCategory == null
+                        ? null
+                        : (val) => setState(() => _selectedJob = val),
+                    validator: (v) {
+                      if (_selectedCategory == null) {
+                        return 'Sélectionnez d’abord un domaine';
+                      }
+                      if (v == null) {
+                        return 'Veuillez sélectionner un métier';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Ville
+                  TextFormField(
+                    initialValue: _city.isEmpty ? null : _city,
+                    decoration: _inputDecoration('Ville'),
+                    onChanged: (v) => _city = v,
+                    validator: (v) =>
+                        v == null || v.isEmpty ? 'Ville requise' : null,
+                  ),
+                  const SizedBox(height: 13),
+
+                  // Téléphone prestataire (+224 fixe)
+                  TextFormField(
+                    initialValue:
+                        _nationalNumber.isEmpty ? null : _nationalNumber,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'[0-9\s\-]'),
+                      ),
+                    ],
+                    decoration: _inputDecoration(
+                            'Numéro du prestataire (ex: 6x xx xx xx)')
+                        .copyWith(
+                      prefixText: '$kDialCode ',
+                      prefixStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    onChanged: (v) => _nationalNumber = v,
+                    validator: (v) {
+                      final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
+                      if (digits.isEmpty) return 'Téléphone requis';
+                      if (digits.length < 8) return 'Numéro trop court';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 13),
+
+                  // Description
+                  TextFormField(
+                    initialValue: _description.isEmpty ? null : _description,
+                    maxLines: 3,
+                    decoration:
+                        _inputDecoration('Description de votre activité'),
+                    onChanged: (v) => _description = v,
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Bouton Valider (teal)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: (_isUploading || _isSaving) ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kTeal,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          vertical: isSmallWidth ? 14 : 17,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            isSmallWidth ? 18 : 20,
+                          ),
+                        ),
+                        elevation: 2,
+                      ),
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.check_circle_outline,
+                              color: Colors.white,
+                            ),
+                      label: Text(
+                        _isSaving
+                            ? 'Enregistrement…'
+                            : (_hasExisting
+                                ? 'Mettre à jour mon inscription'
+                                : 'Valider mon inscription'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                 ],
-                decoration: _inputDecoration('Numéro du prestataire (ex: 6x xx xx xx)')
-                    .copyWith(
-                  prefixText: '$kDialCode ',
-                  prefixStyle: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                onChanged: (v) => _nationalNumber = v,
-                validator: (v) {
-                  final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                  if (digits.isEmpty) return 'Téléphone requis';
-                  if (digits.length < 8) return 'Numéro trop court';
-                  return null;
-                },
               ),
-              const SizedBox(height: 13),
-
-              // Description
-              TextFormField(
-                initialValue: _description.isEmpty ? null : _description,
-                maxLines: 3,
-                decoration: _inputDecoration('Description de votre activité'),
-                onChanged: (v) => _description = v,
-              ),
-              const SizedBox(height: 22),
-
-              // Bouton Valider (teal)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: (_isUploading || _isSaving) ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kTeal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 17),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20)),
-                    elevation: 2,
-                  ),
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.check_circle_outline,
-                          color: Colors.white),
-                  label: Text(
-                    _isSaving
-                        ? 'Enregistrement…'
-                        : (_hasExisting
-                            ? 'Mettre à jour mon inscription'
-                            : 'Valider mon inscription'),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

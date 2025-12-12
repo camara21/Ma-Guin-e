@@ -12,6 +12,7 @@ class NotificationService {
 
   RealtimeChannel? _rtChannel;
 
+  /// Initialisation des notifications locales (Android / iOS)
   static Future<void> initLocalNotifications() async {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings();
@@ -19,11 +20,12 @@ class NotificationService {
     await flutterLocalNotificationsPlugin.initialize(settings);
   }
 
+  /// Création du canal de notification Android pour les messages
   static Future<void> createAndroidNotificationChannel() async {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       _channelId,
       'Messages',
-      description: 'Notifications Ma GuinÃ©Â©Ã†â€™Â©e',
+      description: 'Notifications Ma Guinée',
       importance: Importance.high,
     );
     await flutterLocalNotificationsPlugin
@@ -32,14 +34,20 @@ class NotificationService {
         ?.createNotificationChannel(channel);
   }
 
+  /// Initialisation globale (canal + notifications locales)
   static Future<void> globalInit() async {
     await initLocalNotifications();
     await createAndroidNotificationChannel();
   }
 
+  /// Initialisation de Firebase Cloud Messaging (FCM)
   Future<void> initializeFCM() async {
     final messaging = FirebaseMessaging.instance;
+
+    // Demande d’autorisation (iOS, Web, etc.)
     await messaging.requestPermission();
+
+    // Affichage des notifications en foreground
     await FirebaseMessaging.instance
         .setForegroundNotificationPresentationOptions(
       alert: true,
@@ -47,13 +55,16 @@ class NotificationService {
       sound: true,
     );
 
+    // Écoute des messages reçus lorsque l’app est ouverte
     FirebaseMessaging.onMessage.listen((m) {
       final n = m.notification;
-      if (n != null)
+      if (n != null) {
         _showLocal(n.title ?? 'Nouvelle notification', n.body ?? '');
+      }
     });
   }
 
+  /// Affiche une notification locale sur l’appareil
   void _showLocal(String title, String body) {
     flutterLocalNotificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
@@ -63,7 +74,7 @@ class NotificationService {
         android: AndroidNotificationDetails(
           _channelId,
           'Messages',
-          channelDescription: 'Notifications Ma GuinÃ©Â©Ã†â€™Â©e',
+          channelDescription: 'Notifications Ma Guinée',
           importance: Importance.high,
           priority: Priority.high,
           icon: '@mipmap/ic_launcher',
@@ -73,10 +84,12 @@ class NotificationService {
     );
   }
 
-  /// Ecoute les INSERT sur `public.notifications` pour l'utilisateur courant
+  /// Écoute en temps réel les INSERT sur `public.notifications` pour l'utilisateur courant
   void subscribeRealtime(
-      String userId, void Function(Map<String, dynamic>) onNotification) {
-    // Ã©Â©Ã†â€™Â©vite les doublons si on rÃ©Â©Ã†â€™Â©-appelle
+    String userId,
+    void Function(Map<String, dynamic>) onNotification,
+  ) {
+    // Évite les doublons si on ré-appelle cette méthode
     _rtChannel?.unsubscribe();
 
     _rtChannel = _client
@@ -87,7 +100,7 @@ class NotificationService {
           table: 'notifications',
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
-            column: 'user_id', // Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ CORRECTION ICI
+            column: 'user_id', // Champ filtré par identifiant utilisateur
             value: userId,
           ),
           callback: (payload) {
@@ -104,6 +117,7 @@ class NotificationService {
         .subscribe();
   }
 
+  /// Stoppe l’écoute temps réel des notifications
   void unsubscribeRealtime() {
     _rtChannel?.unsubscribe();
     _rtChannel = null;

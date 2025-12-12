@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import '../routes.dart';
 import 'package:flutter/scheduler.dart';
 import 'cgu_page.dart';
+import 'politique_confidentialite_page.dart'; // ⬅️ ajout
 
 /// =======================
 /// RÉGLAGES TRANSPARENCE (ultra premium, “plus bas possible”)
@@ -53,7 +54,11 @@ class _WelcomePageState extends State<WelcomePage> {
     _termsTap = TapGestureRecognizer()
       ..onTap = () {
         Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const CGUPage()));
+          context,
+          MaterialPageRoute(
+            builder: (_) => const MentionsLegalesPage(),
+          ),
+        );
       };
   }
 
@@ -382,11 +387,11 @@ class _BottomGlassBarState extends State<_BottomGlassBar>
                         fillOpacity: _kOutlineFillOpac,
                       ),
                       const SizedBox(height: 8),
-                      // CGU
+                      // Mentions légales (CGU + Politique)
                       Center(
                         child: Text.rich(
                           TextSpan(
-                            text: 'Conditions Générales d’Utilisation',
+                            text: 'Mentions légales',
                             style: const TextStyle(
                               fontSize: 13.5,
                               color: Colors.white,
@@ -569,10 +574,10 @@ class _OutlineButtonThin extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             splashColor: borderColor.withOpacity(0.08),
             highlightColor: borderColor.withOpacity(0.05),
-            child: Center(
+            child: const Center(
               child: Text(
-                label,
-                style: const TextStyle(
+                'Connexion',
+                style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
                   fontSize: 16.5,
@@ -588,6 +593,87 @@ class _OutlineButtonThin extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// =======================
+/// =======================
+/// Mentions légales = accès CGU + Politique
+/// =======================
+class MentionsLegalesPage extends StatelessWidget {
+  const MentionsLegalesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = _WelcomePageState.kPrimary;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 0,
+        title: const Text(
+          'Mentions légales',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 8),
+          const Text(
+            "Retrouvez ici les principaux documents juridiques de l’application Soneya :",
+            style: TextStyle(fontSize: 15, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 1,
+            child: ListTile(
+              leading: Icon(Icons.article_outlined, color: primary),
+              title: const Text('Conditions Générales d’Utilisation (CGU)'),
+              subtitle: const Text(
+                'Règles d’utilisation de l’application et obligations des utilisateurs.',
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CGUPage()),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 1,
+            child: ListTile(
+              leading: Icon(Icons.privacy_tip_outlined, color: primary),
+              title: const Text('Politique de confidentialité'),
+              subtitle: const Text(
+                'Informations sur la collecte, l’usage et la protection de vos données.',
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PolitiqueConfidentialitePage(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

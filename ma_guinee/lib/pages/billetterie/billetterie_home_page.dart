@@ -31,7 +31,14 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
   final _qCtrl = TextEditingController();
   String _selectedCat = 'toutes';
   final List<String> _categories = const [
-    'toutes', 'concert', 'festival', 'sport', 'conférence', 'kermesse', 'théâtre', 'party',
+    'toutes',
+    'concert',
+    'festival',
+    'sport',
+    'conférence',
+    'kermesse',
+    'théâtre',
+    'party',
   ];
 
   @override
@@ -79,23 +86,31 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
       return;
     }
     try {
-      final rows = await _sb.from('organisateurs').select('id').eq('user_id', uid).limit(1);
+      final rows = await _sb
+          .from('organisateurs')
+          .select('id')
+          .eq('user_id', uid)
+          .limit(1);
       final exists = rows is List && rows.isNotEmpty;
       if (!mounted) return;
       if (exists) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
       } else {
         final created = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (_) => const ProInscriptionOrganisateurPage()),
+          MaterialPageRoute(
+              builder: (_) => const ProInscriptionOrganisateurPage()),
         );
         if (created == true && mounted) {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
         }
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
     }
   }
 
@@ -104,7 +119,8 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
     final c = _selectedCat.toLowerCase();
     Iterable<Map<String, dynamic>> it = _allEvents;
     if (c.isNotEmpty && c != 'toutes') {
-      it = it.where((e) => (e['categorie'] ?? '').toString().toLowerCase() == c);
+      it =
+          it.where((e) => (e['categorie'] ?? '').toString().toLowerCase() == c);
     }
     if (f.isNotEmpty) {
       it = it.where((e) {
@@ -136,7 +152,8 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
             onSelected: (v) {
               if (v == 'pro') _openOrganisateurFlow();
               if (v == 'tickets') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const MesBilletsPage()));
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const MesBilletsPage()));
               }
             },
             itemBuilder: (_) => [
@@ -144,11 +161,14 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                 value: 'tickets',
                 child: Row(
                   children: const [
-                    Icon(Icons.confirmation_num_outlined, color: Color(0xFF4CAF50)),
+                    Icon(Icons.confirmation_num_outlined,
+                        color: Color(0xFF4CAF50)),
                     SizedBox(width: 10),
                     Text('Mes billets'),
                     Spacer(),
-                    _Badge(label: 'BILLETS', color: Color(0xFF4CAF50)), // ⬅️ badge remis
+                    _Badge(
+                        label: 'BILLETS',
+                        color: Color(0xFF4CAF50)), // ⬅️ badge remis
                   ],
                 ),
               ),
@@ -157,11 +177,14 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                 value: 'pro',
                 child: Row(
                   children: const [
-                    Icon(Icons.workspace_premium_outlined, color: Color(0xFF7B2CBF)),
+                    Icon(Icons.workspace_premium_outlined,
+                        color: Color(0xFF7B2CBF)),
                     SizedBox(width: 10),
                     Text('Espace organisateur'),
                     Spacer(),
-                    _Badge(label: 'PRO', color: Color(0xFF7B2CBF)), // ⬅️ badge remis
+                    _Badge(
+                        label: 'PRO',
+                        color: Color(0xFF7B2CBF)), // ⬅️ badge remis
                   ],
                 ),
               ),
@@ -172,7 +195,9 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text('Erreur: $_error', style: const TextStyle(color: Colors.black87)))
+              ? Center(
+                  child: Text('Erreur: $_error',
+                      style: const TextStyle(color: Colors.black87)))
               : CustomScrollView(
                   slivers: [
                     // Barre de recherche + chips (sur fond blanc)
@@ -186,23 +211,29 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                               style: const TextStyle(color: Colors.black87),
                               decoration: InputDecoration(
                                 hintText: 'Rechercher un événement…',
-                                hintStyle: const TextStyle(color: Colors.black45),
-                                prefixIcon: const Icon(Icons.search, color: Colors.black54),
+                                hintStyle:
+                                    const TextStyle(color: Colors.black45),
+                                prefixIcon: const Icon(Icons.search,
+                                    color: Colors.black54),
                                 filled: true,
                                 fillColor: const Color(0xFFF2F2F7),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFE0E0E0)),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFE0E0E0)),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: _kEventPrimary, width: 1.2),
+                                  borderSide: BorderSide(
+                                      color: _kEventPrimary, width: 1.2),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                               ),
                             ),
                           ),
@@ -212,7 +243,8 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                               scrollDirection: Axis.horizontal,
                               itemCount: _categories.length,
-                              separatorBuilder: (_, __) => const SizedBox(width: 8),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 8),
                               itemBuilder: (_, i) {
                                 final cat = _categories[i];
                                 final selected = _selectedCat == cat;
@@ -220,17 +252,24 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                                   label: Text(
                                     cat,
                                     style: TextStyle(
-                                      color: selected ? Colors.white : Colors.black87,
-                                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                      color: selected
+                                          ? Colors.white
+                                          : Colors.black87,
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
                                     ),
                                   ),
                                   selected: selected,
-                                  onSelected: (_) => setState(() => _selectedCat = cat),
+                                  onSelected: (_) =>
+                                      setState(() => _selectedCat = cat),
                                   backgroundColor: const Color(0xFFECECEC),
                                   selectedColor: _kEventPrimary,
                                   shape: StadiumBorder(
                                     side: BorderSide(
-                                      color: selected ? _kEventPrimary : Colors.black12,
+                                      color: selected
+                                          ? _kEventPrimary
+                                          : Colors.black12,
                                     ),
                                   ),
                                 );
@@ -259,13 +298,15 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                               final e = items[index];
                               return _EventCardNeo(
                                 data: e,
-                                imageUrl: _publicImageUrl(e['image_url'] as String?),
+                                imageUrl:
+                                    _publicImageUrl(e['image_url'] as String?),
                                 onTap: () => _openDetail(e['id'].toString()),
                               );
                             },
                             childCount: items.length,
                           ),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 1,
                             mainAxisSpacing: 12,
                             crossAxisSpacing: 12,
@@ -330,7 +371,8 @@ class _EventCardNeo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = DateTime.tryParse(data['date_debut']?.toString() ?? '');
-    final dateFmt = (d != null) ? DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(d) : '';
+    final dateFmt =
+        (d != null) ? DateFormat('EEE d MMM • HH:mm', 'fr_FR').format(d) : '';
     final titre = (data['titre'] ?? '').toString();
     final cat = (data['categorie'] ?? '').toString();
     final lieu = (data['lieu'] ?? '').toString();
@@ -354,13 +396,15 @@ class _EventCardNeo extends StatelessWidget {
                     errorBuilder: (_, __, ___) => Container(
                       color: const Color(0xFF101010),
                       alignment: Alignment.center,
-                      child: const Icon(Icons.broken_image, color: Colors.white54),
+                      child:
+                          const Icon(Icons.broken_image, color: Colors.white54),
                     ),
                   )
                 : Container(
                     color: const Color(0xFF101010),
                     alignment: Alignment.center,
-                    child: const Icon(Icons.event, size: 54, color: Colors.white54),
+                    child: const Icon(Icons.event,
+                        size: 54, color: Colors.white54),
                   ),
           ),
           // Dégradé
@@ -371,33 +415,41 @@ class _EventCardNeo extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Colors.black.withOpacity(.15), Colors.black.withOpacity(.65)],
+                    colors: [
+                      Colors.black.withOpacity(.15),
+                      Colors.black.withOpacity(.65)
+                    ],
                   ),
                 ),
               ),
             ),
           ),
           // Ruban catégorie
-          Positioned(left: 0, top: 18, child: _Ribbon(label: cat.toUpperCase())),
+          Positioned(
+              left: 0, top: 18, child: _Ribbon(label: cat.toUpperCase())),
           // Badge tickets
           if (ticketsRestants != null)
             Positioned(
               right: 14,
               top: 14,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: _stockColor(ticketsRestants).withOpacity(.95),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.confirmation_number, size: 14, color: Colors.white),
+                    const Icon(Icons.confirmation_number,
+                        size: 14, color: Colors.white),
                     const SizedBox(width: 6),
                     Text(
                       '$ticketsRestants restants',
                       style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12),
                     ),
                   ],
                 ),
@@ -428,7 +480,9 @@ class _EventCardNeo extends StatelessWidget {
                               letterSpacing: -.2,
                             )),
                         const SizedBox(height: 10),
-                        _MetaLine(icon: Icons.schedule, text: dateFmt.isEmpty ? 'Date à venir' : dateFmt),
+                        _MetaLine(
+                            icon: Icons.schedule,
+                            text: dateFmt.isEmpty ? 'Date à venir' : dateFmt),
                         const SizedBox(height: 6),
                         _MetaLine(icon: Icons.place, text: '$lieu • $ville'),
                       ],
@@ -437,9 +491,11 @@ class _EventCardNeo extends StatelessWidget {
                   if (prixTxt.isNotEmpty) ...[
                     const SizedBox(width: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
+                        gradient: const LinearGradient(
+                            colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Column(
@@ -447,9 +503,15 @@ class _EventCardNeo extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text('à partir de',
-                              style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600)),
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600)),
                           Text(prixTxt,
-                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
@@ -468,7 +530,8 @@ class _EventCardNeo extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.black12, width: 1), // contour léger sur fond blanc
+          border: Border.all(
+              color: Colors.black12, width: 1), // contour léger sur fond blanc
         ),
         child: card,
       ),
@@ -524,12 +587,16 @@ class _Ribbon extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
+          gradient: const LinearGradient(
+              colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(label,
             style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: .6, fontSize: 12)),
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .6,
+                fontSize: 12)),
       ),
     );
   }
@@ -543,9 +610,14 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
       child: Text(label,
-          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: .4)),
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .4)),
     );
   }
 }

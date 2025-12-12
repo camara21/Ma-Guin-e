@@ -23,6 +23,7 @@ class UserProvider extends ChangeNotifier {
     return _annonces.where((a) => a.userId.toLowerCase() == uid).toList();
   }
 
+  /// Charger les informations de l'utilisateur connecté
   Future<void> chargerUtilisateurConnecte() async {
     _isLoadingUser = true;
     notifyListeners();
@@ -48,7 +49,7 @@ class UserProvider extends ChangeNotifier {
 
       final data = Map<String, dynamic>.from(profil);
 
-      // Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ââ€šÂ¬Ã…Â¾ Ajout des espaces liÃ©Â©Ã†â€™Â©s
+      // Ajout des espaces liés à l'utilisateur
       data['espacePrestataire'] = await _getEspace(
         table: 'prestataires',
         fkColumn: 'utilisateur_id',
@@ -73,24 +74,24 @@ class UserProvider extends ChangeNotifier {
         userId: authUser.id,
       );
 
-      // Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂµ Ajout des lieux
+      // Ajout des lieux associés à l'utilisateur
       data['lieux'] = await _getEspaces(
         table: 'lieux',
         fkColumn: 'user_id',
         userId: authUser.id,
       );
 
-      // Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ CrÃ©Â©Ã†â€™Â©ation du modÃ©Â©Ã†â€™Â¨le utilisateur avec CGU et lieux
+      // Création du modèle utilisateur complet (CGU, espaces, lieux, etc.)
       _utilisateur = UtilisateurModel.fromJson(data);
 
-      debugPrint("Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬â€žÂ¢Â¡ Restos : ${_utilisateur?.restos}");
-      debugPrint("Ã©Â©Â°Ã©â€¦Â¸ÂÂ¨ Hotels : ${_utilisateur?.hotels}");
-      debugPrint("Ã©Â©Â°Ã©â€¦Â¸ÂÂ¥ Cliniques : ${_utilisateur?.cliniques}");
-      debugPrint("Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬Ã…â€œÂ Lieux : ${_utilisateur?.lieux}");
+      debugPrint("Restaurants : ${_utilisateur?.restos}");
+      debugPrint("Hôtels : ${_utilisateur?.hotels}");
+      debugPrint("Cliniques : ${_utilisateur?.cliniques}");
+      debugPrint("Lieux : ${_utilisateur?.lieux}");
 
       await loadAnnoncesUtilisateur(_utilisateur!.id);
     } catch (e, st) {
-      debugPrint("chargerUtilisateurConnecte error: $e\n$st");
+      debugPrint("Erreur chargerUtilisateurConnecte : $e\n$st");
       clearUtilisateur();
     } finally {
       _isLoadingUser = false;
@@ -98,6 +99,7 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  /// Récupère un espace unique (ex : prestataire)
   Future<Map<String, dynamic>?> _getEspace({
     required String table,
     required String fkColumn,
@@ -116,6 +118,7 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  /// Récupère une liste d'espaces (restaurants, hôtels, etc.)
   Future<List<Map<String, dynamic>>> _getEspaces({
     required String table,
     required String fkColumn,
@@ -137,6 +140,7 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  /// Charger toutes les annonces publiées par l'utilisateur
   Future<void> loadAnnoncesUtilisateur(String userId) async {
     _isLoadingAnnonces = true;
     notifyListeners();
@@ -151,7 +155,7 @@ class UserProvider extends ChangeNotifier {
           .map((e) => AnnonceModel.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e, st) {
-      debugPrint("loadAnnoncesUtilisateur error: $e\n$st");
+      debugPrint("Erreur loadAnnoncesUtilisateur : $e\n$st");
       _annonces = [];
     } finally {
       _isLoadingAnnonces = false;
@@ -159,6 +163,7 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  /// Supprimer une annonce appartenant à l'utilisateur
   Future<void> supprimerAnnonce(String annonceId) async {
     try {
       final supabase = Supabase.instance.client;
@@ -166,11 +171,12 @@ class UserProvider extends ChangeNotifier {
       _annonces.removeWhere((a) => a.id == annonceId);
       notifyListeners();
     } catch (e, st) {
-      debugPrint("supprimerAnnonce error: $e\n$st");
+      debugPrint("Erreur supprimerAnnonce : $e\n$st");
       rethrow;
     }
   }
 
+  /// Supprimer un restaurant
   Future<void> supprimerRestaurant(String restoId) async {
     try {
       final supabase = Supabase.instance.client;
@@ -178,11 +184,12 @@ class UserProvider extends ChangeNotifier {
       _utilisateur?.restos.removeWhere((r) => r['id'] == restoId);
       notifyListeners();
     } catch (e, st) {
-      debugPrint("supprimerRestaurant error: $e\n$st");
+      debugPrint("Erreur supprimerRestaurant : $e\n$st");
       rethrow;
     }
   }
 
+  /// Supprimer un hôtel
   Future<void> supprimerHotel(String hotelId) async {
     try {
       final supabase = Supabase.instance.client;
@@ -190,11 +197,12 @@ class UserProvider extends ChangeNotifier {
       _utilisateur?.hotels.removeWhere((h) => h['id'] == hotelId);
       notifyListeners();
     } catch (e, st) {
-      debugPrint("supprimerHotel error: $e\n$st");
+      debugPrint("Erreur supprimerHotel : $e\n$st");
       rethrow;
     }
   }
 
+  /// Supprimer une clinique
   Future<void> supprimerClinique(String cliniqueId) async {
     try {
       final supabase = Supabase.instance.client;
@@ -202,12 +210,12 @@ class UserProvider extends ChangeNotifier {
       _utilisateur?.cliniques.removeWhere((c) => c['id'] == cliniqueId);
       notifyListeners();
     } catch (e, st) {
-      debugPrint("supprimerClinique error: $e\n$st");
+      debugPrint("Erreur supprimerClinique : $e\n$st");
       rethrow;
     }
   }
 
-  // Ã©Â©Â°Ã©â€¦Â¸â€šÂ¬ÂÂµ Supprimer un lieu
+  /// Supprimer un lieu créé par l'utilisateur
   Future<void> supprimerLieu(String lieuId) async {
     try {
       final supabase = Supabase.instance.client;
@@ -215,11 +223,12 @@ class UserProvider extends ChangeNotifier {
       _utilisateur?.lieux.removeWhere((l) => l['id'] == lieuId);
       notifyListeners();
     } catch (e, st) {
-      debugPrint("supprimerLieu error: $e\n$st");
+      debugPrint("Erreur supprimerLieu : $e\n$st");
       rethrow;
     }
   }
 
+  /// Réinitialiser toutes les données utilisateur
   void clearUtilisateur() {
     _utilisateur = null;
     _annonces = [];
@@ -227,6 +236,7 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Déconnexion complète
   Future<void> logout() async {
     await Supabase.instance.client.auth.signOut();
     clearUtilisateur();

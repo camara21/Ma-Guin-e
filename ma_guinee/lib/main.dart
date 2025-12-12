@@ -34,6 +34,9 @@ import 'navigation/push_nav.dart';
 // ✅ Annonces (pré-chargement global)
 import 'pages/annonces_page.dart';
 
+// ✅ Supabase (helper centralisé)
+import 'supabase_client.dart';
+
 /// Hive boxes
 const String kAnnoncesBox = 'annonces_box';
 
@@ -373,30 +376,7 @@ Future<void> main() async {
   // =======================
   //   INIT SUPABASE
   // =======================
-  const supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://zykbcgqgkdsguirjvwxg.supabase.co',
-  );
-  const supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5a2JjZ3Fna2RzZ3Vpcmp2d3hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwMTEsImV4cCI6MjA2ODM1OTAxMX0.R-iSxRy-vFvmmE80EdI2AlZCKqgADvLd9_luvrLQL-E',
-  );
-
-  if (kIsWeb) {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-    );
-  } else {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-      ),
-    );
-  }
+  await initSupabase();
 
   final userProvider = UserProvider();
 

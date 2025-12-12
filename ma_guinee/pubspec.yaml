@@ -99,12 +99,12 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.1
 
-# ====== Génération automatique des icônes (fond bleu) ======
+# ====== Génération automatique des icônes (mobile + web) ======
 flutter_launcher_icons:
   android: true
   ios: true
 
-  # Ton logo 1024x1024 (avec fond bleu déjà appliqué)
+  # Ton logo 1024x1024 (fond déjà dans l'image)
   image_path: assets/icons/soneya-1024.png
   remove_alpha_ios: true
 
@@ -115,6 +115,13 @@ flutter_launcher_icons:
   android_12:
     image: assets/icons/soneya-1024.png
     icon_background_color: "#1175F7"
+
+  # Web (PWA / favicon / icons sous web/icons)
+  web:
+    generate: true
+    image_path: assets/icons/soneya-1024.png
+    background_color: "#1175F7"
+    theme_color: "#1175F7"
 
 flutter:
   uses-material-design: true

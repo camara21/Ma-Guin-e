@@ -6,8 +6,7 @@ import '../models/logement_models.dart';
 
 const String _kTable = 'logements';
 const String _kTablePhotos = 'logement_photos';
-const String _kBucketPhotos =
-    'logements'; // Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ bucket exact (avec "s")
+const String _kBucketPhotos = 'logements'; // Nom exact du bucket (avec le "s")
 
 class LogementService {
   LogementService({SupabaseClient? client})
@@ -15,19 +14,21 @@ class LogementService {
 
   final SupabaseClient _sb;
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Helpers Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ========================= Helpers généraux =========================
 
+  /// Renvoie l'ID de l'utilisateur connecté ou lance une erreur s'il n'est pas connecté.
   String _uidOrThrow() {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) {
-      throw StateError('Utilisateur non connectÃ©Â©Ã†â€™Â©');
+      throw StateError('Utilisateur non connecté');
     }
     return uid;
   }
 
+  /// Construit un pattern pour les recherches ILIKE.
   String _like(String s) => '%${s.trim()}%';
 
-  /// Compatible toutes versions: utilise `inFilter` si dispo, sinon `filter('in', ...)`.
+  /// Compatible toutes versions: utilise `inFilter` si disponible, sinon `filter('in', ...)`.
   PostgrestFilterBuilder _applyIn(
     PostgrestFilterBuilder q,
     String column,
@@ -36,7 +37,7 @@ class LogementService {
     if (values.isEmpty) return q;
     try {
       final dynamic dyn =
-          q; // Ã©Â©Ã†â€™Â©vite les erreurs de compile si inFilter nÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢existe pas
+          q; // évite les erreurs de compilation si inFilter n'existe pas
       return dyn.inFilter(column, values) as PostgrestFilterBuilder;
     } catch (_) {
       final list = values.map((e) => '"$e"').join(',');
@@ -44,7 +45,7 @@ class LogementService {
     }
   }
 
-  /// Map prÃ©Â©Ã†â€™Âªt pour la DB **sans** `photos`.
+  /// Map prêt pour la DB **sans** le champ `photos`.
   Map<String, dynamic> _modelToDbMap(LogementModel m) {
     final map = <String, dynamic>{
       'titre': m.titre,
@@ -61,23 +62,25 @@ class LogementService {
       'lng': m.lng,
       'contact_telephone': m.contactTelephone,
     };
-    // on supprime les nulls (on garde 0/false)
+    // On supprime les valeurs nulles (on garde 0 / false)
     map.removeWhere((_, v) => v == null);
     return map;
   }
 
-  /// Injecte `photos` si fourni pour mapper proprement sur LogementModel.
+  /// Injecte `photos` si fourni pour alimenter correctement LogementModel.
   LogementModel _rowToModel(
     Map<String, dynamic> row, {
     List<String>? photos,
   }) {
     final m = Map<String, dynamic>.from(row);
-    if (photos != null)
-      m['photos'] = photos; // uniquement pour le modÃ©Â©Ã†â€™Â¨le
+    if (photos != null) {
+      // uniquement pour le modèle
+      m['photos'] = photos;
+    }
     return LogementModel.fromMap(m);
   }
 
-  /// RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â¨re les photos (url, position) pour une liste dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢IDs.
+  /// Récupère les photos (url, position) pour une liste d'IDs de logements.
   Future<Map<String, List<String>>> _fetchPhotosByIds(List<String> ids) async {
     if (ids.isEmpty) return {};
     final rows = await _applyIn(
@@ -104,22 +107,25 @@ class LogementService {
     return out;
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Lecture Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ============================== Lecture ==============================
 
+  /// Récupère un logement par son ID (avec ses photos).
   Future<LogementModel?> getById(String id) async {
     try {
       final row = await _sb.from(_kTable).select().eq('id', id).maybeSingle();
       if (row == null) return null;
 
       final photos = await _fetchPhotosByIds([id]);
-      return _rowToModel(Map<String, dynamic>.from(row as Map),
-          photos: photos[id] ?? const []);
+      return _rowToModel(
+        Map<String, dynamic>.from(row as Map),
+        photos: photos[id] ?? const [],
+      );
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  /// Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ Mes annonces (avec sous-table `logement_photos`) triÃ©Â©Ã†â€™Â©es par `cree_le` desc.
+  /// Mes annonces logement (avec sous-table `logement_photos`), triées par `cree_le` desc.
   Future<List<LogementModel>> myListings(String userId) async {
     final rows = await _sb.from(_kTable).select('''
           id, user_id, titre, description, mode, categorie, prix_gnf,
@@ -135,17 +141,20 @@ class LogementService {
       final photosRaw =
           (r['logement_photos'] as List?)?.cast<Map<String, dynamic>>() ??
               const <Map<String, dynamic>>[];
+
       photosRaw
           .sort((a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0));
+
       m['photos'] = photosRaw
           .map((e) => (e['url'] ?? '').toString())
           .where((u) => u.isNotEmpty)
           .toList();
+
       return LogementModel.fromMap(m);
     }).toList();
   }
 
-  /// RÃ©Â©Ã†â€™Â©cupÃ©Â©Ã†â€™Â©ration de plusieurs biens par IDs (utile ailleurs).
+  /// Récupération de plusieurs biens par leurs IDs.
   Future<List<LogementModel>> getManyByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     try {
@@ -158,16 +167,19 @@ class LogementService {
       );
 
       return list
-          .map((r) => _rowToModel(
-                r,
-                photos: photosMap[r['id'].toString()] ?? const [],
-              ))
+          .map(
+            (r) => _rowToModel(
+              r,
+              photos: photosMap[r['id'].toString()] ?? const [],
+            ),
+          )
           .toList();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Derniers logements publiés (limit par défaut : 10).
   Future<List<LogementModel>> latest({int limit = 10}) async {
     try {
       final rows = await _sb
@@ -181,14 +193,19 @@ class LogementService {
       final photosMap = await _fetchPhotosByIds(ids);
 
       return list
-          .map((r) =>
-              _rowToModel(r, photos: photosMap[r['id'].toString()] ?? const []))
+          .map(
+            (r) => _rowToModel(
+              r,
+              photos: photosMap[r['id'].toString()] ?? const [],
+            ),
+          )
           .toList();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Logements proches (par ville/commune) avec limite de résultats.
   Future<List<LogementModel>> nearMe({
     String? ville,
     String? commune,
@@ -197,10 +214,12 @@ class LogementService {
     try {
       var q = _sb.from(_kTable).select('*');
 
-      if (ville != null && ville.trim().isNotEmpty)
+      if (ville != null && ville.trim().isNotEmpty) {
         q = q.ilike('ville', _like(ville));
-      if (commune != null && commune.trim().isNotEmpty)
+      }
+      if (commune != null && commune.trim().isNotEmpty) {
         q = q.ilike('commune', _like(commune));
+      }
 
       final rows = await q.order('cree_le', ascending: false).limit(limit);
       final list = (rows as List).cast<Map<String, dynamic>>();
@@ -208,20 +227,24 @@ class LogementService {
       final photosMap = await _fetchPhotosByIds(ids);
 
       return list
-          .map((r) =>
-              _rowToModel(r, photos: photosMap[r['id'].toString()] ?? const []))
+          .map(
+            (r) => _rowToModel(
+              r,
+              photos: photosMap[r['id'].toString()] ?? const [],
+            ),
+          )
           .toList();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  /// Recherche paginÃ©Â©Ã†â€™Â©e + filtres.
+  /// Recherche paginée avec filtres (mode, catégorie, ville, prix, surface, etc.).
   Future<List<LogementModel>> search(LogementSearchParams params) async {
     try {
       var q = _sb.from(_kTable).select('*');
 
-      // Filtres
+      // Filtres structurés
       if (params.mode != null) {
         q = q.eq('mode', logementModeToString(params.mode!));
       }
@@ -236,15 +259,17 @@ class LogementService {
       }
       if (params.prixMin != null) q = q.gte('prix_gnf', params.prixMin!);
       if (params.prixMax != null) q = q.lte('prix_gnf', params.prixMax!);
-      if (params.surfaceMin != null)
+      if (params.surfaceMin != null) {
         q = q.gte('superficie_m2', params.surfaceMin!);
-      if (params.surfaceMax != null)
+      }
+      if (params.surfaceMax != null) {
         q = q.lte('superficie_m2', params.surfaceMax!);
+      }
       if (params.chambres != null && params.chambres! > 0) {
         q = q.eq('chambres', params.chambres!);
       }
 
-      // Plein-texte simple
+      // Recherche plein texte simple
       if (params.q != null && params.q!.trim().isNotEmpty) {
         final kw = params.q!.trim();
         q = q.or(
@@ -264,59 +289,67 @@ class LogementService {
       final photosMap = await _fetchPhotosByIds(ids);
 
       return list
-          .map((r) =>
-              _rowToModel(r, photos: photosMap[r['id'].toString()] ?? const []))
+          .map(
+            (r) => _rowToModel(
+              r,
+              photos: photosMap[r['id'].toString()] ?? const [],
+            ),
+          )
           .toList();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ CRUD Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // =============================== CRUD ===============================
 
+  /// Crée un logement et renvoie son ID.
   Future<String> create(LogementModel data) async {
     try {
       final uid = _uidOrThrow();
       final payload = _modelToDbMap(data)
-        ..['user_id'] = uid; // Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ pas de `photos` ici
+        // pas de `photos` ici, uniquement les champs de la table
+        ..['user_id'] = uid;
 
       final row = await _sb.from(_kTable).insert(payload).select('id').single();
       return row['id'].toString();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Met à jour un logement avec un patch de champs.
   Future<void> update(String id, Map<String, dynamic> changes) async {
     if (changes.isEmpty) return;
     try {
       await _sb.from(_kTable).update(changes).eq('id', id);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Met à jour un logement à partir d'un modèle (sans gérer les photos).
   Future<void> updateFromModel(String id, LogementModel patch) async {
-    await update(id,
-        _modelToDbMap(patch)); // Ã©Â©Â¢Ã©â€¦â‚¬Å“â€šÂ¬Â¦ pas de `photos` ici
+    await update(id, _modelToDbMap(patch)); // toujours sans `photos` ici
   }
 
+  /// Supprime un logement (et ses photos si la cascade n'est pas configurée).
   Future<void> delete(String id) async {
     try {
-      // Nettoyage photos (au cas oÃ©Â©Ã†â€™Â¹ CASCADE absent)
+      // Nettoyage des photos au cas où la contrainte ON CASCADE n'est pas en place
       await _sb.from(_kTablePhotos).delete().eq('logement_id', id);
       await _sb.from(_kTable).delete().eq('id', id);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  /// Remplace toutes les photos dÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢un logement par `urls` (position = index).
+  /// Remplace toutes les photos d'un logement par la liste `urls` (position = index).
   Future<void> setPhotos(String logementId, List<String> urls) async {
     try {
       await _sb.from(_kTablePhotos).delete().eq('logement_id', logementId);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
 
     if (urls.isEmpty) return;
@@ -336,12 +369,13 @@ class LogementService {
     try {
       await _sb.from(_kTablePhotos).insert(payload);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Contact Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ============================ Contact ============================
 
+  /// Récupère le numéro de téléphone de contact d'un logement.
   Future<String?> getContactPhone(String logementId) async {
     try {
       final row = await _sb
@@ -352,31 +386,33 @@ class LogementService {
       if (row == null) return null;
       return (row as Map)['contact_telephone']?.toString();
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
+  /// Met à jour le numéro de téléphone de contact d'un logement.
   Future<void> updateContactPhone(String logementId, String phone) async {
     try {
       await _sb
           .from(_kTable)
           .update({'contact_telephone': phone}).eq('id', logementId);
     } on PostgrestException catch (e) {
-      throw Exception(e.message ?? 'Erreur base de donnÃ©Â©Ã†â€™Â©es');
+      throw Exception(e.message ?? 'Erreur base de données');
     }
   }
 
-  // Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬ Storage (photos) Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬Ã©Â©Â¢â€šÂ¬Ââ‚¬Å¡Â¬
+  // ========================= Storage (photos) =========================
 
+  /// Upload une photo dans le bucket "logements" et renvoie la clé + URL publique.
   Future<({String key, String publicUrl})> uploadPhoto({
     required Uint8List bytes,
     required String filename,
     String? logementId,
   }) async {
     final uid =
-        _uidOrThrow(); // impose lÃ©Â©Â¢â‚¬Å¡Â¬â‚¬Å¾Â¢auth et fournit le 1er segment
+        _uidOrThrow(); // impose l'authentification et fournit le 1er segment
 
-    // nom de fichier "safe"
+    // Nom de fichier “safe”
     final safeName =
         filename.toLowerCase().replaceAll(RegExp(r'[^a-z0-9._-]+'), '_');
 
@@ -403,6 +439,7 @@ class LogementService {
     }
   }
 
+  /// Crée une URL signée temporaire pour une photo.
   Future<String> createSignedUrl(String key, {int expiresInSec = 3600}) async {
     try {
       final url = await _sb.storage
@@ -410,7 +447,7 @@ class LogementService {
           .createSignedUrl(key, expiresInSec);
       return url;
     } on StorageException catch (e) {
-      throw Exception(e.message ?? 'Erreur URL signÃ©Â©Ã†â€™Â©e');
+      throw Exception(e.message ?? 'Erreur URL signée');
     }
   }
 }
