@@ -22,6 +22,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   // Avis (édition)
   int _note = 0;
   final TextEditingController _avisController = TextEditingController();
+  bool _submittingAvis = false;
 
   // Stats avis
   double? _noteMoyenne;
@@ -36,6 +37,12 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   // Galerie
   final PageController _pageController = PageController();
   int _currentImage = 0;
+
+  bool get _canSubmitAvis {
+    return !_submittingAvis &&
+        _note > 0 &&
+        _avisController.text.trim().isNotEmpty;
+  }
 
   Future<void> _precacheAll(BuildContext context, List<String> urls) async {
     for (final u in urls) {
@@ -55,6 +62,11 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     super.initState();
     _loadAvisStats();
     _loadAvisCommentaires();
+
+    // ✅ pour activer/désactiver le bouton en temps réel
+    _avisController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -164,6 +176,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   Future<void> _submitAvis() async {
     final userId = _sb.auth.currentUser?.id;
     final lieuId = widget.lieu['id']?.toString();
+    final commentaire = _avisController.text.trim();
 
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -175,20 +188,29 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
           .showSnackBar(const SnackBar(content: Text("Lieu invalide.")));
       return;
     }
+
+    // ✅ règles demandées : étoiles + commentaire obligatoires
     if (_note <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text("Choisissez une note (au moins 1 étoile).")));
       return;
     }
+    if (commentaire.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Écrivez un commentaire avant d’envoyer.")));
+      return;
+    }
+
+    if (_submittingAvis) return;
 
     try {
+      if (mounted) setState(() => _submittingAvis = true);
+
       final payload = {
         'lieu_id': lieuId,
         'auteur_id': userId,
         'etoiles': _note,
-        'commentaire': _avisController.text.trim().isEmpty
-            ? null
-            : _avisController.text.trim(),
+        'commentaire': commentaire, // ✅ plus de null
       };
 
       await _sb.from('avis_lieux').upsert(
@@ -214,6 +236,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Erreur avis: ${e.message}')));
+    } finally {
+      if (mounted) setState(() => _submittingAvis = false);
     }
   }
 
@@ -752,8 +776,12 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 TextField(
                   controller: _avisController,
                   maxLines: 3,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _submitAvis(),
+                  textInputAction: _canSubmitAvis
+                      ? TextInputAction.send
+                      : TextInputAction.newline,
+                  onSubmitted: (_) {
+                    if (_canSubmitAvis) _submitAvis();
+                  },
                   decoration: InputDecoration(
                     hintText: "Écrivez votre avis ici...",
                     border: OutlineInputBorder(
@@ -774,12 +802,24 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton.icon(
-                    onPressed: _submitAvis,
-                    icon: const Icon(Icons.send),
-                    label: const Text("Envoyer"),
+                    // ✅ Désactivé tant que étoiles + commentaire pas remplis
+                    onPressed: _canSubmitAvis ? _submitAvis : null,
+                    icon: _submittingAvis
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send),
+                    label: Text(_submittingAvis ? "Envoi..." : "Envoyer"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: kPrimary,
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor: kPrimary.withOpacity(0.35),
+                      disabledForegroundColor: Colors.white70,
                       padding: const EdgeInsets.symmetric(
                           vertical: 11, horizontal: 18),
                       shape: RoundedRectangleBorder(

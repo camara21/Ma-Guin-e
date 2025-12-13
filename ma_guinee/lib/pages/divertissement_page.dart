@@ -31,6 +31,12 @@ class _DivertissementPageState extends State<DivertissementPage>
   static const Color _neutralSurface = Color(0xFFFFFFFF);
   static const Color _neutralBorder = Color(0xFFE5E7EB);
 
+  static const LinearGradient _topGradient = LinearGradient(
+    colors: [primaryColor, secondaryColor],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
+
   // Cache (AppCache)
   static const String _cacheKey = 'divertissement:list:v1';
   static const Duration _memMaxAge = Duration(days: 7);
@@ -45,6 +51,8 @@ class _DivertissementPageState extends State<DivertissementPage>
 
   // Données
   final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+
   List<Map<String, dynamic>> _lieux = [];
   List<Map<String, dynamic>> _filtered = [];
 
@@ -52,9 +60,6 @@ class _DivertissementPageState extends State<DivertissementPage>
   bool _loading = true; // skeleton si cold start sans cache
   bool _syncing = false; // sync réseau silencieuse
   bool _hasAnyCache = false;
-
-  // Recherche (debounce)
-  Timer? _debounce;
 
   // Localisation
   Position? _position;
@@ -85,6 +90,36 @@ class _DivertissementPageState extends State<DivertissementPage>
 
   @override
   bool get wantKeepAlive => true;
+
+  // ---------- Grid responsive (même carte que Santé/Tourisme) ----------
+  int _columnsForWidth(double w) {
+    if (w >= 1600) return 6;
+    if (w >= 1400) return 5;
+    if (w >= 1100) return 4;
+    if (w >= 800) return 3;
+    return 2;
+  }
+
+  double _ratioFor(
+      double screenWidth, int cols, double spacing, double paddingH) {
+    final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
+    final itemWidth = usableWidth / cols;
+
+    final imageH = itemWidth * (3 / 4); // ✅ image 4/3
+    double infoH;
+    if (itemWidth < 220) {
+      infoH = 118;
+    } else if (itemWidth < 280) {
+      infoH = 112;
+    } else if (itemWidth < 340) {
+      infoH = 108;
+    } else {
+      infoH = 104;
+    }
+
+    final totalH = imageH + infoH;
+    return itemWidth / totalH;
+  }
 
   // ====== Distance précise (Haversine) ======
   double? _distanceMeters(
@@ -219,16 +254,13 @@ class _DivertissementPageState extends State<DivertissementPage>
         }
       }
 
-      // injecte _avg / _count dans les items (compat avec ton UI existant)
       for (final l in list) {
         final id = (l['id'] ?? '').toString();
         final c = cnt[id] ?? 0;
         l['_count'] = c;
         l['_avg'] = (c == 0) ? null : (sum[id]! / c);
       }
-    } catch (_) {
-      // silencieux
-    }
+    } catch (_) {}
   }
 
   // ---------- Tri (même ville > distance > nom) ----------
@@ -265,18 +297,15 @@ class _DivertissementPageState extends State<DivertissementPage>
 
   // ---------- SWR : cache instantané + sync réseau ----------
   Future<void> _loadAllSWR({bool forceNetwork = false}) async {
-    // anti double-call
     if (_syncing) return;
 
-    // ouvre Hive si besoin (non bloquant)
     if (!Hive.isBoxOpen(_hiveBoxName)) {
       unawaited(Hive.openBox(_hiveBoxName));
     }
 
-    // 1) snapshot cache (instant) si pas forcé
     if (!forceNetwork) {
+      // Hive snapshot prioritaire si pas de cache affiché
       if (!_hasAnyCache) {
-        // a) Hive
         final hiveSnap = _readHiveSnapshot();
         if (hiveSnap != null && hiveSnap.isNotEmpty) {
           _lieux = hiveSnap.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -289,7 +318,7 @@ class _DivertissementPageState extends State<DivertissementPage>
         }
       }
 
-      // b) AppCache (mémoire/disque)
+      // AppCache fallback (mémoire/disque)
       if (!_hasAnyCache) {
         final mem = AppCache.I.getListMemory(_cacheKey, maxAge: _memMaxAge);
         List<Map<String, dynamic>>? disk;
@@ -312,14 +341,12 @@ class _DivertissementPageState extends State<DivertissementPage>
         }
       }
     } else {
-      // refresh manuel : pas de skeleton global
       if (mounted) setState(() => _loading = _hasAnyCache ? false : true);
     }
 
-    // 2) localisation en parallèle (non bloquante)
+    // localisation en parallèle
     unawaited(_getLocationNonBlocking());
 
-    // 3) réseau (SWR) en arrière-plan
     if (mounted) setState(() => _syncing = true);
 
     try {
@@ -330,7 +357,7 @@ class _DivertissementPageState extends State<DivertissementPage>
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // distances si on a déjà une position
+      // distance + tri si position dispo
       if (_position != null) {
         for (final l in list) {
           final lat = (l['latitude'] as num?)?.toDouble();
@@ -345,7 +372,6 @@ class _DivertissementPageState extends State<DivertissementPage>
         _sortByDistance(list);
       }
 
-      // affiche tout de suite (sans attendre les ratings)
       _lieux = list;
       _memoryCache = list.map((e) => Map<String, dynamic>.from(e)).toList();
       _applyFilter(_searchCtrl.text, setStateNow: false);
@@ -353,11 +379,10 @@ class _DivertissementPageState extends State<DivertissementPage>
       _loading = false;
       if (mounted) setState(() {});
 
-      // ratings en fond (puis re-cache)
+      // ratings + persist caches
       unawaited(() async {
         await _fillRatingsFor(list);
 
-        // persist caches (retire champs volatils)
         final toCache = list.map((e) {
           final c = Map<String, dynamic>.from(e);
           c.remove('_distance');
@@ -367,7 +392,6 @@ class _DivertissementPageState extends State<DivertissementPage>
         AppCache.I.setList(_cacheKey, toCache, persist: true);
         await _writeHiveSnapshot(toCache);
 
-        // update UI (si encore là)
         if (!mounted) return;
         _applyFilter(_searchCtrl.text, setStateNow: false);
         setState(() {});
@@ -423,32 +447,105 @@ class _DivertissementPageState extends State<DivertissementPage>
     if (setStateNow && mounted) setState(() {});
   }
 
-  // ---------- Helpers ----------
+  // ---------- Images ----------
+  bool _validUrl(String? s) {
+    if (s == null || s.trim().isEmpty) return false;
+    final u = Uri.tryParse(s.trim());
+    return u != null && (u.isScheme('http') || u.isScheme('https'));
+  }
+
   List<String> _imagesFrom(dynamic raw) {
-    if (raw is List) return raw.map((e) => e.toString()).toList();
-    if (raw is String && raw.trim().isNotEmpty) return [raw];
+    if (raw is List) {
+      return raw
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => _validUrl(s))
+          .toList();
+    }
+    if (raw is String && _validUrl(raw)) return [raw.trim()];
     return const [];
   }
 
-  Widget _skeletonGrid(BuildContext context) {
-    final screenW = MediaQuery.of(context).size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
-    final itemW = (screenW - totalHGap) / crossCount;
-    final itemH = itemW * (11 / 16) + 112.0;
-    final ratio = itemW / itemH;
+  // ---------- UI images premium (même que Santé/Tourisme) ----------
+  Widget _imagePremiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
 
+  Widget _premiumImage(String url) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final dpr = MediaQuery.of(context).devicePixelRatio;
+        final w = c.maxWidth.isFinite ? c.maxWidth : 360.0;
+        final h = c.maxHeight.isFinite ? c.maxHeight : 240.0;
+
+        final safeUrl = _validUrl(url)
+            ? url.trim()
+            : 'https://via.placeholder.com/600x400?text=Divertissement';
+
+        return CachedNetworkImage(
+          key: ValueKey('divert_img_$safeUrl'),
+          imageUrl: safeUrl,
+          cacheKey: safeUrl,
+          memCacheWidth: (w * dpr).round(),
+          memCacheHeight: (h * dpr).round(),
+          fadeInDuration: Duration.zero,
+          fadeOutDuration: Duration.zero,
+          placeholderFadeInDuration: Duration.zero,
+          useOldImageOnUrlChange: true,
+          imageBuilder: (_, provider) => Image(
+            image: provider,
+            fit: BoxFit.cover, // ✅ pas déformé
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
+          ),
+          placeholder: (_, __) => _imagePremiumPlaceholder(),
+          errorWidget: (_, __, ___) => Container(
+            color: const Color(0xFFE5E7EB),
+            alignment: Alignment.center,
+            child: Icon(Icons.nightlife,
+                size: 44, color: primaryColor.withOpacity(.35)),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _stars(double value, {double size = 14}) {
+    final full = value.floor().clamp(0, 5);
+    final half = (value - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) return Icon(Icons.star, size: size, color: Colors.amber);
+        if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: Colors.amber);
+        }
+        return Icon(Icons.star_border, size: size, color: Colors.amber);
+      }),
+    );
+  }
+
+  // ---------- Skeleton ----------
+  Widget _skeletonGrid(
+      int cols, double ratio, double spacing, double paddingH) {
     return GridView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossCount,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
+        crossAxisCount: cols,
+        mainAxisSpacing: spacing,
+        crossAxisSpacing: spacing,
         childAspectRatio: ratio,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: paddingH, vertical: 4),
       itemCount: 8,
       itemBuilder: (_, __) => const _SkeletonCard(),
     );
@@ -460,15 +557,12 @@ class _DivertissementPageState extends State<DivertissementPage>
 
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
-
     final screenW = media.size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
-    final itemW = (screenW - totalHGap) / crossCount;
-    final itemH = itemW * (11 / 16) + 112.0;
-    final ratio = itemW / itemH;
+
+    final gridCols = _columnsForWidth(screenW);
+    const double gridSpacing = 4.0;
+    const double gridHPadding = 6.0;
+    final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
     final subtitleInfo = (_position != null && _villeGPS != null)
         ? 'Autour de ${_villeGPS!.isEmpty ? "vous" : _villeGPS}'
@@ -514,70 +608,55 @@ class _DivertissementPageState extends State<DivertissementPage>
             child: SizedBox(
               height: 3,
               child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [primaryColor, secondaryColor],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
-              ),
+                  decoration: BoxDecoration(gradient: _topGradient)),
             ),
           ),
         ),
         body: Column(
           children: [
-            // Bandeau
+            // ✅ Bandeau (sans overflow)
             Padding(
               padding: const EdgeInsets.only(
                   left: 12, right: 12, top: 12, bottom: 8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
+                  width: double.infinity,
                   constraints: const BoxConstraints(minHeight: 72),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [primaryColor, secondaryColor],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            "Bars, clubs, lounges et sorties en Guinée",
-                            style: TextStyle(
-                              color: onPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              height: 1.2,
-                              decoration: TextDecoration.none,
-                            ),
-                          ),
-                          if (subtitleInfo != null)
-                            Text(
-                              subtitleInfo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                              style: const TextStyle(
-                                color: onPrimary,
-                                fontSize: 12,
-                                height: 1.1,
-                                decoration: TextDecoration.none,
-                              ),
-                            ),
-                        ],
+                  decoration: const BoxDecoration(gradient: _topGradient),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        "Bars, clubs, lounges et sorties en Guinée",
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: onPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                          decoration: TextDecoration.none,
+                        ),
                       ),
-                    ),
+                      if (subtitleInfo != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitleInfo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: onPrimary,
+                            fontSize: 12,
+                            height: 1.05,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -585,20 +664,28 @@ class _DivertissementPageState extends State<DivertissementPage>
 
             // Recherche (debounce)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: TextField(
                 controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Rechercher un lieu, une catégorie, une ville...',
-                  prefixIcon: const Icon(Icons.search, color: primaryColor),
+                decoration: const InputDecoration(
+                  hintText: 'Rechercher un lieu, une ville, une catégorie…',
+                  prefixIcon: Icon(Icons.search, color: primaryColor),
                   filled: true,
                   fillColor: _neutralSurface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
                   contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide(color: _neutralBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide(color: _neutralBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide(color: primaryColor, width: 1.4),
+                  ),
                 ),
                 onChanged: (txt) {
                   _debounce?.cancel();
@@ -610,49 +697,266 @@ class _DivertissementPageState extends State<DivertissementPage>
             ),
             const SizedBox(height: 6),
 
-            // Grille
             Expanded(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
+                duration: const Duration(milliseconds: 160),
                 child: coldStart
-                    ? _skeletonGrid(context)
+                    ? _skeletonGrid(gridCols, ratio, gridSpacing, gridHPadding)
                     : (_filtered.isEmpty
-                        ? const Center(child: Text("Aucun lieu trouvé."))
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 200),
+                              Center(child: Text("Aucun lieu trouvé.")),
+                            ],
+                          )
                         : RefreshIndicator(
                             onRefresh: () => _loadAllSWR(forceNetwork: true),
                             child: GridView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossCount,
-                                mainAxisSpacing: 8,
-                                crossAxisSpacing: 8,
+                                crossAxisCount: gridCols,
+                                mainAxisSpacing: gridSpacing,
+                                crossAxisSpacing: gridSpacing,
                                 childAspectRatio: ratio,
                               ),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 8),
+                                horizontal: gridHPadding,
+                                vertical: 4,
+                              ),
                               cacheExtent: 900,
                               itemCount: _filtered.length,
                               itemBuilder: (context, index) {
                                 final lieu = _filtered[index];
-                                final images = _imagesFrom(lieu['images']);
-                                final image = images.isNotEmpty
-                                    ? images.first
-                                    : 'https://via.placeholder.com/300x200.png?text=Divertissement';
 
-                                final String tag =
-                                    (lieu['type'] ?? lieu['categorie'] ?? '')
-                                        .toString();
+                                final images = _imagesFrom(lieu['images']);
+                                final img = images.isNotEmpty
+                                    ? images.first
+                                    : 'https://via.placeholder.com/600x400?text=Divertissement';
+
+                                final String cat =
+                                    (lieu['categorie'] ?? lieu['type'] ?? '')
+                                        .toString()
+                                        .trim();
+
                                 final double? avg =
                                     (lieu['_avg'] as num?)?.toDouble();
                                 final int nb = (lieu['_count'] as int?) ?? 0;
 
-                                return _LieuCardTight(
-                                  lieu: lieu,
-                                  imageUrl: image,
-                                  tag: tag,
-                                  avg: avg,
-                                  nbAvis: nb,
+                                final dist = (lieu['_distance'] as double?);
+
+                                return InkWell(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            DivertissementDetailPage(
+                                                lieu: lieu),
+                                      ),
+                                    );
+                                  },
+                                  child: Card(
+                                    margin: EdgeInsets.zero,
+                                    color: _neutralSurface,
+                                    elevation: 1,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      side: const BorderSide(
+                                          color: _neutralBorder),
+                                    ),
+                                    clipBehavior: Clip.hardEdge,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // ✅✅✅ MÊME CARTE : image 4/3 (pas déformée)
+                                        AspectRatio(
+                                          aspectRatio: 4 / 3,
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              _premiumImage(img),
+                                              if ((lieu['ville'] ?? '')
+                                                  .toString()
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                Positioned(
+                                                  left: 8,
+                                                  top: 8,
+                                                  child: Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black
+                                                          .withOpacity(0.55),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        const Icon(
+                                                          Icons.location_on,
+                                                          size: 14,
+                                                          color: Colors.white,
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 4),
+                                                        ConstrainedBox(
+                                                          constraints:
+                                                              const BoxConstraints(
+                                                                  maxWidth:
+                                                                      120),
+                                                          child: Text(
+                                                            (lieu['ville'] ??
+                                                                    '')
+                                                                .toString(),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style:
+                                                                const TextStyle(
+                                                              color:
+                                                                  Colors.white,
+                                                              fontSize: 12,
+                                                              height: 1.0,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        // Infos
+                                        Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                                10, 8, 10, 8),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  (lieu['nom'] ?? '')
+                                                      .toString(),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 15,
+                                                    height: 1.15,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+
+                                                // Note
+                                                Row(
+                                                  children: [
+                                                    _stars(avg ?? 0.0),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      nb > 0
+                                                          ? (avg ?? 0.0)
+                                                              .toStringAsFixed(
+                                                                  1)
+                                                          : '—',
+                                                      style: TextStyle(
+                                                        color: Colors.black
+                                                            .withOpacity(.85),
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 12.5,
+                                                        height: 1.0,
+                                                      ),
+                                                    ),
+                                                    if (nb > 0) ...[
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        '($nb)',
+                                                        style: TextStyle(
+                                                          color: Colors.black
+                                                              .withOpacity(.6),
+                                                          fontSize: 12,
+                                                          height: 1.0,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+
+                                                const SizedBox(height: 4),
+
+                                                // Ville + distance
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        (lieu['ville'] ?? '')
+                                                            .toString(),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: Colors.grey,
+                                                          fontSize: 13,
+                                                          height: 1.0,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (dist != null) ...[
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        '${(dist / 1000).toStringAsFixed(1)} km',
+                                                        maxLines: 1,
+                                                        overflow:
+                                                            TextOverflow.fade,
+                                                        style: const TextStyle(
+                                                          color: Colors.grey,
+                                                          fontSize: 13,
+                                                          height: 1.0,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+
+                                                // Catégorie
+                                                if (cat.isNotEmpty) ...[
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    cat,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: primaryColor,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 13,
+                                                      height: 1.0,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 );
                               },
                             ),
@@ -666,223 +970,7 @@ class _DivertissementPageState extends State<DivertissementPage>
   }
 }
 
-// ======================== Carte ===========================
-class _LieuCardTight extends StatelessWidget {
-  final Map<String, dynamic> lieu;
-  final String imageUrl;
-  final String tag;
-  final double? avg;
-  final int nbAvis;
-
-  const _LieuCardTight({
-    required this.lieu,
-    required this.imageUrl,
-    required this.tag,
-    required this.avg,
-    required this.nbAvis,
-  });
-
-  static const Color primaryColor = _DivertissementPageState.primaryColor;
-  static const Color _neutralSurface = _DivertissementPageState._neutralSurface;
-  static const Color _neutralBorder = _DivertissementPageState._neutralBorder;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => DivertissementDetailPage(lieu: lieu)),
-        );
-      },
-      child: Card(
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: _neutralBorder),
-        ),
-        elevation: 1.5,
-        color: _neutralSurface,
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // IMAGE (premium, sans spinner)
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final dpr = MediaQuery.of(context).devicePixelRatio;
-                  final w = constraints.maxWidth;
-                  final h = w * (11 / 16);
-
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        cacheKey: imageUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth: w.isFinite ? (w * dpr).round() : null,
-                        memCacheHeight: h.isFinite ? (h * dpr).round() : null,
-                        fadeInDuration: Duration.zero,
-                        fadeOutDuration: Duration.zero,
-                        placeholderFadeInDuration: Duration.zero,
-                        useOldImageOnUrlChange: true,
-                        placeholder: (_, __) =>
-                            Container(color: Colors.grey.shade200),
-                        errorWidget: (_, __, ___) => Container(
-                          color: Colors.grey.shade200,
-                          alignment: Alignment.center,
-                          child: Icon(Icons.broken_image,
-                              size: 40, color: Colors.grey.shade500),
-                        ),
-                      ),
-                      if ((lieu['ville'] ?? '').toString().isNotEmpty)
-                        Positioned(
-                          left: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.55),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.location_on,
-                                    size: 14, color: Colors.white),
-                                const SizedBox(width: 4),
-                                ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 140),
-                                  child: Text(
-                                    (lieu['ville'] ?? '').toString(),
-                                    style: const TextStyle(
-                                        color: Colors.white, fontSize: 12),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-
-            // TEXTE
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    (lieu['nom'] ?? '').toString(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          (lieu['ville'] ?? '').toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ),
-                      if (lieu['_distance'] != null) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '${(lieu['_distance'] / 1000).toStringAsFixed(1)} km',
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ],
-                    ],
-                  ),
-                  if (tag.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        tag,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: primaryColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      alignment: WrapAlignment.start,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 2,
-                      children: [
-                        _Stars(avg: avg),
-                        Text(
-                          avg == null
-                              ? 'Aucune note'
-                              : '${avg!.toStringAsFixed(2)} / 5',
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          '($nbAvis avis)',
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Stars extends StatelessWidget {
-  final double? avg;
-  const _Stars({this.avg});
-
-  @override
-  Widget build(BuildContext context) {
-    final n = ((avg ?? 0).round()).clamp(0, 5);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(
-        5,
-        (i) => Icon(
-          i < n ? Icons.star : Icons.star_border,
-          size: 14,
-          color: _DivertissementPageState.primaryColor,
-        ),
-      ),
-    );
-  }
-}
-
-// ------------------ Skeleton Card --------------------
+// ------------------ Skeleton Card (même format que Santé/Tourisme) --------------------
 class _SkeletonCard extends StatelessWidget {
   const _SkeletonCard();
 
@@ -890,28 +978,45 @@ class _SkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 1.5,
+      color: _DivertissementPageState._neutralSurface,
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: _DivertissementPageState._neutralBorder),
+      ),
+      clipBehavior: Clip.hardEdge,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-              aspectRatio: 16 / 11,
-              child: ColoredBox(color: Color(0xFFE5E7EB))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                    height: 14, width: 140, color: const Color(0xFFE5E7EB)),
-                const SizedBox(height: 6),
-                Container(
-                    height: 12, width: 90, color: const Color(0xFFE5E7EB)),
-                const SizedBox(height: 6),
-                Container(
-                    height: 12, width: 70, color: const Color(0xFFE5E7EB)),
-              ],
+            aspectRatio: 4 / 3,
+            child: Container(color: Colors.grey.shade200),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 12,
+                    width: double.infinity,
+                    color: Colors.grey.shade200,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 10,
+                    width: 120,
+                    color: Colors.grey.shade200,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 10,
+                    width: 90,
+                    color: Colors.grey.shade200,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

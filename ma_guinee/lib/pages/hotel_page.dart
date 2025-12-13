@@ -162,8 +162,9 @@ class _HotelPageState extends State<HotelPage>
   // ⚠️ On NE TOUCHE PAS à ta logique de distance
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
-    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null)
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
       return null;
+    }
     const R = 6371000.0;
     double dLat = (lat2 - lat1) * (pi / 180);
     double dLon = (lon1 - lon2) * (pi / 180);
@@ -293,34 +294,66 @@ class _HotelPageState extends State<HotelPage>
   }
 
   List<String> _imagesFrom(dynamic raw) {
-    if (raw is List) return raw.map((e) => e.toString()).toList();
-    if (raw is String && raw.trim().isNotEmpty) return [raw];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) return [raw.trim()];
     return const [];
   }
 
-  Widget _starsFor(double? avg) {
-    final val = (avg ?? 0);
-    final filled = val.floor().clamp(0, 5);
-    return Row(
-      children: List.generate(5, (i) {
-        final icon = i < filled ? Icons.star : Icons.star_border;
-        return Icon(icon, size: 14, color: Colors.amber);
-      })
-        ..add(
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Text(
-              val == 0 ? '—' : val.toStringAsFixed(1),
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ),
-        ),
+  // ===================== colonnes + ratio (même logique que Restaurants) =====================
+  int _columnsForWidth(double w) {
+    if (w >= 1600) return 6;
+    if (w >= 1400) return 5;
+    if (w >= 1100) return 4;
+    if (w >= 800) return 3;
+    return 2;
+  }
+
+  // ✅ carte “tight” : image 16/11 + zone texte compacte (comme RestoPage)
+  double _ratioFor(
+      double screenWidth, int cols, double spacing, double paddingH) {
+    final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
+    final itemWidth = usableWidth / cols;
+
+    // image 16/11
+    final imageH = itemWidth * (11 / 16);
+
+    // hauteur zone texte (compacte) : même philosophie que restaurants
+    double infoH;
+    if (itemWidth < 220) {
+      infoH = 134;
+    } else if (itemWidth < 280) {
+      infoH = 126;
+    } else if (itemWidth < 340) {
+      infoH = 120;
+    } else {
+      infoH = 116;
+    }
+
+    final totalH = imageH + infoH;
+    return itemWidth / totalH;
+  }
+
+  // ===================== Premium placeholder (même rendu) =====================
+  Widget _imagePremiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
     );
   }
 
-  // =======================
-  // Hive snapshot helpers
-  // =======================
+  // ======================= Hive snapshot helpers =======================
   List<Map<String, dynamic>>? _readHiveSnapshot() {
     try {
       if (!Hive.isBoxOpen(_hiveBoxName)) return null;
@@ -354,9 +387,7 @@ class _HotelPageState extends State<HotelPage>
     } catch (_) {}
   }
 
-  // =======================
-  // CHARGEMENT SWR — instantané & sync réseau
-  // =======================
+  // ======================= CHARGEMENT SWR — instantané & sync réseau =======================
   Future<void> _loadAllSWR({bool forceNetwork = false}) async {
     // Ouvre Hive si nécessaire (non bloquant)
     if (!Hive.isBoxOpen(_hiveBoxName)) {
@@ -401,7 +432,7 @@ class _HotelPageState extends State<HotelPage>
     // 2) localisation en parallèle (ne bloque jamais l’UI)
     unawaited(_getLocationNonBlocking());
 
-    // 3) réseau en arrière-plan (UI inchangée)
+    // 3) réseau en arrière-plan
     try {
       if (mounted) setState(() => _syncing = true);
 
@@ -449,29 +480,20 @@ class _HotelPageState extends State<HotelPage>
     }
   }
 
-  // ---------- Skeleton grid (aucun spinner global) ----------
-  Widget _skeletonGrid(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final screenW = media.size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0;
-    final itemW = (screenW - totalHGap - 28) / crossCount;
-    final itemH = itemW * (11 / 16) + 118.0;
-    final ratio = itemW / itemH;
-
+  // ===================== Skeleton grid (même taille de carte) =====================
+  Widget _skeletonGrid(
+      int crossCount, double ratio, double spacing, double padH) {
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       physics: const AlwaysScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
+        mainAxisSpacing: spacing,
+        crossAxisSpacing: spacing,
         childAspectRatio: ratio,
       ),
+      padding: EdgeInsets.symmetric(horizontal: padH, vertical: 4),
       itemCount: 8,
-      itemBuilder: (_, __) => const _HotelSkeletonCard(),
+      itemBuilder: (_, __) => const _HotelSkeletonCardTight(),
     );
   }
 
@@ -483,15 +505,12 @@ class _HotelPageState extends State<HotelPage>
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
 
-    // grille responsive
+    // ✅ même grille / spacing / padding que Restaurants
     final screenW = media.size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0;
-    final itemW = (screenW - totalHGap - 28) / crossCount;
-    final itemH = itemW * (11 / 16) + 118.0;
-    final ratio = itemW / itemH;
+    final gridCols = _columnsForWidth(screenW);
+    const double gridSpacing = 4.0;
+    const double gridHPadding = 6.0;
+    final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
     final coldStart = !_hasAnyCache && hotels.isEmpty;
 
@@ -543,12 +562,12 @@ class _HotelPageState extends State<HotelPage>
           ),
         ),
         body: coldStart
-            ? _skeletonGrid(context)
+            ? _skeletonGrid(gridCols, ratio, gridSpacing, gridHPadding)
             : (hotels.isEmpty
                 ? const Center(child: Text("Aucun hôtel trouvé."))
                 : Padding(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: Column(
                       children: [
                         // Bandeau
@@ -623,242 +642,56 @@ class _HotelPageState extends State<HotelPage>
                             ),
                           ),
 
-                        // Grille
+                        // Grille (✅ carte même taille que Restaurants, plus de overflow)
                         Expanded(
                           child: filteredHotels.isEmpty
                               ? const Center(child: Text("Aucun hôtel trouvé."))
                               : GridView.builder(
-                                  padding: EdgeInsets.zero,
                                   physics:
                                       const AlwaysScrollableScrollPhysics(),
                                   gridDelegate:
                                       SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: crossCount,
-                                    mainAxisSpacing: 8,
-                                    crossAxisSpacing: 8,
+                                    crossAxisCount: gridCols,
+                                    mainAxisSpacing: gridSpacing,
+                                    crossAxisSpacing: gridSpacing,
                                     childAspectRatio: ratio,
                                   ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: gridHPadding, vertical: 4),
                                   cacheExtent: 900,
                                   itemCount: filteredHotels.length,
                                   itemBuilder: (context, index) {
                                     final hotel = filteredHotels[index];
-                                    final id = hotel['id'].toString();
-                                    final avg = _avgByHotelId[id];
+                                    final id = (hotel['id'] ?? '').toString();
+
+                                    final avg = _avgByHotelId[id]; // nullable
                                     final count = _countByHotelId[id] ?? 0;
 
                                     final images = _imagesFrom(hotel['images']);
                                     final image = images.isNotEmpty
                                         ? images.first
-                                        : 'https://via.placeholder.com/300x200.png?text=H%C3%B4tel';
+                                        : 'https://via.placeholder.com/600x400.png?text=H%C3%B4tel';
 
-                                    return Card(
-                                      margin: EdgeInsets.zero,
-                                      elevation: 1.5,
-                                      color: neutralSurface,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        side: const BorderSide(
-                                            color: neutralBorder),
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: InkWell(
-                                        onTap: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => HotelDetailPage(
-                                                hotelId: hotel['id']),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            // Image premium 16:11 + badge ville
-                                            Expanded(
-                                              child: LayoutBuilder(
-                                                builder: (ctx, c) {
-                                                  final dpr = MediaQuery.of(ctx)
-                                                      .devicePixelRatio;
-                                                  final w = c.maxWidth;
-                                                  final h = w * (11 / 16);
+                                    final prixRaw = hotel['prix'];
+                                    final hasPrix = prixRaw != null &&
+                                        prixRaw.toString().trim().isNotEmpty &&
+                                        _formatGNF(prixRaw) != '—';
 
-                                                  return Stack(
-                                                    fit: StackFit.expand,
-                                                    children: [
-                                                      _HotelCachedImage(
-                                                        url: image,
-                                                        memW: w.isFinite
-                                                            ? (w * dpr).round()
-                                                            : null,
-                                                        memH: h.isFinite
-                                                            ? (h * dpr).round()
-                                                            : null,
-                                                      ),
-                                                      if ((hotel['ville'] ?? '')
-                                                          .toString()
-                                                          .isNotEmpty)
-                                                        Positioned(
-                                                          left: 8,
-                                                          top: 8,
-                                                          child: Container(
-                                                            padding:
-                                                                const EdgeInsets
-                                                                    .symmetric(
-                                                                    horizontal:
-                                                                        8,
-                                                                    vertical:
-                                                                        4),
-                                                            decoration:
-                                                                BoxDecoration(
-                                                              color: hotelsPrimary
-                                                                  .withOpacity(
-                                                                      .85),
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          12),
-                                                            ),
-                                                            child: Row(
-                                                              mainAxisSize:
-                                                                  MainAxisSize
-                                                                      .min,
-                                                              children: [
-                                                                const Icon(
-                                                                    Icons
-                                                                        .location_on,
-                                                                    size: 14,
-                                                                    color: Colors
-                                                                        .white),
-                                                                const SizedBox(
-                                                                    width: 4),
-                                                                ConstrainedBox(
-                                                                  constraints:
-                                                                      const BoxConstraints(
-                                                                          maxWidth:
-                                                                              140),
-                                                                  child: Text(
-                                                                    (hotel['ville'] ??
-                                                                            '')
-                                                                        .toString(),
-                                                                    style: const TextStyle(
-                                                                        color: Colors
-                                                                            .white,
-                                                                        fontSize:
-                                                                            12),
-                                                                    maxLines: 1,
-                                                                    overflow:
-                                                                        TextOverflow
-                                                                            .ellipsis,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                            ),
-
-                                            // Texte compact
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.fromLTRB(
-                                                      10, 8, 10, 10),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    (hotel['nom'] ?? "Sans nom")
-                                                        .toString(),
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700),
-                                                  ),
-                                                  const SizedBox(height: 4),
-
-                                                  // ⭐️ note moyenne
-                                                  Row(
-                                                    children: [
-                                                      _starsFor(avg),
-                                                      if (count > 0)
-                                                        Text(
-                                                          '  ($count)',
-                                                          style:
-                                                              const TextStyle(
-                                                                  fontSize: 11,
-                                                                  color: Colors
-                                                                      .black45),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 4),
-
-                                                  // Ville + distance
-                                                  Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          (hotel['ville'] ?? '')
-                                                              .toString(),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style:
-                                                              const TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                  fontSize: 13),
-                                                        ),
-                                                      ),
-                                                      if (hotel.containsKey(
-                                                              '_distance') &&
-                                                          hotel['_distance'] !=
-                                                              null) ...[
-                                                        const Text('  •  ',
-                                                            style: TextStyle(
-                                                                color:
-                                                                    Colors.grey,
-                                                                fontSize: 13)),
-                                                        Text(
-                                                          '${(hotel['_distance'] / 1000).toStringAsFixed(1)} km',
-                                                          style:
-                                                              const TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                  fontSize: 13),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-
-                                                  // Prix
-                                                  if ((hotel['prix'] ?? '')
-                                                      .toString()
-                                                      .isNotEmpty)
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                              top: 3),
-                                                      child: Text(
-                                                        'Prix : ${_formatGNF(hotel['prix'])} GNF / nuit',
-                                                        style: const TextStyle(
-                                                          color: hotelsPrimary,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
+                                    return _HotelCardTight(
+                                      hotel: hotel,
+                                      imageUrl: image,
+                                      avg: avg,
+                                      count: count,
+                                      hasPrix: hasPrix,
+                                      priceLabel: hasPrix
+                                          ? 'Prix : ${_formatGNF(prixRaw)} GNF / nuit'
+                                          : null,
+                                      placeholder: _imagePremiumPlaceholder,
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => HotelDetailPage(
+                                              hotelId: hotel['id']),
                                         ),
                                       ),
                                     );
@@ -873,16 +706,237 @@ class _HotelPageState extends State<HotelPage>
   }
 }
 
+// ======================== Carte Tight (même “taille” que Restaurants) ===========================
+class _HotelCardTight extends StatelessWidget {
+  final Map<String, dynamic> hotel;
+  final String imageUrl;
+
+  final double? avg;
+  final int count;
+
+  final bool hasPrix;
+  final String? priceLabel;
+
+  final Widget Function() placeholder;
+  final VoidCallback onTap;
+
+  const _HotelCardTight({
+    required this.hotel,
+    required this.imageUrl,
+    required this.avg,
+    required this.count,
+    required this.hasPrix,
+    required this.priceLabel,
+    required this.placeholder,
+    required this.onTap,
+  });
+
+  static const Color hotelsPrimary = _HotelPageState.hotelsPrimary;
+  static const Color hotelsSecondary = _HotelPageState.hotelsSecondary;
+  static const Color neutralBorder = _HotelPageState.neutralBorder;
+  static const Color neutralSurface = _HotelPageState.neutralSurface;
+
+  @override
+  Widget build(BuildContext context) {
+    final city = (hotel['ville'] ?? '').toString();
+    final dist = (hotel['_distance'] as double?);
+
+    return InkWell(
+      onTap: onTap,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 1.0,
+        color: neutralSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: neutralBorder),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ✅ Image fixe 16/11 (comme tes cartes “pro”)
+            AspectRatio(
+              aspectRatio: 16 / 11,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LayoutBuilder(
+                    builder: (ctx, c) {
+                      final dpr = MediaQuery.of(ctx).devicePixelRatio;
+                      final w = c.maxWidth;
+                      final h = c.maxHeight;
+                      final memW =
+                          (w.isFinite && w > 0) ? (w * dpr).round() : null;
+                      final memH =
+                          (h.isFinite && h > 0) ? (h * dpr).round() : null;
+
+                      return _HotelCachedImage(
+                        url: imageUrl,
+                        memW: memW,
+                        memH: memH,
+                        placeholder: placeholder,
+                      );
+                    },
+                  ),
+
+                  // badge ville (style restaurants)
+                  if (city.trim().isNotEmpty)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.55),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on,
+                                size: 14, color: Colors.white),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 140),
+                              child: Text(
+                                city,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ✅ Texte compact (même structure que Restaurants => plus d’overflow)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (hotel['nom'] ?? 'Sans nom').toString(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        height: 1.15,
+                        color: hotelsPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Ville + distance (1 ligne)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            city,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                        if (dist != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '${(dist / 1000).toStringAsFixed(1)} km',
+                            maxLines: 1,
+                            overflow: TextOverflow.fade,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+
+                    // Prix (optionnel)
+                    if (priceLabel != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        priceLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: hotelsSecondary,
+                          fontSize: 12,
+                          height: 1.0,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+
+                    const Spacer(),
+
+                    // ⭐️ étoiles + note (1 ligne, bas de carte)
+                    Row(
+                      children: [
+                        _HotelStars(avg: avg),
+                        const SizedBox(width: 6),
+                        Text(
+                          (avg == null || count == 0)
+                              ? '—'
+                              : avg!.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: hotelsPrimary,
+                            height: 1.0,
+                          ),
+                        ),
+                        if (count > 0) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '($count)',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ----------------- Cached image premium (sans spinner) -----------------
 class _HotelCachedImage extends StatelessWidget {
   final String url;
   final int? memW;
   final int? memH;
+  final Widget Function() placeholder;
 
   const _HotelCachedImage({
     required this.url,
     this.memW,
     this.memH,
+    required this.placeholder,
   });
 
   @override
@@ -901,11 +955,11 @@ class _HotelCachedImage extends StatelessWidget {
         image: provider,
         fit: BoxFit.cover,
         gaplessPlayback: true,
-        filterQuality: FilterQuality.low,
+        filterQuality: FilterQuality.high,
       ),
-      placeholder: (_, __) => Container(color: Colors.grey.shade200),
+      placeholder: (_, __) => placeholder(),
       errorWidget: (_, __, ___) => Container(
-        color: Colors.grey.shade200,
+        color: const Color(0xFFE5E7EB),
         alignment: Alignment.center,
         child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade500),
       ),
@@ -913,9 +967,45 @@ class _HotelCachedImage extends StatelessWidget {
   }
 }
 
-// --------- Skeleton Card (aucun spinner) ----------
-class _HotelSkeletonCard extends StatelessWidget {
-  const _HotelSkeletonCard();
+// ----------------- Stars (compact) -----------------
+class _HotelStars extends StatelessWidget {
+  final double? avg;
+  const _HotelStars({this.avg});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = ((avg ?? 0).round()).clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        5,
+        (i) => Icon(
+          i < n ? Icons.star : Icons.star_border,
+          size: 14,
+          color: Colors.amber,
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------ Skeleton Card (même taille / même padding) --------------------
+class _HotelSkeletonCardTight extends StatelessWidget {
+  const _HotelSkeletonCardTight();
+
+  Widget _ph() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -923,33 +1013,47 @@ class _HotelSkeletonCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       color: _HotelPageState.neutralSurface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: _HotelPageState.neutralBorder),
       ),
-      elevation: 1.5,
+      elevation: 1.0,
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(
+          const AspectRatio(
             aspectRatio: 16 / 11,
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: Color(0xFFE5E7EB)),
-            ),
+            child: ColoredBox(color: Color(0xFFE5E7EB)),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                    height: 14, width: 140, color: const Color(0xFFE5E7EB)),
-                const SizedBox(height: 6),
-                Container(
-                    height: 12, width: 90, color: const Color(0xFFE5E7EB)),
-                const SizedBox(height: 6),
-                Container(
-                    height: 12, width: 120, color: const Color(0xFFE5E7EB)),
-              ],
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                      height: 12,
+                      width: double.infinity,
+                      color: const Color(0xFFE5E7EB)),
+                  const SizedBox(height: 6),
+                  Container(
+                      height: 10, width: 120, color: const Color(0xFFE5E7EB)),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Container(
+                          height: 10,
+                          width: 90,
+                          color: const Color(0xFFE5E7EB)),
+                      const SizedBox(width: 6),
+                      Container(
+                          height: 10,
+                          width: 34,
+                          color: const Color(0xFFE5E7EB)),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],

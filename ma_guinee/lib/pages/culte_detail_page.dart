@@ -206,8 +206,8 @@ class CulteDetailPage extends StatelessWidget {
     final String? description =
         (lieu['description'] ?? lieu['desc'] ?? lieu['resume'])?.toString();
 
-    final double latitude = (lieu['latitude'] ?? 0).toDouble();
-    final double longitude = (lieu['longitude'] ?? 0).toDouble();
+    final double latitude = ((lieu['latitude'] as num?) ?? 0).toDouble();
+    final double longitude = ((lieu['longitude'] as num?) ?? 0).toDouble();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -252,14 +252,18 @@ class CulteDetailPage extends StatelessWidget {
                 else
                   ClipRRect(
                     borderRadius: BorderRadius.circular(17),
-                    child: Container(
-                      height: 200,
-                      color: Colors.grey.shade200,
-                      child: const Center(
-                        child: Icon(Icons.place, size: 70, color: Colors.grey),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 11,
+                      child: Container(
+                        color: Colors.grey.shade200,
+                        child: const Center(
+                          child:
+                              Icon(Icons.place, size: 70, color: Colors.grey),
+                        ),
                       ),
                     ),
                   ),
+
                 const SizedBox(height: 16),
 
                 // Ville
@@ -347,10 +351,7 @@ class CulteDetailPage extends StatelessWidget {
                 const SizedBox(height: 18),
                 Center(
                   child: ElevatedButton.icon(
-                    onPressed: () => _ouvrirDansGoogleMaps(
-                      latitude,
-                      longitude,
-                    ),
+                    onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
                     icon: const Icon(Icons.map),
                     label: const Text("Ouvrir dans Google Maps"),
                     style: ElevatedButton.styleFrom(
@@ -404,6 +405,20 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
     super.dispose();
   }
 
+  Widget _premiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = widget.images.length;
@@ -411,13 +426,13 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Image principale + compteur
-        SizedBox(
-          height: 220,
-          child: Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(17),
+        // ✅ Image principale + compteur (ratio stable => pas “déformé”)
+        Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(17),
+              child: AspectRatio(
+                aspectRatio: 16 / 11,
                 child: PageView.builder(
                   controller: _pageCtrl,
                   itemCount: widget.images.length,
@@ -428,20 +443,35 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                       tag: '${widget.heroPrefix}_$i',
                       child: LayoutBuilder(
                         builder: (ctx, cons) {
+                          final dpr = MediaQuery.of(ctx).devicePixelRatio;
                           final w = cons.maxWidth;
-                          const h = 220.0;
+                          final h = cons.maxHeight;
+
+                          final memW =
+                              (w.isFinite && w > 0) ? (w * dpr).round() : null;
+                          final memH =
+                              (h.isFinite && h > 0) ? (h * dpr).round() : null;
+
                           return CachedNetworkImage(
                             imageUrl: widget.images[i],
-                            fit: BoxFit.cover,
-                            memCacheWidth: w.isFinite ? (w * 2).round() : null,
-                            memCacheHeight: (h * 2).round(),
-                            placeholder: (_, __) =>
-                                Container(color: Colors.grey.shade200),
+                            cacheKey: widget.images[i],
+                            memCacheWidth: memW,
+                            memCacheHeight: memH,
+                            fadeInDuration: Duration.zero,
+                            fadeOutDuration: Duration.zero,
+                            placeholderFadeInDuration: Duration.zero,
+                            useOldImageOnUrlChange: true,
+                            imageBuilder: (_, provider) => Image(
+                              image: provider,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.high,
+                            ),
+                            placeholder: (_, __) => _premiumPlaceholder(),
                             errorWidget: (_, __, ___) => Container(
-                              color: Colors.grey.shade300,
-                              child: const Center(
-                                child: Icon(Icons.broken_image),
-                              ),
+                              color: const Color(0xFFE5E7EB),
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image, size: 44),
                             ),
                           );
                         },
@@ -450,30 +480,29 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                   ),
                 ),
               ),
-              // Compteur en haut à droite
-              Positioned(
-                right: 10,
-                top: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.55),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${_current + 1}/$total',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+            ),
+
+            // Compteur en haut à droite
+            Positioned(
+              right: 10,
+              top: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_current + 1}/$total',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
 
         const SizedBox(height: 10),
@@ -517,15 +546,42 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                     ],
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: CachedNetworkImage(
-                    imageUrl: widget.images[i],
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        Container(color: Colors.grey.shade200),
-                    errorWidget: (_, __, ___) => Container(
-                      color: Colors.grey.shade300,
-                      child: const Icon(Icons.broken_image),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (ctx, cons) {
+                      final dpr = MediaQuery.of(ctx).devicePixelRatio;
+                      final w = cons.maxWidth;
+                      final h = cons.maxHeight;
+
+                      final memW =
+                          (w.isFinite && w > 0) ? (w * dpr).round() : null;
+                      final memH =
+                          (h.isFinite && h > 0) ? (h * dpr).round() : null;
+
+                      return CachedNetworkImage(
+                        imageUrl: widget.images[i],
+                        cacheKey: 'thumb_${widget.images[i]}',
+                        memCacheWidth: memW,
+                        memCacheHeight: memH,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholderFadeInDuration: Duration.zero,
+                        useOldImageOnUrlChange: true,
+                        imageBuilder: (_, provider) => Image(
+                          image: provider,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.high,
+                        ),
+                        placeholder: (_, __) => Container(
+                          color: const Color(0xFFE5E7EB),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: const Color(0xFFE5E7EB),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      );
+                    },
                   ),
                 ),
               );
@@ -600,6 +656,9 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
                 child: CachedNetworkImage(
                   imageUrl: url,
                   fit: BoxFit.contain,
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholderFadeInDuration: Duration.zero,
                   placeholder: (_, __) => Container(color: Colors.black),
                   errorWidget: (_, __, ___) => const Icon(
                     Icons.broken_image,

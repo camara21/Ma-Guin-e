@@ -1,6 +1,7 @@
 // lib/pages/tourisme_page.dart
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,12 @@ const Color tourismeSecondary = Color(0xFFFFD700);
 const Color neutralBg = Color(0xFFF7F7F9);
 const Color neutralSurface = Color(0xFFFFFFFF);
 const Color neutralBorder = Color(0xFFE5E7EB);
+
+const LinearGradient _tourismeGradient = LinearGradient(
+  colors: [tourismePrimary, tourismeSecondary],
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
+);
 
 class TourismePage extends StatefulWidget {
   const TourismePage({super.key});
@@ -88,6 +95,37 @@ class _TourismePageState extends State<TourismePage>
 
   // pré-cache images
   bool _didPrecache = false;
+
+  // ---------- Grid (même logique que Annonces/Santé) ----------
+  int _columnsForWidth(double w) {
+    if (w >= 1600) return 6;
+    if (w >= 1400) return 5;
+    if (w >= 1100) return 4;
+    if (w >= 800) return 3;
+    return 2;
+  }
+
+  double _ratioFor(
+      double screenWidth, int cols, double spacing, double paddingH) {
+    final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
+    final itemWidth = usableWidth / cols;
+
+    final imageH = itemWidth * (3 / 4); // ✅ image 4/3 (pas déformée)
+
+    double infoH;
+    if (itemWidth < 220) {
+      infoH = 118;
+    } else if (itemWidth < 280) {
+      infoH = 112;
+    } else if (itemWidth < 340) {
+      infoH = 108;
+    } else {
+      infoH = 104;
+    }
+
+    final totalH = imageH + infoH;
+    return itemWidth / totalH;
+  }
 
   @override
   void initState() {
@@ -192,20 +230,6 @@ class _TourismePageState extends State<TourismePage>
         _resortByDistanceInBackground();
       }
     } catch (_) {}
-  }
-
-  // ---------- Haversine ----------
-  static double? _dist(double? lat1, double? lon1, double? lat2, double? lon2) {
-    if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
-    const R = 6371000.0;
-    final dLat = (lat2! - lat1!) * (pi / 180);
-    final dLon = (lon2! - lon1!) * (pi / 180);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * (pi / 180)) *
-            cos(lat2 * (pi / 180)) *
-            sin(dLon / 2) *
-            sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
   // -------------------- Réseau SWR : remplace en fond --------------------
@@ -392,7 +416,7 @@ class _TourismePageState extends State<TourismePage>
     });
   }
 
-  // -------------------- Helpers images premium (comme annonces) --------------------
+  // -------------------- Helpers images premium --------------------
   List<String> _imagesFrom(dynamic raw) {
     if (raw is List && raw.isNotEmpty) {
       return raw
@@ -431,8 +455,8 @@ class _TourismePageState extends State<TourismePage>
         final w = c.maxWidth.isFinite ? c.maxWidth : 360.0;
         final h = c.maxHeight.isFinite ? c.maxHeight : 240.0;
 
-        final safeUrl = url.isNotEmpty
-            ? url
+        final safeUrl = url.trim().isNotEmpty
+            ? url.trim()
             : 'https://via.placeholder.com/600x400?text=Tourisme';
 
         return CachedNetworkImage(
@@ -447,7 +471,7 @@ class _TourismePageState extends State<TourismePage>
           useOldImageOnUrlChange: true,
           imageBuilder: (_, provider) => Image(
             image: provider,
-            fit: BoxFit.cover,
+            fit: BoxFit.cover, // ✅ pas de déformation
             gaplessPlayback: true,
             filterQuality: FilterQuality.low,
           ),
@@ -469,67 +493,11 @@ class _TourismePageState extends State<TourismePage>
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
         if (i < full) return Icon(Icons.star, size: size, color: Colors.amber);
-        if (i == full && half)
+        if (i == full && half) {
           return Icon(Icons.star_half, size: size, color: Colors.amber);
+        }
         return Icon(Icons.star_border, size: size, color: Colors.amber);
       }),
-    );
-  }
-
-  // -------------------- Skeleton grid --------------------
-  Widget _skeletonGrid(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final screenW = media.size.width;
-    final crossCount = screenW < 600
-        ? max(2, (screenW / 200).floor())
-        : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
-    final itemW = (screenW - totalHGap) / crossCount;
-    final itemH = itemW * (11 / 16) + 112.0;
-    final ratio = itemW / itemH;
-
-    return GridView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossCount,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: ratio,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      itemCount: 8,
-      itemBuilder: (_, __) => Card(
-        margin: EdgeInsets.zero,
-        color: neutralSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: neutralBorder),
-        ),
-        elevation: 1.5,
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-                aspectRatio: 16 / 11,
-                child: Container(color: Colors.grey.shade200)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                      height: 14, width: 140, color: Colors.grey.shade200),
-                  const SizedBox(height: 6),
-                  Container(height: 12, width: 90, color: Colors.grey.shade200),
-                  const SizedBox(height: 6),
-                  Container(height: 12, width: 70, color: Colors.grey.shade200),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -537,24 +505,14 @@ class _TourismePageState extends State<TourismePage>
   Widget build(BuildContext context) {
     super.build(context);
 
-    const bottomGradient = LinearGradient(
-      colors: [tourismePrimary, tourismeSecondary],
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-    );
-
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
     final screenW = media.size.width;
 
-    final crossCount = screenW < 600
-        ? (screenW / 200).floor().clamp(2, 6)
-        : (screenW / 240).floor().clamp(3, 6);
-
-    final totalHGap = (crossCount - 1) * 8.0 + 16.0;
-    final itemW = (screenW - totalHGap) / crossCount;
-    final itemH = itemW * (11 / 16) + 112.0;
-    final ratio = itemW / itemH;
+    final gridCols = _columnsForWidth(screenW);
+    const double gridSpacing = 4.0;
+    const double gridHPadding = 6.0;
+    final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
     final showSkeleton = !_initialFetchDone && _loading && _allLieux.isEmpty;
 
@@ -592,7 +550,7 @@ class _TourismePageState extends State<TourismePage>
             child: SizedBox(
               height: 3,
               child: DecoratedBox(
-                decoration: BoxDecoration(gradient: bottomGradient),
+                decoration: BoxDecoration(gradient: _tourismeGradient),
               ),
             ),
           ),
@@ -602,31 +560,25 @@ class _TourismePageState extends State<TourismePage>
             // Bandeau
             Container(
               width: double.infinity,
-              height: 72,
-              margin:
-                  const EdgeInsets.only(left: 8, right: 8, top: 10, bottom: 8),
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [tourismePrimary, tourismeSecondary],
-                ),
+                gradient: _tourismeGradient,
               ),
               clipBehavior: Clip.hardEdge,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "Découvrez les plus beaux sites touristiques de Guinée"
-                    "${_locationDenied ? " (localisation refusée)" : ""}",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
-                      decoration: TextDecoration.none,
-                    ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Text(
+                  "Découvrez les plus beaux sites touristiques de Guinée"
+                  "${_locationDenied ? " (localisation refusée)" : ""}",
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ),
@@ -634,10 +586,10 @@ class _TourismePageState extends State<TourismePage>
 
             // Recherche
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: TextField(
                 decoration: const InputDecoration(
-                  hintText: 'Rechercher un site ou une ville…',
+                  hintText: 'Rechercher un site, une ville, une catégorie…',
                   prefixIcon: Icon(Icons.search, color: tourismePrimary),
                   filled: true,
                   fillColor: neutralSurface,
@@ -645,7 +597,15 @@ class _TourismePageState extends State<TourismePage>
                       EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.all(Radius.circular(12)),
-                    borderSide: BorderSide.none,
+                    borderSide: BorderSide(color: neutralBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide(color: neutralBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide(color: tourismePrimary, width: 1.4),
                   ),
                 ),
                 onChanged: _onSearchChanged,
@@ -654,121 +614,141 @@ class _TourismePageState extends State<TourismePage>
             const SizedBox(height: 6),
 
             Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 140),
-                child: showSkeleton
-                    ? _skeletonGrid(context)
-                    : (_filteredLieux.isEmpty
-                        ? const Center(child: Text("Aucun site trouvé."))
-                        : GridView.builder(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossCount,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                              childAspectRatio: ratio,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 8),
-                            itemCount: _filteredLieux.length,
-                            itemBuilder: (context, index) {
-                              final lieu = _filteredLieux[index];
-                              final id = (lieu['id'] ?? '').toString();
+              child: showSkeleton
+                  ? GridView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: gridCols,
+                        mainAxisSpacing: gridSpacing,
+                        crossAxisSpacing: gridSpacing,
+                        childAspectRatio: ratio,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: gridHPadding,
+                        vertical: 4,
+                      ),
+                      itemCount: 8,
+                      itemBuilder: (_, __) => const _SkeletonCard(),
+                    )
+                  : (_filteredLieux.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: const [
+                            SizedBox(height: 200),
+                            Center(child: Text("Aucun site trouvé.")),
+                          ],
+                        )
+                      : GridView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: gridCols,
+                            mainAxisSpacing: gridSpacing,
+                            crossAxisSpacing: gridSpacing,
+                            childAspectRatio: ratio,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: gridHPadding,
+                            vertical: 4,
+                          ),
+                          itemCount: _filteredLieux.length,
+                          itemBuilder: (context, index) {
+                            final lieu = _filteredLieux[index];
+                            final id = (lieu['id'] ?? '').toString();
+                            final img = _bestImage(lieu);
+                            final dist = lieu['_distance'] as double?;
 
-                              final img = _bestImage(lieu);
-                              final dist = (lieu['_distance'] as double?);
+                            final rating = _avgByLieuId[id] ?? 0.0;
+                            final count = _countByLieuId[id] ?? 0;
 
-                              final rating = _avgByLieuId[id] ?? 0.0;
-                              final count = _countByLieuId[id] ?? 0;
-
-                              return InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          TourismeDetailPage(lieu: lieu),
-                                    ),
-                                  );
-                                },
-                                child: Card(
-                                  margin: EdgeInsets.zero,
-                                  color: neutralSurface,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side:
-                                        const BorderSide(color: neutralBorder),
+                            return InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        TourismeDetailPage(lieu: lieu),
                                   ),
-                                  elevation: 1.5,
-                                  clipBehavior: Clip.antiAlias,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      // IMAGE nette (premium)
-                                      Expanded(
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            _premiumImage(img),
-                                            if ((lieu['ville'] ?? '')
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty)
-                                              Positioned(
-                                                left: 8,
-                                                top: 8,
-                                                child: Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black
-                                                        .withOpacity(0.55),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            12),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      const Icon(
-                                                          Icons.location_on,
-                                                          size: 14,
-                                                          color: Colors.white),
-                                                      const SizedBox(width: 4),
-                                                      ConstrainedBox(
-                                                        constraints:
-                                                            const BoxConstraints(
-                                                                maxWidth: 120),
-                                                        child: Text(
-                                                          (lieu['ville'] ?? '')
-                                                              .toString(),
-                                                          style:
-                                                              const TextStyle(
-                                                                  color: Colors
-                                                                      .white,
-                                                                  fontSize: 12),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
+                                );
+                              },
+                              child: Card(
+                                margin: EdgeInsets.zero,
+                                color: neutralSurface,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  side: const BorderSide(color: neutralBorder),
+                                ),
+                                clipBehavior: Clip.hardEdge,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // ✅ MÊME CARTE : image 4/3 (pas déformée)
+                                    AspectRatio(
+                                      aspectRatio: 4 / 3,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _premiumImage(img),
+                                          if ((lieu['ville'] ?? '')
+                                              .toString()
+                                              .trim()
+                                              .isNotEmpty)
+                                            Positioned(
+                                              left: 8,
+                                              top: 8,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withOpacity(0.55),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.location_on,
+                                                      size: 14,
+                                                      color: Colors.white,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    ConstrainedBox(
+                                                      constraints:
+                                                          const BoxConstraints(
+                                                              maxWidth: 120),
+                                                      child: Text(
+                                                        (lieu['ville'] ?? '')
+                                                            .toString(),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 12,
+                                                          height: 1.0,
                                                         ),
                                                       ),
-                                                    ],
-                                                  ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                          ],
-                                        ),
+                                            ),
+                                        ],
                                       ),
+                                    ),
 
-                                      // TEXTE
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 8),
+                                    // Infos (densité type Annonces)
+                                    Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            10, 8, 10, 8),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -778,8 +758,10 @@ class _TourismePageState extends State<TourismePage>
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 15),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                                height: 1.15,
+                                              ),
                                             ),
                                             const SizedBox(height: 4),
                                             Row(
@@ -796,6 +778,7 @@ class _TourismePageState extends State<TourismePage>
                                                         .withOpacity(.85),
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: 12.5,
+                                                    height: 1.0,
                                                   ),
                                                 ),
                                                 if (count > 0) ...[
@@ -806,6 +789,7 @@ class _TourismePageState extends State<TourismePage>
                                                       color: Colors.black
                                                           .withOpacity(.6),
                                                       fontSize: 12,
+                                                      height: 1.0,
                                                     ),
                                                   ),
                                                 ],
@@ -822,8 +806,10 @@ class _TourismePageState extends State<TourismePage>
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style: const TextStyle(
-                                                        color: Colors.grey,
-                                                        fontSize: 13),
+                                                      color: Colors.grey,
+                                                      fontSize: 13,
+                                                      height: 1.0,
+                                                    ),
                                                   ),
                                                 ),
                                                 if (dist != null) ...[
@@ -833,25 +819,99 @@ class _TourismePageState extends State<TourismePage>
                                                     maxLines: 1,
                                                     overflow: TextOverflow.fade,
                                                     style: const TextStyle(
-                                                        color: Colors.grey,
-                                                        fontSize: 13),
+                                                      color: Colors.grey,
+                                                      fontSize: 13,
+                                                      height: 1.0,
+                                                    ),
                                                   ),
                                                 ],
                                               ],
                                             ),
+                                            if ((lieu['categorie'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                (lieu['categorie'] ?? '')
+                                                    .toString(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: tourismePrimary,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  height: 1.0,
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
-                          )),
-              ),
+                              ),
+                            );
+                          },
+                        )),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SkeletonCard extends StatelessWidget {
+  const _SkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: neutralSurface,
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: neutralBorder),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AspectRatio(
+            aspectRatio: 4 / 3,
+            child: SizedBox(),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 12,
+                    width: double.infinity,
+                    color: Color(0xFFE5E7EB),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 10,
+                    width: 120,
+                    color: Color(0xFFE5E7EB),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 10,
+                    width: 90,
+                    color: Color(0xFFE5E7EB),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -914,7 +974,6 @@ List<Map<String, dynamic>> _sortPlacesByProximity(_SortPayload p) {
   return list;
 }
 
-// distance util pour isolate
 double? _distIso(double? lat1, double? lon1, double? lat2, double? lon2) {
   if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
   const R = 6371000.0;

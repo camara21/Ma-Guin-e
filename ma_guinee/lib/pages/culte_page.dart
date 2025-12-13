@@ -257,7 +257,6 @@ class _CultePageState extends State<CultePage>
 
       // géoloc en parallèle (non bloquante)
       unawaited(_getLocationFast());
-      // tri distance se fera dès qu’on a position/ville
     }
 
     // 2) Réseau en arrière-plan
@@ -274,7 +273,6 @@ class _CultePageState extends State<CultePage>
 
       final list = List<Map<String, dynamic>>.from(res);
 
-      // affiche le réseau ASAP (sans attendre géoloc)
       _allLieux = list;
       _memoryCacheCulte =
           list.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -284,10 +282,8 @@ class _CultePageState extends State<CultePage>
       _loading = false;
       if (mounted) setState(() {});
 
-      // enrichissement distance + tri après coup (si possible)
       _resortNowIfPossible();
 
-      // cache sans champs volatils
       final toCache = list.map((m) {
         final c = Map<String, dynamic>.from(m);
         c.remove('_distance');
@@ -297,7 +293,6 @@ class _CultePageState extends State<CultePage>
       AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
       unawaited(_writeHiveSnapshot(toCache));
     } catch (_) {
-      // silencieux
       if (mounted && !_hasAnyCache) {
         setState(() => _loading = false);
       }
@@ -310,7 +305,7 @@ class _CultePageState extends State<CultePage>
   void _resortNowIfPossible() {
     if (_resorting) return;
     if (_allLieux.isEmpty) return;
-    if (_position == null) return; // on attend une position exploitable
+    if (_position == null) return;
 
     _resorting = true;
     Future(() async {
@@ -433,8 +428,13 @@ class _CultePageState extends State<CultePage>
   }
 
   List<String> _imagesFrom(dynamic raw) {
-    if (raw is List) return raw.map((e) => e.toString()).toList();
-    if (raw is String && raw.trim().isNotEmpty) return [raw];
+    if (raw is List) {
+      return raw
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) return [raw.trim()];
     return const [];
   }
 
@@ -493,106 +493,117 @@ class _CultePageState extends State<CultePage>
             ),
           ],
         ),
-        body: coldStart
-            ? _skeletonGrid(context, crossCount, ratio)
-            : Column(
-                children: [
-                  // Bandeau intro
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: LinearGradient(
-                        colors: [primaryColor, primaryColor.withOpacity(0.65)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: const Text(
-                      "Mosquées, églises et lieux de prière près de vous",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                        height: 1.2,
-                      ),
-                    ),
-                  ),
 
-                  // Recherche
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Rechercher par nom, type ou ville...',
-                        prefixIcon:
-                            const Icon(Icons.search, color: primaryColor),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
+        // ✅ Tap partout = ferme le clavier (sans casser le scroll)
+        body: Listener(
+          onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          child: coldStart
+              ? _skeletonGrid(context, crossCount, ratio)
+              : Column(
+                  children: [
+                    // Bandeau intro
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: LinearGradient(
+                          colors: [
+                            primaryColor,
+                            primaryColor.withOpacity(0.65)
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
                       ),
-                      onChanged: (v) => _applyFilter(v),
-                    ),
-                  ),
-                  if (_locationDenied)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
-                      child: Text(
-                        "Active la localisation pour afficher la distance.",
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      child: const Text(
+                        "Mosquées, églises et lieux de prière près de vous",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          height: 1.2,
+                        ),
                       ),
                     ),
 
-                  // Grille
-                  Expanded(
-                    child: _filtered.isEmpty
-                        ? const Center(
-                            child: Text("Aucun lieu de culte trouvé."))
-                        : GridView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossCount,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                              childAspectRatio: ratio,
-                            ),
-                            cacheExtent: 1200,
-                            itemCount: _filtered.length,
-                            itemBuilder: (context, index) {
-                              final lieu = _filtered[index];
-                              final images = _imagesFrom(lieu['images']);
-                              final image = images.isNotEmpty
-                                  ? images.first
-                                  : 'https://via.placeholder.com/300x200.png?text=Culte';
-
-                              final ville = (lieu['ville'] ?? '').toString();
-                              final distM = (lieu['_distance'] as double?);
-                              final distLabel = (distM != null)
-                                  ? '${(distM / 1000).toStringAsFixed(1)} km'
-                                  : null;
-
-                              return _CulteCardTight(
-                                lieu: lieu,
-                                imageUrl: image,
-                                ville: ville,
-                                distLabel: distLabel,
-                                icon: _iconFor(lieu),
-                                iconColor: _iconColor(lieu),
-                              );
-                            },
+                    // Recherche
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Rechercher par nom, type ou ville...',
+                          prefixIcon:
+                              const Icon(Icons.search, color: primaryColor),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
                           ),
-                  ),
-                ],
-              ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        onChanged: (v) => _applyFilter(v),
+                      ),
+                    ),
+                    if (_locationDenied)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
+                        child: Text(
+                          "Active la localisation pour afficher la distance.",
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ),
+
+                    // Grille
+                    Expanded(
+                      child: _filtered.isEmpty
+                          ? const Center(
+                              child: Text("Aucun lieu de culte trouvé."))
+                          : GridView.builder(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossCount,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                                childAspectRatio: ratio,
+                              ),
+                              cacheExtent: 1200,
+                              itemCount: _filtered.length,
+                              itemBuilder: (context, index) {
+                                final lieu = _filtered[index];
+                                final images = _imagesFrom(lieu['images']);
+                                final image = images.isNotEmpty
+                                    ? images.first
+                                    : 'https://via.placeholder.com/600x400.png?text=Culte';
+
+                                final ville = (lieu['ville'] ?? '').toString();
+                                final distM = (lieu['_distance'] as double?);
+                                final distLabel = (distM != null)
+                                    ? '${(distM / 1000).toStringAsFixed(1)} km'
+                                    : null;
+
+                                return _CulteCardTight(
+                                  lieu: lieu,
+                                  imageUrl: image,
+                                  ville: ville,
+                                  distLabel: distLabel,
+                                  icon: _iconFor(lieu),
+                                  iconColor: _iconColor(lieu),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -602,6 +613,7 @@ class _CultePageState extends State<CultePage>
     return GridView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       physics: const AlwaysScrollableScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
         mainAxisSpacing: 8,
@@ -634,6 +646,20 @@ class _CulteCardTight extends StatelessWidget {
 
   static const primaryColor = _CultePageState.primaryColor;
 
+  Widget _premiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -649,13 +675,17 @@ class _CulteCardTight extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // IMAGE + BADGES
-            Expanded(
+            // ✅ IMAGE NETTE (AspectRatio fixe + decode à la vraie taille)
+            AspectRatio(
+              aspectRatio: 16 / 11,
               child: LayoutBuilder(
                 builder: (context, c) {
                   final dpr = MediaQuery.of(context).devicePixelRatio;
                   final w = c.maxWidth;
-                  final h = w * (11 / 16);
+                  final h = c.maxHeight;
+
+                  final memW = (w.isFinite && w > 0) ? (w * dpr).round() : null;
+                  final memH = (h.isFinite && h > 0) ? (h * dpr).round() : null;
 
                   return Stack(
                     fit: StackFit.expand,
@@ -663,17 +693,21 @@ class _CulteCardTight extends StatelessWidget {
                       CachedNetworkImage(
                         imageUrl: imageUrl,
                         cacheKey: imageUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth: w.isFinite ? (w * dpr).round() : null,
-                        memCacheHeight: h.isFinite ? (h * dpr).round() : null,
+                        memCacheWidth: memW,
+                        memCacheHeight: memH,
                         fadeInDuration: Duration.zero,
                         fadeOutDuration: Duration.zero,
                         placeholderFadeInDuration: Duration.zero,
                         useOldImageOnUrlChange: true,
-                        placeholder: (_, __) =>
-                            Container(color: Colors.grey.shade200),
+                        imageBuilder: (_, provider) => Image(
+                          image: provider,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.high,
+                        ),
+                        placeholder: (_, __) => _premiumPlaceholder(),
                         errorWidget: (_, __, ___) => Container(
-                          color: Colors.grey.shade200,
+                          color: const Color(0xFFE5E7EB),
                           alignment: Alignment.center,
                           child: Icon(Icons.broken_image,
                               size: 40, color: Colors.grey.shade500),
@@ -809,19 +843,23 @@ class _SkeletonCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(
-              aspectRatio: 16 / 11,
-              child: Container(color: Colors.grey.shade200)),
+          const AspectRatio(
+            aspectRatio: 16 / 11,
+            child: ColoredBox(color: Color(0xFFE5E7EB)),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 140, color: Colors.grey.shade200),
+                Container(
+                    height: 14, width: 140, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 90, color: Colors.grey.shade200),
+                Container(
+                    height: 12, width: 90, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 70, color: Colors.grey.shade200),
+                Container(
+                    height: 12, width: 70, color: const Color(0xFFE5E7EB)),
               ],
             ),
           ),

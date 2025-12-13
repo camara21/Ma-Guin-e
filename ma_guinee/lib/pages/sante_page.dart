@@ -374,7 +374,7 @@ class _SantePageState extends State<SantePage>
     );
   }
 
-  // ---------- Grid responsive (comme resto) ----------
+  // ---------- Grid responsive ----------
   int _columnsForWidth(double w) {
     if (w >= 1600) return 6;
     if (w >= 1400) return 5;
@@ -383,28 +383,30 @@ class _SantePageState extends State<SantePage>
     return 2;
   }
 
+  // ✅ IMPORTANT : même ratio que AnnoncesPage / Resto corrigé (même taille de carte)
   double _ratioFor(
       double screenWidth, int cols, double spacing, double paddingH) {
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
     final itemWidth = usableWidth / cols;
+
     final imageH = itemWidth * (3 / 4);
 
     double infoH;
     if (itemWidth < 220) {
-      infoH = 118;
+      infoH = 134;
     } else if (itemWidth < 280) {
-      infoH = 112;
+      infoH = 126;
     } else if (itemWidth < 340) {
-      infoH = 108;
+      infoH = 120;
     } else {
-      infoH = 104;
+      infoH = 116;
     }
 
     final totalH = imageH + infoH;
     return itemWidth / totalH;
   }
 
-  // ✅ Bandeau SANS overflow (plus de height fixe)
+  // ✅ Bandeau SANS overflow
   Widget _heroBanner(String? subtitle) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
@@ -415,7 +417,6 @@ class _SantePageState extends State<SantePage>
           curve: Curves.easeOut,
           child: Container(
             width: double.infinity,
-            // IMPORTANT: pas de height fixe -> évite "BOTTOM OVERFLOWED"
             constraints: const BoxConstraints(minHeight: 72),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -537,7 +538,6 @@ class _SantePageState extends State<SantePage>
         ),
         body: Column(
           children: [
-            // ✅ Bandeau corrigé (plus d’overflow)
             _heroBanner(subtitleInfo),
 
             // Recherche
@@ -698,8 +698,9 @@ class _SantePageState extends State<SantePage>
                                     ),
                                     Expanded(
                                       child: Padding(
+                                        // ✅ même padding que Annonces/Resto corrigé
                                         padding: const EdgeInsets.fromLTRB(
-                                            10, 8, 10, 8),
+                                            10, 6, 10, 6),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -805,7 +806,8 @@ class _SkeletonCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              // ✅ même padding que les cartes
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

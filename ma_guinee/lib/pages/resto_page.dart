@@ -416,21 +416,23 @@ class _RestoPageState extends State<RestoPage> {
     return 2;
   }
 
+  // ✅ IMPORTANT : même ratio que AnnoncesPage (pour avoir la même taille de cartes)
   double _ratioFor(
       double screenWidth, int cols, double spacing, double paddingH) {
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
     final itemWidth = usableWidth / cols;
+
     final imageH = itemWidth * (3 / 4);
 
     double infoH;
     if (itemWidth < 220) {
-      infoH = 118;
+      infoH = 134;
     } else if (itemWidth < 280) {
-      infoH = 112;
+      infoH = 126;
     } else if (itemWidth < 340) {
-      infoH = 108;
+      infoH = 120;
     } else {
-      infoH = 104;
+      infoH = 116;
     }
 
     final totalH = imageH + infoH;
@@ -746,8 +748,9 @@ class _RestoPageState extends State<RestoPage> {
                                       // Texte
                                       Expanded(
                                         child: Padding(
+                                          // ✅ même padding que AnnoncesPage
                                           padding: const EdgeInsets.fromLTRB(
-                                              10, 8, 10, 8),
+                                              10, 6, 10, 6),
                                           child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
@@ -812,9 +815,17 @@ class _RestoPageState extends State<RestoPage> {
                                                   ),
                                                 ),
                                               ],
+
                                               const Spacer(),
+
+                                              // ✅✅✅ étoiles remontées un peu
                                               if (avgInt != null)
-                                                _buildStarsInt(avgInt),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          bottom: 6),
+                                                  child: _buildStarsInt(avgInt),
+                                                ),
                                             ],
                                           ),
                                         ),
@@ -858,7 +869,8 @@ class _SkeletonRestoCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              // ✅ aligné visuellement avec la carte
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -870,7 +882,13 @@ class _SkeletonRestoCard extends StatelessWidget {
                   Container(
                       height: 10, width: 120, color: Colors.grey.shade200),
                   const Spacer(),
-                  Container(height: 10, width: 90, color: Colors.grey.shade200),
+
+                  // ✅✅✅ même “remontée” que la vraie carte
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Container(
+                        height: 10, width: 90, color: Colors.grey.shade200),
+                  ),
                 ],
               ),
             ),
