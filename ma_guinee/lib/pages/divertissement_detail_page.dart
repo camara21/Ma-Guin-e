@@ -1,4 +1,3 @@
-// lib/pages/divertissement_detail_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -15,6 +14,9 @@ class DivertissementDetailPage extends StatefulWidget {
 
 class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   static const Color kPrimary = Colors.deepPurple;
+  static const Color _neutralBorder = Color(0xFFE5E7EB);
+  static const Color _neutralSurface = Colors.white;
+
   final _sb = Supabase.instance.client;
 
   // Avis (édition)
@@ -35,7 +37,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   final PageController _pageController = PageController();
   int _currentImage = 0;
 
-  // Pré-cache (meilleur ressenti à l’ouverture)
   Future<void> _precacheAll(BuildContext context, List<String> urls) async {
     for (final u in urls) {
       unawaited(precacheImage(NetworkImage(u), context).catchError((_) {}));
@@ -72,7 +73,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
   // ----------------- SUPABASE: Avis (stats) -----------------
   Future<void> _loadAvisStats() async {
-    setState(() => _loadingAvis = true);
+    if (mounted) setState(() => _loadingAvis = true);
     try {
       final lieuId = widget.lieu['id']?.toString();
       if (lieuId == null || lieuId.isEmpty) {
@@ -95,9 +96,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       }
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur avis: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur avis: ${e.message}')));
       _noteMoyenne = null;
       _nbAvis = 0;
     } finally {
@@ -107,7 +107,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
   // ----------------- SUPABASE: Avis (liste + profils) -----------------
   Future<void> _loadAvisCommentaires() async {
-    setState(() => _loadingCommentaires = true);
+    if (mounted) setState(() => _loadingCommentaires = true);
     try {
       final lieuId = widget.lieu['id']?.toString();
       if (lieuId == null || !_isUuid(lieuId)) {
@@ -154,8 +154,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     } on PostgrestException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur commentaires: ${e.message}')),
-      );
+          SnackBar(content: Text('Erreur commentaires: ${e.message}')));
       _avisList = [];
     } finally {
       if (mounted) setState(() => _loadingCommentaires = false);
@@ -167,23 +166,18 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final lieuId = widget.lieu['id']?.toString();
 
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Veuillez vous connecter pour laisser un avis.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Veuillez vous connecter pour laisser un avis.")));
       return;
     }
     if (lieuId == null || lieuId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Lieu invalide.")),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Lieu invalide.")));
       return;
     }
     if (_note <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Choisissez une note (au moins 1 étoile).")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Choisissez une note (au moins 1 étoile).")));
       return;
     }
 
@@ -202,21 +196,24 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             onConflict: 'lieu_id,auteur_id',
           );
 
+      // ✅ ferme clavier
+      FocusManager.instance.primaryFocus?.unfocus();
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Merci pour votre avis !')),
-      );
+          const SnackBar(content: Text('Merci pour votre avis !')));
+
       setState(() {
         _note = 0;
         _avisController.clear();
       });
+
       await _loadAvisStats();
       await _loadAvisCommentaires();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur avis: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur avis: ${e.message}')));
     }
   }
 
@@ -264,7 +261,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
-  // Plein écran
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     final heroPrefix =
         'divert_${widget.lieu['id'] ?? (widget.lieu['nom'] ?? '')}';
@@ -280,22 +276,24 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   }
 
   // ----------------- UI helpers -----------------
-  Widget _starsFromAverage(double avg, {double size = 18}) {
-    final n = avg.round().clamp(0, 5);
+  Widget _starsAverage(double avg, {double size = 16}) {
+    final full = avg.floor().clamp(0, 5);
+    final half = (avg - full) >= 0.5;
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(
-        5,
-        (i) => Icon(
-          i < n ? Icons.star : Icons.star_border,
-          color: Colors.amber,
-          size: size,
-        ),
-      ),
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, color: Colors.amber, size: size);
+        }
+        if (i == full && half) {
+          return Icon(Icons.star_half, color: Colors.amber, size: size);
+        }
+        return Icon(Icons.star_border, color: Colors.amber, size: size);
+      }),
     );
   }
 
-  Widget _starsFromInt(int n, {double size = 16}) {
+  Widget _starsFromInt(int n, {double size = 14}) {
     final clamped = n.clamp(0, 5);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -310,16 +308,58 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     );
   }
 
+  Widget _avgRatingBar() {
+    if (_loadingAvis) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: _neutralSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _neutralBorder),
+      ),
+      child: Row(
+        children: [
+          if (_noteMoyenne != null) _starsAverage(_noteMoyenne!, size: 16),
+          if (_noteMoyenne != null) const SizedBox(width: 8),
+          Text(
+            _noteMoyenne != null
+                ? '${_noteMoyenne!.toStringAsFixed(1)} / 5'
+                : 'Aucune note',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '($_nbAvis avis)',
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const Spacer(),
+          const Icon(Icons.verified, size: 18, color: kPrimary),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lieu = widget.lieu;
-    final horaires = (lieu['horaires'] ?? "Non renseigné").toString();
-    final images = _images(lieu);
 
+    final images = _images(lieu);
     final String nom = (lieu['nom'] ?? '').toString();
     final String ville = (lieu['ville'] ?? '').toString();
     final String ambiance =
         (lieu['categorie'] ?? lieu['type'] ?? '').toString();
+    final String horaires = (lieu['horaires'] ?? "Non renseigné").toString();
+    final String description = (lieu['description'] ?? '').toString().trim();
 
     // clamp léger
     final media = MediaQuery.of(context);
@@ -363,7 +403,9 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     label: const Text(
                       "Contacter",
                       style: TextStyle(
-                          color: kPrimary, fontWeight: FontWeight.w700),
+                        color: kPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: kPrimary, width: 1.5),
@@ -382,7 +424,9 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     label: const Text(
                       "Itinéraire",
                       style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w700),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: kPrimary,
@@ -399,324 +443,353 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
           ),
         ),
 
-        // Contenu
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 110),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ---------- Galerie ---------- (sans spinner)
-              if (images.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
-                  child: Stack(
-                    children: [
-                      SizedBox(
-                        height: 200,
-                        width: double.infinity,
-                        child: PageView.builder(
-                          controller: _pageController,
-                          itemCount: images.length,
-                          onPageChanged: (i) =>
-                              setState(() => _currentImage = i),
-                          itemBuilder: (context, index) => _FadeInNetworkImage(
-                            url: images[index],
-                            heroTag: '${heroPrefix}_$index',
-                            onTap: () => _openFullScreenGallery(images, index),
+        // ✅ Tap partout = ferme clavier
+        body: Listener(
+          onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 140),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ---------- Galerie ----------
+                if (images.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: Stack(
+                      children: [
+                        SizedBox(
+                          height: 200,
+                          width: double.infinity,
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: images.length,
+                            onPageChanged: (i) =>
+                                setState(() => _currentImage = i),
+                            itemBuilder: (context, index) =>
+                                _FadeInNetworkImage(
+                              url: images[index],
+                              heroTag: '${heroPrefix}_$index',
+                              onTap: () =>
+                                  _openFullScreenGallery(images, index),
+                            ),
                           ),
                         ),
+                        if (images.length > 1)
+                          Positioned(
+                            right: 8,
+                            top: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.45),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                '${_currentImage + 1}/${images.length}',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (images.length > 1)
+                    SizedBox(
+                      height: 68,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: images.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final isActive = index == _currentImage;
+                          return GestureDetector(
+                            onTap: () {
+                              _pageController.animateToPage(
+                                index,
+                                duration: const Duration(milliseconds: 280),
+                                curve: Curves.easeOut,
+                              );
+                              setState(() => _currentImage = index);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 90,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color:
+                                      isActive ? kPrimary : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                              clipBehavior: Clip.hardEdge,
+                              child: Image.network(
+                                images[index],
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.broken_image),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      if (images.length > 1)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.45),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Text(
-                              '${_currentImage + 1}/${images.length}',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (images.length > 1)
-                  SizedBox(
-                    height: 68,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: images.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final isActive = index == _currentImage;
-                        return GestureDetector(
-                          onTap: () {
-                            _pageController.animateToPage(
-                              index,
-                              duration: const Duration(milliseconds: 280),
-                              curve: Curves.easeOut,
-                            );
-                            setState(() => _currentImage = index);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 90,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isActive ? kPrimary : Colors.transparent,
-                                width: 2,
-                              ),
-                            ),
-                            clipBehavior: Clip.hardEdge,
-                            child: Image.network(
-                              images[index],
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey[200],
-                                child: const Icon(Icons.broken_image),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                    ),
+                ] else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: Container(
+                      height: 200,
+                      color: Colors.grey.shade300,
+                      child: const Center(
+                        child: Icon(Icons.image_not_supported, size: 60),
+                      ),
                     ),
                   ),
-              ] else
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
-                  child: Container(
-                    height: 200,
-                    color: Colors.grey.shade300,
-                    child: const Center(
-                      child: Icon(Icons.image_not_supported, size: 60),
-                    ),
-                  ),
-                ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              // ---------- Infos ----------
-
-              Text(nom,
+                // ---------- Infos ----------
+                Text(
+                  nom,
                   style: const TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.bold)),
-              if (ambiance.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(ambiance,
-                    style: const TextStyle(fontSize: 15, color: Colors.grey)),
-              ],
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(Icons.location_on, color: kPrimary, size: 21),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      ville,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(fontSize: 15, color: Colors.black87),
-                    ),
+                      fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                if (ambiance.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    ambiance,
+                    style: const TextStyle(fontSize: 15, color: Colors.grey),
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.access_time, color: kPrimary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      horaires,
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                  ),
-                ],
-              ),
+                const SizedBox(height: 14),
 
-              const SizedBox(height: 12),
-
-              // ---------- Bloc note moyenne ----------
-              if (_loadingAvis)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else
                 Row(
                   children: [
-                    if (_noteMoyenne != null)
-                      _starsFromAverage(_noteMoyenne!, size: 18),
-                    if (_noteMoyenne != null) const SizedBox(width: 8),
-                    Text(
-                      _noteMoyenne != null
-                          ? '${_noteMoyenne!.toStringAsFixed(2)} / 5'
-                          : 'Aucune note',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    const Icon(Icons.location_on, color: kPrimary, size: 21),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        ville,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 15, color: Colors.black87),
+                      ),
                     ),
-                    const SizedBox(width: 6),
-                    Text('($_nbAvis avis)',
-                        style: const TextStyle(color: Colors.grey)),
                   ],
                 ),
 
-              const Divider(height: 30),
+                const SizedBox(height: 12),
 
-              // ---------- Liste des commentaires ----------
-              const Text("Avis des utilisateurs",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              if (_loadingCommentaires)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 6),
-                  child: SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.access_time, color: kPrimary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child:
+                          Text(horaires, style: const TextStyle(fontSize: 15)),
+                    ),
+                  ],
+                ),
+
+                // ✅ DESCRIPTION (si dispo)
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    description,
+                    style: const TextStyle(fontSize: 15, height: 1.35),
                   ),
-                )
-              else if (_avisList.isEmpty)
-                const Text(
-                  "Aucun commentaire pour le moment.",
-                  style: TextStyle(color: Colors.grey),
-                )
-              else
-                ListView.separated(
-                  physics: const NeverScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  itemCount: _avisList.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, idx) {
-                    final r = _avisList[idx];
-                    final int etoiles = (r['etoiles'] as num?)?.toInt() ?? 0;
-                    final String commentaire =
-                        (r['commentaire'] ?? '').toString();
-                    final String auteurId = (r['auteur_id'] ?? '').toString();
-                    final u = _usersById[auteurId] ?? const {};
-                    final prenom = (u['prenom'] ?? '').toString();
-                    final nomU = (u['nom'] ?? '').toString();
-                    final avatarUrl = (u['photo_url'] ?? '').toString();
-                    final fullName = ('$prenom $nomU').trim().isEmpty
-                        ? 'Utilisateur'
-                        : ('$prenom $nomU').trim();
-                    final String dateShort = (() {
-                      final raw = r['created_at']?.toString();
-                      if (raw == null) return '';
-                      return raw.length >= 10 ? raw.substring(0, 10) : raw;
-                    })();
+                ],
 
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        border: Border.all(color: const Color(0xFFEAEAEA)),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 16,
-                                backgroundImage: avatarUrl.isNotEmpty
-                                    ? NetworkImage(avatarUrl)
-                                    : null,
-                                child: avatarUrl.isEmpty
-                                    ? const Icon(Icons.person, size: 18)
-                                    : null,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(fullName,
+                // ✅ BAR NOTE MOYENNE SOUS DESCRIPTION
+                const SizedBox(height: 12),
+                _avgRatingBar(),
+
+                const Divider(height: 30),
+
+                // ✅ AVIS UTILISATEURS AU-DESSUS
+                const Text(
+                  "Avis des utilisateurs",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+
+                if (_loadingCommentaires)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (_avisList.isEmpty)
+                  const Text(
+                    "Aucun commentaire pour le moment.",
+                    style: TextStyle(color: Colors.grey),
+                  )
+                else
+                  ListView.separated(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: _avisList.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, idx) {
+                      final r = _avisList[idx];
+                      final int etoiles = (r['etoiles'] as num?)?.toInt() ?? 0;
+                      final String commentaire =
+                          (r['commentaire'] ?? '').toString();
+                      final String auteurId = (r['auteur_id'] ?? '').toString();
+                      final u = _usersById[auteurId] ?? const {};
+                      final prenom = (u['prenom'] ?? '').toString();
+                      final nomU = (u['nom'] ?? '').toString();
+                      final avatarUrl = (u['photo_url'] ?? '').toString();
+                      final fullName = ('$prenom $nomU').trim().isEmpty
+                          ? 'Utilisateur'
+                          : ('$prenom $nomU').trim();
+                      final String dateShort = (() {
+                        final raw = r['created_at']?.toString();
+                        if (raw == null) return '';
+                        return raw.length >= 10 ? raw.substring(0, 10) : raw;
+                      })();
+
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: _neutralBorder),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.03),
+                              blurRadius: 10,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundImage: avatarUrl.isNotEmpty
+                                      ? NetworkImage(avatarUrl)
+                                      : null,
+                                  child: avatarUrl.isEmpty
+                                      ? const Icon(Icons.person, size: 18)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        fullName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
-                                            fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 2),
-                                    _starsFromInt(etoiles, size: 14),
-                                  ],
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      _starsFromInt(etoiles, size: 14),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (dateShort.isNotEmpty)
-                                Text(dateShort,
+                                if (dateShort.isNotEmpty)
+                                  Text(
+                                    dateShort,
                                     style: const TextStyle(
-                                        color: Colors.grey, fontSize: 12)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            commentaire,
-                            style: const TextStyle(fontSize: 14.5),
-                          ),
-                        ],
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              commentaire,
+                              style:
+                                  const TextStyle(fontSize: 14.5, height: 1.3),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
+                const Divider(height: 32),
+
+                // ✅ VOTRE AVIS EN BAS DE PAGE
+                const Text(
+                  "Votre avis",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: List.generate(5, (index) {
+                    return IconButton(
+                      icon: Icon(
+                        index < _note ? Icons.star : Icons.star_border,
+                        color: Colors.amber,
                       ),
+                      onPressed: () => setState(() => _note = index + 1),
+                      splashRadius: 21,
                     );
-                  },
+                  }),
                 ),
-
-              const Divider(height: 32),
-
-              // ---------- Saisie avis ----------
-              const Text("Notez ce lieu :",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              Row(
-                children: List.generate(5, (index) {
-                  return IconButton(
-                    icon: Icon(index < _note ? Icons.star : Icons.star_border,
-                        color: Colors.amber),
-                    onPressed: () => setState(() => _note = index + 1),
-                    splashRadius: 21,
-                  );
-                }),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _avisController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: "Écrivez votre avis ici...",
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  fillColor: Colors.grey[100],
-                  filled: true,
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _avisController,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _submitAvis(),
+                  decoration: InputDecoration(
+                    hintText: "Écrivez votre avis ici...",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: _neutralBorder)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: _neutralBorder)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide:
+                            const BorderSide(color: kPrimary, width: 1.3)),
+                    fillColor: Colors.grey[100],
+                    filled: true,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: _submitAvis,
-                icon: const Icon(Icons.send),
-                label: const Text("Envoyer l'avis"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kPrimary,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 11, horizontal: 18),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  elevation: 1.5,
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: _submitAvis,
+                    icon: const Icon(Icons.send),
+                    label: const Text("Envoyer"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 11, horizontal: 18),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -766,7 +839,6 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
           _ctrl.forward();
           return FadeTransition(opacity: _fade, child: child);
         }
-        // ✅ placeholder simple, SANS spinner
         return const _ImagePlaceholder();
       },
       errorBuilder: (_, __, ___) =>
@@ -787,11 +859,7 @@ class _ImagePlaceholder extends StatelessWidget {
     return Container(
       color: Colors.grey.shade200,
       alignment: Alignment.center,
-      child: const Icon(
-        Icons.image,
-        size: 40,
-        color: Colors.grey,
-      ),
+      child: const Icon(Icons.image, size: 40, color: Colors.grey),
     );
   }
 }

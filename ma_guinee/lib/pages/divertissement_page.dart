@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../services/app_cache.dart';
 import '../services/geoloc_service.dart';
@@ -19,7 +20,8 @@ class DivertissementPage extends StatefulWidget {
   State<DivertissementPage> createState() => _DivertissementPageState();
 }
 
-class _DivertissementPageState extends State<DivertissementPage> {
+class _DivertissementPageState extends State<DivertissementPage>
+    with AutomaticKeepAliveClientMixin {
   // Couleurs
   static const Color primaryColor = Color(0xFF7B1FA2);
   static const Color secondaryColor = Color(0xFF00C9FF);
@@ -29,8 +31,17 @@ class _DivertissementPageState extends State<DivertissementPage> {
   static const Color _neutralSurface = Color(0xFFFFFFFF);
   static const Color _neutralBorder = Color(0xFFE5E7EB);
 
-  // Cache
+  // Cache (AppCache)
   static const String _cacheKey = 'divertissement:list:v1';
+  static const Duration _memMaxAge = Duration(days: 7);
+  static const Duration _diskMaxAge = Duration(days: 14);
+
+  // ✅ Cache mémoire global (retour écran instant)
+  static List<Map<String, dynamic>> _memoryCache = [];
+
+  // ✅ Hive persistant (relance app instant)
+  static const String _hiveBoxName = 'lieux_box';
+  static const String _hiveKey = 'divertissement_snapshot_v1';
 
   // Données
   final _searchCtrl = TextEditingController();
@@ -38,7 +49,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
   List<Map<String, dynamic>> _filtered = [];
 
   // État
-  bool _loading = true; // skeleton quand pas encore de data
+  bool _loading = true; // skeleton si cold start sans cache
   bool _syncing = false; // sync réseau silencieuse
   bool _hasAnyCache = false;
 
@@ -53,6 +64,15 @@ class _DivertissementPageState extends State<DivertissementPage> {
   @override
   void initState() {
     super.initState();
+
+    // 0) cache mémoire global (instant)
+    if (_memoryCache.isNotEmpty) {
+      _lieux = _memoryCache.map((e) => Map<String, dynamic>.from(e)).toList();
+      _applyFilter(_searchCtrl.text, setStateNow: false);
+      _hasAnyCache = true;
+      _loading = false;
+    }
+
     _loadAllSWR(); // cache instantané + sync réseau
   }
 
@@ -63,16 +83,15 @@ class _DivertissementPageState extends State<DivertissementPage> {
     super.dispose();
   }
 
-  // ====== Distance précise (Haversine, même logique que Resto) ======
+  @override
+  bool get wantKeepAlive => true;
+
+  // ====== Distance précise (Haversine) ======
   double? _distanceMeters(
-    double? lat1,
-    double? lon1,
-    double? lat2,
-    double? lon2,
-  ) {
+      double? lat1, double? lon1, double? lat2, double? lon2) {
     if ([lat1, lon1, lat2, lon2].any((v) => v == null)) return null;
 
-    const R = 6371000.0; // rayon Terre en mètres
+    const R = 6371000.0;
     final dLat = (lat2! - lat1!) * (pi / 180.0);
     final dLon = (lon2! - lon1!) * (pi / 180.0);
 
@@ -82,12 +101,45 @@ class _DivertissementPageState extends State<DivertissementPage> {
             sin(dLon / 2) *
             sin(dLon / 2);
 
-    // ✅ formule correcte: atan2(sqrt(a), sqrt(1 - a))
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // ---------- Hive snapshot helpers ----------
+  List<Map<String, dynamic>>? _readHiveSnapshot() {
+    try {
+      if (!Hive.isBoxOpen(_hiveBoxName)) return null;
+      final box = Hive.box(_hiveBoxName);
+      final raw = box.get(_hiveKey);
+      if (raw is! Map) return null;
+
+      final ts = raw['ts'] as int?;
+      final data = raw['data'] as List?;
+      if (ts == null || data == null) return null;
+
+      final ageMs = DateTime.now().millisecondsSinceEpoch - ts;
+      if (ageMs > _diskMaxAge.inMilliseconds) return null;
+
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeHiveSnapshot(List<Map<String, dynamic>> list) async {
+    try {
+      if (!Hive.isBoxOpen(_hiveBoxName)) return;
+      await Hive.box(_hiveBoxName).put(_hiveKey, {
+        'ts': DateTime.now().millisecondsSinceEpoch,
+        'data': list,
+      });
+    } catch (_) {}
+  }
+
   // ---------- Localisation non bloquante ----------
-  Future<void> _getLocation() async {
+  Future<void> _getLocationNonBlocking() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
 
@@ -106,88 +158,179 @@ class _DivertissementPageState extends State<DivertissementPage> {
       final last = await Geolocator.getLastKnownPosition();
       if (last != null) {
         _position = last;
-        _recomputeDistancesAndSort(); // distances quasi immédiates
+        unawaited(_resolveCity(last));
+        _recomputeDistancesAndSort();
       }
 
       // 2) position actuelle → en arrière-plan
       Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium)
           .then((pos) async {
         _position = pos;
-
-        try {
-          await GeolocService.reportPosition(pos); // silencieux si erreur
-        } catch (_) {}
-
-        try {
-          final marks =
-              await placemarkFromCoordinates(pos.latitude, pos.longitude);
-          if (marks.isNotEmpty) {
-            final m = marks.first;
-            final city = (m.locality?.isNotEmpty == true)
-                ? m.locality
-                : (m.subAdministrativeArea?.isNotEmpty == true
-                    ? m.subAdministrativeArea
-                    : null);
-            _villeGPS = city?.toLowerCase().trim();
-          }
-        } catch (_) {}
-
+        unawaited(GeolocService.reportPosition(pos));
+        await _resolveCity(pos);
         _recomputeDistancesAndSort();
       }).catchError((_) {});
-    } catch (e) {
-      debugPrint('Erreur localisation divertissement: $e');
+    } catch (_) {}
+  }
+
+  Future<void> _resolveCity(Position pos) async {
+    try {
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isNotEmpty) {
+        final m = marks.first;
+        final city = (m.locality?.isNotEmpty == true)
+            ? m.locality
+            : (m.subAdministrativeArea?.isNotEmpty == true
+                ? m.subAdministrativeArea
+                : null);
+        _villeGPS = city?.toLowerCase().trim();
+      }
+    } catch (_) {}
+  }
+
+  // ---------- Ratings batched (évite join lourd) ----------
+  Future<void> _fillRatingsFor(List<Map<String, dynamic>> list) async {
+    final ids = list
+        .map((e) => (e['id'] ?? '').toString())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+
+    try {
+      const int batchSize = 20;
+      final Map<String, int> sum = {};
+      final Map<String, int> cnt = {};
+
+      for (var i = 0; i < ids.length; i += batchSize) {
+        final batch = ids.sublist(i, min(i + batchSize, ids.length));
+        final orFilter = batch.map((id) => 'lieu_id.eq.$id').join(',');
+
+        final rows = await Supabase.instance.client
+            .from('avis_lieux')
+            .select('lieu_id, etoiles')
+            .or(orFilter);
+
+        for (final r in List<Map<String, dynamic>>.from(rows)) {
+          final id = (r['lieu_id'] ?? '').toString();
+          final n = (r['etoiles'] as num?)?.toInt() ?? 0;
+          if (id.isEmpty || n <= 0) continue;
+          sum[id] = (sum[id] ?? 0) + n;
+          cnt[id] = (cnt[id] ?? 0) + 1;
+        }
+      }
+
+      // injecte _avg / _count dans les items (compat avec ton UI existant)
+      for (final l in list) {
+        final id = (l['id'] ?? '').toString();
+        final c = cnt[id] ?? 0;
+        l['_count'] = c;
+        l['_avg'] = (c == 0) ? null : (sum[id]! / c);
+      }
+    } catch (_) {
+      // silencieux
+    }
+  }
+
+  // ---------- Tri (même ville > distance > nom) ----------
+  void _sortByDistance(List<Map<String, dynamic>> arr) {
+    int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
+        (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+
+    if ((_villeGPS ?? '').isNotEmpty) {
+      arr.sort((a, b) {
+        final aSame =
+            (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+        final bSame =
+            (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
+        if (aSame != bSame) return aSame ? -1 : 1;
+
+        final ad = (a['_distance'] as double?);
+        final bd = (b['_distance'] as double?);
+        if (ad != null && bd != null) return ad.compareTo(bd);
+        if (ad != null) return -1;
+        if (bd != null) return 1;
+        return byName(a, b);
+      });
+    } else {
+      arr.sort((a, b) {
+        final ad = (a['_distance'] as double?);
+        final bd = (b['_distance'] as double?);
+        if (ad != null && bd != null) return ad.compareTo(bd);
+        if (ad != null) return -1;
+        if (bd != null) return 1;
+        return byName(a, b);
+      });
     }
   }
 
   // ---------- SWR : cache instantané + sync réseau ----------
-  Future<void> _loadAllSWR() async {
-    // 1) Lecture cache mémoire / disque
-    final mem =
-        AppCache.I.getListMemory(_cacheKey, maxAge: const Duration(days: 7));
-    List<Map<String, dynamic>>? disk;
-    if (mem == null) {
-      disk = await AppCache.I
-          .getListPersistent(_cacheKey, maxAge: const Duration(days: 14));
-    }
-    final snapshot = mem ?? disk;
+  Future<void> _loadAllSWR({bool forceNetwork = false}) async {
+    // anti double-call
+    if (_syncing) return;
 
-    if (snapshot != null) {
-      _lieux = List<Map<String, dynamic>>.from(snapshot);
-      _applyFilter(_searchCtrl.text);
-      _hasAnyCache = true;
-      if (mounted) setState(() => _loading = false);
+    // ouvre Hive si besoin (non bloquant)
+    if (!Hive.isBoxOpen(_hiveBoxName)) {
+      unawaited(Hive.openBox(_hiveBoxName));
+    }
+
+    // 1) snapshot cache (instant) si pas forcé
+    if (!forceNetwork) {
+      if (!_hasAnyCache) {
+        // a) Hive
+        final hiveSnap = _readHiveSnapshot();
+        if (hiveSnap != null && hiveSnap.isNotEmpty) {
+          _lieux = hiveSnap.map((e) => Map<String, dynamic>.from(e)).toList();
+          _memoryCache =
+              _lieux.map((e) => Map<String, dynamic>.from(e)).toList();
+          _applyFilter(_searchCtrl.text, setStateNow: false);
+          _hasAnyCache = true;
+          _loading = false;
+          if (mounted) setState(() {});
+        }
+      }
+
+      // b) AppCache (mémoire/disque)
+      if (!_hasAnyCache) {
+        final mem = AppCache.I.getListMemory(_cacheKey, maxAge: _memMaxAge);
+        List<Map<String, dynamic>>? disk;
+        if (mem == null) {
+          disk = await AppCache.I
+              .getListPersistent(_cacheKey, maxAge: _diskMaxAge);
+        }
+        final snapshot = mem ?? disk;
+
+        if (snapshot != null && snapshot.isNotEmpty) {
+          _lieux = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+          _memoryCache =
+              _lieux.map((e) => Map<String, dynamic>.from(e)).toList();
+          _applyFilter(_searchCtrl.text, setStateNow: false);
+          _hasAnyCache = true;
+          _loading = false;
+          if (mounted) setState(() {});
+        } else {
+          if (mounted && !_hasAnyCache) setState(() => _loading = true);
+        }
+      }
     } else {
-      // premier chargement sans cache → skeleton
-      if (mounted) setState(() => _loading = true);
+      // refresh manuel : pas de skeleton global
+      if (mounted) setState(() => _loading = _hasAnyCache ? false : true);
     }
 
-    // 2) Sync réseau en arrière-plan
+    // 2) localisation en parallèle (non bloquante)
+    unawaited(_getLocationNonBlocking());
+
+    // 3) réseau (SWR) en arrière-plan
     if (mounted) setState(() => _syncing = true);
-    unawaited(_getLocation());
 
     try {
       final response = await Supabase.instance.client.from('lieux').select('''
         id, nom, ville, type, categorie, description,
-        images, latitude, longitude, adresse, created_at,
-        avis_lieux(etoiles)
+        images, latitude, longitude, adresse, created_at
       ''').eq('type', 'divertissement').order('nom', ascending: true);
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // moyenne & nb_avis
-      for (final l in list) {
-        final List avis = (l['avis_lieux'] as List?) ?? const [];
-        int sum = 0;
-        for (final a in avis) {
-          sum += (a['etoiles'] as num?)?.toInt() ?? 0;
-        }
-        final count = avis.length;
-        final avg = count == 0 ? null : (sum / count);
-        l['_avg'] = avg;
-        l['_count'] = count;
-      }
-
-      // Ajout distance si on a déjà une position
+      // distances si on a déjà une position
       if (_position != null) {
         for (final l in list) {
           final lat = (l['latitude'] as num?)?.toDouble();
@@ -199,50 +342,36 @@ class _DivertissementPageState extends State<DivertissementPage> {
             lon,
           );
         }
+        _sortByDistance(list);
       }
 
-      // Tri (même ville > distance > nom)
-      void sortByDistance(List<Map<String, dynamic>> arr) {
-        int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
-            (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
-
-        if ((_villeGPS ?? '').isNotEmpty) {
-          arr.sort((a, b) {
-            final aSame =
-                (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-            final bSame =
-                (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-            if (aSame != bSame) return aSame ? -1 : 1;
-
-            final ad = (a['_distance'] as double?);
-            final bd = (b['_distance'] as double?);
-            if (ad != null && bd != null) return ad.compareTo(bd);
-            if (ad != null) return -1;
-            if (bd != null) return 1;
-            return byName(a, b);
-          });
-        } else {
-          arr.sort((a, b) {
-            final ad = (a['_distance'] as double?);
-            final bd = (b['_distance'] as double?);
-            if (ad != null && bd != null) return ad.compareTo(bd);
-            if (ad != null) return -1;
-            if (bd != null) return 1;
-            return byName(a, b);
-          });
-        }
-      }
-
-      sortByDistance(list);
-
-      // Écrit dans le cache (mémoire + disque)
-      AppCache.I.setList(_cacheKey, list, persist: true);
-
+      // affiche tout de suite (sans attendre les ratings)
       _lieux = list;
-      _applyFilter(_searchCtrl.text);
+      _memoryCache = list.map((e) => Map<String, dynamic>.from(e)).toList();
+      _applyFilter(_searchCtrl.text, setStateNow: false);
       _hasAnyCache = true;
+      _loading = false;
+      if (mounted) setState(() {});
 
-      if (mounted) setState(() => _loading = false);
+      // ratings en fond (puis re-cache)
+      unawaited(() async {
+        await _fillRatingsFor(list);
+
+        // persist caches (retire champs volatils)
+        final toCache = list.map((e) {
+          final c = Map<String, dynamic>.from(e);
+          c.remove('_distance');
+          return c;
+        }).toList(growable: false);
+
+        AppCache.I.setList(_cacheKey, toCache, persist: true);
+        await _writeHiveSnapshot(toCache);
+
+        // update UI (si encore là)
+        if (!mounted) return;
+        _applyFilter(_searchCtrl.text, setStateNow: false);
+        setState(() {});
+      }());
     } catch (e) {
       debugPrint('Erreur réseau divertissement: $e');
       if (mounted && !_hasAnyCache) {
@@ -250,10 +379,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
         setState(() {});
       }
     } finally {
-      if (mounted) {
-        _syncing = false;
-        setState(() {});
-      }
+      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -274,40 +400,12 @@ class _DivertissementPageState extends State<DivertissementPage> {
       );
     }
 
-    int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
-        (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
-
-    if ((_villeGPS ?? '').isNotEmpty) {
-      _lieux.sort((a, b) {
-        final aSame =
-            (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-        final bSame =
-            (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-        if (aSame != bSame) return aSame ? -1 : 1;
-
-        final ad = (a['_distance'] as double?);
-        final bd = (b['_distance'] as double?);
-        if (ad != null && bd != null) return ad.compareTo(bd);
-        if (ad != null) return -1;
-        if (bd != null) return 1;
-        return byName(a, b);
-      });
-    } else {
-      _lieux.sort((a, b) {
-        final ad = (a['_distance'] as double?);
-        final bd = (b['_distance'] as double?);
-        if (ad != null && bd != null) return ad.compareTo(bd);
-        if (ad != null) return -1;
-        if (bd != null) return 1;
-        return byName(a, b);
-      });
-    }
-
-    _applyFilter(_searchCtrl.text);
+    _sortByDistance(_lieux);
+    _applyFilter(_searchCtrl.text, setStateNow: true);
   }
 
   // ---------- Filtre ----------
-  void _applyFilter(String value) {
+  void _applyFilter(String value, {bool setStateNow = true}) {
     final q = value.toLowerCase().trim();
     final filtered = q.isEmpty
         ? _lieux
@@ -321,13 +419,8 @@ class _DivertissementPageState extends State<DivertissementPage> {
             return nom.contains(q) || ville.contains(q) || tag.contains(q);
           }).toList();
 
-    if (mounted) {
-      setState(() {
-        _filtered = filtered;
-      });
-    } else {
-      _filtered = filtered;
-    }
+    _filtered = filtered;
+    if (setStateNow && mounted) setState(() {});
   }
 
   // ---------- Helpers ----------
@@ -363,6 +456,8 @@ class _DivertissementPageState extends State<DivertissementPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
 
@@ -379,6 +474,8 @@ class _DivertissementPageState extends State<DivertissementPage> {
         ? 'Autour de ${_villeGPS!.isEmpty ? "vous" : _villeGPS}'
         : (_locationDenied ? 'Localisation refusée — tri par défaut' : null);
 
+    final coldStart = !_hasAnyCache && _loading;
+
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
       child: Scaffold(
@@ -386,10 +483,7 @@ class _DivertissementPageState extends State<DivertissementPage> {
         appBar: AppBar(
           title: const Text(
             'Divertissement',
-            style: TextStyle(
-              color: onPrimary,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: onPrimary, fontWeight: FontWeight.w700),
           ),
           centerTitle: true,
           backgroundColor: primaryColor,
@@ -410,10 +504,9 @@ class _DivertissementPageState extends State<DivertissementPage> {
               )
             else
               IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: _loadAllSWR,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: () => _loadAllSWR(forceNetwork: true),
                 tooltip: 'Rafraîchir',
-                color: Colors.white,
               ),
           ],
           bottom: const PreferredSize(
@@ -504,10 +597,8 @@ class _DivertissementPageState extends State<DivertissementPage> {
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
                 onChanged: (txt) {
                   _debounce?.cancel();
@@ -523,12 +614,12 @@ class _DivertissementPageState extends State<DivertissementPage> {
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
-                child: _loading
+                child: coldStart
                     ? _skeletonGrid(context)
                     : (_filtered.isEmpty
                         ? const Center(child: Text("Aucun lieu trouvé."))
                         : RefreshIndicator(
-                            onRefresh: _loadAllSWR,
+                            onRefresh: () => _loadAllSWR(forceNetwork: true),
                             child: GridView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
                               gridDelegate:
@@ -602,8 +693,7 @@ class _LieuCardTight extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => DivertissementDetailPage(lieu: lieu),
-          ),
+              builder: (_) => DivertissementDetailPage(lieu: lieu)),
         );
       },
       child: Card(
@@ -618,66 +708,72 @@ class _LieuCardTight extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // IMAGE
+            // IMAGE (premium, sans spinner)
             Expanded(
-              child: LayoutBuilder(builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                final h = w * (11 / 16);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: w.isFinite ? (w * 2).round() : null,
-                      memCacheHeight: h.isFinite ? (h * 2).round() : null,
-                      placeholder: (_, __) => Container(
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.image, size: 36),
-                      ),
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.grey.shade300,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image, size: 40),
-                      ),
-                    ),
-                    if ((lieu['ville'] ?? '').toString().isNotEmpty)
-                      Positioned(
-                        left: 8,
-                        top: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.55),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.location_on,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                (lieu['ville'] ?? '').toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final dpr = MediaQuery.of(context).devicePixelRatio;
+                  final w = constraints.maxWidth;
+                  final h = w * (11 / 16);
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        cacheKey: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: w.isFinite ? (w * dpr).round() : null,
+                        memCacheHeight: h.isFinite ? (h * dpr).round() : null,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholderFadeInDuration: Duration.zero,
+                        useOldImageOnUrlChange: true,
+                        placeholder: (_, __) =>
+                            Container(color: Colors.grey.shade200),
+                        errorWidget: (_, __, ___) => Container(
+                          color: Colors.grey.shade200,
+                          alignment: Alignment.center,
+                          child: Icon(Icons.broken_image,
+                              size: 40, color: Colors.grey.shade500),
                         ),
                       ),
-                  ],
-                );
-              }),
+                      if ((lieu['ville'] ?? '').toString().isNotEmpty)
+                        Positioned(
+                          left: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on,
+                                    size: 14, color: Colors.white),
+                                const SizedBox(width: 4),
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 140),
+                                  child: Text(
+                                    (lieu['ville'] ?? '').toString(),
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 12),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
 
             // TEXTE
@@ -691,9 +787,7 @@ class _LieuCardTight extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                        fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                   const SizedBox(height: 3),
                   Row(
@@ -703,10 +797,8 @@ class _LieuCardTight extends StatelessWidget {
                           (lieu['ville'] ?? '').toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 13,
-                          ),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 13),
                         ),
                       ),
                       if (lieu['_distance'] != null) ...[
@@ -715,10 +807,8 @@ class _LieuCardTight extends StatelessWidget {
                           '${(lieu['_distance'] / 1000).toStringAsFixed(1)} km',
                           maxLines: 1,
                           overflow: TextOverflow.fade,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 13,
-                          ),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 13),
                         ),
                       ],
                     ],
@@ -751,16 +841,12 @@ class _LieuCardTight extends StatelessWidget {
                               ? 'Aucune note'
                               : '${avg!.toStringAsFixed(2)} / 5',
                           style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                         Text(
                           '($nbAvis avis)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
+                          style:
+                              const TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
                     ),
@@ -810,19 +896,21 @@ class _SkeletonCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 16 / 11,
-            child: Container(color: Colors.grey.shade200),
-          ),
+              aspectRatio: 16 / 11,
+              child: ColoredBox(color: Color(0xFFE5E7EB))),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: 14, width: 140, color: Colors.grey.shade200),
+                Container(
+                    height: 14, width: 140, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 90, color: Colors.grey.shade200),
+                Container(
+                    height: 12, width: 90, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
-                Container(height: 12, width: 70, color: Colors.grey.shade200),
+                Container(
+                    height: 12, width: 70, color: const Color(0xFFE5E7EB)),
               ],
             ),
           ),

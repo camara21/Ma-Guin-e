@@ -1,6 +1,7 @@
 // lib/pages/logement/logement_edit_page.dart
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,8 +10,13 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../services/logement_service.dart';
 import '../../models/logement_models.dart';
+
+// ✅ Compression (même module que Annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 class LogementEditPage extends StatefulWidget {
   const LogementEditPage({super.key, this.existing});
@@ -72,6 +78,10 @@ class _LogementEditPageState extends State<LogementEditPage> {
   // Photos
   static const _kMaxPhotos = 10;
   final List<_PhotoItem> _photos = [];
+
+  // ✅ Pour supprimer dans Storage ce qui est remplacé/supprimé au moment du save
+  final Set<String> _originalPhotoUrls = <String>{};
+  final Set<String> _pendingDeleteUrls = <String>{};
 
   bool _saving = false;
   bool _loadedFromRouteArg = false;
@@ -138,9 +148,15 @@ class _LogementEditPageState extends State<LogementEditPage> {
     _lng = e.lng;
 
     _photos.clear();
+    _originalPhotoUrls.clear();
+    _pendingDeleteUrls.clear();
+
     for (final u in e.photos) {
       final s = u.trim();
-      if (s.isNotEmpty) _photos.add(_PhotoItem(url: s));
+      if (s.isNotEmpty) {
+        _photos.add(_PhotoItem(url: s));
+        _originalPhotoUrls.add(s);
+      }
     }
     setState(() {});
   }
@@ -630,7 +646,12 @@ class _LogementEditPageState extends State<LogementEditPage> {
           child: IconButton(
             style: IconButton.styleFrom(backgroundColor: Colors.black45),
             icon: const Icon(Icons.close, size: 18, color: Colors.white),
-            onPressed: () => setState(() => _photos.removeAt(index)),
+            onPressed: () {
+              // ✅ on marque pour suppression au save (on ne supprime pas immédiatement)
+              final url = (p.url ?? '').trim();
+              if (url.isNotEmpty) _pendingDeleteUrls.add(url);
+              setState(() => _photos.removeAt(index));
+            },
             tooltip: "Supprimer",
           ),
         ),
@@ -643,7 +664,9 @@ class _LogementEditPageState extends State<LogementEditPage> {
     final left = _kMaxPhotos - _photos.length;
 
     final picker = ImagePicker();
-    final files = await picker.pickMultiImage(imageQuality: 85);
+
+    // ✅ pas de imageQuality ici : on compresse comme Annonces
+    final files = await picker.pickMultiImage();
     if (files.isEmpty) return;
 
     for (final f in files.take(left)) {
@@ -651,6 +674,74 @@ class _LogementEditPageState extends State<LogementEditPage> {
       _photos.add(_PhotoItem(bytes: bytes, name: f.name));
     }
     setState(() {});
+  }
+
+  // ===================== Storage delete helpers =====================
+
+  _StorageRef? _parseStorageRefFromUrl(String url) {
+    try {
+      final u = Uri.parse(url);
+      final seg = u.pathSegments;
+
+      // formats:
+      // /storage/v1/object/public/<bucket>/<path...>
+      // /storage/v1/object/sign/<bucket>/<path...>
+      final idx = seg.indexOf('object');
+      if (idx < 0) return null;
+      if (idx + 2 >= seg.length) return null;
+
+      final mode = seg[idx + 1]; // public | sign | ...
+      if (mode != 'public' && mode != 'sign') return null;
+
+      final bucket = Uri.decodeComponent(seg[idx + 2]);
+      if (bucket.isEmpty) return null;
+
+      final rest = seg.sublist(idx + 3);
+      if (rest.isEmpty) return null;
+
+      final path = rest.map(Uri.decodeComponent).join('/');
+      if (path.isEmpty) return null;
+
+      return _StorageRef(bucket: bucket, path: path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteUrlsFromStorage(Set<String> urls) async {
+    if (urls.isEmpty) return;
+
+    final Map<String, List<String>> byBucket = {};
+    for (final url in urls) {
+      final ref = _parseStorageRefFromUrl(url);
+      if (ref == null) continue;
+      byBucket.putIfAbsent(ref.bucket, () => <String>[]).add(ref.path);
+    }
+
+    if (byBucket.isEmpty) return;
+
+    final client = Supabase.instance.client;
+
+    for (final entry in byBucket.entries) {
+      final bucket = entry.key;
+      final paths = entry.value.toSet().toList(); // unique
+      try {
+        await client.storage.from(bucket).remove(paths);
+      } catch (e) {
+        // On ne bloque pas la sauvegarde si la policy Storage refuse la suppression
+        debugPrint('Erreur suppression storage ($bucket): $e');
+      }
+    }
+  }
+
+  String _buildFilename(String? originalName, String ext, int i) {
+    final raw = (originalName ?? '').trim();
+    final safe =
+        raw.isEmpty ? 'photo_$i' : raw.replaceAll(RegExp(r'[^\w\-.]+'), '_');
+
+    final noExt = safe.replaceAll(RegExp(r'\.[a-zA-Z0-9]{1,5}$'), '');
+    final e = ext.trim().toLowerCase().replaceAll('.', '');
+    return '$noExt.$e';
   }
 
   // ===================== Save =====================
@@ -710,23 +801,61 @@ class _LogementEditPageState extends State<LogementEditPage> {
       final tel = _phone.text.trim();
       if (tel.isNotEmpty) await _svc.update(id, {'contact_telephone': tel});
 
+      // ✅ Construit la liste finale d’URLs (compression + upload)
       final urls = <String>[];
       for (var i = 0; i < _photos.length; i++) {
         final p = _photos[i];
-        if ((p.url ?? '').isNotEmpty) {
-          urls.add(p.url!);
-        } else if (p.bytes != null) {
-          final name = p.name ?? 'photo_$i.jpg';
-          final res = await _svc.uploadPhoto(
-            bytes: p.bytes!,
-            filename: name,
-            logementId: id,
-          );
-          urls.add(res.publicUrl);
+
+        if ((p.url ?? '').trim().isNotEmpty) {
+          urls.add(p.url!.trim());
+          continue;
         }
+
+        if (p.bytes == null) continue;
+
+        // ✅ Compression identique à Annonces
+        final c = await ImageCompressor.compressBytes(
+          p.bytes!,
+          maxSide: 1600,
+          quality: 82,
+          maxBytes: 900 * 1024,
+          keepPngIfTransparent: true,
+        );
+
+        final filename = _buildFilename(p.name, c.extension, i);
+
+        final res = await _svc.uploadPhoto(
+          bytes: c.bytes,
+          filename: filename,
+          logementId: id,
+        );
+
+        urls.add(res.publicUrl);
       }
 
       await _svc.setPhotos(id, urls);
+
+      // ✅ Suppression storage : anciennes URLs qui ne sont plus dans "urls"
+      final keep = urls.toSet();
+      final toDelete = <String>{};
+
+      // 1) ce qui était dans l’existant mais plus gardé
+      for (final u in _originalPhotoUrls) {
+        if (!keep.contains(u)) toDelete.add(u);
+      }
+
+      // 2) ce que l’utilisateur a supprimé pendant l’édition (sécurité)
+      for (final u in _pendingDeleteUrls) {
+        if (!keep.contains(u)) toDelete.add(u);
+      }
+
+      await _deleteUrlsFromStorage(toDelete);
+
+      // ✅ reset “baseline” après succès
+      _originalPhotoUrls
+        ..clear()
+        ..addAll(keep);
+      _pendingDeleteUrls.clear();
 
       if (!mounted) return;
       _snack(!isEditing ? "Annonce créée" : "Annonce mise à jour");
@@ -975,6 +1104,12 @@ class _PhotoItem {
   final Uint8List? bytes;
   final String? url;
   final String? name;
+}
+
+class _StorageRef {
+  final String bucket;
+  final String path;
+  _StorageRef({required this.bucket, required this.path});
 }
 
 // Formatter : 50000 -> 50.000

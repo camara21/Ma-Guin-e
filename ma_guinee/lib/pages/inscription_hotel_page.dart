@@ -1,3 +1,4 @@
+// lib/pages/inscription_hotel_page.dart
 import 'dart:io' show File;
 import 'dart:typed_data';
 
@@ -11,6 +12,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ✅ Compression (ton module)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 class InscriptionHotelPage extends StatefulWidget {
   final Map<String, dynamic>? hotel;
@@ -43,7 +47,9 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
   bool _gettingLocation = false;
   bool _loading = false;
 
+  // Images
   final List<XFile> _pickedImages = [];
+  List<String> _onlineImages = []; // ✅ images existantes en édition
   static const String _bucket = 'hotel-photos';
 
   // Centre par défaut (Conakry) si jamais
@@ -74,6 +80,9 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
       etoiles = (h['etoiles'] as int?) ?? 1;
       latitude = (h['latitude'] as num?)?.toDouble();
       longitude = (h['longitude'] as num?)?.toDouble();
+
+      // ✅ récupérer photos existantes si présentes
+      _onlineImages = (h['images'] as List?)?.cast<String>() ?? [];
     }
   }
 
@@ -137,15 +146,15 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         final placemarks =
             await placemarkFromCoordinates(latitude!, longitude!);
         if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
+          final pmark = placemarks.first;
           adresse = [
-            p.street,
-            p.subLocality,
-            p.locality,
-            p.administrativeArea,
-            p.country
+            pmark.street,
+            pmark.subLocality,
+            pmark.locality,
+            pmark.administrativeArea,
+            pmark.country
           ].where((e) => (e != null && e!.trim().isNotEmpty)).join(', ');
-          ville = p.locality ?? ville;
+          ville = pmark.locality ?? ville;
         }
       } catch (_) {}
 
@@ -185,16 +194,16 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     try {
       final placemarks = await placemarkFromCoordinates(lat, lng);
       if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
+        final pmark = placemarks.first;
         setState(() {
           adresse = [
-            p.street,
-            p.subLocality,
-            p.locality,
-            p.administrativeArea,
-            p.country
+            pmark.street,
+            pmark.subLocality,
+            pmark.locality,
+            pmark.administrativeArea,
+            pmark.country
           ].where((e) => (e != null && e!.trim().isNotEmpty)).join(', ');
-          ville = p.locality ?? ville;
+          ville = pmark.locality ?? ville;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -222,7 +231,8 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     setState(() => _pickedImages.addAll(res));
   }
 
-  void _removeImage(int i) => setState(() => _pickedImages.removeAt(i));
+  void _removePicked(int i) => setState(() => _pickedImages.removeAt(i));
+  void _removeOnline(int i) => setState(() => _onlineImages.removeAt(i));
 
   Widget _imagePreview(XFile f) {
     if (kIsWeb) {
@@ -262,45 +272,63 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
     );
   }
 
+  // ✅ Upload + compression (web + mobile + desktop) + contentType
   Future<List<String>> _uploadImages(String uid) async {
     final storage = Supabase.instance.client.storage.from(_bucket);
     final urls = <String>[];
 
-    for (final img in _pickedImages) {
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
-      final objectPath = '$uid/$fileName';
+    for (int i = 0; i < _pickedImages.length; i++) {
+      final img = _pickedImages[i];
 
-      if (kIsWeb) {
-        final bytes = await img.readAsBytes();
-        await storage.uploadBinary(
-          objectPath,
-          bytes,
-          fileOptions: const FileOptions(upsert: true),
-        );
-      } else {
-        await storage.upload(
-          objectPath,
-          File(img.path),
-          fileOptions: const FileOptions(upsert: true),
-        );
-      }
+      final raw = await img.readAsBytes();
+
+      final c = await ImageCompressor.compressBytes(
+        raw,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      final safeBase =
+          p.basename(img.path).replaceAll(' ', '_').replaceAll('.', '_');
+      final ts = DateTime.now().microsecondsSinceEpoch;
+
+      // ✅ important : cohérent avec tes policies (u/<uid>/...)
+      final objectPath = 'u/$uid/${ts}_${i}_$safeBase.${c.extension}';
+
+      try {
+        debugPrint(
+            '[hotel] upload: raw=${raw.length}B -> cmp=${c.bytes.length}B type=${c.contentType}');
+      } catch (_) {}
+
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
+
       urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
   // ---------- Vérification : un seul hôtel par compte ----------
   Future<Map<String, dynamic>?> _findHotelForUser(String uid) async {
     try {
-      final res = await Supabase.instance.client
+      final res = Supabase.instance.client
           .from('hotels')
           .select('id, nom')
           .eq('user_id', uid)
           .limit(1);
 
-      if (res is List && res.isNotEmpty) {
-        final row = res.first;
+      final out = await res;
+      if (out is List && out.isNotEmpty) {
+        final row = out.first;
         if (row is Map<String, dynamic>) return row;
         return Map<String, dynamic>.from(row as Map);
       }
@@ -364,7 +392,11 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         }
       }
 
-      final urls = await _uploadImages(uid);
+      // ✅ upload compressé
+      final uploaded = await _uploadImages(uid);
+
+      // ✅ important : en édition, on garde les anciennes + nouvelles
+      final allImages = [..._onlineImages, ...uploaded];
 
       final data = {
         'user_id': uid,
@@ -377,7 +409,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
         'etoiles': etoiles,
         'latitude': latitude,
         'longitude': longitude,
-        'images': urls,
+        'images': allImages,
         'updated_at': DateTime.now().toIso8601String(),
       };
 
@@ -534,7 +566,6 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                             ),
                             initialZoom: 16.0,
                             onTap: (tapPosition, point) {
-                              // Ajustement manuel direct sur mobile uniquement
                               if (!isMobile) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -682,6 +713,38 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        // ✅ existantes
+                        for (int i = 0; i < _onlineImages.length; i++)
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  _onlineImages[i],
+                                  width: 70,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: () => _removeOnline(i),
+                                  child: const CircleAvatar(
+                                    radius: 11,
+                                    backgroundColor: Colors.red,
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        // ✅ nouvelles
                         for (int i = 0; i < _pickedImages.length; i++)
                           Stack(
                             children: [
@@ -690,7 +753,7 @@ class _InscriptionHotelPageState extends State<InscriptionHotelPage> {
                                 top: 2,
                                 right: 2,
                                 child: GestureDetector(
-                                  onTap: () => _removeImage(i),
+                                  onTap: () => _removePicked(i),
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,

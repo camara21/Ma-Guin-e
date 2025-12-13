@@ -23,6 +23,9 @@ class TourismeDetailPage extends StatefulWidget {
 class _TourismeDetailPageState extends State<TourismeDetailPage> {
   final _sb = Supabase.instance.client;
 
+  // Neutres
+  static const Color _neutralBorder = Color(0xFFE5E7EB);
+
   Map<String, dynamic>? _fullLieu;
   bool _loadingLieu = false;
 
@@ -49,6 +52,80 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     if (s == null || s.trim().isEmpty) return false;
     final u = Uri.tryParse(s.trim());
     return u != null && (u.isScheme('http') || u.isScheme('https'));
+  }
+
+  String _fmtDate(dynamic raw) {
+    final dt = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} • ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  Widget _starsStatic(double avg, {double size = 14}) {
+    final full = avg.floor().clamp(0, 5);
+    final half = (avg - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, size: size, color: tourismeSecondary);
+        }
+        if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: tourismeSecondary);
+        }
+        return Icon(Icons.star_border, size: size, color: tourismeSecondary);
+      }),
+    );
+  }
+
+  Widget _avgBar() {
+    // ✅ Barre note moyenne (sous description)
+    if (_avis.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _neutralBorder),
+        ),
+        child: Row(
+          children: const [
+            Text(
+              "Aucun avis pour le moment",
+              style: TextStyle(color: Colors.black54),
+            ),
+            Spacer(),
+            Icon(Icons.verified, size: 18, color: tourismeSecondary),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _neutralBorder),
+      ),
+      child: Row(
+        children: [
+          _starsStatic(_noteMoyenne, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            '${_noteMoyenne.toStringAsFixed(1)} / 5',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '(${_avis.length})',
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const Spacer(),
+          const Icon(Icons.verified, size: 18, color: tourismeSecondary),
+        ],
+      ),
+    );
   }
 
   @override
@@ -92,7 +169,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     final raw = (m['contact'] ?? m['telephone'] ?? m['phone'] ?? m['tel'] ?? '')
         .toString()
         .trim();
-
     return raw.replaceAll(RegExp(r'[^0-9+]'), '');
   }
 
@@ -122,9 +198,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
         if (lat != null && lon != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _mapController.move(LatLng(lat, lon), 15);
-            }
+            if (mounted) _mapController.move(LatLng(lat, lon), 15);
           });
         }
       }
@@ -183,9 +257,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         for (final p in List<Map<String, dynamic>>.from(profs)) {
           final id = (p['id'] ?? '').toString();
           fetched[id] = {
-            'prenom': p['prenom'],
-            'nom': p['nom'],
-            'photo_url': p['photo_url'],
+            'prenom': (p['prenom'] ?? '').toString(),
+            'nom': (p['nom'] ?? '').toString(),
+            'photo_url': (p['photo_url'] ?? '').toString(),
           };
         }
       }
@@ -246,6 +320,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         },
         onConflict: 'lieu_id,auteur_id',
       );
+
+      // ✅ ferme clavier + reset
+      FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
       setState(() {
@@ -316,11 +393,17 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     final images = _images(lieu);
     final nom = (lieu['nom'] ?? 'Site touristique').toString();
     final ville = (lieu['ville'] ?? '').toString();
-    final description = (lieu['description'] ?? '').toString();
+    final description = (lieu['description'] ?? '').toString().trim();
     final numero = _extractPhone(lieu);
 
     final lat = (lieu['latitude'] as num?)?.toDouble();
     final lon = (lieu['longitude'] as num?)?.toDouble();
+
+    final canSend =
+        _noteUtilisateur > 0 && _avisController.text.trim().isNotEmpty;
+
+    final mapCenter =
+        (lat != null && lon != null) ? LatLng(lat, lon) : _defaultCenter;
 
     return Scaffold(
       appBar: AppBar(
@@ -331,13 +414,16 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                 nom,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    color: tourismePrimary, fontWeight: FontWeight.w700),
+                  color: tourismePrimary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             if (_loadingLieu)
               const SizedBox(
                 width: 16,
                 height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
           ],
         ),
@@ -371,13 +457,16 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                   label: const Text(
                     "Contacter",
                     style: TextStyle(
-                        color: tourismePrimary, fontWeight: FontWeight.w700),
+                      color: tourismePrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: tourismePrimary, width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -397,13 +486,16 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                   label: const Text(
                     "Réserver",
                     style: TextStyle(
-                        color: tourismeOnPrimary, fontWeight: FontWeight.w700),
+                      color: tourismeOnPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: tourismePrimary,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                   ),
                 ),
@@ -413,281 +505,394 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         ),
       ),
 
-      // CONTENU
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        children: [
-          // -----------------------------------------------------
-          // Galerie
-          // -----------------------------------------------------
-          if (images.isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
-                children: [
-                  SizedBox(
-                    height: 230,
-                    width: double.infinity,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: images.length,
-                      onPageChanged: (i) => setState(() => _currentIndex = i),
-                      itemBuilder: (_, index) => GestureDetector(
-                        onTap: () => _openFullScreenGallery(images, index),
-                        child: Hero(
-                          tag: 'tourisme_$index',
-                          child: CachedNetworkImage(
-                            imageUrl: images[index],
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                Container(color: Colors.grey.shade200),
-                            errorWidget: (_, __, ___) => Container(
-                              color: Colors.grey.shade200,
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.landscape,
-                                  size: 40, color: Colors.grey),
+      // ✅ Tap partout = ferme le clavier
+      body: Listener(
+        onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+          children: [
+            // -----------------------------------------------------
+            // Galerie
+            // -----------------------------------------------------
+            if (images.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  children: [
+                    SizedBox(
+                      height: 230,
+                      width: double.infinity,
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: images.length,
+                        onPageChanged: (i) => setState(() => _currentIndex = i),
+                        itemBuilder: (_, index) => GestureDetector(
+                          onTap: () => _openFullScreenGallery(images, index),
+                          child: Hero(
+                            tag: 'tourisme_$index',
+                            child: CachedNetworkImage(
+                              imageUrl: images[index],
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) =>
+                                  Container(color: Colors.grey.shade200),
+                              errorWidget: (_, __, ___) => Container(
+                                color: Colors.grey.shade200,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.landscape,
+                                    size: 40, color: Colors.grey),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          '${_currentIndex + 1}/${images.length}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Miniatures
+              if (images.length > 1) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 68,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, index) {
+                      final isActive = index == _currentIndex;
+
+                      return GestureDetector(
+                        onTap: () {
+                          _pageController.animateToPage(
+                            index,
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOut,
+                          );
+                          setState(() => _currentIndex = index);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 90,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isActive
+                                  ? tourismePrimary
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          clipBehavior: Clip.hardEdge,
+                          child: CachedNetworkImage(
+                            imageUrl: images[index],
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey.shade200),
+                            errorWidget: (_, __, ___) =>
+                                const Center(child: Icon(Icons.broken_image)),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        '${_currentIndex + 1}/${images.length}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
+                ),
+              ],
+            ] else
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 230,
+                  color: Colors.grey.shade300,
+                  child: const Center(
+                    child: Icon(Icons.landscape, size: 60, color: Colors.grey),
+                  ),
+                ),
+              ),
+
+            // -----------------------------------------------------
+            // Texte
+            // -----------------------------------------------------
+            const SizedBox(height: 12),
+            Text(
+              nom,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            if (ville.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.location_on, color: Colors.black54),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      ville,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
-            ),
+            ],
 
-            // Miniatures
+            // ✅ DESCRIPTION
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(description, style: const TextStyle(height: 1.35)),
+            ],
+
+            // ✅ NOTE MOYENNE (SOUS DESCRIPTION)
+            const SizedBox(height: 12),
+            _avgBar(),
+
+            const SizedBox(height: 16),
+            const Divider(height: 28),
+
+            // -----------------------------------------------------
+            // CARTE
+            // -----------------------------------------------------
+            const Text("Localisation",
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             SizedBox(
-              height: 68,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, index) {
-                  final isActive = index == _currentIndex;
-
-                  return GestureDetector(
-                    onTap: () {
-                      _pageController.animateToPage(index,
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeOut);
-                      setState(() => _currentIndex = index);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 90,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color:
-                              isActive ? tourismePrimary : Colors.transparent,
-                          width: 2,
+              height: 210,
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: mapCenter,
+                  initialZoom: _defaultZoom,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all,
+                  ),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    subdomains: const ['a', 'b', 'c'],
+                    userAgentPackageName: 'com.soneya.app',
+                  ),
+                  if (lat != null && lon != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(lat, lon),
+                          width: 40,
+                          height: 40,
+                          child: const Icon(
+                            Icons.location_on,
+                            size: 40,
+                            color: tourismePrimary,
+                          ),
                         ),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: CachedNetworkImage(
-                        imageUrl: images[index],
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: Colors.grey.shade200),
-                        errorWidget: (_, __, ___) =>
-                            const Center(child: Icon(Icons.broken_image)),
-                      ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+
+            if (lat != null && lon != null) ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () => _ouvrirGoogleMaps(lat, lon),
+                icon: const Icon(Icons.map),
+                label: const Text("Ouvrir dans Google Maps"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tourismePrimary,
+                  foregroundColor: tourismeOnPrimary,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+            const Divider(height: 28),
+
+            // -----------------------------------------------------
+            // ✅ AVIS DES VISITEURS (AU-DESSUS de "Votre avis")
+            // -----------------------------------------------------
+            const Text(
+              "Avis des visiteurs",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+
+            if (_avis.isEmpty)
+              const Text("Aucun avis pour le moment.")
+            else
+              Column(
+                children: _avis.map((a) {
+                  final uid = (a['auteur_id'] ?? '').toString();
+                  final u = _usersById[uid] ?? const {};
+                  final prenom = (u['prenom'] ?? '').toString();
+                  final nomU = (u['nom'] ?? '').toString();
+                  final photo = (u['photo_url'] ?? '').toString();
+                  final fullName = ('$prenom $nomU').trim().isEmpty
+                      ? 'Utilisateur'
+                      : ('$prenom $nomU').trim();
+
+                  final etoiles = (a['etoiles'] as num?)?.toDouble() ?? 0.0;
+                  final commentaire =
+                      (a['commentaire'] ?? '').toString().trim();
+                  final dateStr = _fmtDate(a['created_at']);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _neutralBorder),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundImage:
+                              (photo.isNotEmpty) ? NetworkImage(photo) : null,
+                          child: photo.isEmpty
+                              ? const Icon(Icons.person, size: 18)
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      fullName,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _starsStatic(etoiles, size: 14),
+                                ],
+                              ),
+                              if (commentaire.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  commentaire,
+                                  style: const TextStyle(height: 1.3),
+                                ),
+                              ],
+                              if (dateStr.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  dateStr,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.black54),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   );
-                },
+                }).toList(),
               ),
-            ),
-          ] else
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                height: 230,
-                color: Colors.grey.shade300,
-                child: const Center(
-                  child: Icon(Icons.landscape, size: 60, color: Colors.grey),
+
+            const SizedBox(height: 18),
+            const Divider(height: 28),
+
+            // -----------------------------------------------------
+            // ✅ VOTRE AVIS (TOUT EN BAS)
+            // -----------------------------------------------------
+            const Text("Votre avis",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            if (_dejaNote)
+              const Padding(
+                padding: EdgeInsets.only(top: 6, bottom: 6),
+                child: Text(
+                  "Vous avez déjà laissé un avis. Renvoyez pour mettre à jour.",
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
-            ),
-
-          // -----------------------------------------------------
-          // Texte
-          // -----------------------------------------------------
-          const SizedBox(height: 12),
-          Text(nom,
-              style:
-                  const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          if (ville.isNotEmpty) ...[
-            const SizedBox(height: 4),
             Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.black54),
-                const SizedBox(width: 4),
-                Text(ville),
-              ],
+              children: List.generate(5, (i) {
+                final active = i < _noteUtilisateur;
+                return IconButton(
+                  onPressed: () => setState(() => _noteUtilisateur = i + 1),
+                  icon: Icon(active ? Icons.star : Icons.star_border),
+                  color: Colors.amber,
+                );
+              }),
             ),
-          ],
-          if (description.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(description),
-          ],
-
-          // -----------------------------------------------------
-          // CARTE INSTANTANÉE (VERSION RESTO)
-          // -----------------------------------------------------
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 210,
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _defaultCenter,
-                initialZoom: _defaultZoom,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all,
+            TextField(
+              controller: _avisController,
+              minLines: 3,
+              maxLines: 3,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _envoyerAvis(),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: "Votre avis…",
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                enabledBorder:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: tourismePrimary, width: 1.4),
                 ),
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.soneya.app',
-                ),
-                if (lat != null && lon != null)
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: LatLng(lat, lon),
-                        width: 40,
-                        height: 40,
-                        child: const Icon(Icons.location_on,
-                            size: 40, color: tourismePrimary),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-
-          if (lat != null && lon != null) ...[
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () => _ouvrirGoogleMaps(lat, lon),
-              icon: const Icon(Icons.map),
-              label: const Text("Ouvrir dans Google Maps"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tourismePrimary,
-                foregroundColor: tourismeOnPrimary,
+                filled: true,
+                fillColor: const Color(0xFFF8F6F9),
+                contentPadding: const EdgeInsets.all(12),
               ),
             ),
-          ],
-
-          // -----------------------------------------------------
-          // Avis
-          // -----------------------------------------------------
-          const SizedBox(height: 24),
-          Text("Avis des visiteurs",
-              style: Theme.of(context).textTheme.titleMedium),
-          if (_avis.isEmpty)
-            const Text("Aucun avis pour le moment.")
-          else ...[
-            Text("Note moyenne : ${_noteMoyenne.toStringAsFixed(1)} ★"),
-            const SizedBox(height: 6),
-            ..._avis.map((a) {
-              final uid = (a['auteur_id'] ?? '').toString();
-              final u = _usersById[uid] ?? const {};
-              final prenom = (u['prenom'] ?? '').toString();
-              final nomU = (u['nom'] ?? '').toString();
-              final photo = (u['photo_url'] ?? '').toString();
-              final fullName = ('$prenom $nomU').trim().isEmpty
-                  ? 'Utilisateur'
-                  : ('$prenom $nomU').trim();
-              final note = (a['etoiles'] as num?)?.toInt() ?? 0;
-
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: photo.isNotEmpty
-                      ? CachedNetworkImageProvider(photo)
-                      : null,
-                  child: photo.isEmpty ? const Icon(Icons.person) : null,
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: canSend ? _envoyerAvis : null,
+                icon: const Icon(Icons.send_rounded, size: 18),
+                label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tourismePrimary,
+                  foregroundColor: tourismeOnPrimary,
+                  disabledBackgroundColor: tourismePrimary.withOpacity(0.35),
+                  disabledForegroundColor: tourismeOnPrimary.withOpacity(0.85),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
                 ),
-                title: Text(fullName),
-                subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("$note ★"),
-                      if ((a['commentaire'] ?? '').toString().isNotEmpty)
-                        Text(a['commentaire'].toString()),
-                    ]),
-              );
-            }),
-          ],
-
-          // -----------------------------------------------------
-          // Laisser un avis
-          // -----------------------------------------------------
-          const SizedBox(height: 24),
-          Text("Laisser un avis",
-              style: Theme.of(context).textTheme.titleSmall),
-          if (_dejaNote)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 6),
-              child: Text(
-                "Vous avez déjà laissé un avis. Renvoyez pour mettre à jour.",
-                style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ),
-          Row(
-            children: List.generate(5, (i) {
-              final active = i < _noteUtilisateur;
-              return IconButton(
-                onPressed: () => setState(() => _noteUtilisateur = i + 1),
-                icon: Icon(active ? Icons.star : Icons.star_border),
-                color: Colors.amber,
-              );
-            }),
-          ),
-          TextField(
-            controller: _avisController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: "Votre avis…",
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              filled: true,
-              fillColor: const Color(0xFFF8F6F9),
-            ),
-          ),
-          const SizedBox(height: 10),
-          ElevatedButton.icon(
-            onPressed: _envoyerAvis,
-            icon: const Icon(Icons.send),
-            label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFDE68A),
-              foregroundColor: Colors.black87,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

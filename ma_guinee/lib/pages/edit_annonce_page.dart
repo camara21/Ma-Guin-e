@@ -9,19 +9,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/annonce_model.dart';
 
+// ✅ Compression (même module que CreateAnnoncePage)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
+
 // ====== PALETTE FIXE (rouge doux cohérente) ======
-const kAnnoncePrimary     = Color(0xFFD92D20); // rouge doux (actions)
+const kAnnoncePrimary = Color(0xFFD92D20); // rouge doux (actions)
 const kAnnoncePrimaryDark = Color(0xFFB42318); // variante pressée
-const kAnnonceSecondary   = Color(0xFFFFF1F1); // fond très léger
-const kAnnonceOnPrimary   = Color(0xFFFFFFFF);
+const kAnnonceSecondary = Color(0xFFFFF1F1); // fond très léger
+const kAnnonceOnPrimary = Color(0xFFFFFFFF);
 const kAnnonceOnSecondary = Color(0xFF1F2937);
 
 // Neutres
-const kAnnonceBg   = Color(0xFFF5F7FA);
+const kAnnonceBg = Color(0xFFF5F7FA);
 const kAnnonceCard = Color(0xFFFFFFFF);
-const kStroke      = Color(0xFFE5E7EB);
-const kText        = Color(0xFF1F2937);
-const kText2       = Color(0xFF6B7280);
+const kStroke = Color(0xFFE5E7EB);
+const kText = Color(0xFF1F2937);
+const kText2 = Color(0xFF6B7280);
 // ========================================
 
 class EditAnnoncePage extends StatefulWidget {
@@ -42,8 +45,12 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
   late TextEditingController _villeController;
 
   final ImagePicker _picker = ImagePicker();
+
   final List<XFile> _newImages = []; // nouvelles images non uploadées
   List<String> _oldUrls = []; // images déjà en ligne
+
+  // ✅ Pour supprimer de Supabase Storage les anciennes images retirées (optionnel mais recommandé)
+  final List<String> _oldUrlsToDelete = [];
 
   bool _loading = false;
   int? _selectedCategoryId;
@@ -65,6 +72,16 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
     _loadCategories();
   }
 
+  @override
+  void dispose() {
+    _titreController.dispose();
+    _descriptionController.dispose();
+    _prixController.dispose();
+    _telephoneController.dispose();
+    _villeController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadCategories() async {
     try {
       final response =
@@ -79,7 +96,7 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
 
   Future<void> _pickImages() async {
     final picked = await _picker.pickMultiImage();
-    if (picked != null && picked.isNotEmpty) {
+    if (picked.isNotEmpty) {
       setState(() => _newImages.addAll(picked));
     }
   }
@@ -89,7 +106,9 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
   }
 
   void _removeOldImage(int index) {
-    setState(() => _oldUrls.removeAt(index));
+    final removed = _oldUrls.removeAt(index);
+    _oldUrlsToDelete.add(removed); // ✅ marquer pour suppression storage
+    setState(() {});
   }
 
   Widget _previewNew(int index) {
@@ -98,22 +117,34 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
       return FutureBuilder<Uint8List>(
         future: file.readAsBytes(),
         builder: (_, snap) {
-          if (snap.connectionState != ConnectionState.done) {
+          if (snap.connectionState != ConnectionState.done ||
+              snap.data == null) {
             return const SizedBox(
-              width: 90, height: 90,
+              width: 90,
+              height: 90,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             );
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(13),
-            child: Image.memory(snap.data!, width: 90, height: 90, fit: BoxFit.cover),
+            child: Image.memory(
+              snap.data!,
+              width: 90,
+              height: 90,
+              fit: BoxFit.cover,
+            ),
           );
         },
       );
     } else {
       return ClipRRect(
         borderRadius: BorderRadius.circular(13),
-        child: Image.file(File(file.path), width: 90, height: 90, fit: BoxFit.cover),
+        child: Image.file(
+          File(file.path),
+          width: 90,
+          height: 90,
+          fit: BoxFit.cover,
+        ),
       );
     }
   }
@@ -123,9 +154,12 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
       borderRadius: BorderRadius.circular(13),
       child: Image.network(
         _oldUrls[index],
-        width: 90, height: 90, fit: BoxFit.cover,
+        width: 90,
+        height: 90,
+        fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => Container(
-          width: 90, height: 90,
+          width: 90,
+          height: 90,
           color: Colors.grey[300],
           child: const Icon(Icons.broken_image, size: 32),
         ),
@@ -133,21 +167,71 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
     );
   }
 
+  // ✅ Upload des nouvelles images avec compression (identique à CreateAnnoncePage)
   Future<List<String>> _uploadNewImages() async {
+    if (_newImages.isEmpty) return [];
+
     final storage = Supabase.instance.client.storage.from('annonce-photos');
+    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'anon';
+
     final List<String> urls = [];
 
-    for (final file in _newImages) {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      if (kIsWeb) {
-        final bytes = await file.readAsBytes();
-        await storage.uploadBinary(fileName, bytes);
-      } else {
-        await storage.upload(fileName, File(file.path));
-      }
-      urls.add(storage.getPublicUrl(fileName));
+    for (int i = 0; i < _newImages.length; i++) {
+      final file = _newImages[i];
+
+      // 1) bytes originaux
+      final rawBytes = await file.readAsBytes();
+
+      // 2) compression prod
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      // 3) chemin cohérent avec CreateAnnoncePage
+      final nameBase = DateTime.now().microsecondsSinceEpoch;
+      final objectPath = 'annonces/$userId/${nameBase}_$i.${c.extension}';
+
+      // 4) upload binaire + contentType
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
+
+      urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
+  }
+
+  // ✅ (Optionnel mais recommandé) supprimer dans Supabase Storage les images anciennes retirées
+  Future<void> _deleteOldImagesFromStorage(List<String> urls) async {
+    if (urls.isEmpty) return;
+    final storage = Supabase.instance.client.storage.from('annonce-photos');
+
+    for (final url in urls) {
+      try {
+        final uri = Uri.parse(url);
+        final seg = List<String>.from(uri.pathSegments);
+
+        // URL publique typique:
+        // /storage/v1/object/public/annonce-photos/<objectPath...>
+        final idx = seg.indexOf('annonce-photos');
+        if (idx == -1 || idx + 1 >= seg.length) continue;
+
+        final objectPath = seg.sublist(idx + 1).join('/');
+        await storage.remove([objectPath]);
+      } catch (_) {
+        // silencieux (ne bloque pas l'update)
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -178,6 +262,15 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
           .from('annonces')
           .update(data)
           .eq('id', widget.annonce['id']);
+
+      // ✅ Après update DB, on nettoie le storage des anciennes images supprimées
+      if (_oldUrlsToDelete.isNotEmpty) {
+        await _deleteOldImagesFromStorage(_oldUrlsToDelete);
+        _oldUrlsToDelete.clear();
+      }
+
+      // reset nouvelles images
+      _newImages.clear();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -253,47 +346,51 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                     TextFormField(
                       controller: _titreController,
                       decoration: _input('Titre', icon: Icons.edit_outlined),
-                      validator: (v) => v!.isEmpty ? 'Entrez un titre' : null,
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Entrez un titre' : null,
                     ),
                     const SizedBox(height: 16),
-
                     TextFormField(
                       controller: _descriptionController,
                       maxLines: 4,
-                      decoration: _input('Description', icon: Icons.description),
-                      validator: (v) => v!.isEmpty ? 'Entrez une description' : null,
+                      decoration:
+                          _input('Description', icon: Icons.description),
+                      validator: (v) => v == null || v.isEmpty
+                          ? 'Entrez une description'
+                          : null,
                     ),
                     const SizedBox(height: 16),
-
                     TextFormField(
                       controller: _prixController,
                       keyboardType: TextInputType.number,
-                      decoration: _input('Prix (GNF)', icon: Icons.price_change),
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Indiquez un prix' : null,
+                      decoration:
+                          _input('Prix (GNF)', icon: Icons.price_change),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Indiquez un prix'
+                          : null,
                     ),
                     const SizedBox(height: 16),
-
                     TextFormField(
                       controller: _villeController,
                       decoration: _input('Ville', icon: Icons.location_on),
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Entrez une ville' : null,
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Entrez une ville'
+                          : null,
                     ),
                     const SizedBox(height: 16),
-
                     TextFormField(
                       controller: _telephoneController,
                       keyboardType: TextInputType.phone,
                       decoration: _input('Téléphone', icon: Icons.phone),
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Entrez un numéro' : null,
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Entrez un numéro'
+                          : null,
                     ),
                     const SizedBox(height: 16),
-
                     DropdownButtonFormField<int>(
                       value: _selectedCategoryId,
-                      decoration: _input('Catégorie', icon: Icons.category_outlined),
+                      decoration:
+                          _input('Catégorie', icon: Icons.category_outlined),
                       items: _categories
                           .map((cat) => DropdownMenuItem<int>(
                                 value: cat['id'],
@@ -303,10 +400,10 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                 ),
                               ))
                           .toList(),
-                      onChanged: (val) => setState(() => _selectedCategoryId = val),
+                      onChanged: (val) =>
+                          setState(() => _selectedCategoryId = val),
                     ),
                     const SizedBox(height: 24),
-
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -334,7 +431,11 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                   child: const CircleAvatar(
                                     radius: 13,
                                     backgroundColor: kAnnonceSecondary,
-                                    child: Icon(Icons.close, size: 16, color: kAnnonceOnSecondary),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: kAnnonceOnSecondary,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -343,7 +444,6 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                       ],
                     ),
                     const SizedBox(height: 22),
-
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -371,7 +471,11 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                                   child: const CircleAvatar(
                                     radius: 13,
                                     backgroundColor: kAnnonceSecondary,
-                                    child: Icon(Icons.close, size: 16, color: kAnnonceOnSecondary),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: kAnnonceOnSecondary,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -387,21 +491,27 @@ class _EditAnnoncePageState extends State<EditAnnoncePage> {
                               borderRadius: BorderRadius.circular(13),
                               color: kAnnonceCard,
                             ),
-                            child: const Icon(Icons.add_a_photo, size: 28, color: kAnnoncePrimary),
+                            child: const Icon(
+                              Icons.add_a_photo,
+                              size: 28,
+                              color: kAnnoncePrimary,
+                            ),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 32),
-
                     ElevatedButton.icon(
-                      onPressed: _save,
+                      onPressed: _loading ? null : _save,
                       icon: const Icon(Icons.save),
                       label: const Text("Enregistrer"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: kAnnoncePrimary,
                         foregroundColor: kAnnonceOnPrimary,
-                        padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 38,
+                          vertical: 16,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(17),
                         ),

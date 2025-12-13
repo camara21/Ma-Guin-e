@@ -1,4 +1,6 @@
-import 'dart:io' show File;
+// lib/pages/inscription_prestataire_page.dart
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/user_provider.dart';
+
+// ✅ Compression (même module que Annonces/Resto/Lieux)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 class InscriptionPrestatairePage extends StatefulWidget {
   const InscriptionPrestatairePage({super.key});
@@ -158,47 +163,67 @@ class _InscriptionPrestatairePageState
     return name.toLowerCase().replaceAll(RegExp(r'[^\w\d\-_\.]'), '_');
   }
 
+  String _stripExtension(String filename) {
+    final dot = filename.lastIndexOf('.');
+    if (dot <= 0) return filename;
+    return filename.substring(0, dot);
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final res =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 72);
+
+    // ✅ pas de imageQuality : on compresse nous-mêmes avant l’upload
+    final res = await picker.pickImage(source: ImageSource.gallery);
     if (res == null) return;
+
     setState(() => _pickedImage = res);
     await _uploadImage(res);
   }
 
+  // ✅ Upload avec compression (identique à Annonces/Resto/Lieux)
   Future<void> _uploadImage(XFile file) async {
     setState(() => _isUploading = true);
+
     try {
       final supa = Supabase.instance.client;
       final uid = context.read<UserProvider>().utilisateur!.id;
+      final storage = supa.storage.from(_bucket);
 
-      final cleanFileName = _cleanFileName(file.name);
+      // 1) bytes originaux
+      final Uint8List rawBytes = await file.readAsBytes();
+
+      // 2) compression prod
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      // 3) nom safe + extension issue du compresseur
+      final clean = _cleanFileName(file.name.isEmpty ? 'photo.png' : file.name);
+      final base = _stripExtension(clean).trim().isEmpty
+          ? 'photo_activite'
+          : _stripExtension(clean);
+
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_$cleanFileName';
+          '${DateTime.now().microsecondsSinceEpoch}_$base.${c.extension}';
       final storagePath = '$uid/$fileName';
 
-      final storage = supa.storage.from(_bucket);
-      if (kIsWeb) {
-        await storage.uploadBinary(
-          storagePath,
-          await file.readAsBytes(),
-          fileOptions: const FileOptions(upsert: true),
-        );
-      } else {
-        await storage.upload(
-          storagePath,
-          File(file.path),
-          fileOptions: const FileOptions(upsert: true),
-        );
-      }
+      // 4) upload binaire + contentType
+      await storage.uploadBinary(
+        storagePath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
 
       final publicUrl = storage.getPublicUrl(storagePath);
 
-      setState(() {
-        _uploadedImageUrl = publicUrl;
-        _isUploading = false;
-      });
+      setState(() => _uploadedImageUrl = publicUrl);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -206,10 +231,13 @@ class _InscriptionPrestatairePageState
         );
       }
     } catch (e) {
-      setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'upload : $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur lors de l'upload : $e")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -282,8 +310,7 @@ class _InscriptionPrestatairePageState
     final row = {
       'utilisateur_id': user.id,
       'metier': _selectedJob,
-      'category':
-          _selectedCategory ?? _categoryForJob(_selectedJob), // fallback
+      'category': _selectedCategory ?? _categoryForJob(_selectedJob),
       'ville': _city.trim(),
       'description': _description.trim(),
       'phone': normalizedPhone,

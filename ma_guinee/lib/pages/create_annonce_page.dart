@@ -24,47 +24,112 @@ const Color _stroke = Color(0xFFE5E7EB);
 const Color _text = Color(0xFF1F2937);
 const Color _text2 = Color(0xFF6B7280);
 
-// ===== Toutes les principales villes / préfectures de Guinée =====
+// ===== Lieux Guinée (préfectures / communes / quartiers / secteurs) =====
+// ✅ Triée A→Z, noms indépendants, sans doublons.
 const List<String> _guineaCities = [
-  'Conakry - Kaloum',
-  'Conakry - Dixinn',
-  'Conakry - Ratoma',
-  'Conakry - Matam',
-  'Conakry - Matoto',
-  'Kindia - Kindia',
-  'Kindia - Coyah',
-  'Kindia - Dubréka',
-  'Kindia - Forécariah',
-  'Kindia - Télimélé',
-  'Boké - Boké',
-  'Boké - Kamsar',
-  'Boké - Boffa',
-  'Boké - Fria',
-  'Boké - Gaoual',
-  'Boké - Koundara',
-  'Labé - Labé',
-  'Labé - Lélouma',
-  'Labé - Mali',
-  'Labé - Tougué',
-  'Labé - Koubia',
-  'Mamou - Mamou',
-  'Mamou - Pita',
-  'Mamou - Dalaba',
-  'Faranah - Faranah',
-  'Faranah - Dabola',
-  'Faranah - Dinguiraye',
-  'Faranah - Kissidougou',
-  'Kankan - Kankan',
-  'Kankan - Kouroussa',
-  'Kankan - Siguiri',
-  'Kankan - Mandiana',
-  'Nzérékoré - Nzérékoré',
-  'Nzérékoré - Beyla',
-  'Nzérékoré - Lola',
-  'Nzérékoré - Yomou',
-  'Nzérékoré - Guéckédou',
-  'Nzérékoré - Macenta',
+  'Almamya',
+  'Aéroport Gbéssia',
+  'Bambéto',
+  'Bantounka',
+  'Bellevue',
+  'Beyla',
+  'Boffa',
+  'Boké',
+  'Bonfi',
+  'Boulbinet',
+  'Camayenne',
+  'Conakry',
+  'Coronthie',
+  'Cosa',
+  'Coyah',
+  'Dabola',
+  'Dabondy',
+  'Dalaba',
+  'Dinguiraye',
+  'Dixinn',
+  'Dubréka',
+  'Enta',
+  'Faranah',
+  'Forécariah',
+  'Fria',
+  'Gaoual',
+  'Gbéssia',
+  'Guéckédou',
+  'Hafia',
+  'Hamdallaye',
+  'Kagbelen',
+  'Kaloum',
+  'Kamsar',
+  'Kankan',
+  'Kaporo-Rails',
+  'Kassonyah',
+  'Kérouané',
+  'Kindia',
+  'Kintinian',
+  'Kipé',
+  'Kissidougou',
+  'Kobaya',
+  'Kolaboui',
+  'Koloma',
+  'Koubia',
+  'Koundara',
+  'Kouroussa',
+  'Kountia',
+  'Labé',
+  'Lambanyi',
+  'Lélouma',
+  'Lola',
+  'Macenta',
+  'Madina',
+  'Mali',
+  'Mamou',
+  'Mandiana',
+  'Manéah',
+  'Matam',
+  'Matoto',
+  'Moribayah',
+  'Nongo',
+  'Nzérékoré',
+  'Pita',
+  'Ratoma',
+  'Sangarédi',
+  'Sangoyah',
+  'Sanoyah',
+  'Siguiri',
+  'Simbaya',
+  'Sonfonia',
+  'Tannerie',
+  'Taouyah',
+  'Télimélé',
+  'Tombo',
+  'Tombolia',
+  'Tougué',
+  'Wanindara',
+  'Yattaya',
+  'Yomou',
 ];
+
+String _normalizePlace(String s) {
+  var x = s.trim().toLowerCase();
+  x = x
+      .replaceAll('é', 'e')
+      .replaceAll('è', 'e')
+      .replaceAll('ê', 'e')
+      .replaceAll('ë', 'e')
+      .replaceAll('à', 'a')
+      .replaceAll('â', 'a')
+      .replaceAll('ä', 'a')
+      .replaceAll('î', 'i')
+      .replaceAll('ï', 'i')
+      .replaceAll('ô', 'o')
+      .replaceAll('ö', 'o')
+      .replaceAll('ù', 'u')
+      .replaceAll('û', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll('ç', 'c');
+  x = x.replaceAll(RegExp(r'\s+'), ' ');
+  return x;
+}
 
 class CreateAnnoncePage extends StatefulWidget {
   const CreateAnnoncePage({super.key});
@@ -411,42 +476,87 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                     const SizedBox(height: 16),
                     Autocomplete<String>(
                       optionsBuilder: (TextEditingValue value) {
-                        if (value.text.isEmpty) return _guineaCities;
-                        final query = value.text.toLowerCase();
-                        return _guineaCities.where(
-                            (city) => city.toLowerCase().contains(query));
+                        final typed = value.text.trim();
+                        final q = _normalizePlace(typed);
+
+                        // Si vide, propose quelques suggestions (évite une liste énorme)
+                        if (q.isEmpty) return _guineaCities.take(18);
+
+                        final matches = _guineaCities
+                            .where((p) => _normalizePlace(p).contains(q))
+                            .take(18)
+                            .toList(growable: false);
+
+                        // ✅ Option “Utiliser ce que j’ai tapé” si pas déjà dans la liste
+                        final alreadyExists = _guineaCities.any(
+                          (p) => _normalizePlace(p) == _normalizePlace(typed),
+                        );
+
+                        if (typed.isNotEmpty && !alreadyExists) {
+                          return <String>[typed, ...matches];
+                        }
+                        return matches;
                       },
                       onSelected: (String selection) {
-                        _ville = selection;
+                        _ville = selection; // ✅ garde la valeur sélectionnée
                       },
                       fieldViewBuilder: (context, textController, focusNode,
                           onFieldSubmitted) {
-                        textController.text = _ville;
                         return TextFormField(
                           controller: textController,
                           focusNode: focusNode,
-                          decoration: _input('Ville', icon: Icons.location_on),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Entrez une ville'
-                              : null,
+                          decoration: _input('Ville / quartier / secteur',
+                              icon: Icons.location_on),
+                          textInputAction: TextInputAction.next,
+
+                          // ✅ autorise la saisie libre
                           onChanged: (value) => _ville = value,
+
+                          // ✅ si l’utilisateur valide au clavier sans choisir une suggestion
+                          onFieldSubmitted: (value) {
+                            _ville = value;
+                            onFieldSubmitted();
+                          },
+
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Entrez une ville / quartier / secteur'
+                              : null,
                         );
                       },
                       optionsViewBuilder: (context, onSelected, options) {
                         return Align(
                           alignment: Alignment.topLeft,
                           child: Material(
-                            elevation: 4,
+                            elevation: 6,
+                            color: _cardBg,
+                            borderRadius: BorderRadius.circular(12),
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(
-                                  maxHeight: 220, maxWidth: 600),
-                              child: ListView.builder(
+                                  maxHeight: 240, maxWidth: 600),
+                              child: ListView.separated(
                                 padding: EdgeInsets.zero,
                                 itemCount: options.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1, color: _stroke),
                                 itemBuilder: (context, index) {
                                   final option = options.elementAt(index);
+
+                                  // 👇 si c’est la valeur tapée (non présente dans la liste), on l’indique
+                                  final isTypedValue = !_guineaCities.any(
+                                    (p) =>
+                                        _normalizePlace(p) ==
+                                        _normalizePlace(option),
+                                  );
+
                                   return ListTile(
-                                    title: Text(option),
+                                    dense: true,
+                                    title: Text(option,
+                                        style: const TextStyle(color: _text)),
+                                    subtitle: isTypedValue
+                                        ? const Text('Utiliser cette valeur',
+                                            style: TextStyle(
+                                                color: _text2, fontSize: 12))
+                                        : null,
                                     onTap: () => onSelected(option),
                                   );
                                 },

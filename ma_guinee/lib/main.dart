@@ -350,6 +350,10 @@ Future<void> main() async {
   await Hive.openBox('hotels_box');
   await Hive.openBox('logement_feed_box');
   await Hive.openBox('logements_map_box_v1');
+  await Hive.openBox('sante_box');
+  await Hive.openBox('tourisme_box');
+  await Hive.openBox('prestataires_box');
+  await Hive.openBox('lieux_box');
 
   if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
 

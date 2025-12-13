@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:postgrest/postgrest.dart' show PostgrestException;
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'messages_prestataire_page.dart';
 
@@ -22,24 +23,30 @@ class PrestataireDetailPage extends StatefulWidget {
 }
 
 class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
-  // États locaux
+  static const Color _neutralBg = Color(0xFFF7F7F9);
+  static const Color _neutralSurface = Color(0xFFFFFFFF);
+  static const Color _neutralBorder = Color(0xFFE5E7EB);
+  static const Color _divider = Color(0xFFEAEAEA);
+
+  static const String _avatarBucket = 'profile-photos';
+
+  final _client = Supabase.instance.client;
+
+  // Avis
   int _noteUtilisateur = 0;
   final TextEditingController _avisController = TextEditingController();
 
   List<Map<String, dynamic>> _avis = [];
   Map<String, Map<String, dynamic>> _usersById = {};
-  double _noteMoyenne = 0;
+  double _noteMoyenne = 0.0;
+  bool _dejaNote = false;
+
+  bool _sendingReport = false;
+  bool _sendingAvis = false;
 
   // Résolution propriétaire (utilisateur lié au prestataire)
   String? _ownerId; // prestataires.utilisateur_id
   bool _ownerResolved = false;
-
-  bool _sending = false;
-
-  static const Color kDivider = Color(0xFFEAEAEA);
-  static const String _avatarBucket = 'profile-photos';
-
-  final _client = Supabase.instance.client;
 
   @override
   void initState() {
@@ -64,13 +71,27 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   }
 
   String? _publicUrl(String bucket, String? path) {
-    if (path == null || path.isEmpty) return null;
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    if (path == null || path.trim().isEmpty) return null;
+    final p = path.trim();
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+
     final objectPath =
-        path.startsWith('$bucket/') ? path.substring(bucket.length + 1) : path;
+        p.startsWith('$bucket/') ? p.substring(bucket.length + 1) : p;
     return _client.storage.from(bucket).getPublicUrl(objectPath);
   }
 
+  bool _isUuid(String s) => RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(s);
+
+  String _fmtDate(dynamic raw) {
+    final dt = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} • ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  // -----------------------------------------------------
+  // Owner
+  // -----------------------------------------------------
   Future<void> _resolveOwner() async {
     final fromData = (widget.data['utilisateur_id'] ??
             widget.data['user_id'] ??
@@ -100,6 +121,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           .select('utilisateur_id')
           .eq('id', prestataireId)
           .maybeSingle();
+
       if (!mounted) return;
       setState(() {
         _ownerId = row?['utilisateur_id']?.toString();
@@ -110,7 +132,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
+  // -----------------------------------------------------
   // AVIS : lecture
+  // -----------------------------------------------------
   Future<void> _loadAvis() async {
     try {
       final id = widget.data['id']?.toString();
@@ -124,17 +148,25 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
       final list = List<Map<String, dynamic>>.from(res);
 
+      // moyenne
       final notes = list
-          .map<int>((e) => (e['etoiles'] as num?)?.toInt() ?? 0)
+          .map<double>((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0)
           .where((n) => n > 0)
           .toList();
-      final moyenne =
-          notes.isNotEmpty ? notes.reduce((a, b) => a + b) / notes.length : 0.0;
 
+      final moyenne =
+          notes.isEmpty ? 0.0 : notes.reduce((a, b) => a + b) / notes.length;
+
+      // deja noté
+      final me = _client.auth.currentUser;
+      final deja = me != null && list.any((a) => a['auteur_id'] == me.id);
+
+      // profils
       final ids = list
           .map((e) => e['auteur_id'])
           .where((v) => v != null)
           .map((v) => v.toString())
+          .where(_isUuid)
           .toSet()
           .toList();
 
@@ -145,9 +177,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
             .from('utilisateurs')
             .select('id, prenom, nom, photo_url')
             .or(orFilter);
+
         final users = List<Map<String, dynamic>>.from(usersRes);
         for (final u in users) {
-          usersById[u['id'].toString()] = u;
+          usersById[u['id'].toString()] = {
+            'prenom': (u['prenom'] ?? '').toString(),
+            'nom': (u['nom'] ?? '').toString(),
+            'photo_url': (u['photo_url'] ?? '').toString(),
+          };
         }
       }
 
@@ -156,11 +193,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         _avis = list;
         _usersById = usersById;
         _noteMoyenne = moyenne;
+        _dejaNote = deja;
       });
     } catch (_) {}
   }
 
+  // -----------------------------------------------------
   // AVIS : upsert
+  // -----------------------------------------------------
   Future<void> _ajouterOuModifierAvis({
     required String prestataireId,
     required String utilisateurId,
@@ -179,37 +219,54 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   }
 
   Future<void> _envoyerAvis() async {
+    if (_sendingAvis) return;
+
     final me = _client.auth.currentUser;
     if (me == null) return _snack("Connexion requise.");
+
     final prestataireId = widget.data['id']?.toString() ?? '';
     if (prestataireId.isEmpty) return _snack("Fiche prestataire invalide.");
 
-    if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
+    final commentaire = _avisController.text.trim();
+    if (_noteUtilisateur == 0 || commentaire.isEmpty) {
       return _snack("Veuillez attribuer une note et écrire un commentaire.");
     }
+
+    setState(() => _sendingAvis = true);
 
     try {
       await _ajouterOuModifierAvis(
         prestataireId: prestataireId,
         utilisateurId: me.id,
         note: _noteUtilisateur,
-        commentaire: _avisController.text.trim(),
+        commentaire: commentaire,
       );
+
+      // ✅ ferme clavier + reset
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      if (!mounted) return;
       setState(() {
         _noteUtilisateur = 0;
         _avisController.clear();
       });
-      FocusScope.of(context).unfocus();
+
       await _loadAvis();
-      _snack("Merci pour votre avis !");
+
+      if (mounted) _snack("Merci pour votre avis !");
     } catch (e) {
       _snack("Erreur lors de l'envoi de l'avis : $e");
+    } finally {
+      if (mounted) setState(() => _sendingAvis = false);
     }
   }
 
+  // -----------------------------------------------------
   // Actions
+  // -----------------------------------------------------
   Future<void> _call(String? input) async {
-    if (_isOwner) return _snack("Action non autorisée pour votre propre fiche.");
+    if (_isOwner)
+      return _snack("Action non autorisée pour votre propre fiche.");
 
     final raw = (input ??
             widget.data['telephone'] ??
@@ -261,8 +318,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       MaterialPageRoute(
         builder: (_) => MessagesPrestatairePage(
           prestataireId: prestataireId,
-          prestataireNom:
-              fullName.isNotEmpty ? fullName : (widget.data['metier']?.toString() ?? 'Prestataire'),
+          prestataireNom: fullName.isNotEmpty
+              ? fullName
+              : (widget.data['metier']?.toString() ?? 'Prestataire'),
           receiverId: _ownerId!,
           senderId: me.id,
         ),
@@ -334,19 +392,24 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Signaler ce prestataire',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Signaler ce prestataire',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: reasons
-                        .map((r) => ChoiceChip(
-                              label: Text(r),
-                              selected: selected == r,
-                              selectedColor: prestatairesSecondary,
-                              onSelected: (_) => setLocalState(() => selected = r),
-                            ))
+                        .map(
+                          (r) => ChoiceChip(
+                            label: Text(r),
+                            selected: selected == r,
+                            selectedColor: prestatairesSecondary,
+                            onSelected: (_) =>
+                                setLocalState(() => selected = r),
+                          ),
+                        )
                         .toList(),
                   ),
                   const SizedBox(height: 12),
@@ -363,8 +426,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.report_gmailerrorred),
-                      label:
-                          Text(_sending ? 'Envoi en cours…' : 'Envoyer le signalement'),
+                      label: Text(_sendingReport
+                          ? 'Envoi en cours…'
+                          : 'Envoyer le signalement'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: prestatairesPrimary,
                         foregroundColor: prestatairesOnPrimary,
@@ -373,7 +437,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: _sending
+                      onPressed: _sendingReport
                           ? null
                           : () async {
                               Navigator.pop(ctx);
@@ -391,8 +455,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   }
 
   Future<void> _sendReport(String reason, String details) async {
-    if (_sending) return;
-    setState(() => _sending = true);
+    if (_sendingReport) return;
+    setState(() => _sendingReport = true);
 
     showDialog(
       context: context,
@@ -422,11 +486,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       await _client.from('reports').insert(body);
 
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _sendingReport = false);
       if (mounted) _snack('Signalement envoyé. Merci.');
     } on PostgrestException catch (e) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _sendingReport = false);
 
       final msg = (e.message ?? '').toLowerCase();
       if (e.code == '23505' || msg.contains('duplicate')) {
@@ -438,67 +502,219 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       }
     } catch (e) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _sendingReport = false);
       if (mounted) _snack("Impossible d'envoyer le signalement ($e)");
     }
   }
 
-  // Étoiles input
+  // -----------------------------------------------------
+  // UI helpers
+  // -----------------------------------------------------
+  Widget _starsStatic(double avg, {double size = 16}) {
+    final full = avg.floor().clamp(0, 5);
+    final half = (avg - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, size: size, color: Colors.amber);
+        }
+        if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: Colors.amber);
+        }
+        return Icon(Icons.star_border, size: size, color: Colors.amber);
+      }),
+    );
+  }
+
   Widget _starsInput() {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
+        final active = i < _noteUtilisateur;
         return IconButton(
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          iconSize: 22,
-          icon: Icon(
-            i < _noteUtilisateur ? Icons.star : Icons.star_border,
-            color: Colors.amber,
-          ),
+          iconSize: 24,
+          icon: Icon(active ? Icons.star : Icons.star_border,
+              color: Colors.amber),
           onPressed: () => setState(() => _noteUtilisateur = i + 1),
         );
       }),
     );
   }
 
-  // Étoiles en lecture
   Widget _starsRead(int value) {
+    final v = value.clamp(0, 5);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
         5,
-        (i) => Icon(i < value ? Icons.star : Icons.star_border, size: 16, color: Colors.amber),
+        (i) => Icon(
+          i < v ? Icons.star : Icons.star_border,
+          size: 14,
+          color: Colors.amber,
+        ),
       ),
     );
   }
 
+  Widget _ratingSummaryCard() {
+    if (_avis.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _neutralSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _neutralBorder),
+        ),
+        child: const Text(
+          "Aucun avis pour le moment",
+          style: TextStyle(color: Colors.black54),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _neutralSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _neutralBorder),
+      ),
+      child: Row(
+        children: [
+          _starsStatic(_noteMoyenne, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            '${_noteMoyenne.toStringAsFixed(1)} / 5',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 8),
+          Text('(${_avis.length})',
+              style: const TextStyle(color: Colors.black54)),
+          const Spacer(),
+          const Icon(Icons.verified, size: 18, color: prestatairesSecondary),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewCard(Map<String, dynamic> a) {
+    final uid = (a['auteur_id'] ?? '').toString();
+    final u = _usersById[uid] ?? const {};
+
+    final prenom = (u['prenom'] ?? '').toString();
+    final nom = (u['nom'] ?? '').toString();
+    final fullName = ('$prenom $nom').trim().isEmpty
+        ? 'Utilisateur'
+        : ('$prenom $nom').trim();
+
+    final avatarRaw = (u['photo_url'] ?? '').toString();
+    final avatar = _publicUrl(_avatarBucket, avatarRaw) ?? avatarRaw;
+
+    final etoiles = (a['etoiles'] as num?)?.toInt() ?? 0;
+    final commentaire = (a['commentaire'] ?? '').toString().trim();
+    final dateStr = _fmtDate(a['created_at']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _neutralSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _neutralBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+            child: avatar.isEmpty ? const Icon(Icons.person, size: 18) : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        fullName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _starsRead(etoiles),
+                  ],
+                ),
+                if (commentaire.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(commentaire, style: const TextStyle(height: 1.3)),
+                ],
+                if (dateStr.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    dateStr,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -----------------------------------------------------
+  // Build
+  // -----------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
 
     final metier = d['metier']?.toString() ?? '';
     final ville = d['ville']?.toString() ?? '';
-    final String? rawPhoto = d['photo_url']?.toString();
-    final photo = _publicUrl(_avatarBucket, rawPhoto) ?? rawPhoto ?? '';
-
-    final String? phone =
-        (d['telephone'] ?? d['phone'] ?? d['tel'])?.toString();
-
     final description = d['description']?.toString() ?? '';
+
     final prenom = d['prenom']?.toString() ?? '';
     final nom = d['nom']?.toString() ?? '';
     final fullName = ('$prenom $nom').trim();
 
+    final String? phone =
+        (d['telephone'] ?? d['phone'] ?? d['tel'])?.toString();
+
+    final String? rawPhoto = d['photo_url']?.toString();
+    final photo = _publicUrl(_avatarBucket, rawPhoto) ?? (rawPhoto ?? '');
+
+    final canSend = !_sendingAvis &&
+        _noteUtilisateur > 0 &&
+        _avisController.text.trim().isNotEmpty;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _neutralBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: _neutralSurface,
         elevation: 0.7,
         iconTheme: const IconThemeData(color: prestatairesPrimary),
         title: Text(
           fullName.isNotEmpty ? fullName : 'Prestataire',
-          style: const TextStyle(color: prestatairesPrimary, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: prestatairesPrimary,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
         actions: [
@@ -507,7 +723,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
             itemBuilder: (ctx) => const [
               PopupMenuItem(
                 value: 'share',
-                child: ListTile(leading: Icon(Icons.share), title: Text('Partager')),
+                child: ListTile(
+                  leading: Icon(Icons.share),
+                  title: Text('Partager'),
+                ),
               ),
               PopupMenuItem(
                 value: 'report',
@@ -520,170 +739,236 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           ),
         ],
       ),
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              if (photo.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.network(photo, height: 200, fit: BoxFit.cover),
-                ),
-              const SizedBox(height: 16),
-              if (metier.isNotEmpty)
-                Text(metier,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              if (ville.isNotEmpty)
-                Row(
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.red),
-                    const SizedBox(width: 4),
-                    Text(ville, style: const TextStyle(fontSize: 16)),
-                  ],
-                ),
-              const SizedBox(height: 14),
-              if (description.isNotEmpty) Text(description),
-              const SizedBox(height: 20),
 
-              if (_ownerResolved && !_isOwner)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _openChat,
-                          icon: const Icon(Icons.chat_bubble_outline, color: prestatairesPrimary),
-                          label: const Text(
-                            "Message",
-                            style: TextStyle(color: prestatairesPrimary, fontWeight: FontWeight.w600),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: prestatairesPrimary, width: 1.5),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
+      // ✅ Tap partout = ferme le clavier
+      body: Listener(
+        onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 130),
+              children: [
+                // Photo
+                if (photo.trim().isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: CachedNetworkImage(
+                      imageUrl: photo,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(height: 200, color: Colors.grey.shade200),
+                      errorWidget: (_, __, ___) => Container(
+                        height: 200,
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.person,
+                            size: 48, color: Colors.grey),
                       ),
-                      const SizedBox(width: 12),
+                    ),
+                  )
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 200,
+                      color: Colors.grey.shade200,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.person,
+                          size: 48, color: Colors.grey),
+                    ),
+                  ),
+
+                const SizedBox(height: 16),
+
+                // Métier
+                if (metier.isNotEmpty)
+                  Text(
+                    metier,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+
+                const SizedBox(height: 6),
+
+                // ✅ Ville (corrigé : plus de followedBy)
+                if (ville.isNotEmpty)
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, color: Colors.red),
+                      const SizedBox(width: 4),
                       Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () async => _call(phone),
-                          icon: const Icon(Icons.phone, color: Colors.white),
-                          label: const Text(
-                            "Contacter",
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: prestatairesPrimary,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                          ),
+                        child: Text(
+                          ville,
+                          style: const TextStyle(fontSize: 16),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
-                ),
 
-              const Divider(height: 30, color: kDivider),
+                const SizedBox(height: 14),
 
-              Row(
-                children: [
-                  const Text("Avis",
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(width: 8),
-                  Icon(Icons.star, color: Colors.amber.shade700, size: 18),
-                  const SizedBox(width: 2),
-                  Text(_noteMoyenne.toStringAsFixed(1)),
+                // Description
+                if (description.isNotEmpty) ...[
+                  const Text(
+                    "Description",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(description),
                 ],
-              ),
-              const SizedBox(height: 8),
 
-              if (_avis.isEmpty)
-                const Text("Aucun avis pour le moment.")
-              else
-                Column(
-                  children: _avis.map((a) {
-                    final userId = a['auteur_id']?.toString() ?? '';
-                    final user = _usersById[userId] ?? {};
-                    final avatar = (user['photo_url'] ?? '').toString();
-                    final note = (a['etoiles'] as num?)?.toInt() ?? 0;
+                // ✅ Carte moyenne SOUS description (comme les autres)
+                const SizedBox(height: 12),
+                _ratingSummaryCard(),
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage:
-                            avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                        child: avatar.isEmpty ? const Icon(Icons.person) : null,
-                      ),
-                      title: Text("${user['prenom'] ?? ''} ${user['nom'] ?? ''}".trim()),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _starsRead(note),
-                          if ((a['commentaire'] ?? '').toString().isNotEmpty)
-                            Text(a['commentaire'].toString()),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                const SizedBox(height: 18),
+
+                // Actions (Message/Contacter)
+                if (_ownerResolved && !_isOwner)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _openChat,
+                            icon: const Icon(Icons.chat_bubble_outline,
+                                color: prestatairesPrimary),
+                            label: const Text(
+                              "Message",
+                              style: TextStyle(
+                                color: prestatairesPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                  color: prestatairesPrimary, width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async => _call(phone),
+                            icon: const Icon(Icons.phone, color: Colors.white),
+                            label: const Text(
+                              "Contacter",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: prestatairesPrimary,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const Divider(height: 30, color: _divider),
+
+                // ✅ Avis (cards) AU-DESSUS de "Votre avis"
+                const Text(
+                  "Avis des utilisateurs",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
+                const SizedBox(height: 10),
 
-              const SizedBox(height: 16),
-              const Text("Laisser un avis",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                if (_avis.isEmpty)
+                  const Text("Aucun avis pour le moment.")
+                else
+                  ..._avis.map(_reviewCard),
 
-              _starsInput(),
+                const SizedBox(height: 10),
+                const Divider(height: 30, color: _divider),
 
-              TextField(
-                controller: _avisController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: "Votre avis",
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  contentPadding: const EdgeInsets.all(12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey.shade400),
-                  ),
+                // ✅ "Votre avis" TOUT EN BAS
+                const Text(
+                  "Votre avis",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-              ),
-              const SizedBox(height: 8),
+                if (_dejaNote)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, bottom: 6),
+                    child: Text(
+                      "Vous avez déjà laissé un avis. Renvoyez pour mettre à jour.",
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
 
-              Align(
-                alignment: Alignment.centerRight,
-                child: ElevatedButton.icon(
-                  onPressed: _envoyerAvis,
-                  icon: const Icon(Icons.send, size: 18, color: Colors.black87),
-                  label: const Text("Envoyer"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFDE68A), // jaune doux (amber-300)
-                    foregroundColor: Colors.black87,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(
+                _starsInput(),
+                const SizedBox(height: 6),
+
+                TextField(
+                  controller: _avisController,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send, // ✅ clavier “Envoyer”
+                  onSubmitted: (_) => _envoyerAvis(), // ✅ envoi clavier
+                  onChanged: (_) =>
+                      setState(() {}), // ✅ active/désactive bouton
+                  decoration: InputDecoration(
+                    hintText: "Votre avis",
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    contentPadding: const EdgeInsets.all(12),
+                    border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey.shade400),
                     ),
                   ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 8),
+
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: canSend ? _envoyerAvis : null,
+                    icon: const Icon(Icons.send, size: 18),
+                    label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: prestatairesSecondary,
+                      foregroundColor: prestatairesOnSecondary,
+                      disabledBackgroundColor:
+                          prestatairesSecondary.withOpacity(0.35),
+                      disabledForegroundColor:
+                          prestatairesOnSecondary.withOpacity(0.75),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

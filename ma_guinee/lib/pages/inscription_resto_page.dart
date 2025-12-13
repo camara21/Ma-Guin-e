@@ -14,6 +14,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+// ✅ Compression (même module que Annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
+
 class InscriptionRestoPage extends StatefulWidget {
   final Map<String, dynamic>? restaurant;
 
@@ -145,7 +148,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
     return int.tryParse(digits);
   }
 
-  // ---------- Helpers filename / content-type ----------
+  // ---------- Helpers filename ----------
   String _toAscii(String input) {
     const withD = 'ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñŸÿŠšŽž';
     const noD = 'AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYySsZz';
@@ -166,27 +169,10 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
     return ascii.toLowerCase();
   }
 
-  String _safeFilename(String original) {
-    final name = _slugify(original);
-    final dot = name.lastIndexOf('.');
-    final hasExt = dot > 0 && dot < name.length - 1;
-    final ext = hasExt ? name.substring(dot).toLowerCase() : '.png';
-    final base = hasExt ? name.substring(0, dot) : name;
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    return '${ts}_$base$ext';
-  }
-
-  String _inferContentType(String filename) {
-    final f = filename.toLowerCase();
-    if (f.endsWith('.jpg') || f.endsWith('.jpeg')) return 'image/jpeg';
-    if (f.endsWith('.png')) return 'image/png';
-    if (f.endsWith('.webp')) return 'image/webp';
-    return 'application/octet-stream';
-  }
-
   // ---------- IMAGES ----------
   Future<void> _pickImages() async {
-    final res = await _picker.pickMultiImage(imageQuality: 75);
+    // ✅ pas de imageQuality ici : on compresse nous-mêmes juste avant upload
+    final res = await _picker.pickMultiImage();
     if (res.isEmpty) return;
     setState(() => _pickedImages.addAll(res));
   }
@@ -209,9 +195,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
             return const SizedBox(
               width: 70,
               height: 70,
-              child: Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             );
           }
           return ClipRRect(
@@ -238,39 +222,47 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
     }
   }
 
+  // ✅ Upload + compression (identique Annonces/Lieux)
   Future<List<String>> _uploadImages(String uid) async {
     final storage = Supabase.instance.client.storage.from(_bucket);
     final List<String> urls = [];
 
-    for (final img in _pickedImages) {
-      final original = kIsWeb ? img.name : p.basename(img.path);
-      final safeName = _safeFilename(original);
-      final objectPath = 'users/$uid/$safeName';
-      final contentType = _inferContentType(safeName);
+    for (int i = 0; i < _pickedImages.length; i++) {
+      final img = _pickedImages[i];
 
-      if (kIsWeb) {
-        final bytes = await img.readAsBytes();
-        await storage.uploadBinary(
-          objectPath,
-          bytes,
-          fileOptions: FileOptions(
-            upsert: false,
-            contentType: contentType,
-          ),
-        );
-      } else {
-        await storage.upload(
-          objectPath,
-          File(img.path),
-          fileOptions: FileOptions(
-            upsert: false,
-            contentType: contentType,
-          ),
-        );
-      }
+      // Nom de base (utile si tu veux un nom “humain”)
+      final original = kIsWeb ? img.name : p.basename(img.path);
+      final base = _slugify(p.basenameWithoutExtension(original));
+      final safeBase = (base.trim().isEmpty) ? 'image' : base.trim();
+
+      // Bytes source
+      final rawBytes = await img.readAsBytes();
+
+      // ✅ compression prod (mêmes paramètres que Annonces)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      final filename = '${ts}_${safeBase}_$i.${c.extension}';
+      final objectPath = 'users/$uid/$filename';
+
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
 
       urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
@@ -508,6 +500,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
         await _deleteImagesFromStorage(_imagesToDelete);
       }
 
+      // ✅ upload compressé
       final newImageUrls = await _uploadImages(uid);
 
       final data = {
@@ -892,9 +885,7 @@ class _InscriptionRestoPageState extends State<InscriptionRestoPage> {
                     ElevatedButton.icon(
                       onPressed: canSave ? _save : null,
                       icon: const Icon(Icons.save),
-                      label: Text(
-                        enEdition ? 'Mettre à jour' : 'Enregistrer',
-                      ),
+                      label: Text(enEdition ? 'Mettre à jour' : 'Enregistrer'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: kRestoPrimary,
                         foregroundColor: kOnPrimary,

@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+
+// ✅ Compression (même module que Annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 // ---- Couleurs globales ----
 const Color danger = Color(0xFFCE1126); // rouge suppression
@@ -40,7 +43,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   // Images déjà en ligne (URLs publiques)
   List<String> _uploadedImages = [];
 
-  // Images nouvellement choisies (préviews + fichier)
+  // Images nouvellement choisies (préviews + bytes)
   final List<_LocalImage> _localPreviews = [];
 
   bool _isUploading = false;
@@ -304,7 +307,9 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
   Future<void> _choisirImages() async {
     final picker = ImagePicker();
-    final picked = await picker.pickMultiImage(imageQuality: 80);
+
+    // ✅ comme Annonces: pas de "imageQuality" ici (on gère la compression nous-mêmes)
+    final picked = await picker.pickMultiImage();
     if (picked.isEmpty) return;
 
     for (final x in picked) {
@@ -326,48 +331,53 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     setState(() => _uploadedImages.remove(url));
   }
 
-  Future<String?> _uploadOne(Uint8List bytes, String userId) async {
+  // ✅ Upload 1 image avec compression (même logique que Annonces)
+  Future<String?> _uploadOneCompressed(
+    Uint8List rawBytes,
+    String userId,
+    int i,
+  ) async {
     try {
-      final mime =
-          lookupMimeType('', headerBytes: bytes) ?? 'application/octet-stream';
-      String ext = 'bin';
-      if (mime.contains('jpeg')) {
-        ext = 'jpg';
-      } else if (mime.contains('png')) {
-        ext = 'png';
-      } else if (mime.contains('webp')) {
-        ext = 'webp';
-      } else if (mime.contains('gif')) {
-        ext = 'gif';
-      }
+      final storage = Supabase.instance.client.storage.from(_bucket);
 
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final objectPath = 'u/$userId/$ts.$ext';
+      // ✅ compression prod (identique à ton CreateAnnoncePage)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
 
-      await Supabase.instance.client.storage.from(_bucket).uploadBinary(
-            objectPath,
-            bytes,
-            fileOptions: FileOptions(upsert: true, contentType: mime),
-          );
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      final objectPath = 'u/$userId/${ts}_$i.${c.extension}';
 
-      final publicUrl = Supabase.instance.client.storage
-          .from(_bucket)
-          .getPublicUrl(objectPath);
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
 
-      return publicUrl;
+      return storage.getPublicUrl(objectPath);
     } catch (e) {
-      debugPrint('Erreur upload image: $e');
+      debugPrint('Erreur upload image (lieu): $e');
       return null;
     }
   }
 
+  // ✅ Upload de toutes les images avec compression
   Future<List<String>> _uploadImages() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return [];
 
     final urls = <String>[];
-    for (final li in _localPreviews) {
-      final url = await _uploadOne(li.bytes, userId);
+    for (int i = 0; i < _localPreviews.length; i++) {
+      final li = _localPreviews[i];
+
+      final url = await _uploadOneCompressed(li.bytes, userId, i);
       if (url != null) urls.add(url);
     }
     return urls;
@@ -380,19 +390,16 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     dynamic excludeId,
   }) async {
     try {
-      // On construit d’abord le builder avec les filtres de base
       var query = Supabase.instance.client
           .from('lieux')
           .select('id, nom, type')
           .eq('user_id', userId)
           .eq('type', typeLieu);
 
-      // Si on doit exclure un id (édition)
       if (excludeId != null) {
         query = query.neq('id', excludeId);
       }
 
-      // On applique le limit à la fin
       final res = await query.limit(1);
 
       if (res is List && res.isNotEmpty) {
@@ -434,9 +441,6 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
     final existingId = widget.lieu != null ? widget.lieu!['id'] : null;
 
-    // Règle métier:
-    // - Création : 1 seul lieu par type (divertissement, culte, tourisme)
-    // - Édition   : on interdit de changer vers un type déjà utilisé par un autre lieu.
     final existingSameType =
         await _findLieuByType(userId, type!, excludeId: existingId);
 
@@ -471,7 +475,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
     setState(() => _isUploading = true);
     try {
-      // Upload des nouvelles images si besoin
+      // ✅ Upload des nouvelles images (compressées) si besoin
       if (_localPreviews.isNotEmpty) {
         final newUrls = await _uploadImages();
         _uploadedImages = [..._uploadedImages, ...newUrls];

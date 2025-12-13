@@ -12,6 +12,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// ✅ Compression (ton module)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
+
 class InscriptionCliniquePage extends StatefulWidget {
   final Map<String, dynamic>? clinique;
   const InscriptionCliniquePage({super.key, this.clinique});
@@ -229,6 +232,8 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
 
   // ------------ Images ------------
   Future<void> _pickImages() async {
+    // imageQuality ici est un “pré-filtre” (surtout Android/iOS),
+    // mais la compression “PROD” est faite au moment de l’upload.
     final res = await _picker.pickMultiImage(imageQuality: 80);
     if (res.isEmpty) return;
     setState(() => _pickedImages.addAll(res));
@@ -275,30 +280,43 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     );
   }
 
+  // ✅ Upload + compression (web + mobile + desktop)
   Future<List<String>> _uploadImages(String uid) async {
     final storage = _sb.storage.from(_bucket);
     final urls = <String>[];
-    for (final img in _pickedImages) {
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(img.path).replaceAll(' ', '_')}';
-      final objectPath = 'u/$uid/$fileName';
 
-      if (kIsWeb) {
-        final bytes = await img.readAsBytes();
-        await storage.uploadBinary(
-          objectPath,
-          bytes,
-          fileOptions: const FileOptions(upsert: true),
-        );
-      } else {
-        await storage.upload(
-          objectPath,
-          File(img.path),
-          fileOptions: const FileOptions(upsert: true),
-        );
-      }
+    for (int i = 0; i < _pickedImages.length; i++) {
+      final img = _pickedImages[i];
+
+      // bytes originaux (web + mobile)
+      final rawBytes = await img.readAsBytes();
+
+      // ✅ compression prod (identique à ton module annonces)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      final safeBase =
+          p.basename(img.path).replaceAll(' ', '_').replaceAll('.', '_');
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      final objectPath = 'u/$uid/${ts}_${i}_$safeBase.${c.extension}';
+
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
+
       urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
@@ -317,9 +335,7 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
         if (row is Map<String, dynamic>) return row;
         return Map<String, dynamic>.from(row as Map);
       }
-    } catch (e) {
-      // En cas d’erreur réseau, on laisse passer, les RLS protègent aussi côté base.
-    }
+    } catch (e) {}
     return null;
   }
 
@@ -331,7 +347,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
     final enEdition = widget.clinique != null;
 
     if (!isMobile && !enEdition) {
-      // Sécurité supplémentaire côté logique, en plus du bouton désactivé.
       if (!mounted) return;
       await showDialog(
         context: context,
@@ -404,11 +419,10 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
         }
       }
 
-      // Upload images
+      // Upload images (compressées)
       final uploaded = await _uploadImages(uid);
       final allImages = [..._onlineImages, ...uploaded];
 
-      // Données selon colonnes existantes
       final data = {
         'user_id': uid,
         'nom': nom,
@@ -558,13 +572,11 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                         ),
                       ),
                     ],
-
                     const Text(
                       "Placez-vous dans la clinique pour enregistrer sa position exacte.",
                       style: TextStyle(color: Colors.blueGrey, fontSize: 13.5),
                     ),
                     const SizedBox(height: 9),
-
                     ElevatedButton.icon(
                       onPressed:
                           (!isMobile || _locating) ? null : _detectLocation,
@@ -577,7 +589,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                         foregroundColor: kOnPrimary,
                       ),
                     ),
-
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -589,7 +600,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                         ),
                       ),
                     ),
-
                     if (showMap) ...[
                       const SizedBox(height: 10),
                       if (adresse.isNotEmpty)
@@ -624,7 +634,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                             ),
                             initialZoom: 16.0,
                             onTap: (tapPosition, point) {
-                              // Ajustement manuel direct sur mobile uniquement
                               if (!isMobile) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -699,8 +708,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                       ),
                       const SizedBox(height: 12),
                     ],
-
-                    // Form fields
                     TextFormField(
                       initialValue: nom,
                       decoration: const InputDecoration(
@@ -753,7 +760,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                       ),
                       onSaved: (v) => horaires = (v ?? '').trim(),
                     ),
-
                     const SizedBox(height: 16),
                     const Text(
                       'Photos de la clinique :',
@@ -764,7 +770,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        // existantes
                         for (int i = 0; i < _onlineImages.length; i++)
                           Stack(
                             children: [
@@ -795,7 +800,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                               ),
                             ],
                           ),
-                        // nouvelles
                         for (int i = 0; i < _pickedImages.length; i++)
                           Stack(
                             children: [
@@ -833,7 +837,6 @@ class _InscriptionCliniquePageState extends State<InscriptionCliniquePage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: canSave ? _save : null,

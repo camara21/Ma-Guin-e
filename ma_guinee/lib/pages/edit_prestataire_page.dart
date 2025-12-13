@@ -1,7 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ✅ Compression (même module que annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 // --- Palette Prestataires ---
 const Color prestatairePrimary = Color(0xFF113CFC);
@@ -18,10 +23,13 @@ class EditPrestatairePage extends StatefulWidget {
 }
 
 class _EditPrestatairePageState extends State<EditPrestatairePage> {
+  static const String _bucket = 'prestataire-photos';
+
   late TextEditingController jobController;
   late TextEditingController villeController;
   late TextEditingController descriptionController;
   late TextEditingController phoneController;
+
   File? _photoFile;
   bool _isUploading = false;
   String? _imageUrl;
@@ -30,13 +38,16 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
   void initState() {
     super.initState();
     jobController = TextEditingController(
-        text: widget.prestataire['metier'] ?? widget.prestataire['job'] ?? '');
+      text: widget.prestataire['metier'] ?? widget.prestataire['job'] ?? '',
+    );
     villeController = TextEditingController(
-        text: widget.prestataire['ville'] ?? widget.prestataire['city'] ?? '');
+      text: widget.prestataire['ville'] ?? widget.prestataire['city'] ?? '',
+    );
     phoneController =
         TextEditingController(text: widget.prestataire['phone'] ?? '');
     descriptionController =
         TextEditingController(text: widget.prestataire['description'] ?? '');
+
     _imageUrl =
         widget.prestataire['image'] ?? widget.prestataire['photo_url'] ?? '';
   }
@@ -54,19 +65,19 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
     if (job == null) return '';
     final Map<String, List<String>> categories = {
       'Artisans & BTP': [
-        'MaÃ©Â©Ã†â€™Â§on',
+        'Maçon',
         'Plombier',
-        'Ã©Â©Ã†â€™â€šÂ¬Â°lectricien',
+        'Électricien',
         'Soudeur',
         'Charpentier',
         'Couvreur',
-        'Peintre en bÃ©Â©Ã†â€™Â¢timent',
-        'MÃ©Â©Ã†â€™Â©canicien',
+        'Peintre en bâtiment',
+        'Mécanicien',
         'Menuisier',
         'Vitrier',
-        'TÃ©Â©Ã†â€™Â´lier',
+        'Tôlier',
         'Carreleur',
-        'Poseur de fenÃ©Â©Ã†â€™Âªtres/portes',
+        'Poseur de fenêtres/portes',
         'Ferrailleur',
       ],
       // ... (autres catégories inchangées)
@@ -77,60 +88,139 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
     return '';
   }
 
+  // -----------------------------
+  // ✅ Extraire objectPath depuis une URL publique Supabase
+  // -----------------------------
+  String? _storagePathFromPublicUrl(String url) {
+    try {
+      if (url.trim().isEmpty) return null;
+
+      final marker = '/storage/v1/object/public/$_bucket/';
+      final i = url.indexOf(marker);
+      if (i != -1) {
+        final p = url.substring(i + marker.length);
+        final decoded = Uri.decodeComponent(p);
+        if (decoded.trim().isEmpty) return null;
+        if (decoded.trim() == _bucket) return null;
+        if (decoded.endsWith('/')) return null;
+        return decoded;
+      }
+
+      final uri = Uri.parse(url);
+      final seg = uri.pathSegments;
+      final idx = seg.indexOf(_bucket);
+      if (idx == -1 || idx + 1 >= seg.length) return null;
+
+      final p = seg.sublist(idx + 1).join('/');
+      final decoded = Uri.decodeComponent(p);
+      if (decoded.trim().isEmpty) return null;
+      if (decoded.trim() == _bucket) return null;
+      if (decoded.endsWith('/')) return null;
+      return decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteOldImageIfAny(String? oldUrl) async {
+    if (oldUrl == null || oldUrl.trim().isEmpty) return;
+
+    final objectPath = _storagePathFromPublicUrl(oldUrl);
+    if (objectPath == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.storage.from(_bucket).remove([objectPath]);
+    } catch (_) {
+      // On n'échoue pas l'UX si la suppression échoue (policy, fichier déjà supprimé, etc.)
+    }
+  }
+
   Future<void> _pickImageAndUpload() async {
     final picker = ImagePicker();
     final picked =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
     if (picked == null) return;
+
+    // snapshot ancienne URL (à supprimer après succès)
+    final oldUrl = _imageUrl;
 
     setState(() {
       _isUploading = true;
-      _photoFile = File(picked.path);
+      _photoFile = File(picked.path); // preview instant
     });
 
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw "Utilisateur non connecté.";
-      final fileExt = picked.path.split('.').last.toLowerCase();
+
       final prestataireId = widget.prestataire['id'] ??
           DateTime.now().millisecondsSinceEpoch.toString();
-      final fileName = 'presta_$prestataireId.$fileExt';
-      // *** CHEMIN DOIT COMMENCER PAR L'ID UTILISATEUR ! ***
+
+      // 1) bytes originaux
+      final Uint8List rawBytes = await picked.readAsBytes();
+
+      // 2) ✅ compression prod (mêmes réglages que annonces)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      // 3) Nouveau chemin unique
+      final fileName =
+          'presta_${prestataireId}_${DateTime.now().microsecondsSinceEpoch}.${c.extension}';
       final filePath = '$userId/$fileName';
 
-      final bytes = await picked.readAsBytes();
-
-      await supabase.storage.from('prestataire-photos').uploadBinary(
+      // 4) upload binaire
+      await supabase.storage.from(_bucket).uploadBinary(
             filePath,
-            bytes,
+            c.bytes,
             fileOptions: FileOptions(
               upsert: true,
+              contentType: c.contentType,
               metadata: {'owner': userId},
             ),
           );
 
-      final publicUrl =
-          supabase.storage.from('prestataire-photos').getPublicUrl(filePath);
+      final publicUrl = supabase.storage.from(_bucket).getPublicUrl(filePath);
 
+      // 5) update DB
       await supabase
           .from('prestataires')
           .update({'image': publicUrl}).eq('id', prestataireId);
 
+      // 6) ✅ suppression de l'ancienne image (après succès DB)
+      //    - si l’ancienne URL est bien dans le même bucket
+      if (oldUrl != null &&
+          oldUrl.trim().isNotEmpty &&
+          oldUrl.trim() != publicUrl.trim()) {
+        await _deleteOldImageIfAny(oldUrl);
+      }
+
       setState(() {
         _imageUrl = publicUrl;
-        _photoFile = null; // forcer l'affichage direct de l'image réseau
+        _photoFile = null;
         _isUploading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Photo de profil mise à jour avec succès !")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Photo de profil mise à jour (ancienne supprimée)."),
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'upload : $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur lors de l'upload : $e")),
+        );
+      }
     }
   }
 
@@ -143,7 +233,9 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
         villeController.text.trim().isEmpty ||
         phoneController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Tous les champs obligatoires doivent être remplis.")),
+        const SnackBar(
+          content: Text("Tous les champs obligatoires doivent être remplis."),
+        ),
       );
       return;
     }
@@ -158,14 +250,18 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
         'image': _imageUrl ?? widget.prestataire['image'] ?? '',
       }).eq('id', prestataireId);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Profil prestataire mis à jour avec succès !")),
-      );
-      Navigator.pop(context, true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profil prestataire mis à jour !")),
+        );
+        Navigator.pop(context, true);
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de la sauvegarde : $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur lors de la sauvegarde : $e")),
+        );
+      }
     }
   }
 
@@ -177,26 +273,37 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
         content: const Text("Cette action est irréversible."),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Annuler")),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Annuler"),
+          ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
+
               final supabase = Supabase.instance.client;
               final prestataireId = widget.prestataire['id'];
+
               try {
+                // Optionnel: supprimer aussi la photo storage actuelle
+                final url = _imageUrl;
                 await supabase
                     .from('prestataires')
                     .delete()
                     .eq('id', prestataireId);
-                Navigator.pop(context, true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Prestataire supprimé.")),
-                );
+                await _deleteOldImageIfAny(url);
+
+                if (mounted) {
+                  Navigator.pop(context, true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Prestataire supprimé.")),
+                  );
+                }
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Erreur lors de la suppression : $e")),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Erreur suppression : $e")),
+                  );
+                }
               }
             },
             child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
@@ -219,8 +326,9 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
         iconTheme: const IconThemeData(color: prestatairePrimary),
         actions: [
           IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: _delete),
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: _delete,
+          ),
         ],
         elevation: 1,
       ),
@@ -257,7 +365,11 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.edit, color: prestatairePrimary, size: 22),
+                          : const Icon(
+                              Icons.edit,
+                              color: prestatairePrimary,
+                              size: 22,
+                            ),
                     ),
                   ),
                 ),
@@ -269,7 +381,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             controller: jobController,
             decoration: InputDecoration(
               labelText: "Métier *",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               labelStyle: const TextStyle(color: prestatairePrimary),
               focusedBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: prestatairePrimary, width: 2),
@@ -281,7 +394,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             controller: villeController,
             decoration: InputDecoration(
               labelText: "Ville *",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               labelStyle: const TextStyle(color: prestatairePrimary),
               focusedBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: prestatairePrimary, width: 2),
@@ -293,7 +407,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             controller: phoneController,
             decoration: InputDecoration(
               labelText: "Téléphone *",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               labelStyle: const TextStyle(color: prestatairePrimary),
               focusedBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: prestatairePrimary, width: 2),
@@ -308,7 +423,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
             maxLines: 3,
             decoration: InputDecoration(
               labelText: "Description",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               labelStyle: const TextStyle(color: prestatairePrimary),
               focusedBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: prestatairePrimary, width: 2),
@@ -325,7 +441,8 @@ class _EditPrestatairePageState extends State<EditPrestatairePage> {
               foregroundColor: prestataireOnPrimary,
               padding: const EdgeInsets.symmetric(vertical: 15),
               textStyle: const TextStyle(fontWeight: FontWeight.bold),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
         ],

@@ -1,8 +1,13 @@
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
+
+// ✅ Compression (même module que annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
 class EditHotelPage extends StatefulWidget {
   final int hotelId;
@@ -19,7 +24,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
   bool loading = true;
   bool saving = false;
 
-  // Champs hÃ©Â©Ã†â€™Â´tel
+  // Champs hôtel
   String nom = '';
   String adresse = '';
   String ville = '';
@@ -31,10 +36,9 @@ class _EditHotelPageState extends State<EditHotelPage> {
   double? longitude;
 
   // Images
-  List<File> files = []; // Nouvelles Ã©Â©Ã†â€™  uploader
-  List<String> imageUrls =
-      []; // DÃ©Â©Ã†â€™Â©jÃ©Â©Ã†â€™  sur Supabase (ou uploadÃ©Â©Ã†â€™Â©es)
-  Set<int> _imagesToRemove = {}; // Index des images Ã©Â©Ã†â€™  supprimer
+  List<File> files = []; // Nouvelles à uploader
+  List<String> imageUrls = []; // Déjà sur Supabase (ou uploadées)
+  Set<int> _imagesToRemove = {}; // Index des images à supprimer
 
   @override
   void initState() {
@@ -74,17 +78,48 @@ class _EditHotelPageState extends State<EditHotelPage> {
     }
   }
 
-  // Uploads images locales vers Storage, retourne les URLs publiques
+  // ✅ Uploads images locales vers Storage avec compression, retourne les URLs publiques
   Future<List<String>> _uploadImages() async {
     final storage = Supabase.instance.client.storage.from('hotel-photos');
-    List<String> urls = [];
-    for (var file in files) {
-      final filename =
-          '${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      await storage.upload(filename, file);
-      final url = storage.getPublicUrl(filename);
-      urls.add(url);
+    final List<String> urls = [];
+
+    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'anon';
+
+    for (int i = 0; i < files.length; i++) {
+      final file = files[i];
+
+      // 1) bytes originaux
+      final Uint8List rawBytes = await file.readAsBytes();
+
+      // 2) ✅ compression prod (mêmes réglages que annonces)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      // 3) nom unique + extension sortie (jpg/png/webp…)
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      final originalBase = path.basenameWithoutExtension(file.path);
+      final safeBase = originalBase.replaceAll(RegExp(r'[^\w\d\-_]+'), '_');
+
+      final objectPath = 'hotels/$userId/${ts}_${safeBase}_$i.${c.extension}';
+
+      // 4) upload binaire (contentType correct)
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: c.contentType,
+        ),
+      );
+
+      urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
@@ -93,8 +128,8 @@ class _EditHotelPageState extends State<EditHotelPage> {
     setState(() => saving = true);
     _formKey.currentState!.save();
 
-    // On garde seulement les images non supprimÃ©Â©Ã†â€™Â©es
-    List<String> updatedImages = [
+    // On garde seulement les images non supprimées
+    final List<String> updatedImages = [
       for (var i = 0; i < imageUrls.length; i++)
         if (!_imagesToRemove.contains(i)) imageUrls[i]
     ];
@@ -123,12 +158,11 @@ class _EditHotelPageState extends State<EditHotelPage> {
           .from('hotels')
           .update(data)
           .eq('id', widget.hotelId);
+
       setState(() => saving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  "HÃ©Â©Ã†â€™Â´tel modifiÃ©Â©Ã†â€™Â© avec succÃ©Â©Ã†â€™Â¨sÃ©Â©Â¢â‚¬Å¡Â¬Â¯!")),
+          const SnackBar(content: Text("Hôtel modifié avec succès !")),
         );
         Navigator.pop(context, true);
       }
@@ -149,7 +183,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Modifier l'hÃ©Â©Ã†â€™Â´tel",
+        title: const Text("Modifier l'hôtel",
             style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         iconTheme: IconThemeData(color: bleuMaGuinee),
@@ -168,7 +202,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
                         TextFormField(
                           initialValue: nom,
                           decoration: InputDecoration(
-                            labelText: "Nom de l'hÃ©Â©Ã†â€™Â´tel *",
+                            labelText: "Nom de l'hôtel *",
                             border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
@@ -194,7 +228,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
                         TextFormField(
                           initialValue: telephone,
                           decoration: InputDecoration(
-                            labelText: "TÃ©Â©Ã†â€™Â©lÃ©Â©Ã†â€™Â©phone *",
+                            labelText: "Téléphone *",
                             border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8)),
                             labelStyle: TextStyle(color: bleuMaGuinee),
@@ -230,7 +264,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Text("Nombre d'Ã©Â©Ã†â€™Â©toilesÃ©Â©Â¢â‚¬Å¡Â¬Â¯:",
+                            Text("Nombre d'étoiles :",
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: bleuMaGuinee)),
@@ -242,7 +276,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
                               items: [1, 2, 3, 4, 5]
                                   .map((e) => DropdownMenuItem(
                                         value: e,
-                                        child: Text("$e Ã©Â©Â¢Â­Â",
+                                        child: Text("$e ⭐",
                                             style: const TextStyle(
                                                 fontWeight: FontWeight.bold)),
                                       ))
@@ -251,7 +285,7 @@ class _EditHotelPageState extends State<EditHotelPage> {
                           ],
                         ),
                         const SizedBox(height: 18),
-                        const Text("Photos de l'hÃ©Â©Ã†â€™Â´tel :",
+                        const Text("Photos de l'hôtel :",
                             style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         Wrap(
@@ -259,16 +293,19 @@ class _EditHotelPageState extends State<EditHotelPage> {
                           runSpacing: 8,
                           children: [
                             ...List.generate(imageUrls.length, (i) {
-                              if (_imagesToRemove.contains(i))
+                              if (_imagesToRemove.contains(i)) {
                                 return const SizedBox();
+                              }
                               return Stack(
                                 children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(imageUrls[i],
-                                        width: 70,
-                                        height: 70,
-                                        fit: BoxFit.cover),
+                                    child: Image.network(
+                                      imageUrls[i],
+                                      width: 70,
+                                      height: 70,
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
                                   Positioned(
                                     top: 0,
@@ -284,8 +321,11 @@ class _EditHotelPageState extends State<EditHotelPage> {
                                             bottomLeft: Radius.circular(8),
                                           ),
                                         ),
-                                        child: const Icon(Icons.close,
-                                            color: Colors.white, size: 18),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -295,10 +335,12 @@ class _EditHotelPageState extends State<EditHotelPage> {
                             ...files
                                 .map((file) => ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(file,
-                                          width: 70,
-                                          height: 70,
-                                          fit: BoxFit.cover),
+                                      child: Image.file(
+                                        file,
+                                        width: 70,
+                                        height: 70,
+                                        fit: BoxFit.cover,
+                                      ),
                                     ))
                                 .toList(),
                             InkWell(

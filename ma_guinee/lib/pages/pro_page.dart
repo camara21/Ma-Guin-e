@@ -1,6 +1,13 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ✅ Cache persistant + images premium
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/prestataire_model.dart';
 import '../providers/prestataires_provider.dart';
@@ -20,60 +27,140 @@ class ProPage extends StatefulWidget {
   State<ProPage> createState() => _ProPageState();
 }
 
-class _ProPageState extends State<ProPage> {
+class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
   final _client = Supabase.instance.client;
+
+  // ✅ Hive (cache persistant)
+  static const String _hiveBoxName = 'prestataires_box';
+  static const String _hiveKey = 'prestataires';
+
+  // ✅ Cache mémoire global (retour écran instant)
+  static List<Map<String, dynamic>> _cachePrestataires = [];
+  static void setGlobalCache(List<Map<String, dynamic>> list) {
+    _cachePrestataires = List<Map<String, dynamic>>.from(list);
+  }
+
+  // Cache local (UI fallback)
+  List<PrestataireModel> _cachedModels = [];
+  bool _hasAnyCache = false;
+  String? _lastPersistKey;
 
   /// Catégories & métiers
   static const Map<String, List<String>> categories = {
     'Artisans & BTP': [
-      'Maçon','Plombier','Électricien','Soudeur','Charpentier','Couvreur',
-      'Peintre en bâtiment','Mécanicien','Menuisier','Vitrier','Tôlier / Carrossier',
-      'Carreleur','Poseur de fenêtres/portes','Ferrailleur',
-      'Frigoriste / Technicien froid & clim','Topographe / Géomètre',
+      'Maçon',
+      'Plombier',
+      'Électricien',
+      'Soudeur',
+      'Charpentier',
+      'Couvreur',
+      'Peintre en bâtiment',
+      'Mécanicien',
+      'Menuisier',
+      'Vitrier',
+      'Tôlier / Carrossier',
+      'Carreleur',
+      'Poseur de fenêtres/portes',
+      'Ferrailleur',
+      'Frigoriste / Technicien froid & clim',
+      'Topographe / Géomètre',
       'Technicien solaire / Photovoltaïque',
     ],
     'Beauté & Bien-être': [
-      'Coiffeur / Coiffeuse','Esthéticienne','Maquilleuse','Barbier','Masseuse',
-      'Spa thérapeute','Onglerie / Prothésiste ongulaire',
+      'Coiffeur / Coiffeuse',
+      'Esthéticienne',
+      'Maquilleuse',
+      'Barbier',
+      'Masseuse',
+      'Spa thérapeute',
+      'Onglerie / Prothésiste ongulaire',
     ],
     'Couture & Mode': [
-      'Couturier / Couturière','Styliste / Modéliste','Brodeur / Brodeuse',
-      'Teinturier','Designer textile','Cordonnier','Tisserand',
+      'Couturier / Couturière',
+      'Styliste / Modéliste',
+      'Brodeur / Brodeuse',
+      'Teinturier',
+      'Designer textile',
+      'Cordonnier',
+      'Tisserand',
     ],
     'Alimentation': [
-      'Cuisinier','Traiteur','Boulanger','Pâtissier','Vendeur de fruits/légumes',
-      'Marchand de poisson','Restaurateur','Boucher / Charcutier',
+      'Cuisinier',
+      'Traiteur',
+      'Boulanger',
+      'Pâtissier',
+      'Vendeur de fruits/légumes',
+      'Marchand de poisson',
+      'Restaurateur',
+      'Boucher / Charcutier',
     ],
     'Transport & Livraison': [
-      'Chauffeur particulier','Taxi-moto','Taxi-brousse','Livreur',
-      'Transporteur','Déménageur','Conducteur engins BTP',
+      'Chauffeur particulier',
+      'Taxi-moto',
+      'Taxi-brousse',
+      'Livreur',
+      'Transporteur',
+      'Déménageur',
+      'Conducteur engins BTP',
     ],
     'Services domestiques': [
-      'Femme de ménage','Nounou','Agent d’entretien','Gardiennage',
-      'Blanchisserie','Cuisinière à domicile',
+      'Femme de ménage',
+      'Nounou',
+      'Agent d’entretien',
+      'Gardiennage',
+      'Blanchisserie',
+      'Cuisinière à domicile',
     ],
     'Services professionnels': [
-      'Secrétaire','Traducteur','Comptable','Consultant','Notaire',
-      'Photographe / Vidéaste','Imprimeur','Agent immobilier',
+      'Secrétaire',
+      'Traducteur',
+      'Comptable',
+      'Consultant',
+      'Notaire',
+      'Photographe / Vidéaste',
+      'Imprimeur',
+      'Agent immobilier',
     ],
     'Éducation & Formation': [
-      'Enseignant','Tuteur','Formateur','Professeur particulier',
-      'Coach scolaire','Moniteur auto-école',
+      'Enseignant',
+      'Tuteur',
+      'Formateur',
+      'Professeur particulier',
+      'Coach scolaire',
+      'Moniteur auto-école',
     ],
     'Santé & Bien-être': [
-      'Infirmier','Docteur','Kinésithérapeute','Psychologue','Pharmacien',
-      'Médecine traditionnelle','Sage-femme',
+      'Infirmier',
+      'Docteur',
+      'Kinésithérapeute',
+      'Psychologue',
+      'Pharmacien',
+      'Médecine traditionnelle',
+      'Sage-femme',
     ],
     'Technologies & Digital': [
-      'Développeur / Développeuse','Ingénieur logiciel','Data Scientist',
-      'Développeur mobile','Designer UI/UX','Administrateur systèmes',
-      'Chef de projet IT','Technicien réseau','Analyste sécurité',
-      'Community Manager','Growth Hacker','Webmaster','DevOps Engineer',
+      'Développeur / Développeuse',
+      'Ingénieur logiciel',
+      'Data Scientist',
+      'Développeur mobile',
+      'Designer UI/UX',
+      'Administrateur systèmes',
+      'Chef de projet IT',
+      'Technicien réseau',
+      'Analyste sécurité',
+      'Community Manager',
+      'Growth Hacker',
+      'Webmaster',
+      'DevOps Engineer',
       'Technicien audiovisuel',
     ],
     'Événementiel & Culture': [
-      'DJ / Animateur','Maître de cérémonie','Décorateur événementiel',
-      'Traiteur événementiel','Sonorisateur / Éclairagiste','Guide touristique',
+      'DJ / Animateur',
+      'Maître de cérémonie',
+      'Décorateur événementiel',
+      'Traiteur événementiel',
+      'Sonorisateur / Éclairagiste',
+      'Guide touristique',
     ],
   };
 
@@ -107,9 +194,59 @@ class _ProPageState extends State<ProPage> {
   @override
   void initState() {
     super.initState();
+
+    // ✅ 1) Cache instant (Hive -> mémoire)
+    _loadCacheInstant();
+
+    // ✅ 2) Réseau via Provider (SWR)
     Future.microtask(
       () => context.read<PrestatairesProvider>().loadPrestataires(),
     );
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  void _loadCacheInstant() {
+    // Disque Hive
+    try {
+      if (Hive.isBoxOpen(_hiveBoxName)) {
+        final box = Hive.box(_hiveBoxName);
+        final cached = box.get(_hiveKey) as List?;
+        if (cached != null && cached.isNotEmpty) {
+          final maps = cached
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          _cachedModels =
+              maps.map((m) => PrestataireModel.fromJson(m)).toList();
+          _cachePrestataires = List<Map<String, dynamic>>.from(maps);
+          _hasAnyCache = _cachedModels.isNotEmpty;
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Mémoire global
+    if (_cachePrestataires.isNotEmpty) {
+      try {
+        _cachedModels = _cachePrestataires
+            .map((m) => PrestataireModel.fromJson(m))
+            .toList();
+        _hasAnyCache = _cachedModels.isNotEmpty;
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _persistCache(List<PrestataireModel> list) async {
+    try {
+      final maps = list.map((p) => p.toJson()).toList(growable: false);
+      _cachePrestataires = List<Map<String, dynamic>>.from(maps);
+
+      if (Hive.isBoxOpen(_hiveBoxName)) {
+        await Hive.box(_hiveBoxName).put(_hiveKey, maps);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadNotesMoyennesFor(List<String> prestataireIds) async {
@@ -154,21 +291,95 @@ class _ProPageState extends State<ProPage> {
           _countByPrestataireId[id] = c;
         }
       });
-    } catch (_) {
-      // silencieux
-    }
+    } catch (_) {}
+  }
+
+  Widget _imagePremiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
+
+  Widget _skeletonGrid(BuildContext context, int crossAxisCount) {
+    return GridView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: crossAxisCount == 1 ? 2.0 : .78,
+      ),
+      itemCount: 8,
+      itemBuilder: (_, __) => Card(
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 0.8,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: AspectRatio(
+                  aspectRatio: 16 / 11, child: _imagePremiumPlaceholder()),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                      height: 12, width: 140, color: Colors.grey.shade200),
+                  const SizedBox(height: 8),
+                  Container(
+                      height: 10, width: 110, color: Colors.grey.shade200),
+                  const SizedBox(height: 8),
+                  Container(height: 10, width: 90, color: Colors.grey.shade200),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final prov = context.watch<PrestatairesProvider>();
-    final all = prov.prestataires;
+    final netList = prov.prestataires;
+
+    // ✅ Source SWR: réseau si dispo, sinon cache
+    final List<PrestataireModel> source =
+        netList.isNotEmpty ? netList : _cachedModels;
+
+    // ✅ Persist cache si réseau OK (une seule fois par “snapshot”)
+    if (!prov.loading && netList.isNotEmpty) {
+      final key = netList.map((p) => p.id.toString()).join(',');
+      if (key != _lastPersistKey) {
+        _lastPersistKey = key;
+        unawaited(_persistCache(netList));
+      }
+    }
 
     // --- Filtrage ---
-    List<PrestataireModel> list = all;
+    List<PrestataireModel> list = source;
     if (selectedCategory != 'Tous') {
       list = list.where((p) {
-        final cat = p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
+        final cat =
+            p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
         return cat == selectedCategory;
       }).toList();
     }
@@ -178,25 +389,33 @@ class _ProPageState extends State<ProPage> {
     if (searchQuery.trim().isNotEmpty) {
       final q = searchQuery.toLowerCase();
       list = list.where((p) {
-        final cat = p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
+        final cat =
+            p.category.isNotEmpty ? p.category : _categoryForJob(p.metier);
         return p.metier.toLowerCase().contains(q) ||
             p.ville.toLowerCase().contains(q) ||
             cat.toLowerCase().contains(q);
       }).toList();
     }
 
-    // notes moyennes pour la liste visible
+    // notes moyennes pour la liste visible (throttle via key)
     final visibleIds = list.map((p) => p.id.toString()).toList();
-    final key = visibleIds.join(',');
-    if (key != _lastQueryKey && !prov.loading) {
-      _lastQueryKey = key;
-      _loadNotesMoyennesFor(visibleIds);
+    final noteKey = visibleIds.join(',');
+    if (noteKey != _lastQueryKey && !prov.loading) {
+      _lastQueryKey = noteKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadNotesMoyennesFor(visibleIds);
+      });
     }
 
     // --- Responsive ---
     int crossAxisCount = 2;
     final width = MediaQuery.of(context).size.width;
     if (width < 380) crossAxisCount = 1;
+
+    final showSkeleton = prov.loading &&
+        !_hasAnyCache &&
+        netList.isEmpty &&
+        _cachedModels.isEmpty;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FB),
@@ -227,51 +446,59 @@ class _ProPageState extends State<ProPage> {
                 ],
               ),
             ),
+            if (prov.loading && _hasAnyCache) ...[
+              const SizedBox(width: 8),
+              const Icon(Icons.sync, size: 16, color: Colors.black26),
+            ],
           ],
         ),
         iconTheme: const IconThemeData(color: prestatairesPrimary),
-        actions: const <Widget>[], // ✅ on supprime le bouton d'inscription en haut
+        actions: const <Widget>[],
       ),
-      body: prov.loading
-          ? const Center(child: CircularProgressIndicator())
-          : prov.error != null
-              ? Center(child: Text('Erreur: ${prov.error}'))
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                  child: Column(
-                    children: [
-                      const _HeroBanner(), // garde le bouton "S'inscrire" dans la bannière
-                      const SizedBox(height: 8),
-                      _SearchField(onChanged: (v) => setState(() => searchQuery = v)),
-                      const SizedBox(height: 10),
-                      _CategoryChips(
-                        categories: _allCategories,
-                        selected: selectedCategory,
-                        onSelected: (v) {
-                          setState(() {
-                            selectedCategory = v;
-                            selectedJob = 'Tous';
-                          });
-                        },
-                      ),
-                      if (selectedCategory != 'Tous') ...[
-                        const SizedBox(height: 8),
-                        _JobChips(
-                          jobs: _jobsForCategory(selectedCategory),
-                          selected: selectedJob,
-                          onSelected: (v) => setState(() => selectedJob = v),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: list.isEmpty
+      body: prov.error != null
+          ? Center(child: Text('Erreur: ${prov.error}'))
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              child: Column(
+                children: [
+                  const _HeroBanner(),
+                  const SizedBox(height: 8),
+                  _SearchField(
+                      onChanged: (v) => setState(() => searchQuery = v)),
+                  const SizedBox(height: 10),
+                  _CategoryChips(
+                    categories: _allCategories,
+                    selected: selectedCategory,
+                    onSelected: (v) {
+                      setState(() {
+                        selectedCategory = v;
+                        selectedJob = 'Tous';
+                      });
+                    },
+                  ),
+                  if (selectedCategory != 'Tous') ...[
+                    const SizedBox(height: 8),
+                    _JobChips(
+                      jobs: _jobsForCategory(selectedCategory),
+                      selected: selectedJob,
+                      onSelected: (v) => setState(() => selectedJob = v),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: showSkeleton
+                        ? _skeletonGrid(context, crossAxisCount)
+                        : (list.isEmpty
                             ? const _EmptyState()
                             : GridView.builder(
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: crossAxisCount,
                                   mainAxisSpacing: 16,
                                   crossAxisSpacing: 16,
-                                  childAspectRatio: crossAxisCount == 1 ? 2.0 : .78,
+                                  childAspectRatio:
+                                      crossAxisCount == 1 ? 2.0 : .78,
                                 ),
                                 itemCount: list.length,
                                 itemBuilder: (_, i) {
@@ -294,18 +521,18 @@ class _ProPageState extends State<ProPage> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) =>
-                                              PrestataireDetailPage(data: p.toJson()),
+                                          builder: (_) => PrestataireDetailPage(
+                                              data: p.toJson()),
                                         ),
                                       );
                                     },
                                   );
                                 },
-                              ),
-                      ),
-                    ],
+                              )),
                   ),
-                ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -340,9 +567,9 @@ class _HeroBanner extends StatelessWidget {
           Positioned(
             right: -20,
             top: -10,
-            child: Icon(Icons.settings, size: 120, color: Colors.white.withOpacity(.06)),
+            child: Icon(Icons.settings,
+                size: 120, color: Colors.white.withOpacity(.06)),
           ),
-          // bouton "S'inscrire" dans la bannière
           Positioned(
             right: 16,
             bottom: 12,
@@ -350,14 +577,17 @@ class _HeroBanner extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: prestatairesPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24)),
                 elevation: 0,
               ),
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const InscriptionPrestatairePage()),
+                  MaterialPageRoute(
+                      builder: (_) => const InscriptionPrestatairePage()),
                 );
               },
               icon: const Icon(Icons.person_add_alt_1),
@@ -401,7 +631,8 @@ class _SearchField extends StatelessWidget {
         prefixIcon: const Icon(Icons.search, color: prestatairesPrimary),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: Color(0xFFE6EBEF)),
@@ -412,7 +643,8 @@ class _SearchField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: prestatairesSecondary, width: 1.4),
+          borderSide:
+              const BorderSide(color: prestatairesSecondary, width: 1.4),
         ),
       ),
     );
@@ -455,8 +687,10 @@ class _CategoryChips extends StatelessWidget {
             onSelected: (_) => onSelected(c),
             selectedColor: prestatairesSecondary,
             backgroundColor: Colors.white,
-            side: BorderSide(color: isSel ? prestatairesSecondary : const Color(0xFFE1E7EC)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            side: BorderSide(
+                color: isSel ? prestatairesSecondary : const Color(0xFFE1E7EC)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           );
         },
       ),
@@ -499,8 +733,10 @@ class _JobChips extends StatelessWidget {
             onSelected: (_) => onSelected(j),
             selectedColor: prestatairesSecondary.withOpacity(.95),
             backgroundColor: Colors.white,
-            side: BorderSide(color: isSel ? prestatairesSecondary : const Color(0xFFE1E7EC)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            side: BorderSide(
+                color: isSel ? prestatairesSecondary : const Color(0xFFE1E7EC)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           );
         },
       ),
@@ -513,8 +749,8 @@ class _ProCard extends StatelessWidget {
   final String category;
   final String city;
   final String photoUrl;
-  final double rating;     // ⭐ moyenne
-  final int ratingCount;   // nb avis
+  final double rating;
+  final int ratingCount;
   final VoidCallback onTap;
 
   const _ProCard({
@@ -527,8 +763,68 @@ class _ProCard extends StatelessWidget {
     required this.onTap,
   });
 
+  Widget _imagePremiumPlaceholder() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.35, end: 0.60),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, v, __) {
+        return Container(
+          color:
+              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
+        );
+      },
+    );
+  }
+
+  Widget _premiumImage(BuildContext context, String url) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final dpr = MediaQuery.of(context).devicePixelRatio;
+        final w = c.maxWidth.isFinite ? c.maxWidth : 360.0;
+        final h = c.maxHeight.isFinite ? c.maxHeight : 240.0;
+
+        final safeUrl = url.trim().isNotEmpty ? url.trim() : '';
+
+        if (safeUrl.isEmpty) {
+          return Container(
+            alignment: Alignment.center,
+            color: const Color(0xFFF1F4F7),
+            child: Icon(Icons.person,
+                size: 44, color: prestatairesPrimary.withOpacity(.35)),
+          );
+        }
+
+        return CachedNetworkImage(
+          key: ValueKey('prestataire_img_$safeUrl'),
+          imageUrl: safeUrl,
+          cacheKey: safeUrl,
+          memCacheWidth: (w * dpr).round(),
+          memCacheHeight: (h * dpr).round(),
+          fadeInDuration: Duration.zero,
+          fadeOutDuration: Duration.zero,
+          placeholderFadeInDuration: Duration.zero,
+          useOldImageOnUrlChange: true,
+          imageBuilder: (_, provider) => Image(
+            image: provider,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
+          ),
+          placeholder: (_, __) => _imagePremiumPlaceholder(),
+          errorWidget: (_, __, ___) => Container(
+            alignment: Alignment.center,
+            color: const Color(0xFFF1F4F7),
+            child: Icon(Icons.person,
+                size: 44, color: prestatairesPrimary.withOpacity(.35)),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _stars(double value) {
-    final full = value.floor();
+    final full = value.floor().clamp(0, 5);
     final half = (value - full) >= 0.5;
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -575,13 +871,7 @@ class _ProCard extends StatelessWidget {
                 children: [
                   AspectRatio(
                     aspectRatio: 16 / 11,
-                    child: photoUrl.isNotEmpty
-                        ? Image.network(photoUrl, fit: BoxFit.cover)
-                        : Container(
-                            alignment: Alignment.center,
-                            color: const Color(0xFFF1F4F7),
-                            child: Icon(Icons.person, size: 44, color: prestatairesPrimary.withOpacity(.35)),
-                          ),
+                    child: _premiumImage(context, photoUrl),
                   ),
                   Positioned.fill(
                     child: DecoratedBox(
@@ -589,7 +879,10 @@ class _ProCard extends StatelessWidget {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black.withOpacity(.45)],
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(.45)
+                          ],
                         ),
                       ),
                     ),
@@ -598,21 +891,28 @@ class _ProCard extends StatelessWidget {
                     left: 8,
                     bottom: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: prestatairesSecondary.withOpacity(.9),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.location_on, size: 14, color: prestatairesOnSecondary),
+                          Icon(Icons.location_on,
+                              size: 14, color: prestatairesOnSecondary),
                           const SizedBox(width: 4),
-                          Text(
-                            city,
-                            style: TextStyle(
-                              color: prestatairesOnSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 140),
+                            child: Text(
+                              city,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: prestatairesOnSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -667,7 +967,8 @@ class _ProCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.work_outline, size: 14, color: prestatairesPrimary.withOpacity(.7)),
+                      Icon(Icons.work_outline,
+                          size: 14, color: prestatairesPrimary.withOpacity(.7)),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -702,7 +1003,8 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.search_off, size: 54, color: prestatairesPrimary.withOpacity(.35)),
+          Icon(Icons.search_off,
+              size: 54, color: prestatairesPrimary.withOpacity(.35)),
           const SizedBox(height: 10),
           Text(
             'Aucun prestataire trouvé.',

@@ -42,6 +42,58 @@ class _LogementHomePageState extends State<LogementHomePage> {
   // Cache global en mémoire
   static List<LogementModel> _cacheFeed = [];
 
+  // ================== CACHE PERSISTANT (Hive) ==================
+  static const String _kFeedBoxName = 'logement_feed_box';
+  static const String _kCacheVersion =
+      'v1'; // incrémente si tu changes le schema LogementModel
+
+  String get _cacheKey => 'logements_${_kCacheVersion}_${_mode}_${_categorie}';
+  String get _cacheMetaKey => '${_cacheKey}__meta';
+
+  Future<Box> _ensureFeedBoxOpen() async {
+    if (Hive.isBoxOpen(_kFeedBoxName)) return Hive.box(_kFeedBoxName);
+    return await Hive.openBox(_kFeedBoxName);
+  }
+
+  Future<List<LogementModel>> _readFeedFromDisk(String key) async {
+    try {
+      final box = await _ensureFeedBoxOpen();
+      final cached = box.get(key);
+      if (cached is! List || cached.isEmpty) return const [];
+
+      final items = cached
+          .whereType<Map>()
+          .map((e) => LogementModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false);
+
+      return items;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _warmFromDiskCache({
+    required String key,
+    required bool keepLoading,
+  }) async {
+    final items = await _readFeedFromDisk(key);
+    if (items.isEmpty || !mounted) return;
+
+    _cacheFeed = List<LogementModel>.from(items);
+
+    setState(() {
+      _feed
+        ..clear()
+        ..addAll(items);
+      // initState : keepLoading=false => afficher immédiatement
+      // reloadAll : keepLoading=true => on garde le refresh en cours
+      if (!keepLoading) _loading = false;
+      _hasMore = true;
+      _error = null;
+    });
+  }
+  // =============================================================
+
   final List<LogementModel> _feed = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -122,30 +174,8 @@ class _LogementHomePageState extends State<LogementHomePage> {
   }
 
   void _tryLoadFromCache() {
-    try {
-      if (!Hive.isBoxOpen('logement_feed_box')) return;
-      final box = Hive.box('logement_feed_box');
-
-      final cached = box.get('logements');
-      if (cached is! List || cached.isEmpty) return;
-
-      final items = cached
-          .whereType<Map>()
-          .map((e) => LogementModel.fromJson(Map<String, dynamic>.from(e)))
-          .toList(growable: false);
-
-      if (items.isEmpty) return;
-
-      _cacheFeed = List<LogementModel>.from(items);
-
-      setState(() {
-        _feed
-          ..clear()
-          ..addAll(items);
-        _loading = false;
-        _hasMore = true;
-      });
-    } catch (_) {}
+    // Warm start (initState) : afficher le cache immédiatement
+    unawaited(_warmFromDiskCache(key: _cacheKey, keepLoading: false));
   }
 
   void _animateHeroTo(int index) {
@@ -190,6 +220,10 @@ class _LogementHomePageState extends State<LogementHomePage> {
       _hasMore = true;
     });
 
+    // ✅ Affiche instantanément le cache persistant correspondant aux filtres
+    // tout en laissant le refresh réseau continuer.
+    unawaited(_warmFromDiskCache(key: _cacheKey, keepLoading: true));
+
     try {
       final firstPageF = _fetchPage(offset: 0);
       final favF = _loadFavoris(); // ✅ met aussi _favIds
@@ -222,9 +256,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
   Future<void> _saveFeedToDisk(List<LogementModel> items) async {
     try {
-      if (!Hive.isBoxOpen('logement_feed_box')) return;
-      final box = Hive.box('logement_feed_box');
-      await box.put('logements', items.map((e) => e.toJson()).toList());
+      final box = await _ensureFeedBoxOpen();
+      await box.put(_cacheKey, items.map((e) => e.toJson()).toList());
+      await box.put(_cacheMetaKey, {
+        'savedAt': DateTime.now().millisecondsSinceEpoch,
+        'count': items.length,
+      });
     } catch (_) {}
   }
 
@@ -1208,10 +1245,8 @@ class _HomeFiltersSheetState extends State<_HomeFiltersSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              "Filtres",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const Text("Filtres",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 14),
             const Text("Type d’opération"),
             const SizedBox(height: 8),
@@ -1660,8 +1695,7 @@ class _LuxuryGlassPanel extends StatelessWidget {
           children: [
             Positioned.fill(
               child: IgnorePointer(
-                child: Container(color: Colors.white.withOpacity(.06)),
-              ),
+                  child: Container(color: Colors.white.withOpacity(.06))),
             ),
             Positioned.fill(
               child: IgnorePointer(
@@ -1724,10 +1758,7 @@ class _SkeletonBienCard extends StatelessWidget {
         builder: (_, c) {
           // ✅ identique au vrai panel : évite les sauts visuels
           final ts = MediaQuery.textScaleFactorOf(context);
-          final panelH = min(
-            c.maxHeight,
-            max(c.maxHeight * 0.48, 190.0 * ts),
-          );
+          final panelH = min(c.maxHeight, max(c.maxHeight * 0.48, 190.0 * ts));
 
           return Stack(
             children: [

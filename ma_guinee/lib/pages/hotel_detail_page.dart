@@ -1,3 +1,6 @@
+// lib/pages/hotel_detail_page.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,6 +24,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   static const Color onPrimary = Color(0xFFFFFFFF);
   static const Color neutralBorder = Color(0xFFE5E7EB);
 
+  static const Color _neutralBg = Color(0xFFF7F7F9);
+  static const Color _neutralSurface = Color(0xFFFFFFFF);
+
   Map<String, dynamic>? hotel;
   bool loading = true;
   String? _error;
@@ -35,7 +41,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   int _currentIndex = 0;
 
   String get _id => widget.hotelId.toString();
-  bool _isUuid(String id) => RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(id);
+  bool _isUuid(String id) => RegExp(
+          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+      .hasMatch(id);
 
   @override
   void initState() {
@@ -64,6 +72,13 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       if (fromEnd > 1 && fromEnd % 3 == 1) buf.write(' ');
     }
     return buf.toString();
+  }
+
+  String _fmtDate(dynamic raw) {
+    final dt = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} • ${two(dt.hour)}:${two(dt.minute)}';
   }
 
   Future<void> _loadHotel() async {
@@ -104,7 +119,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       if (list.isNotEmpty) {
         final notes =
             list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        moyenne = notes.reduce((a, b) => a + b) / notes.length;
+        moyenne = notes.fold<double>(0.0, (a, b) => a + b) / notes.length;
       }
 
       final ids = list
@@ -114,7 +129,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           .toSet()
           .toList();
 
-      Map<String, Map<String, dynamic>> fetched = {};
+      final Map<String, Map<String, dynamic>> fetched = {};
 
       if (ids.isNotEmpty) {
         final orFilter = ids.map((id) => 'id.eq.$id').join(',');
@@ -125,10 +140,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             .or(orFilter);
 
         for (final p in List<Map<String, dynamic>>.from(profs)) {
-          fetched[p['id']] = {
-            'nom': p['nom'],
-            'prenom': p['prenom'],
-            'photo_url': p['photo_url'],
+          final id = (p['id'] ?? '').toString();
+          fetched[id] = {
+            'nom': (p['nom'] ?? '').toString(),
+            'prenom': (p['prenom'] ?? '').toString(),
+            'photo_url': (p['photo_url'] ?? '').toString(),
           };
         }
       }
@@ -141,17 +157,38 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           ..clear()
           ..addAll(fetched);
       });
-    } catch (e) {}
+    } catch (_) {
+      // silencieux comme avant
+    }
   }
 
   Future<void> _envoyerAvis() async {
     final commentaire = _avisController.text.trim();
-    if (_noteUtilisateur == 0 || commentaire.isEmpty) return;
+    if (_noteUtilisateur == 0 || commentaire.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("Veuillez noter et écrire un commentaire.")),
+      );
+      return;
+    }
 
     final user = _sb.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
+      );
+      return;
+    }
 
-    if (!_isUuid(_id)) return;
+    if (!_isUuid(_id)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur : ID hôtel invalide.")),
+      );
+      return;
+    }
 
     try {
       await _sb.from('avis_hotels').upsert(
@@ -164,10 +201,23 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         onConflict: 'hotel_id,auteur_id',
       );
 
+      FocusManager.instance.primaryFocus?.unfocus();
+
       _avisController.clear();
       setState(() => _noteUtilisateur = 0);
+
       await _loadAvisBloc();
-    } catch (e) {}
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Avis envoyé.")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur envoi avis : $e")),
+      );
+    }
   }
 
   void _contacter() async {
@@ -201,11 +251,34 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   List<String> _imagesFromHotel() {
     final raw = hotel?['images'];
 
+    List<String> normalize(List list) => list
+        .map((e) => e.toString().trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
     if (raw is List && raw.isNotEmpty) {
-      return raw.map((e) => e.toString()).toList();
+      return normalize(raw);
     }
 
-    final p = (hotel?['photo_url'] ?? '').toString();
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isNotEmpty) {
+        if (s.startsWith('[')) {
+          try {
+            final decoded = jsonDecode(s);
+            if (decoded is List) return normalize(decoded);
+          } catch (_) {}
+        }
+        if (s.contains(',')) {
+          final parts = s.split(',').map((e) => e.trim()).toList();
+          final out = parts.where((e) => e.isNotEmpty).toList();
+          if (out.isNotEmpty) return out;
+        }
+        return [s];
+      }
+    }
+
+    final p = (hotel?['photo_url'] ?? '').toString().trim();
     return p.isNotEmpty ? [p] : [];
   }
 
@@ -217,9 +290,41 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         builder: (_) => _FullscreenGalleryPage(
           images: images,
           initialIndex: index,
-          heroPrefix: 'hotel',
+          heroPrefix: 'hotel_${_id}_',
         ),
       ),
+    );
+  }
+
+  // ---------- UI helpers ----------
+  Widget _starsStatic(double avg, {double size = 16}) {
+    final full = avg.floor().clamp(0, 5);
+    final half = (avg - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        if (i < full) {
+          return Icon(Icons.star, size: size, color: Colors.amber);
+        }
+        if (i == full && half) {
+          return Icon(Icons.star_half, size: size, color: Colors.amber);
+        }
+        return Icon(Icons.star_border, size: size, color: Colors.amber);
+      }),
+    );
+  }
+
+  Widget _starsPick(int rating, {required void Function(int) onTap}) {
+    return Row(
+      children: List.generate(5, (i) {
+        final active = i < rating;
+        return IconButton(
+          iconSize: 28,
+          onPressed: () => onTap(i + 1),
+          icon: Icon(active ? Icons.star : Icons.star_border,
+              color: Colors.amber),
+        );
+      }),
     );
   }
 
@@ -228,10 +333,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final title = (hotel?['nom'] ?? 'Hôtel').toString();
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _neutralBg,
       appBar: AppBar(
         title: Text(title),
-        backgroundColor: Colors.white,
+        backgroundColor: _neutralSurface,
         titleTextStyle: const TextStyle(
           color: hotelsPrimary,
           fontWeight: FontWeight.bold,
@@ -255,15 +360,21 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           ),
         ),
       ),
-      body: loading
-          ? _buildSkeletonBody()
-          : (hotel == null
-              ? Center(
-                  child: Text(
-                    _error == null ? "Hôtel introuvable" : "Erreur : $_error",
-                  ),
-                )
-              : _buildDetailBody()),
+
+      // ✅ Tap partout = ferme le clavier (sans casser le scroll)
+      body: Listener(
+        onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        child: loading
+            ? _buildSkeletonBody()
+            : (hotel == null
+                ? Center(
+                    child: Text(
+                      _error == null ? "Hôtel introuvable" : "Erreur : $_error",
+                    ),
+                  )
+                : _buildDetailBody()),
+      ),
+
       bottomNavigationBar:
           (!loading && hotel != null) ? _buildBottomBar() : null,
     );
@@ -276,9 +387,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             child: Container(
-              height: 230,
+              height: 240,
               width: double.infinity,
               color: Colors.grey.shade300,
             ),
@@ -303,131 +414,118 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   Widget _buildDetailBody() {
     final images = _imagesFromHotel();
 
+    final nom = (hotel?['nom'] ?? 'Hôtel').toString();
+    final ville = (hotel?['ville'] ?? 'Non précisé').toString();
+    final prix = hotel?['prix'];
+    final desc = (hotel?['description'] ?? 'Aucune description').toString();
+
+    final canSend =
+        _noteUtilisateur > 0 && _avisController.text.trim().isNotEmpty;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1) Galerie
           if (images.isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
-                children: [
-                  SizedBox(
-                    height: 230,
-                    width: double.infinity,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: images.length,
-                      onPageChanged: (i) {
-                        // TRANSITION INSTANTANÉE
-                        setState(() => _currentIndex = i);
-                      },
-                      itemBuilder: (context, index) => GestureDetector(
-                        onTap: () => _openFullScreenGallery(images, index),
-                        child: Hero(
-                          tag: 'hotel_$index',
-                          child: CachedNetworkImage(
-                            imageUrl: images[index],
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                Container(color: Colors.grey[200]),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        '${_currentIndex + 1}/${images.length}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 11),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (images.length > 1)
-              SizedBox(
-                height: 68,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final isActive = index == _currentIndex;
-
-                    return GestureDetector(
-                      onTap: () {
-                        // TRANSITION INSTANTANÉE
-                        _pageController.jumpToPage(index);
-                        setState(() => _currentIndex = index);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
-                        width: 90,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color:
-                                isActive ? hotelsPrimary : Colors.transparent,
-                            width: 2,
-                          ),
-                        ),
-                        clipBehavior: Clip.hardEdge,
-                        child: CachedNetworkImage(
-                          imageUrl: images[index],
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.grey[200]),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+            _buildProGallery(images, nom),
+            const SizedBox(height: 14),
           ] else
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                height: 230,
+                height: 240,
                 color: Colors.grey.shade300,
                 child: const Center(
                   child: Icon(Icons.image_not_supported, size: 60),
                 ),
               ),
             ),
-          const SizedBox(height: 16),
+
+          // 2) Titre + ville
           Text(
-            "Ville : ${(hotel!['ville'] ?? 'Non précisé').toString()}",
-            style: const TextStyle(fontSize: 16),
+            nom,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 8),
-          Builder(
-            builder: (_) {
-              final prix = hotel!['prix'];
-              return Text(
-                "Prix moyen : ${_formatGNF(prix)} GNF / nuit",
-                style: const TextStyle(fontSize: 16),
-              );
-            },
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.location_on, size: 18, color: Colors.red),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  ville,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, color: Colors.black87),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            "Description :\n${(hotel!['description'] ?? 'Aucune description').toString()}",
-          ),
+
           const SizedBox(height: 12),
+
+          // 3) Prix
+          Text(
+            "Prix moyen : ${_formatGNF(prix)} GNF / nuit",
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+
+          const SizedBox(height: 10),
+
+          // 4) Description
+          Text(
+            "Description :\n$desc",
+            style: const TextStyle(height: 1.35),
+          ),
+
+          // 5) ✅ Bar note moyenne SOUS la description
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: neutralBorder),
+            ),
+            child: Row(
+              children: [
+                _noteMoyenne > 0
+                    ? Row(
+                        children: [
+                          _starsStatic(_noteMoyenne, size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${_noteMoyenne.toStringAsFixed(1)} / 5',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '(${_avis.length})',
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ],
+                      )
+                    : const Text(
+                        "Aucun avis pour le moment",
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                const Spacer(),
+                const Icon(Icons.verified, size: 18, color: hotelsSecondary),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+          const Divider(height: 24),
+
+          // 6) Localisation (bouton)
+          const Text(
+            "Localisation",
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
           ElevatedButton.icon(
             onPressed: _localiser,
             icon: const Icon(Icons.map),
@@ -435,57 +533,357 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             style: ElevatedButton.styleFrom(
               backgroundColor: hotelsSecondary,
               foregroundColor: onPrimary,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            "Avis client :",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Text(
-            _avis.isEmpty
-                ? "Pas d'avis"
-                : "${_noteMoyenne.toStringAsFixed(1)} / 5",
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            "Notez cet hôtel :",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Row(
-            children: List.generate(5, (i) {
-              return IconButton(
-                icon: Icon(
-                  i < _noteUtilisateur ? Icons.star : Icons.star_border,
-                  color: Colors.amber,
-                ),
-                onPressed: () => setState(() => _noteUtilisateur = i + 1),
-                iconSize: 28,
-              );
-            }),
-          ),
-          TextField(
-            controller: _avisController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: "Partagez votre expérience...",
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
+
+          const SizedBox(height: 22),
+          const Divider(height: 24),
+
+          // 7) ✅ Avis des utilisateurs (AU-DESSUS de “Votre avis”)
+          const Text(
+            "Avis des utilisateurs",
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
           const SizedBox(height: 10),
-          ElevatedButton.icon(
-            onPressed: _envoyerAvis,
-            icon: const Icon(Icons.send),
-            label: const Text("Envoyer mon avis"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: hotelsSecondary,
-              foregroundColor: onPrimary,
+
+          if (_avis.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text("Aucun avis pour le moment."),
+            )
+          else
+            Column(
+              children: _avis.map((a) {
+                final uid = (a['auteur_id'] ?? '').toString();
+                final u = _userCache[uid] ?? const {};
+                final prenom = (u['prenom'] ?? '').toString();
+                final nomU = (u['nom'] ?? '').toString();
+                final photo = (u['photo_url'] ?? '').toString();
+                final fullName = ('$prenom $nomU').trim().isNotEmpty
+                    ? ('$prenom $nomU').trim()
+                    : 'Utilisateur';
+
+                final etoiles = (a['etoiles'] as num?)?.toDouble() ?? 0.0;
+                final commentaire = (a['commentaire'] ?? '').toString().trim();
+                final dateStr = _fmtDate(a['created_at']);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: neutralBorder),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundImage:
+                            (photo.isNotEmpty) ? NetworkImage(photo) : null,
+                        child: photo.isEmpty
+                            ? const Icon(Icons.person, size: 18)
+                            : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    fullName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _starsStatic(etoiles, size: 14),
+                              ],
+                            ),
+                            if (commentaire.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                commentaire,
+                                style: const TextStyle(height: 1.3),
+                              ),
+                            ],
+                            if (dateStr.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                dateStr,
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.black54),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+
+          const SizedBox(height: 22),
+          const Divider(height: 24),
+
+          // 8) ✅ Votre avis (TOUT EN BAS)
+          const Text(
+            "Votre avis",
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+
+          _starsPick(_noteUtilisateur,
+              onTap: (n) => setState(() => _noteUtilisateur = n)),
+
+          TextField(
+            controller: _avisController,
+            minLines: 3,
+            maxLines: 3,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) => _envoyerAvis(),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: "Partagez votre expérience...",
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.all(12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: neutralBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: neutralBorder),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: canSend ? _envoyerAvis : null,
+              icon: const Icon(Icons.send_rounded, size: 18),
+              label: const Text("Envoyer"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: hotelsSecondary,
+                foregroundColor: onPrimary,
+                disabledBackgroundColor: hotelsSecondary.withOpacity(0.35),
+                disabledForegroundColor: onPrimary.withOpacity(0.8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProGallery(List<String> images, String title) {
+    final heroPrefix = 'hotel_${_id}_';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              SizedBox(
+                height: 240,
+                width: double.infinity,
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: images.length,
+                  onPageChanged: (i) => setState(() => _currentIndex = i),
+                  itemBuilder: (context, index) {
+                    final url = images[index];
+                    return GestureDetector(
+                      onTap: () => _openFullScreenGallery(images, index),
+                      child: Hero(
+                        tag: '${heroPrefix}$index',
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            color: Colors.grey.shade200,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            color: Colors.grey.shade200,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.broken_image,
+                                color: Colors.black26, size: 42),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // Gradient overlay bas + titre
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 28, 12, 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(0.0),
+                        Colors.black.withOpacity(0.55),
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _buildDots(images.length, _currentIndex),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Compteur top-right
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.40),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white.withOpacity(0.18)),
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1}/${images.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Thumbnails
+        if (images.length > 1) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final isActive = index == _currentIndex;
+                return GestureDetector(
+                  onTap: () {
+                    _pageController.jumpToPage(index);
+                    setState(() => _currentIndex = index);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: 92,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isActive ? hotelsPrimary : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: CachedNetworkImage(
+                      imageUrl: images[index],
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(color: Colors.grey.shade200),
+                      errorWidget: (_, __, ___) => Container(
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image,
+                            color: Colors.black26, size: 24),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDots(int count, int index) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(count, (i) {
+        final active = i == index;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          margin: const EdgeInsets.only(left: 5),
+          width: active ? 14 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.white.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        );
+      }),
     );
   }
 
@@ -503,7 +901,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _neutralSurface,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.06),
@@ -585,7 +983,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
-  final String heroPrefix;
+  final String heroPrefix; // ex: 'hotel_<id>_'
 
   const _FullscreenGalleryPage({
     required this.images,
@@ -636,7 +1034,7 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
         itemBuilder: (_, i) {
           return Center(
             child: Hero(
-              tag: '${widget.heroPrefix}_$i',
+              tag: '${widget.heroPrefix}$i',
               child: InteractiveViewer(
                 minScale: 1,
                 maxScale: 4,

@@ -11,8 +11,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// ✅ Compression (même module que tes annonces)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
+
 /// Palette Restaurants
-const Color restoPrimary   = Color(0xFFE76F51);
+const Color restoPrimary = Color(0xFFE76F51);
 const Color restoSecondary = Color(0xFFF4A261);
 const Color restoOnPrimary = Color(0xFFFFFFFF);
 
@@ -35,8 +38,8 @@ class _EditRestoPageState extends State<EditRestoPage> {
 
   // Champs additionnels
   final TextEditingController _prixCtrl = TextEditingController();
-  int? prix;          // parsé localement
-  int? etoiles;       // parsé localement
+  int? prix; // parsé localement
+  int? etoiles; // parsé localement
 
   double? latitude;
   double? longitude;
@@ -78,7 +81,8 @@ class _EditRestoPageState extends State<EditRestoPage> {
     for (int i = 0; i < s.length; i++) {
       final remaining = s.length - i - 1;
       buf.write(s[i]);
-      if (remaining > 0 && remaining % 3 == 0) buf.write('\u202F'); // espace fine
+      if (remaining > 0 && remaining % 3 == 0)
+        buf.write('\u202F'); // espace fine
     }
     return buf.toString();
   }
@@ -92,7 +96,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
   // ---------- Helpers: filename safe ----------
   String _toAscii(String input) {
     const withD = 'ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñŸÿŠšŽž';
-    const noD   = 'AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYySsZz';
+    const noD = 'AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYySsZz';
     final map = {for (int i = 0; i < withD.length; i++) withD[i]: noD[i]};
     final buf = StringBuffer();
     for (final ch in input.characters) {
@@ -110,23 +114,15 @@ class _EditRestoPageState extends State<EditRestoPage> {
     return ascii.toLowerCase();
   }
 
-  String _safeFilename(String original) {
+  String _safeFilenameFor(String original, String extNoDot) {
     final baseName = kIsWeb ? original : p.basename(original);
     final name = _slugify(baseName);
     final dot = name.lastIndexOf('.');
-    final hasExt = dot > 0 && dot < name.length - 1;
-    final ext = hasExt ? name.substring(dot).toLowerCase() : '.png';
-    final base = hasExt ? name.substring(0, dot) : name;
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    return '${ts}_$base$ext';
-  }
+    final base = (dot > 0) ? name.substring(0, dot) : name;
 
-  String _inferContentType(String filename) {
-    final f = filename.toLowerCase();
-    if (f.endsWith('.jpg') || f.endsWith('.jpeg')) return 'image/jpeg';
-    if (f.endsWith('.png')) return 'image/png';
-    if (f.endsWith('.webp')) return 'image/webp';
-    return 'application/octet-stream';
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final ext = extNoDot.replaceAll('.', '').toLowerCase();
+    return '${ts}_$base.$ext';
   }
 
   // ---------- Payload unique (même que l’inscription) ----------
@@ -134,28 +130,26 @@ class _EditRestoPageState extends State<EditRestoPage> {
     required String uid,
     required List<String> images,
   }) {
-    // Prix: la colonne est TEXT -> on envoie une chaîne "50000" (ou null)
+    // Prix: si ta colonne est TEXT -> on envoie une chaîne "50000" (ou null)
     final prixStr = _prixCtrl.text.trim().isEmpty
         ? null
         : _parseGNF(_prixCtrl.text)?.toString();
 
     return {
-      'nom'        : nomController.text.trim(),
-      'ville'      : villeController.text.trim(),
-      'tel'        : telController.text.trim(),       // colonne existante
-      'telephone'  : telController.text.trim(),       // pour rester aligné si les 2 coexistent
+      'nom': nomController.text.trim(),
+      'ville': villeController.text.trim(),
+      'tel': telController.text.trim(), // colonne existante
+      'telephone': telController.text.trim(), // si les 2 coexistent
       'description': descriptionController.text.trim(),
       'specialites': widget.resto['specialites'] ?? '',
-      'horaires'   : widget.resto['horaires'] ?? '',
-      'latitude'   : latitude,
-      'longitude'  : longitude,
-      'adresse'    : adresse,
-      'prix'       : prixStr,      // TEXT en base
-      'etoiles'    : etoiles,      // INT en base
-      'images'     : images,       // text[]
-      'user_id'    : uid,          // identique à l’inscription (ne doit pas changer)
-      // on n’envoie PAS updated_at: le trigger le gère
-      // on n’envoie PAS created_at sur update
+      'horaires': widget.resto['horaires'] ?? '',
+      'latitude': latitude,
+      'longitude': longitude,
+      'adresse': adresse,
+      'prix': prixStr, // TEXT (ou int si colonne int, adapte si besoin)
+      'etoiles': etoiles, // INT
+      'images': images, // text[]
+      'user_id': uid, // identique à l’inscription
     };
   }
 
@@ -168,13 +162,14 @@ class _EditRestoPageState extends State<EditRestoPage> {
     telController = TextEditingController(
       text: (widget.resto['tel'] ?? widget.resto['telephone'] ?? '').toString(),
     );
-    descriptionController = TextEditingController(text: widget.resto['description'] ?? '');
+    descriptionController =
+        TextEditingController(text: widget.resto['description'] ?? '');
 
-    latitude  = _asDouble(widget.resto['latitude']);
+    latitude = _asDouble(widget.resto['latitude']);
     longitude = _asDouble(widget.resto['longitude']);
-    adresse   = (widget.resto['adresse'] ?? '').toString();
+    adresse = (widget.resto['adresse'] ?? '').toString();
 
-    prix    = _asInt(widget.resto['prix']);
+    prix = _asInt(widget.resto['prix']);
     etoiles = _asInt(widget.resto['etoiles']);
     if (prix != null) _prixCtrl.text = _formatGNF(prix!);
 
@@ -211,6 +206,7 @@ class _EditRestoPageState extends State<EditRestoPage> {
         );
         return;
       }
+
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
@@ -246,13 +242,14 @@ class _EditRestoPageState extends State<EditRestoPage> {
 
   // ---------- Images ----------
   Future<void> _pickImages() async {
-    final res = await _picker.pickMultiImage(imageQuality: 75);
+    // imageQuality ici ne suffit pas (différences devices), on compresse à l’upload.
+    final res = await _picker.pickMultiImage(imageQuality: 100);
     if (res.isNotEmpty) setState(() => _pickedImages.addAll(res));
   }
 
   void _removeExistingImage(int i) {
     final removed = _existingImageUrls.removeAt(i);
-    _imagesToDelete.add(removed);
+    _imagesToDelete.add(removed); // ✅ sera supprimée du storage au Save
     setState(() {});
   }
 
@@ -265,56 +262,113 @@ class _EditRestoPageState extends State<EditRestoPage> {
         builder: (_, snap) {
           if (!snap.hasData) {
             return const SizedBox(
-              width: 70, height: 70,
+              width: 70,
+              height: 70,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             );
           }
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(snap.data!, width: 70, height: 70, fit: BoxFit.cover),
+            child: Image.memory(
+              snap.data!,
+              width: 70,
+              height: 70,
+              fit: BoxFit.cover,
+            ),
           );
         },
       );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.file(File(file.path), width: 70, height: 70, fit: BoxFit.cover),
+      child: Image.file(
+        File(file.path),
+        width: 70,
+        height: 70,
+        fit: BoxFit.cover,
+      ),
     );
+  }
+
+  // ✅ extraction robuste objectPath depuis URL publique
+  String? _storagePathFromPublicUrl(String url) {
+    try {
+      if (url.trim().isEmpty) return null;
+
+      final marker = '/storage/v1/object/public/$_bucket/';
+      final i = url.indexOf(marker);
+      if (i != -1) {
+        final pth = Uri.decodeComponent(url.substring(i + marker.length));
+        if (pth.trim().isEmpty) return null;
+        if (pth.trim() == _bucket) return null;
+        if (pth.endsWith('/')) return null;
+        return pth;
+      }
+
+      final uri = Uri.parse(url);
+      final seg = uri.pathSegments;
+      final idx = seg.indexOf(_bucket);
+      if (idx == -1 || idx + 1 >= seg.length) return null;
+
+      final pth = Uri.decodeComponent(seg.sublist(idx + 1).join('/'));
+      if (pth.trim().isEmpty) return null;
+      if (pth.trim() == _bucket) return null;
+      if (pth.endsWith('/')) return null;
+      return pth;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _deleteImagesFromStorage(List<String> urls) async {
     final storage = Supabase.instance.client.storage.from(_bucket);
     for (final url in urls) {
+      final objectPath = _storagePathFromPublicUrl(url);
+      if (objectPath == null) continue;
       try {
-        final uri = Uri.parse(url);
-        final seg = List<String>.from(uri.pathSegments);
-        final idx = seg.indexOf(_bucket);
-        if (idx == -1 || idx + 1 >= seg.length) continue;
-        final objectPath = seg.sublist(idx + 1).join('/');
         await storage.remove([objectPath]);
-      } catch (_) {}
+      } catch (_) {
+        // ignore : policy, déjà supprimé, etc.
+      }
     }
   }
 
   Future<List<String>> _uploadImages(String uid) async {
     final storage = Supabase.instance.client.storage.from(_bucket);
     final List<String> urls = [];
+
     for (final img in _pickedImages) {
       final original = kIsWeb ? img.name : p.basename(img.path);
-      final safeName = _safeFilename(original);
-      final objectPath = 'users/$uid/$safeName';
-      final contentType = _inferContentType(safeName);
 
-      if (kIsWeb) {
-        final bytes = await img.readAsBytes();
-        await storage.uploadBinary(objectPath, bytes,
-            fileOptions: FileOptions(upsert: false, contentType: contentType));
-      } else {
-        await storage.upload(objectPath, File(img.path),
-            fileOptions: FileOptions(upsert: false, contentType: contentType));
-      }
+      // 1) lire bytes
+      final rawBytes = await img.readAsBytes();
+
+      // 2) ✅ compression prod (cohérent avec annonces)
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      // 3) nom/chemin safe (ext = extension réelle post-compression)
+      final safeName = _safeFilenameFor(original, c.extension);
+      final objectPath = 'users/$uid/$safeName';
+
+      // 4) upload binaire avec contentType
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          upsert: false,
+          contentType: c.contentType,
+        ),
+      );
+
       urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
@@ -324,7 +378,9 @@ class _EditRestoPageState extends State<EditRestoPage> {
 
     if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clique d’abord sur “Détecter ma position”.')),
+        const SnackBar(
+          content: Text('Clique d’abord sur “Détecter ma position”.'),
+        ),
       );
       return;
     }
@@ -337,23 +393,27 @@ class _EditRestoPageState extends State<EditRestoPage> {
       final uid = supa.auth.currentUser?.id;
       if (uid == null) throw 'Utilisateur non connecté';
 
-      // 1) supprimer du storage les images retirées
+      // 1) ✅ supprimer du storage les images retirées (donc “ancien” supprimé vraiment)
       if (_imagesToDelete.isNotEmpty) {
         await _deleteImagesFromStorage(_imagesToDelete);
       }
 
-      // 2) uploader les nouvelles images
+      // 2) upload nouvelles images
       final newUrls = await _uploadImages(uid);
       final allUrls = [..._existingImageUrls, ...newUrls];
 
-      // 3) payload identique à l’inscription (sans updated_at, géré côté DB)
+      // 3) payload aligné inscription
       final payload = _buildPayload(uid: uid, images: allUrls);
 
-      // 4) UPDATE strict par id
+      // 4) update
       await supa
           .from('restaurants')
           .update(payload)
           .eq('id', widget.resto['id']);
+
+      // 5) nettoyage local
+      _imagesToDelete.clear();
+      _pickedImages.clear();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -364,15 +424,16 @@ class _EditRestoPageState extends State<EditRestoPage> {
         ...payload,
         'id': widget.resto['id'],
       });
-
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur Supabase : ${e.message}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur Supabase : ${e.message}')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e')),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -383,7 +444,10 @@ class _EditRestoPageState extends State<EditRestoPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Modifier le restaurant', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Modifier le restaurant',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: restoPrimary),
         elevation: 1,
@@ -399,7 +463,11 @@ class _EditRestoPageState extends State<EditRestoPage> {
                     ElevatedButton.icon(
                       onPressed: _gettingLocation ? null : _detectLocation,
                       icon: const Icon(Icons.location_on),
-                      label: Text(_gettingLocation ? 'Recherche en cours…' : 'Détecter ma position'),
+                      label: Text(
+                        _gettingLocation
+                            ? 'Recherche en cours…'
+                            : 'Détecter ma position',
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: restoPrimary,
                         foregroundColor: restoOnPrimary,
@@ -407,34 +475,34 @@ class _EditRestoPageState extends State<EditRestoPage> {
                     ),
                     if (latitude != null && longitude != null) ...[
                       const SizedBox(height: 8),
-                      Text('Latitude : $latitude'),
-                      Text('Longitude : $longitude'),
+                      Text('Latitude : ${latitude!.toStringAsFixed(6)}'),
+                      Text('Longitude : ${longitude!.toStringAsFixed(6)}'),
                       if (adresse.isNotEmpty) Text('Adresse : $adresse'),
                     ],
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: nomController,
-                      decoration: const InputDecoration(labelText: 'Nom du restaurant'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      decoration:
+                          const InputDecoration(labelText: 'Nom du restaurant'),
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: villeController,
                       decoration: const InputDecoration(labelText: 'Ville'),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: telController,
                       decoration: const InputDecoration(labelText: 'Téléphone'),
                       keyboardType: TextInputType.phone,
-                      validator: (v) => (v == null || v.isEmpty) ? 'Champ requis' : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Champ requis' : null,
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: _prixCtrl,
                       keyboardType: TextInputType.number,
@@ -449,22 +517,25 @@ class _EditRestoPageState extends State<EditRestoPage> {
                           if (_prixCtrl.text != ss) {
                             _prixCtrl.value = TextEditingValue(
                               text: ss,
-                              selection: TextSelection.collapsed(offset: ss.length),
+                              selection:
+                                  TextSelection.collapsed(offset: ss.length),
                             );
                           }
                         }
                       },
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: descriptionController,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration:
+                          const InputDecoration(labelText: 'Description'),
                       maxLines: 3,
                     ),
                     const SizedBox(height: 16),
-
-                    const Text('Photos du restaurant', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Photos du restaurant',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 8,
@@ -475,8 +546,12 @@ class _EditRestoPageState extends State<EditRestoPage> {
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.network(_existingImageUrls[i],
-                                    width: 70, height: 70, fit: BoxFit.cover),
+                                child: Image.network(
+                                  _existingImageUrls[i],
+                                  width: 70,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                               Positioned(
                                 top: 2,
@@ -486,7 +561,11 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close, size: 14, color: Colors.white),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -504,7 +583,11 @@ class _EditRestoPageState extends State<EditRestoPage> {
                                   child: const CircleAvatar(
                                     radius: 11,
                                     backgroundColor: Colors.red,
-                                    child: Icon(Icons.close, size: 14, color: Colors.white),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -513,19 +596,23 @@ class _EditRestoPageState extends State<EditRestoPage> {
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
-                            width: 70, height: 70,
+                            width: 70,
+                            height: 70,
                             decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: const Icon(Icons.add_a_photo, size: 30, color: restoPrimary),
+                            child: const Icon(
+                              Icons.add_a_photo,
+                              size: 30,
+                              color: restoPrimary,
+                            ),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 22),
-
                     ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.save),
@@ -534,7 +621,9 @@ class _EditRestoPageState extends State<EditRestoPage> {
                         backgroundColor: restoPrimary,
                         foregroundColor: restoOnPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ],

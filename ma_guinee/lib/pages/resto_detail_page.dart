@@ -1,4 +1,3 @@
-// lib/pages/resto_detail_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -52,7 +51,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
-  // 🔥 MapController pour carte instantanée
+  // Map
   final MapController _mapController = MapController();
   LatLng _defaultCenter = const LatLng(9.5, -13.7);
 
@@ -62,6 +61,13 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     final r = RegExp(
         r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     return r.hasMatch(id);
+  }
+
+  String _fmtDate(dynamic raw) {
+    final dt = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} • ${two(dt.hour)}:${two(dt.minute)}';
   }
 
   @override
@@ -113,7 +119,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         _syncing = false;
       });
 
-      // 🔥 Dès que les coordonnées arrivent → repositionner la carte instant
+      // Dès que les coordonnées arrivent → repositionner la carte
       final lat = (resto?['latitude'] as num?)?.toDouble();
       final lng = (resto?['longitude'] as num?)?.toDouble();
       if (lat != null && lng != null) {
@@ -161,7 +167,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           .toSet()
           .toList();
 
-      Map<String, Map<String, dynamic>> fetched = {};
+      final Map<String, Map<String, dynamic>> fetched = {};
       if (ids.isNotEmpty) {
         final orFilter = ids.map((id) => 'id.eq.$id').join(',');
         final profiles = await _sb
@@ -172,9 +178,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         for (final p in List<Map<String, dynamic>>.from(profiles)) {
           final id = (p['id'] ?? '').toString();
           fetched[id] = {
-            'nom': p['nom'],
-            'prenom': p['prenom'],
-            'photo_url': p['photo_url']
+            'nom': (p['nom'] ?? '').toString(),
+            'prenom': (p['prenom'] ?? '').toString(),
+            'photo_url': (p['photo_url'] ?? '').toString(),
           };
         }
       }
@@ -228,17 +234,20 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         onConflict: 'restaurant_id,auteur_id',
       );
 
+      // ferme clavier
+      FocusManager.instance.primaryFocus?.unfocus();
+
       setState(() {
         _noteUtilisateur = 0;
         _avisController.clear();
         _dejaNote = true;
       });
-      FocusScope.of(context).unfocus();
+
       await _loadAvisBloc();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Avis enregistré 👍")),
+        const SnackBar(content: Text("Avis enregistré.")),
       );
     } catch (e) {
       if (!mounted) return;
@@ -310,19 +319,64 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   }
 
   Widget _starsStatic(double avg, {double size = 16}) {
-    final full = avg.floor();
+    final full = avg.floor().clamp(0, 5);
     final half = (avg - full) >= 0.5;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full) {
+        if (i < full)
           return Icon(Icons.star, size: size, color: _restoSecondary);
-        }
         if (i == full && half) {
           return Icon(Icons.star_half, size: size, color: _restoSecondary);
         }
         return Icon(Icons.star_border, size: size, color: _restoSecondary);
       }),
+    );
+  }
+
+  Widget _avgBar() {
+    // ✅ Barre note moyenne sous la description
+    if (_avis.isEmpty || _noteMoyenne <= 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _neutralBorder),
+        ),
+        child: Row(
+          children: const [
+            Text("Aucun avis pour le moment",
+                style: TextStyle(color: Colors.black54)),
+            Spacer(),
+            Icon(Icons.verified, size: 18, color: _restoSecondary),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _neutralBorder),
+      ),
+      child: Row(
+        children: [
+          _starsStatic(_noteMoyenne, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            '${_noteMoyenne.toStringAsFixed(1)} / 5',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 8),
+          Text('(${_avis.length})',
+              style: const TextStyle(color: Colors.black54)),
+          const Spacer(),
+          const Icon(Icons.verified, size: 18, color: _restoSecondary),
+        ],
+      ),
     );
   }
 
@@ -354,41 +408,22 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ),
         ),
         const SizedBox(height: 14),
-        Container(
-          height: 20,
-          width: 200,
-          color: Colors.grey.shade200,
-        ),
+        Container(height: 20, width: 200, color: Colors.grey.shade200),
         const SizedBox(height: 8),
-        Container(
-          height: 14,
-          width: 140,
-          color: Colors.grey.shade200,
-        ),
+        Container(height: 14, width: 140, color: Colors.grey.shade200),
         const SizedBox(height: 18),
         Container(
-          height: 14,
-          width: double.infinity,
-          color: Colors.grey.shade200,
-        ),
+            height: 14, width: double.infinity, color: Colors.grey.shade200),
         const SizedBox(height: 6),
         Container(
-          height: 14,
-          width: double.infinity,
-          color: Colors.grey.shade200,
-        ),
+            height: 14, width: double.infinity, color: Colors.grey.shade200),
         const SizedBox(height: 6),
+        Container(height: 14, width: 180, color: Colors.grey.shade200),
+        const SizedBox(height: 14),
         Container(
-          height: 14,
-          width: 180,
-          color: Colors.grey.shade200,
-        ),
+            height: 44, width: double.infinity, color: Colors.grey.shade200),
         const SizedBox(height: 24),
-        Container(
-          height: 18,
-          width: 160,
-          color: Colors.grey.shade200,
-        ),
+        Container(height: 18, width: 160, color: Colors.grey.shade200),
         const SizedBox(height: 10),
         Container(
           height: 200,
@@ -406,24 +441,25 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   Widget _buildRestoContent() {
     final nom = (resto!['nom'] ?? '').toString();
     final ville = (resto!['ville'] ?? '').toString();
-    final desc = (resto!['description'] ?? '').toString();
-    final spec = (resto!['specialites'] ?? '').toString();
-    final horaire = (resto!['horaires'] ?? '').toString();
+    final desc = (resto!['description'] ?? '').toString().trim();
+    final spec = (resto!['specialites'] ?? '').toString().trim();
+    final horaire = (resto!['horaires'] ?? '').toString().trim();
     final images = _imagesFrom(resto!['images']);
     final lat = (resto!['latitude'] as num?)?.toDouble();
     final lng = (resto!['longitude'] as num?)?.toDouble();
 
-    // fallback image
     const fallback = 'https://via.placeholder.com/1200x800.png?text=Restaurant';
     final heroPrefix = 'resto_${resto!['id'] ?? nom}';
 
-    // 🔥 centre réel si validé
-    LatLng? trueCenter = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+    final trueCenter = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+
+    final canSend =
+        _noteUtilisateur > 0 && _avisController.text.trim().isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Galerie
+        // 1) Galerie
         ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: Stack(
@@ -461,12 +497,30 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   },
                 ),
               ),
+              if ((images.isNotEmpty ? images.length : 1) > 1)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.45),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      '${_currentIndex + 1}/${images.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
 
         const SizedBox(height: 14),
 
+        // 2) Titre + ville + spécialités
         Text(nom,
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
@@ -474,20 +528,31 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           children: [
             const Icon(Icons.location_on, color: Colors.red, size: 18),
             const SizedBox(width: 4),
-            Text(ville),
+            Expanded(
+              child: Text(
+                ville,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
 
         if (spec.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(spec,
-              style: const TextStyle(
-                  color: _restoPrimary, fontWeight: FontWeight.w600)),
+          Text(
+            spec,
+            style: const TextStyle(
+              color: _restoPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
 
+        // 3) Description
         if (desc.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Text(desc),
+          Text(desc, style: const TextStyle(height: 1.35)),
         ],
 
         if (horaire.isNotEmpty) ...[
@@ -496,48 +561,19 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
             children: [
               const Icon(Icons.schedule, size: 20),
               const SizedBox(width: 6),
-              Text(horaire),
+              Expanded(child: Text(horaire)),
             ],
           ),
         ],
 
-        if (_noteMoyenne > 0) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _starsStatic(_noteMoyenne),
-              const SizedBox(width: 8),
-              Text('${_noteMoyenne.toStringAsFixed(1)} / 5',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ],
+        // 4) Note moyenne (sous description)
+        const SizedBox(height: 12),
+        _avgBar(),
 
         const SizedBox(height: 18),
         const Divider(height: 30),
 
-        // Avis utilisateur
-        const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
-        _buildStars(_noteUtilisateur,
-            onTap: (n) => setState(() => _noteUtilisateur = n)),
-        TextField(
-          controller: _avisController,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: "Votre commentaire",
-            filled: true,
-            fillColor: Colors.grey[50],
-            contentPadding: const EdgeInsets.all(12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _neutralBorder),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 28),
-
-        // 🔥🔥🔥 CARTE INSTANTANÉE
+        // 5) Carte + Google Maps
         const Text("Localisation",
             style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
@@ -591,8 +627,10 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ),
         ),
 
-        const SizedBox(height: 28),
+        const SizedBox(height: 18),
+        const Divider(height: 30),
 
+        // 6) Avis des utilisateurs (AVANT votre avis)
         const Text("Avis des utilisateurs",
             style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
@@ -611,34 +649,139 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   ? 'Utilisateur'
                   : ('$prenom $nomU').trim();
 
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage:
-                      (photo.isNotEmpty) ? NetworkImage(photo) : null,
-                  child: photo.isEmpty ? const Icon(Icons.person) : null,
+              final etoiles = (a['etoiles'] as num?)?.toDouble() ?? 0.0;
+              final commentaire = (a['commentaire'] ?? '').toString().trim();
+              final dateStr = _fmtDate(a['created_at']);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _neutralBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                title: Text(fullName),
-                subtitle: Column(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("${a['etoiles']} ★"),
-                    if (a['commentaire'] != null &&
-                        a['commentaire'].toString().trim().isNotEmpty)
-                      Text(a['commentaire'].toString()),
-                    const SizedBox(height: 4),
-                    Text(
-                      DateTime.tryParse(a['created_at']?.toString() ?? '')
-                              ?.toLocal()
-                              .toString() ??
-                          '',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.black54),
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundImage:
+                          (photo.isNotEmpty) ? NetworkImage(photo) : null,
+                      child: photo.isEmpty
+                          ? const Icon(Icons.person, size: 18)
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  fullName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _starsStatic(etoiles, size: 14),
+                            ],
+                          ),
+                          if (commentaire.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(commentaire,
+                                style: const TextStyle(height: 1.3)),
+                          ],
+                          if (dateStr.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.black54),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
               );
             }).toList(),
           ),
+
+        const SizedBox(height: 18),
+        const Divider(height: 30),
+
+        // 7) Votre avis (TOUT EN BAS)
+        const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
+        if (_dejaNote)
+          const Padding(
+            padding: EdgeInsets.only(top: 6, bottom: 6),
+            child: Text(
+              "Vous avez déjà laissé un avis. Renvoyez pour mettre à jour.",
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+        _buildStars(_noteUtilisateur,
+            onTap: (n) => setState(() => _noteUtilisateur = n)),
+        TextField(
+          controller: _avisController,
+          minLines: 3,
+          maxLines: 3,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => _envoyerAvis(),
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: "Votre commentaire",
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.all(12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _neutralBorder),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _neutralBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _restoPrimary, width: 1.4),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ElevatedButton.icon(
+            onPressed: canSend ? _envoyerAvis : null,
+            icon: const Icon(Icons.send_rounded, size: 18),
+            label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _restoPrimary,
+              foregroundColor: _restoOnPrimary,
+              disabledBackgroundColor: _restoPrimary.withOpacity(0.35),
+              disabledForegroundColor: _restoOnPrimary.withOpacity(0.85),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+          ),
+        ),
 
         const SizedBox(height: 16),
       ],
@@ -695,25 +838,31 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ),
         ),
       ),
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 700),
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: showSkeleton
-                ? _buildSkeletonContent()
-                : (showNotFound
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 80),
-                          child: Text("Restaurant introuvable"),
-                        ),
-                      )
-                    : _buildRestoContent()),
+
+      // ✅ Tap partout = ferme le clavier
+      body: Listener(
+        onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 700),
+            padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: showSkeleton
+                  ? _buildSkeletonContent()
+                  : (showNotFound
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 80),
+                            child: Text("Restaurant introuvable"),
+                          ),
+                        )
+                      : _buildRestoContent()),
+            ),
           ),
         ),
       ),
+
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(

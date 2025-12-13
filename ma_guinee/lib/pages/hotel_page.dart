@@ -1,14 +1,19 @@
 // lib/pages/hotel_page.dart
+import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
 import 'hotel_detail_page.dart';
 
 // ⬇️ AppCache (SWR)
 import '../services/app_cache.dart';
-// ⬇️ NEW: centralisation de l’envoi vers la table `utilisateurs`
+// ⬇️ centralisation envoi position
 import '../services/geoloc_service.dart';
 
 class HotelPage extends StatefulWidget {
@@ -18,7 +23,8 @@ class HotelPage extends StatefulWidget {
   State<HotelPage> createState() => _HotelPageState();
 }
 
-class _HotelPageState extends State<HotelPage> {
+class _HotelPageState extends State<HotelPage>
+    with AutomaticKeepAliveClientMixin {
   // ===== Couleurs (Hôtels) — page spécifique =====
   static const Color hotelsPrimary = Color(0xFF264653);
   static const Color hotelsSecondary = Color(0xFF2A9D8F);
@@ -33,20 +39,25 @@ class _HotelPageState extends State<HotelPage> {
   static const String _CACHE_KEY = 'hotels_v1';
   static const Duration _CACHE_MAX_AGE = Duration(hours: 12);
 
-  // ✅ Cache mémoire global (pour affichage instantané quand on revient)
+  // ✅ Cache mémoire global (retour écran instant)
   static List<Map<String, dynamic>> _memoryCacheHotels = [];
+
+  // ✅ Hive persistant (instant même après relance)
+  static const String _hiveBoxName = 'hotels_box';
+  static const String _hiveKey = 'hotels_snapshot_v1';
 
   // Données
   List<Map<String, dynamic>> hotels = [];
   List<Map<String, dynamic>> filteredHotels = [];
 
   // État
-  bool _hasAnyCache = false; // sait si on a au moins un snapshot pour afficher
-  bool _syncing = false; // rafraîchissement en arrière-plan
+  bool _hasAnyCache = false;
+  bool _syncing = false;
 
-  // ⭐️ notes moyennes calculées en batch
+  // ⭐️ notes moyennes (batch)
   final Map<String, double> _avgByHotelId = {};
   final Map<String, int> _countByHotelId = {};
+  String? _lastRatingsKey;
 
   // Recherche
   String searchQuery = '';
@@ -60,16 +71,19 @@ class _HotelPageState extends State<HotelPage> {
   void initState() {
     super.initState();
 
-    // 0) Cache mémoire global (instantané, même session)
+    // 0) mémoire global (instant)
     if (_memoryCacheHotels.isNotEmpty) {
       hotels = List<Map<String, dynamic>>.from(_memoryCacheHotels);
       filteredHotels = hotels;
       _hasAnyCache = true;
     }
 
-    // 1) SWR classique (AppCache + réseau en arrière-plan)
-    _loadAll(); // ne bloque pas l’UI
+    // 1) cache disque (Hive/AppCache) + 2) sync réseau SWR
+    _loadAllSWR();
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   // ------- format prix (espaces) -------
   String _formatGNF(dynamic value) {
@@ -86,10 +100,9 @@ class _HotelPageState extends State<HotelPage> {
     }
     return buf.toString();
   }
-  // -------------------------------------
 
-  // ---------------- Localisation ----------------
-  Future<void> _getLocation() async {
+  // ---------------- Localisation (non bloquante) ----------------
+  Future<void> _getLocationNonBlocking() async {
     _position = null;
     _villeGPS = null;
     _locationDenied = false;
@@ -98,6 +111,15 @@ class _HotelPageState extends State<HotelPage> {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return;
 
+      // last known = instant
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _position = last;
+        unawaited(_resolveCity(last));
+        _recomputeDistancesAndSort();
+      }
+
+      // permission + position fraîche (en fond)
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -105,49 +127,43 @@ class _HotelPageState extends State<HotelPage> {
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         _locationDenied = true;
+        if (mounted) setState(() {});
         return;
       }
 
-      // Last known position = instantané
-      final last = await Geolocator.getLastKnownPosition();
-      if (last != null) _position = last;
-
-      // Position actuelle en arrière-plan (améliore précision)
       Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium)
           .then((pos) async {
         _position = pos;
-        try {
-          final placemarks =
-              await placemarkFromCoordinates(pos.latitude, pos.longitude);
-          if (placemarks.isNotEmpty) {
-            final p = placemarks.first;
-            final city = (p.locality?.isNotEmpty == true)
-                ? p.locality
-                : (p.subAdministrativeArea?.isNotEmpty == true
-                    ? p.subAdministrativeArea
-                    : null);
-            _villeGPS = city?.toLowerCase().trim();
-          }
-        } catch (_) {}
-        _recomputeDistancesAndSort(); // met à jour tri dès qu’on a mieux
+        unawaited(GeolocService.reportPosition(pos));
+        await _resolveCity(pos);
+        _recomputeDistancesAndSort();
       }).catchError((_) {});
-
-      // pousser la position côté serveur (silencieux)
-      try {
-        final used = _position;
-        if (used != null) await GeolocService.reportPosition(used);
-      } catch (_) {}
-    } catch (e) {
-      debugPrint('Erreur localisation hôtels: $e');
+    } catch (_) {
+      // silencieux
     }
+  }
+
+  Future<void> _resolveCity(Position pos) async {
+    try {
+      final placemarks =
+          await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final city = (p.locality?.isNotEmpty == true)
+            ? p.locality
+            : (p.subAdministrativeArea?.isNotEmpty == true
+                ? p.subAdministrativeArea
+                : null);
+        _villeGPS = city?.toLowerCase().trim();
+      }
+    } catch (_) {}
   }
 
   // ⚠️ On NE TOUCHE PAS à ta logique de distance
   double? _distanceMeters(
       double? lat1, double? lon1, double? lat2, double? lon2) {
-    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null)
       return null;
-    }
     const R = 6371000.0;
     double dLat = (lat2 - lat1) * (pi / 180);
     double dLon = (lon1 - lon2) * (pi / 180);
@@ -161,10 +177,10 @@ class _HotelPageState extends State<HotelPage> {
     return R * c;
   }
 
-  // ========= enrichissement distance + tri =========
-  Future<List<Map<String, dynamic>>> _enrichAndSort(
-      List<Map<String, dynamic>> list) async {
-    await _getLocation();
+  // ========= tri (villeGPS puis distance puis nom) =========
+  void _sortHotelsInPlace(List<Map<String, dynamic>> list) {
+    int byName(Map<String, dynamic> a, Map<String, dynamic> b) =>
+        (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
 
     if (_position != null) {
       for (final h in list) {
@@ -180,7 +196,6 @@ class _HotelPageState extends State<HotelPage> {
               (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
           final bSame =
               (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-
           if (aSame != bSame) return aSame ? -1 : 1;
 
           final ad = (a['_distance'] as double?);
@@ -188,9 +203,7 @@ class _HotelPageState extends State<HotelPage> {
           if (ad != null && bd != null) return ad.compareTo(bd);
           if (ad != null) return -1;
           if (bd != null) return 1;
-          return (a['nom'] ?? '')
-              .toString()
-              .compareTo((b['nom'] ?? '').toString());
+          return byName(a, b);
         });
       } else {
         list.sort((a, b) {
@@ -199,60 +212,84 @@ class _HotelPageState extends State<HotelPage> {
           if (ad != null && bd != null) return ad.compareTo(bd);
           if (ad != null) return -1;
           if (bd != null) return 1;
-          return (a['nom'] ?? '')
-              .toString()
-              .compareTo((b['nom'] ?? '').toString());
+          return byName(a, b);
         });
       }
     } else {
-      list.sort((a, b) =>
-          (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
+      list.sort(byName);
     }
-
-    return list;
   }
 
-  // --------- récupère moyennes ⭐️ en une requête ----------
-  Future<void> _preloadAverages(List<String> ids) async {
+  void _recomputeDistancesAndSort() {
+    if (hotels.isEmpty) return;
+    final list = hotels.map((e) => Map<String, dynamic>.from(e)).toList();
+    _sortHotelsInPlace(list);
+    hotels = list;
+    _filterHotels(searchQuery, setStateNow: true);
+  }
+
+  // --------- ⭐️ moyennes en batch (évite filtre OR énorme) ----------
+  Future<void> _preloadAveragesBatched(List<String> ids) async {
     _avgByHotelId.clear();
     _countByHotelId.clear();
     if (ids.isEmpty) return;
 
-    final orFilter = ids.map((id) => 'hotel_id.eq.$id').join(',');
-    final rows = await Supabase.instance.client
-        .from('avis_hotels')
-        .select('hotel_id, etoiles')
-        .or(orFilter);
+    final key = ids.join(',');
+    if (key == _lastRatingsKey) return;
+    _lastRatingsKey = key;
 
-    final list = List<Map<String, dynamic>>.from(rows);
-    final Map<String, double> sums = {};
-    final Map<String, int> counts = {};
-    for (final r in list) {
-      final id = (r['hotel_id'] ?? '').toString();
-      final n = (r['etoiles'] as num?)?.toDouble() ?? 0.0;
-      sums[id] = (sums[id] ?? 0.0) + n;
-      counts[id] = (counts[id] ?? 0) + 1;
-    }
-    for (final id in counts.keys) {
-      _avgByHotelId[id] = (sums[id]! / counts[id]!.clamp(1, 1 << 30));
-      _countByHotelId[id] = counts[id]!;
-    }
+    try {
+      const int batchSize = 20;
+      final Map<String, double> sums = {};
+      final Map<String, int> counts = {};
+
+      for (var i = 0; i < ids.length; i += batchSize) {
+        final batch = ids.sublist(i, min(i + batchSize, ids.length));
+        final orFilter = batch.map((id) => 'hotel_id.eq.$id').join(',');
+
+        final rows = await Supabase.instance.client
+            .from('avis_hotels')
+            .select('hotel_id, etoiles')
+            .or(orFilter);
+
+        final list = List<Map<String, dynamic>>.from(rows);
+        for (final r in list) {
+          final id = (r['hotel_id'] ?? '').toString();
+          final n = (r['etoiles'] as num?)?.toDouble() ?? 0.0;
+          if (id.isEmpty || n <= 0) continue;
+          sums[id] = (sums[id] ?? 0.0) + n;
+          counts[id] = (counts[id] ?? 0) + 1;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        for (final id in counts.keys) {
+          final c = counts[id] ?? 0;
+          final s = sums[id] ?? 0.0;
+          _avgByHotelId[id] = c > 0 ? (s / c) : 0.0;
+          _countByHotelId[id] = c;
+        }
+      });
+    } catch (_) {}
   }
 
-  void _filterHotels(String value) {
+  // ----------------- Filtre -----------------
+  void _filterHotels(String value, {bool setStateNow = false}) {
     final q = value.toLowerCase().trim();
-    setState(() {
-      searchQuery = value;
-      if (q.isEmpty) {
-        filteredHotels = hotels;
-      } else {
-        filteredHotels = hotels.where((hotel) {
-          final nom = (hotel['nom'] ?? '').toString().toLowerCase();
-          final ville = (hotel['ville'] ?? '').toString().toLowerCase();
-          return nom.contains(q) || ville.contains(q);
-        }).toList();
-      }
-    });
+    searchQuery = value;
+
+    if (q.isEmpty) {
+      filteredHotels = hotels;
+    } else {
+      filteredHotels = hotels.where((hotel) {
+        final nom = (hotel['nom'] ?? '').toString().toLowerCase();
+        final ville = (hotel['ville'] ?? '').toString().toLowerCase();
+        return nom.contains(q) || ville.contains(q);
+      }).toList();
+    }
+
+    if (setStateNow && mounted) setState(() {});
   }
 
   List<String> _imagesFrom(dynamic raw) {
@@ -263,7 +300,7 @@ class _HotelPageState extends State<HotelPage> {
 
   Widget _starsFor(double? avg) {
     final val = (avg ?? 0);
-    final filled = val.floor();
+    final filled = val.floor().clamp(0, 5);
     return Row(
       children: List.generate(5, (i) {
         final icon = i < filled ? Icons.star : Icons.star_border;
@@ -272,46 +309,99 @@ class _HotelPageState extends State<HotelPage> {
         ..add(
           Padding(
             padding: const EdgeInsets.only(left: 4),
-            child: Text(val == 0 ? '—' : val.toStringAsFixed(1),
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            child: Text(
+              val == 0 ? '—' : val.toStringAsFixed(1),
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
           ),
         ),
     );
   }
 
   // =======================
-  // CHARGEMENT SWR PRINCIPAL — instantané & sans gros spinner
+  // Hive snapshot helpers
   // =======================
-  Future<void> _loadAll({bool forceNetwork = false}) async {
-    // 1) Snapshot cache immédiat (AppCache) si pas forcé
-    if (!forceNetwork && !_hasAnyCache) {
-      final mem = AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
-      List<Map<String, dynamic>>? disk;
-      if (mem == null) {
-        disk = await AppCache.I
-            .getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+  List<Map<String, dynamic>>? _readHiveSnapshot() {
+    try {
+      if (!Hive.isBoxOpen(_hiveBoxName)) return null;
+      final box = Hive.box(_hiveBoxName);
+      final raw = box.get(_hiveKey);
+      if (raw is! Map) return null;
+
+      final ts = raw['ts'] as int?;
+      final data = raw['data'] as List?;
+      if (ts == null || data == null) return null;
+
+      final age = DateTime.now().millisecondsSinceEpoch - ts;
+      if (age > _CACHE_MAX_AGE.inMilliseconds) return null;
+
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeHiveSnapshot(List<Map<String, dynamic>> list) async {
+    try {
+      if (!Hive.isBoxOpen(_hiveBoxName)) return;
+      await Hive.box(_hiveBoxName).put(_hiveKey, {
+        'ts': DateTime.now().millisecondsSinceEpoch,
+        'data': list,
+      });
+    } catch (_) {}
+  }
+
+  // =======================
+  // CHARGEMENT SWR — instantané & sync réseau
+  // =======================
+  Future<void> _loadAllSWR({bool forceNetwork = false}) async {
+    // Ouvre Hive si nécessaire (non bloquant)
+    if (!Hive.isBoxOpen(_hiveBoxName)) {
+      unawaited(Hive.openBox(_hiveBoxName));
+    }
+
+    // 1) Snapshot cache (instant) si pas forcé
+    if (!forceNetwork) {
+      // a) mémoire global déjà appliquée initState
+      // b) Hive
+      if (!_hasAnyCache) {
+        final hiveSnap = _readHiveSnapshot();
+        if (hiveSnap != null && hiveSnap.isNotEmpty) {
+          hotels = hiveSnap;
+          _memoryCacheHotels = List<Map<String, dynamic>>.from(hiveSnap);
+          _hasAnyCache = true;
+          _filterHotels(searchQuery);
+          if (mounted) setState(() {});
+        }
       }
-      final snapshot = mem ?? disk;
 
-      if (snapshot != null) {
-        _hasAnyCache = true;
-
-        final snapClone =
-            snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
-        final enriched = await _enrichAndSort(snapClone);
-
-        hotels = enriched;
-        // ✅ met à jour le cache mémoire global
-        _memoryCacheHotels = List<Map<String, dynamic>>.from(enriched);
-
-        await _preloadAverages(
-            enriched.map((e) => e['id'].toString()).toList());
-        _filterHotels(searchQuery);
-        if (mounted) setState(() {});
+      // c) AppCache (mémoire/disque) si toujours rien
+      if (!_hasAnyCache) {
+        final mem =
+            AppCache.I.getListMemory(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+        List<Map<String, dynamic>>? disk;
+        if (mem == null) {
+          disk = await AppCache.I
+              .getListPersistent(_CACHE_KEY, maxAge: _CACHE_MAX_AGE);
+        }
+        final snapshot = mem ?? disk;
+        if (snapshot != null && snapshot.isNotEmpty) {
+          hotels = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+          _memoryCacheHotels = List<Map<String, dynamic>>.from(hotels);
+          _hasAnyCache = true;
+          _filterHotels(searchQuery);
+          if (mounted) setState(() {});
+        }
       }
     }
 
-    // 2) Réseau en arrière-plan (UI inchangée)
+    // 2) localisation en parallèle (ne bloque jamais l’UI)
+    unawaited(_getLocationNonBlocking());
+
+    // 3) réseau en arrière-plan (UI inchangée)
     try {
       if (mounted) setState(() => _syncing = true);
 
@@ -322,99 +412,51 @@ class _HotelPageState extends State<HotelPage> {
 
       final list = List<Map<String, dynamic>>.from(data);
 
-      final enriched = await _enrichAndSort(list);
+      // Affichage immédiat : tri nom (rapide)
+      list.sort((a, b) =>
+          (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
 
-      // Notes moyennes
-      await _preloadAverages(enriched.map((e) => e['id'].toString()).toList());
-
-      // Met à jour l'écran (sans bloquer)
-      hotels = enriched;
-      _memoryCacheHotels =
-          List<Map<String, dynamic>>.from(enriched); // ✅ mémoire globale
+      hotels = list;
+      _memoryCacheHotels = List<Map<String, dynamic>>.from(list);
+      _hasAnyCache = true;
       _filterHotels(searchQuery);
 
-      // Persist cache (retire champs volatils)
-      final toCache = enriched
-          .map((h) {
-            final clone = Map<String, dynamic>.from(h);
-            clone.remove('_distance');
-            return clone;
-          })
-          .toList(growable: false)
-          .cast<Map<String, dynamic>>();
+      if (mounted) setState(() {});
+
+      // Après affichage : tri distance/ville si on a position
+      _recomputeDistancesAndSort();
+
+      // Notes moyennes (après rendu)
+      final ids = hotels
+          .map((e) => (e['id'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      unawaited(_preloadAveragesBatched(ids));
+
+      // Persist caches (sans _distance)
+      final toCache = hotels.map((h) {
+        final clone = Map<String, dynamic>.from(h);
+        clone.remove('_distance');
+        return clone;
+      }).toList(growable: false);
 
       AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
-
-      if (mounted) setState(() => _hasAnyCache = true);
-    } catch (e) {
-      if (mounted && !_hasAnyCache) {
-        // cold start sans cache => on reste sur skeleton + snack discret
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Réseau lent — affichage du squelette. ($e)'),
-          ),
-        );
-      }
+      await _writeHiveSnapshot(toCache);
+    } catch (_) {
+      // silencieux : si cache présent, on ne gêne pas
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
   }
 
-  void _recomputeDistancesAndSort() {
-    if (hotels.isEmpty) return;
-    // recompute
-    if (_position != null) {
-      for (final h in hotels) {
-        final lat = (h['latitude'] as num?)?.toDouble();
-        final lon = (h['longitude'] as num?)?.toDouble();
-        h['_distance'] = _distanceMeters(
-            _position!.latitude, _position!.longitude, lat, lon);
-      }
-    }
-    // sort
-    if ((_villeGPS ?? '').isNotEmpty && _position != null) {
-      hotels.sort((a, b) {
-        final aSame =
-            (a['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-        final bSame =
-            (b['ville'] ?? '').toString().toLowerCase().trim() == _villeGPS;
-        if (aSame != bSame) return aSame ? -1 : 1;
-
-        final ad = (a['_distance'] as double?);
-        final bd = (b['_distance'] as double?);
-        if (ad != null && bd != null) return ad.compareTo(bd);
-        if (ad != null) return -1;
-        if (bd != null) return 1;
-        return (a['nom'] ?? '')
-            .toString()
-            .compareTo((b['nom'] ?? '').toString());
-      });
-    } else if (_position != null) {
-      hotels.sort((a, b) {
-        final ad = (a['_distance'] as double?);
-        final bd = (b['_distance'] as double?);
-        if (ad != null && bd != null) return ad.compareTo(bd);
-        if (ad != null) return -1;
-        if (bd != null) return 1;
-        return (a['nom'] ?? '')
-            .toString()
-            .compareTo((b['nom'] ?? '').toString());
-      });
-    } else {
-      hotels.sort((a, b) =>
-          (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
-    }
-    _filterHotels(searchQuery);
-  }
-
-  // ---------- Skeleton grid (aucun spinner) ----------
+  // ---------- Skeleton grid (aucun spinner global) ----------
   Widget _skeletonGrid(BuildContext context) {
     final media = MediaQuery.of(context);
     final screenW = media.size.width;
     final crossCount = screenW < 600
         ? max(2, (screenW / 200).floor())
         : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 0;
+    final totalHGap = (crossCount - 1) * 8.0;
     final itemW = (screenW - totalHGap - 28) / crossCount;
     final itemH = itemW * (11 / 16) + 118.0;
     final ratio = itemW / itemH;
@@ -435,19 +477,23 @@ class _HotelPageState extends State<HotelPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     // clamp léger du textScale
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
 
-    // grille responsive serrée
+    // grille responsive
     final screenW = media.size.width;
     final crossCount = screenW < 600
         ? max(2, (screenW / 200).floor())
         : max(3, (screenW / 240).floor());
-    final totalHGap = (crossCount - 1) * 8.0 + 0;
+    final totalHGap = (crossCount - 1) * 8.0;
     final itemW = (screenW - totalHGap - 28) / crossCount;
     final itemH = itemW * (11 / 16) + 118.0;
     final ratio = itemW / itemH;
+
+    final coldStart = !_hasAnyCache && hotels.isEmpty;
 
     return MediaQuery(
       data: media.copyWith(textScaleFactor: mf.toDouble()),
@@ -462,9 +508,7 @@ class _HotelPageState extends State<HotelPage> {
               const Text(
                 'Hôtels',
                 style: TextStyle(
-                  color: hotelsPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
+                    color: hotelsPrimary, fontWeight: FontWeight.bold),
               ),
               if (_syncing) const SizedBox(width: 8),
               if (_syncing)
@@ -479,8 +523,7 @@ class _HotelPageState extends State<HotelPage> {
             IconButton(
               icon: const Icon(Icons.refresh, color: hotelsPrimary),
               tooltip: 'Rafraîchir',
-              onPressed: () => _loadAll(
-                  forceNetwork: true), // instantané, UI conserve la grille
+              onPressed: () => _loadAllSWR(forceNetwork: true),
             ),
           ],
           bottom: const PreferredSize(
@@ -499,10 +542,8 @@ class _HotelPageState extends State<HotelPage> {
             ),
           ),
         ),
-        body: (!_hasAnyCache && !_syncing)
-            // Cold start sans cache => skeleton (aucun spinner global)
+        body: coldStart
             ? _skeletonGrid(context)
-            // Sinon, affiche la grille instantanément.
             : (hotels.isEmpty
                 ? const Center(child: Text("Aucun hôtel trouvé."))
                 : Padding(
@@ -540,6 +581,7 @@ class _HotelPageState extends State<HotelPage> {
                             ),
                           ),
                         ),
+
                         // Barre de recherche
                         TextField(
                           decoration: InputDecoration(
@@ -564,7 +606,7 @@ class _HotelPageState extends State<HotelPage> {
                             filled: true,
                             fillColor: neutralSurface,
                           ),
-                          onChanged: _filterHotels,
+                          onChanged: (v) => setState(() => _filterHotels(v)),
                         ),
                         const SizedBox(height: 10),
 
@@ -581,7 +623,7 @@ class _HotelPageState extends State<HotelPage> {
                             ),
                           ),
 
-                        // Grille d'hôtels
+                        // Grille
                         Expanded(
                           child: filteredHotels.isEmpty
                               ? const Center(child: Text("Aucun hôtel trouvé."))
@@ -624,30 +666,32 @@ class _HotelPageState extends State<HotelPage> {
                                           context,
                                           MaterialPageRoute(
                                             builder: (_) => HotelDetailPage(
-                                              hotelId: hotel['id'],
-                                            ),
+                                                hotelId: hotel['id']),
                                           ),
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            // Image 16:11 nette avec fade-in + badge ville
+                                            // Image premium 16:11 + badge ville
                                             Expanded(
                                               child: LayoutBuilder(
                                                 builder: (ctx, c) {
+                                                  final dpr = MediaQuery.of(ctx)
+                                                      .devicePixelRatio;
                                                   final w = c.maxWidth;
                                                   final h = w * (11 / 16);
+
                                                   return Stack(
                                                     fit: StackFit.expand,
                                                     children: [
-                                                      _FadeInNetworkImage(
+                                                      _HotelCachedImage(
                                                         url: image,
-                                                        cacheWidth: w.isFinite
-                                                            ? (w * 2).round()
+                                                        memW: w.isFinite
+                                                            ? (w * dpr).round()
                                                             : null,
-                                                        cacheHeight: h.isFinite
-                                                            ? (h * 2).round()
+                                                        memH: h.isFinite
+                                                            ? (h * dpr).round()
                                                             : null,
                                                       ),
                                                       if ((hotel['ville'] ?? '')
@@ -660,9 +704,10 @@ class _HotelPageState extends State<HotelPage> {
                                                             padding:
                                                                 const EdgeInsets
                                                                     .symmetric(
-                                                              horizontal: 8,
-                                                              vertical: 4,
-                                                            ),
+                                                                    horizontal:
+                                                                        8,
+                                                                    vertical:
+                                                                        4),
                                                             decoration:
                                                                 BoxDecoration(
                                                               color: hotelsPrimary
@@ -679,29 +724,32 @@ class _HotelPageState extends State<HotelPage> {
                                                                       .min,
                                                               children: [
                                                                 const Icon(
-                                                                  Icons
-                                                                      .location_on,
-                                                                  size: 14,
-                                                                  color: Colors
-                                                                      .white,
-                                                                ),
+                                                                    Icons
+                                                                        .location_on,
+                                                                    size: 14,
+                                                                    color: Colors
+                                                                        .white),
                                                                 const SizedBox(
                                                                     width: 4),
-                                                                Text(
-                                                                  (hotel['ville'] ??
-                                                                          '')
-                                                                      .toString(),
-                                                                  style:
-                                                                      const TextStyle(
-                                                                    color: Colors
-                                                                        .white,
-                                                                    fontSize:
-                                                                        12,
+                                                                ConstrainedBox(
+                                                                  constraints:
+                                                                      const BoxConstraints(
+                                                                          maxWidth:
+                                                                              140),
+                                                                  child: Text(
+                                                                    (hotel['ville'] ??
+                                                                            '')
+                                                                        .toString(),
+                                                                    style: const TextStyle(
+                                                                        color: Colors
+                                                                            .white,
+                                                                        fontSize:
+                                                                            12),
+                                                                    maxLines: 1,
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
                                                                   ),
-                                                                  maxLines: 1,
-                                                                  overflow:
-                                                                      TextOverflow
-                                                                          .ellipsis,
                                                                 ),
                                                               ],
                                                             ),
@@ -729,12 +777,12 @@ class _HotelPageState extends State<HotelPage> {
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
+                                                        fontWeight:
+                                                            FontWeight.w700),
                                                   ),
                                                   const SizedBox(height: 4),
-                                                  // ⭐️ Note moyenne
+
+                                                  // ⭐️ note moyenne
                                                   Row(
                                                     children: [
                                                       _starsFor(avg),
@@ -743,14 +791,14 @@ class _HotelPageState extends State<HotelPage> {
                                                           '  ($count)',
                                                           style:
                                                               const TextStyle(
-                                                            fontSize: 11,
-                                                            color:
-                                                                Colors.black45,
-                                                          ),
+                                                                  fontSize: 11,
+                                                                  color: Colors
+                                                                      .black45),
                                                         ),
                                                     ],
                                                   ),
                                                   const SizedBox(height: 4),
+
                                                   // Ville + distance
                                                   Row(
                                                     children: [
@@ -763,34 +811,33 @@ class _HotelPageState extends State<HotelPage> {
                                                               .ellipsis,
                                                           style:
                                                               const TextStyle(
-                                                            color: Colors.grey,
-                                                            fontSize: 13,
-                                                          ),
+                                                                  color: Colors
+                                                                      .grey,
+                                                                  fontSize: 13),
                                                         ),
                                                       ),
                                                       if (hotel.containsKey(
                                                               '_distance') &&
                                                           hotel['_distance'] !=
                                                               null) ...[
-                                                        const Text(
-                                                          '  •  ',
-                                                          style: TextStyle(
-                                                            color: Colors.grey,
-                                                            fontSize: 13,
-                                                          ),
-                                                        ),
+                                                        const Text('  •  ',
+                                                            style: TextStyle(
+                                                                color:
+                                                                    Colors.grey,
+                                                                fontSize: 13)),
                                                         Text(
                                                           '${(hotel['_distance'] / 1000).toStringAsFixed(1)} km',
                                                           style:
                                                               const TextStyle(
-                                                            color: Colors.grey,
-                                                            fontSize: 13,
-                                                          ),
+                                                                  color: Colors
+                                                                      .grey,
+                                                                  fontSize: 13),
                                                         ),
                                                       ],
                                                     ],
                                                   ),
-                                                  // Prix — toujours "GNF / nuit"
+
+                                                  // Prix
                                                   if ((hotel['prix'] ?? '')
                                                       .toString()
                                                       .isNotEmpty)
@@ -826,66 +873,41 @@ class _HotelPageState extends State<HotelPage> {
   }
 }
 
-// ----------------- Image réseau avec fade-in + placeholder gris (sans spinner) -----------------
-class _FadeInNetworkImage extends StatefulWidget {
+// ----------------- Cached image premium (sans spinner) -----------------
+class _HotelCachedImage extends StatelessWidget {
   final String url;
-  final int? cacheWidth;
-  final int? cacheHeight;
+  final int? memW;
+  final int? memH;
 
-  const _FadeInNetworkImage({
+  const _HotelCachedImage({
     required this.url,
-    this.cacheWidth,
-    this.cacheHeight,
+    this.memW,
+    this.memH,
   });
 
   @override
-  State<_FadeInNetworkImage> createState() => _FadeInNetworkImageState();
-}
-
-class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 180),
-  );
-  late final Animation<double> _fade =
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl.value = 0;
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Image.network(
-      widget.url,
-      fit: BoxFit.cover,
-      cacheWidth: widget.cacheWidth,
-      cacheHeight: widget.cacheHeight,
-      // ✅ aucun spinner : simple bloc gris pendant le chargement
-      loadingBuilder: (ctx, child, ev) {
-        if (ev == null) {
-          _ctrl.forward();
-          return FadeTransition(opacity: _fade, child: child);
-        }
-        return Container(color: Colors.grey.shade200);
-      },
-      errorBuilder: (_, __, ___) => Container(
+    final u = url.trim();
+    return CachedNetworkImage(
+      imageUrl: u,
+      cacheKey: u,
+      memCacheWidth: memW,
+      memCacheHeight: memH,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholderFadeInDuration: Duration.zero,
+      useOldImageOnUrlChange: true,
+      imageBuilder: (_, provider) => Image(
+        image: provider,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.low,
+      ),
+      placeholder: (_, __) => Container(color: Colors.grey.shade200),
+      errorWidget: (_, __, ___) => Container(
         color: Colors.grey.shade200,
         alignment: Alignment.center,
-        child: Icon(
-          Icons.broken_image,
-          size: 40,
-          color: Colors.grey.shade500,
-        ),
+        child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade500),
       ),
     );
   }
@@ -910,7 +932,9 @@ class _HotelSkeletonCard extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 16 / 11,
-            child: Container(color: Colors.grey.shade200),
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: Color(0xFFE5E7EB)),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
@@ -918,22 +942,13 @@ class _HotelSkeletonCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  height: 14,
-                  width: 140,
-                  color: Colors.grey.shade200,
-                ),
+                    height: 14, width: 140, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
                 Container(
-                  height: 12,
-                  width: 90,
-                  color: Colors.grey.shade200,
-                ),
+                    height: 12, width: 90, color: const Color(0xFFE5E7EB)),
                 const SizedBox(height: 6),
                 Container(
-                  height: 12,
-                  width: 120,
-                  color: Colors.grey.shade200,
-                ),
+                    height: 12, width: 120, color: const Color(0xFFE5E7EB)),
               ],
             ),
           ),
