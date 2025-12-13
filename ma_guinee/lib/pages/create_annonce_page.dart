@@ -8,6 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// ✅ Compression (module qu’on vient de faire)
+import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
+
 // ===== PALETTE FIXE (rouge doux, cohérente avec les autres pages) =====
 const Color annoncesPrimary = Color(0xFFD92D20); // rouge doux (actions)
 const Color annoncesSecondary = Color(0xFFFFF1F1); // fond très léger
@@ -23,53 +26,38 @@ const Color _text2 = Color(0xFF6B7280);
 
 // ===== Toutes les principales villes / préfectures de Guinée =====
 const List<String> _guineaCities = [
-  // Conakry (ville)
   'Conakry - Kaloum',
   'Conakry - Dixinn',
   'Conakry - Ratoma',
   'Conakry - Matam',
   'Conakry - Matoto',
-
-  // Région de Kindia
   'Kindia - Kindia',
   'Kindia - Coyah',
   'Kindia - Dubréka',
   'Kindia - Forécariah',
   'Kindia - Télimélé',
-
-  // Région de Boké
   'Boké - Boké',
   'Boké - Kamsar',
   'Boké - Boffa',
   'Boké - Fria',
   'Boké - Gaoual',
   'Boké - Koundara',
-
-  // Région de Labé
   'Labé - Labé',
   'Labé - Lélouma',
   'Labé - Mali',
   'Labé - Tougué',
   'Labé - Koubia',
-
-  // Région de Mamou
   'Mamou - Mamou',
   'Mamou - Pita',
   'Mamou - Dalaba',
-
-  // Région de Faranah
   'Faranah - Faranah',
   'Faranah - Dabola',
   'Faranah - Dinguiraye',
   'Faranah - Kissidougou',
-
-  // Région de Kankan
   'Kankan - Kankan',
   'Kankan - Kouroussa',
   'Kankan - Siguiri',
   'Kankan - Mandiana',
-
-  // Région de Nzérékoré
   'Nzérékoré - Nzérékoré',
   'Nzérékoré - Beyla',
   'Nzérékoré - Lola',
@@ -93,15 +81,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _prixController = TextEditingController();
   final _telephoneController = TextEditingController();
 
-  // Ville saisie (utilisée par Autocomplete)
   String _ville = '';
 
   final List<XFile> _images = [];
   final ImagePicker _picker = ImagePicker();
 
   bool _loading = false;
-  int?
-      _selectedCategoryId; // <- reste NULL tant que l'utilisateur n'a pas choisi
+  int? _selectedCategoryId;
   List<Map<String, dynamic>> _categories = [];
 
   @override
@@ -121,10 +107,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     super.dispose();
   }
 
-  // Formatage live du prix : chiffres uniquement + points tous les mille
   void _onPrixChanged() {
     final text = _prixController.text;
-    // On ne garde que les chiffres
     final digits = text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.isEmpty) {
       if (text.isEmpty) return;
@@ -138,9 +122,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final value = int.tryParse(digits);
     if (value == null) return;
 
-    final formatted = NumberFormat('#,##0', 'en_US')
-        .format(value)
-        .replaceAll(',', '.'); // 1000 -> 1.000
+    final formatted =
+        NumberFormat('#,##0', 'en_US').format(value).replaceAll(',', '.');
 
     if (formatted == text) return;
 
@@ -154,16 +137,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final response = await Supabase.instance.client.from('categories').select();
     setState(() {
       _categories = List<Map<String, dynamic>>.from(response);
-      // NE PAS pré-remplir : on laisse _selectedCategoryId == null
     });
   }
 
-  // — Icônes de catégories (mêmes pictos que la page principale)
   IconData _iconForCategory(String name) {
     final n = name.toLowerCase();
     if (n.contains('immobilier')) return Icons.home_work_outlined;
-    if (n.contains('véhicule') || n.contains('vehicule') || n.contains('auto'))
+    if (n.contains('véhicule') ||
+        n.contains('vehicule') ||
+        n.contains('auto')) {
       return Icons.directions_car;
+    }
     if (n.contains('vacance') || n.contains('voyage'))
       return Icons.beach_access;
     if (n.contains('emploi') || n.contains('job') || n.contains('travail')) {
@@ -173,20 +157,23 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     if (n.contains('famille')) return Icons.family_restroom;
     if (n.contains('électronique') ||
         n.contains('electronique') ||
-        n.contains('tech')) return Icons.devices_other;
+        n.contains('tech')) {
+      return Icons.devices_other;
+    }
     if (n.contains('mode')) return Icons.checkroom;
     if (n.contains('loisir') || n.contains('sport')) return Icons.sports_soccer;
     if (n.contains('animal')) return Icons.pets;
     if (n.contains('maison') || n.contains('jardin')) return Icons.chair_alt;
-    if (n.contains('matériel') || n.contains('materiel') || n.contains('pro'))
+    if (n.contains('matériel') || n.contains('materiel') || n.contains('pro')) {
       return Icons.build;
+    }
     if (n.contains('autre')) return Icons.category;
     return Icons.category_outlined;
   }
 
   Future<void> _pickImages() async {
     final picked = await _picker.pickMultiImage();
-    if (picked != null && picked.isNotEmpty) {
+    if (picked.isNotEmpty) {
       setState(() => _images.addAll(picked));
     }
   }
@@ -232,23 +219,46 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
   }
 
+  // ✅ Upload + compression (mobile + web + desktop via ton module)
   Future<List<String>> _uploadImages() async {
     final storage = Supabase.instance.client.storage.from('annonce-photos');
+
+    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'anon';
     final List<String> urls = [];
-    for (final file in _images) {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      if (kIsWeb) {
-        final bytes = await file.readAsBytes();
-        await storage.uploadBinary(fileName, bytes);
-      } else {
-        await storage.upload(fileName, File(file.path));
-      }
-      urls.add(storage.getPublicUrl(fileName));
+
+    for (int i = 0; i < _images.length; i++) {
+      final file = _images[i];
+
+      // bytes originaux
+      final rawBytes = await file.readAsBytes();
+
+      // ✅ compression prod
+      final c = await ImageCompressor.compressBytes(
+        rawBytes,
+        maxSide: 1600,
+        quality: 82,
+        maxBytes: 900 * 1024,
+        keepPngIfTransparent: true,
+      );
+
+      final nameBase = DateTime.now().microsecondsSinceEpoch;
+      final objectPath = 'annonces/$userId/${nameBase}_$i.${c.extension}';
+
+      await storage.uploadBinary(
+        objectPath,
+        c.bytes,
+        fileOptions: FileOptions(
+          contentType: c.contentType,
+          upsert: true,
+        ),
+      );
+
+      urls.add(storage.getPublicUrl(objectPath));
     }
+
     return urls;
   }
 
-  // Normalisation du numéro au format Guinée (+224XXXXXXXXX)
   String? _normalizeGuineaPhone(String input) {
     final digits = input.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return null;
@@ -260,20 +270,20 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       d = d.substring(3);
     }
 
-    // On attend 9 chiffres pour le numéro local (ex : 620000000)
     if (d.length != 9) return null;
-
     return '+224$d';
   }
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
+
     if (_images.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Ajoutez au moins une photo")),
       );
       return;
     }
+
     if (_selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Choisissez une catégorie")),
@@ -301,8 +311,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       final data = {
         'titre': _titreController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'prix': prix, // GNF
-        'telephone': normalizedPhone, // +224XXXXXXXXX
+        'prix': prix,
+        'telephone': normalizedPhone,
         'ville': _ville.trim(),
         'categorie_id': _selectedCategoryId,
         'images': uploadedUrls,
@@ -326,7 +336,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   }
 
   InputDecoration _input(String label, {IconData? icon}) {
-    // Icône grise; seul l’état "focus" utilise la bordure rouge
     return InputDecoration(
       labelText: label,
       prefixIcon: icon != null ? Icon(icon, color: _text2) : null,
@@ -359,7 +368,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         title: const Text(
           'Déposer une annonce',
           style: TextStyle(
-            color: _text, // titre neutre (pas rouge)
+            color: _text,
             fontWeight: FontWeight.bold,
             fontSize: 21,
           ),
@@ -373,7 +382,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    // TITRE
                     TextFormField(
                       controller: _titreController,
                       decoration: _input('Titre', icon: Icons.edit_outlined),
@@ -382,8 +390,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                           : null,
                     ),
                     const SizedBox(height: 16),
-
-                    // DESCRIPTION
                     TextFormField(
                       controller: _descriptionController,
                       maxLines: 4,
@@ -394,28 +400,21 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                           : null,
                     ),
                     const SizedBox(height: 16),
-
-                    // PRIX (GNF, chiffres + points)
                     TextFormField(
                       controller: _prixController,
                       keyboardType: TextInputType.number,
-                      decoration: _input('Prix (GNF)'), // pas d’icône dollar
+                      decoration: _input('Prix (GNF)'),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Indiquez un prix'
                           : null,
                     ),
                     const SizedBox(height: 16),
-
-                    // VILLE — Autocomplete sur les villes de Guinée
                     Autocomplete<String>(
                       optionsBuilder: (TextEditingValue value) {
-                        if (value.text.isEmpty) {
-                          return _guineaCities;
-                        }
+                        if (value.text.isEmpty) return _guineaCities;
                         final query = value.text.toLowerCase();
                         return _guineaCities.where(
-                          (city) => city.toLowerCase().contains(query),
-                        );
+                            (city) => city.toLowerCase().contains(query));
                       },
                       onSelected: (String selection) {
                         _ville = selection;
@@ -440,9 +439,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                             elevation: 4,
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(
-                                maxHeight: 220,
-                                maxWidth: 600,
-                              ),
+                                  maxHeight: 220, maxWidth: 600),
                               child: ListView.builder(
                                 padding: EdgeInsets.zero,
                                 itemCount: options.length,
@@ -460,8 +457,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                       },
                     ),
                     const SizedBox(height: 16),
-
-                    // SENSIBILISATION NUMÉRO
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 8),
@@ -470,8 +465,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                         color: annoncesSecondary,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: annoncesPrimary.withOpacity(0.15),
-                        ),
+                            color: annoncesPrimary.withOpacity(0.15)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,47 +480,33 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                               "vous n’êtes pas connecté(e) à Soneya. Utilisez un "
                               "numéro guinéen actif que vous consultez régulièrement.",
                               style: TextStyle(
-                                color: _text2,
-                                fontSize: 12.5,
-                                height: 1.3,
-                              ),
+                                  color: _text2, fontSize: 12.5, height: 1.3),
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    // TÉLÉPHONE – pavé numérique uniquement
                     TextFormField(
                       controller: _telephoneController,
-                      keyboardType: TextInputType.number, // pavé numérique
-                      inputFormatters: [
-                        FilteringTextInputFormatter
-                            .digitsOnly, // chiffres uniquement
-                      ],
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration:
                           _input('Téléphone (Guinée)', icon: Icons.phone),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
+                        if (v == null || v.trim().isEmpty)
                           return 'Entrez un numéro';
-                        }
                         return _normalizeGuineaPhone(v) == null
                             ? 'Entrez un numéro guinéen valide'
                             : null;
                       },
                     ),
-
                     const SizedBox(height: 16),
-
-                    // CATÉGORIE (PAS PRÉ-REMPLIE + icône dans les options)
                     DropdownButtonFormField<int>(
-                      value: _selectedCategoryId, // reste null par défaut
+                      value: _selectedCategoryId,
                       decoration:
                           _input('Catégorie', icon: Icons.category_outlined),
-                      hint: const Text(
-                        'Choisissez une catégorie',
-                        style: TextStyle(color: _text2),
-                      ),
+                      hint: const Text('Choisissez une catégorie',
+                          style: TextStyle(color: _text2)),
                       validator: (v) =>
                           (v == null) ? 'Choisissez une catégorie' : null,
                       items: _categories.map((cat) {
@@ -535,16 +515,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                           value: cat['id'] as int,
                           child: Row(
                             children: [
-                              Icon(
-                                _iconForCategory(nom),
-                                size: 18,
-                                color: _text2,
-                              ),
+                              Icon(_iconForCategory(nom),
+                                  size: 18, color: _text2),
                               const SizedBox(width: 8),
-                              Text(
-                                nom,
-                                style: const TextStyle(color: _text),
-                              ),
+                              Text(nom, style: const TextStyle(color: _text)),
                             ],
                           ),
                         );
@@ -553,16 +527,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                           setState(() => _selectedCategoryId = val),
                     ),
                     const SizedBox(height: 24),
-
-                    // PHOTOS
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
                         "Photos",
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _text,
-                        ),
+                            fontWeight: FontWeight.bold, color: _text),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -582,17 +552,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                                   child: const CircleAvatar(
                                     radius: 13,
                                     backgroundColor: annoncesPrimary,
-                                    child: Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
+                                    child: Icon(Icons.close,
+                                        size: 16, color: Colors.white),
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                        // Ajout photo
                         InkWell(
                           onTap: _pickImages,
                           child: Container(
@@ -603,18 +569,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                               borderRadius: BorderRadius.circular(13),
                               color: annoncesSecondary,
                             ),
-                            child: const Icon(
-                              Icons.add_a_photo,
-                              size: 28,
-                              color: annoncesPrimary,
-                            ),
+                            child: const Icon(Icons.add_a_photo,
+                                size: 28, color: annoncesPrimary),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 32),
-
-                    // BOUTON
                     ElevatedButton.icon(
                       onPressed: _submitForm,
                       icon: const Icon(Icons.send),
@@ -623,12 +584,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
                         backgroundColor: annoncesPrimary,
                         foregroundColor: annoncesOnPrimary,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 38,
-                          vertical: 16,
-                        ),
+                            horizontal: 38, vertical: 16),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(17),
-                        ),
+                            borderRadius: BorderRadius.circular(17)),
                       ),
                     ),
                   ],

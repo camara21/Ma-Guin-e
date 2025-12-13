@@ -1,4 +1,5 @@
 // lib/routes.dart — Routes + RecoveryGuard
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -154,7 +155,6 @@ class AppRoutes {
   static const String billetterieDetail = '/billetterie/detail';
   static const String myTickets = '/mes_billets';
   static const String scanner = '/scanner';
-  // Espace organisateur (facultatif mais utile)
   static const String billetteriePro = '/billetterie/pro';
   static const String billetterieVentes = '/billetterie/pro/ventes';
   // ===================================
@@ -178,22 +178,18 @@ class AppRoutes {
   static const String resetPassword = '/reset_password';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
-    // Normalisation du nom de route
     final String name = settings.name ?? '';
 
-    // ✅ Cas spécial : lien de réinitialisation Supabase sur mobile/web
-    // Exemple: "/reset_password?code=...&type=recovery"
+    // ✅ Cas spécial : lien de réinitialisation Supabase
     if (name.startsWith(resetPassword)) {
-      return _page(const ResetPasswordPage());
+      return _page(settings, const ResetPasswordPage());
     }
 
     switch (name) {
       // ----- ADMIN CENTER -----
       case adminCenter:
         RecoveryGuard.deactivate();
-        return MaterialPageRoute(
-          builder: (_) => const AdminGate(child: AdminDashboard()),
-        );
+        return _page(settings, const AdminGate(child: AdminDashboard()));
 
       case adminManage:
         {
@@ -204,61 +200,58 @@ class AppRoutes {
           final title = (a['title']?.toString().trim().isNotEmpty == true)
               ? a['title'].toString()
               : _prettyServiceName(table);
-          return MaterialPageRoute(
-            builder: (_) => AdminGate(
-                child: ContentAdvancedPage(title: title, table: table)),
+          return _page(
+            settings,
+            AdminGate(child: ContentAdvancedPage(title: title, table: table)),
           );
         }
 
       // ----- CORE -----
       case splash:
-        return _page(const SplashScreen());
+        return _page(settings, const SplashScreen());
       case welcome:
-        {
-          RecoveryGuard.deactivate();
-          return _page(const WelcomePage());
-        }
+        RecoveryGuard.deactivate();
+        return _page(settings, const WelcomePage());
       case mainNav:
-        {
-          RecoveryGuard.deactivate();
-          return _page(const MainNavigationPage());
-        }
+        RecoveryGuard.deactivate();
+        return _page(settings, const MainNavigationPage());
       case home:
-        {
-          RecoveryGuard.deactivate();
-          return _page(const HomePage());
-        }
+        RecoveryGuard.deactivate();
+        return _page(settings, const HomePage());
 
       // ----- EXISTANTS -----
       case annonces:
-        return _page(const AnnoncesPage());
+        return _page(settings, const AnnoncesPage());
       case pro:
-        return _page(const ProPage());
+        return _page(settings, const ProPage());
       case carte:
-        return _page(const CartePage());
+        return _page(settings, const CartePage());
       case divertissement:
-        return _page(const DivertissementPage());
+        return _page(settings, const DivertissementPage());
       case admin:
-        return _page(const AdminPage());
+        return _page(settings, const AdminPage());
       case resto:
-        return _page(const resto_pg.RestoPage());
+        return _page(settings, const resto_pg.RestoPage());
       case culte:
-        return _page(const CultePage());
+        return _page(settings, const CultePage());
 
       // ----- LOGEMENT -----
       case logement:
-        return _page(const LogementHomePage());
+        return _page(settings, const LogementHomePage());
       case logementList:
         {
           final a = _argsMap(settings);
           final String? q = a['q'] as String?;
           final LogementMode mode = _parseMode(a['mode']);
           final LogementCategorie? cat = _parseCategorieOrNull(a['categorie']);
-          return _page(LogementListPage(
-            initialQuery: q,
-            initialMode: mode,
-            initialCategorie: cat ?? LogementCategorie.autres,
-          ));
+          return _page(
+            settings,
+            LogementListPage(
+              initialQuery: q,
+              initialMode: mode,
+              initialCategorie: cat ?? LogementCategorie.autres,
+            ),
+          );
         }
       case logementDetail:
         {
@@ -266,18 +259,20 @@ class AppRoutes {
           final id =
               (a is String) ? a : (a is Map ? (a['id']?.toString()) : null);
           if (id == null || id.isEmpty) {
-            return _error('ID requis pour $logementDetail');
+            return _error(settings, 'ID requis pour $logementDetail');
           }
-          return _page(LogementDetailPage(logementId: id));
+          return _page(settings, LogementDetailPage(logementId: id));
         }
       case logementEdit:
         {
           final a = _argsMap(settings);
           final existing = a['existing'];
           if (existing != null && existing is! LogementModel) {
-            return _error('Argument "existing" invalide pour $logementEdit');
+            return _error(
+                settings, 'Argument "existing" invalide pour $logementEdit');
           }
           return _userProtected(
+            settings,
             (_) => LogementEditPage(existing: existing as LogementModel?),
           );
         }
@@ -290,8 +285,9 @@ class AppRoutes {
             return double.tryParse(v.toString());
           }
 
-          return MaterialPageRoute(
-            builder: (_) => LogementMapPage(
+          return _page(
+            settings,
+            LogementMapPage(
               ville: a['ville'] as String?,
               commune: a['commune'] as String?,
               focusId: a['id']?.toString(),
@@ -306,51 +302,55 @@ class AppRoutes {
 
       // ----- AUTH / PROFIL / DIVERS -----
       case login:
-        {
-          RecoveryGuard.deactivate();
-          return _page(const LoginPage());
-        }
+        RecoveryGuard.deactivate();
+        return _page(settings, const LoginPage());
       case register:
-        return _page(const register_pg.RegisterPage());
+        return _page(settings, const register_pg.RegisterPage());
       case tourisme:
-        return _page(const TourismePage());
+        return _page(settings, const TourismePage());
       case sante:
-        return _page(const SantePage());
+        return _page(settings, const SantePage());
       case hotel:
-        return _page(const HotelPage());
+        return _page(settings, const HotelPage());
       case notifications:
-        return _page(const NotificationsPage());
+        return _page(settings, const NotificationsPage());
       case profil:
-        return _userProtected((u) => ProfilePage(user: u));
+        return _userProtected(settings, (u) => ProfilePage(user: u));
 
-      // Paramètres
       case parametre:
-        return _userProtected((u) => ParametrePage(user: u));
+        return _userProtected(settings, (u) => ParametrePage(user: u));
 
       case aide:
-        return _page(const AidePage());
+        return _page(settings, const AidePage());
       case messages:
-        return _page(const MessagesPage());
+        return _page(settings, const MessagesPage());
 
       case mesAnnonces:
-        return _userProtected((_) => const MesAnnoncesPage());
+        return _userProtected(settings, (_) => const MesAnnoncesPage());
+
       case mesPrestations:
-        return _userProtected((u) {
+        return _userProtected(settings, (u) {
           final prestations = u.espacePrestataire != null
               ? [u.espacePrestataire!]
               : <Map<String, dynamic>>[];
           return MesPrestationsPage(prestations: prestations);
         });
+
       case mesRestaurants:
         return _userProtected(
+          settings,
           (u) => myresto_pg.MesRestaurantsPage(restaurants: u.restos ?? []),
         );
+
       case mesHotels:
         return _userProtected(
+          settings,
           (u) => hotel_page.MesHotelsPage(hotels: u.hotels ?? []),
         );
+
       case mesCliniques:
         return _userProtected(
+          settings,
           (u) => MesCliniquesPage(cliniques: u.cliniques ?? []),
         );
 
@@ -359,72 +359,82 @@ class AppRoutes {
           final arg = settings.arguments;
           if (arg == null || arg is Map<String, dynamic>) {
             return _page(
+              settings,
               InscriptionRestoPage(restaurant: arg as Map<String, dynamic>?),
             );
           }
-          return _error('Argument invalide pour $inscriptionResto');
+          return _error(settings, 'Argument invalide pour $inscriptionResto');
         }
+
       case inscriptionHotel:
         {
           final arg = settings.arguments;
           if (arg == null || arg is Map<String, dynamic>) {
             return _page(
+              settings,
               InscriptionHotelPage(hotel: arg as Map<String, dynamic>?),
             );
           }
-          return _error('Argument invalide pour $inscriptionHotel');
+          return _error(settings, 'Argument invalide pour $inscriptionHotel');
         }
+
       case inscriptionClinique:
         {
           final arg = settings.arguments;
           if (arg == null || arg is Map<String, dynamic>) {
             return _page(
+              settings,
               EditCliniquePage(clinique: arg as Map<String, dynamic>?),
             );
           }
-          return _error('Argument invalide pour $inscriptionClinique');
+          return _error(
+              settings, 'Argument invalide pour $inscriptionClinique');
         }
 
       case annonceDetail:
         {
           final arg = settings.arguments;
           if (arg is AnnonceModel) {
-            return _page(AnnonceDetailPage(annonce: arg));
+            return _page(settings, AnnonceDetailPage(annonce: arg));
           }
-          return _error('Argument invalide pour $annonceDetail');
+          return _error(settings, 'Argument invalide pour $annonceDetail');
         }
+
       case restoDetail:
         {
           final arg = settings.arguments;
           final String? restoId = (arg is String) ? arg : arg?.toString();
           if (restoId == null || restoId.isEmpty) {
-            return _error('ID invalide pour $restoDetail');
+            return _error(settings, 'ID invalide pour $restoDetail');
           }
-          return _page(RestoDetailPage(restoId: restoId));
+          return _page(settings, RestoDetailPage(restoId: restoId));
         }
+
       case hotelDetail:
         {
           final id = settings.arguments;
           if (id is int) {
-            return _page(HotelDetailPage(hotelId: id));
+            return _page(settings, HotelDetailPage(hotelId: id));
           }
-          return _error('ID invalide pour $hotelDetail');
+          return _error(settings, 'ID invalide pour $hotelDetail');
         }
 
       case editPrestataire:
-        return _page(EditPrestatairePage(prestataire: _argsMap(settings)));
+        return _page(
+            settings, EditPrestatairePage(prestataire: _argsMap(settings)));
       case editHotel:
-        return _page(EditHotelPage(hotelId: _argsMap(settings)['id']));
+        return _page(
+            settings, EditHotelPage(hotelId: _argsMap(settings)['id']));
       case editResto:
-        return _page(EditRestoPage(resto: _argsMap(settings)));
+        return _page(settings, EditRestoPage(resto: _argsMap(settings)));
       case editAnnonce:
-        return _page(EditAnnoncePage(annonce: _argsMap(settings)));
+        return _page(settings, EditAnnoncePage(annonce: _argsMap(settings)));
       case editClinique:
-        return _page(EditCliniquePage(clinique: _argsMap(settings)));
+        return _page(settings, EditCliniquePage(clinique: _argsMap(settings)));
 
-      // ====== BILLETTERIE (NOUVEAU) ======
+      // ====== BILLETTERIE ======
       case billetterie:
-        return _page(const BilletterieHomePage());
+        return _page(settings, const BilletterieHomePage());
 
       case billetterieDetail:
         {
@@ -432,30 +442,29 @@ class AppRoutes {
           final String? eventId =
               (a is String) ? a : (a is Map ? a['id']?.toString() : null);
           if (eventId == null || eventId.isEmpty) {
-            return _error('eventId requis pour $billetterieDetail');
+            return _error(settings, 'eventId requis pour $billetterieDetail');
           }
-          return _page(EventDetailPage(eventId: eventId));
+          return _page(settings, EventDetailPage(eventId: eventId));
         }
 
       case myTickets:
-        return _userProtected((_) => const MesBilletsPage());
+        return _userProtected(settings, (_) => const MesBilletsPage());
 
       case scanner:
-        return _userProtected((_) => const TicketScannerPage());
+        return _userProtected(settings, (_) => const TicketScannerPage());
 
-      // Espace organisateur (pro)
       case billetteriePro:
-        return _userProtected((_) => const ProEvenementsPage());
+        return _userProtected(settings, (_) => const ProEvenementsPage());
 
       case billetterieVentes:
-        return _userProtected((_) => const ProVentesPage());
-      // ===================================
+        return _userProtected(settings, (_) => const ProVentesPage());
 
       // ====== JOB ======
       case jobHome:
-        return _page(const JobHomePage());
+        return _page(settings, const JobHomePage());
       case jobList:
-        return _page(const JobsPage());
+        return _page(settings, const JobsPage());
+
       case jobDetail:
         {
           final a = settings.arguments;
@@ -467,20 +476,20 @@ class AppRoutes {
             jobId = (m['jobId'] as String?) ?? (m['id'] as String?);
           }
           if (jobId == null || jobId.isEmpty) {
-            return _error('jobId requis pour $jobDetail');
+            return _error(settings, 'jobId requis pour $jobDetail');
           }
-          return MaterialPageRoute(
-            builder: (_) => JobDetailPage(jobId: jobId!),
-          );
+          return _page(settings, JobDetailPage(jobId: jobId!));
         }
 
       case myApplications:
-        return _userProtected((_) => const apps.MyApplicationsPage());
+        return _userProtected(settings, (_) => const apps.MyApplicationsPage());
+
       case cvMaker:
-        return _userProtected((_) => const CvMakerPage());
+        return _userProtected(settings, (_) => const CvMakerPage());
 
       case employerOffers:
         return _userProtected(
+          settings,
           (_) => _EmployeurGate(
             builder: (empId) => MesOffresPage(employeurId: empId),
             onMissing: const DevenirEmployeurPage(),
@@ -491,6 +500,7 @@ class AppRoutes {
         {
           final arg = settings.arguments;
           return _userProtected(
+            settings,
             (_) => _EmployeurGate(
               builder: (empId) {
                 if (arg == null) {
@@ -515,10 +525,10 @@ class AppRoutes {
           final titre = (m['titre'] as String?) ?? 'Candidatures';
           if (id == null || id.isEmpty) {
             return _error(
-              'emploiId requis pour $employerOfferCandidatures',
-            );
+                settings, 'emploiId requis pour $employerOfferCandidatures');
           }
           return _userProtected(
+            settings,
             (_) => _EmployeurGate(
               builder: (_) => CandidaturesPage(jobId: id, jobTitle: titre),
               onMissing: const DevenirEmployeurPage(),
@@ -528,13 +538,12 @@ class AppRoutes {
 
       // ----- AUTH: reset password -----
       case forgotPassword:
-        return _page(const ForgotPasswordPage());
+        return _page(settings, const ForgotPasswordPage());
       case resetPassword:
-        // Ne pas activer RecoveryGuard ici : déjà géré dans main.dart
-        return _page(const ResetPasswordPage());
+        return _page(settings, const ResetPasswordPage());
 
       default:
-        return _error('Page non trouvée : $name');
+        return _error(settings, 'Page non trouvée : $name');
     }
   }
 
@@ -546,38 +555,36 @@ class AppRoutes {
         : <String, dynamic>{};
   }
 
-  // ✅ Transitions plus fluides (fade) pour toutes les pages "normales"
-  static PageRoute _page(Widget child) {
-    return PageRouteBuilder(
-      pageBuilder: (_, __, ___) => child,
-      transitionsBuilder: (_, animation, __, child) {
-        return FadeTransition(
-          opacity: animation,
-          child: child,
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 220),
+  /// ✅ Route fluide globale (slide + back-swipe iOS)
+  static PageRoute<T> _page<T>(RouteSettings settings, Widget child) {
+    return CupertinoPageRoute<T>(
+      settings: settings,
+      builder: (_) => child,
     );
   }
 
-  static MaterialPageRoute _error(String msg) => MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Erreur')),
-          body: Center(child: Text(msg)),
-        ),
-      );
+  static PageRoute _error(RouteSettings settings, String msg) {
+    return CupertinoPageRoute(
+      settings: settings,
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('Erreur')),
+        body: Center(child: Text(msg)),
+      ),
+    );
+  }
 
-  /// ✅ Gate utilisateur simplifié : plus de blocage lié à RecoveryGuard.
-  static MaterialPageRoute _userProtected(
+  /// ✅ Gate utilisateur en gardant les mêmes transitions fluides
+  static PageRoute _userProtected(
+    RouteSettings settings,
     Widget Function(UtilisateurModel) builder,
   ) {
-    return MaterialPageRoute(
+    return CupertinoPageRoute(
+      settings: settings,
       builder: (context) {
         final user =
             Provider.of<UserProvider>(context, listen: false).utilisateur;
 
         if (user == null) {
-          // Utilisateur non connecté → redirection propre vers /login
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (ModalRoute.of(context)?.settings.name != login) {
               Navigator.of(context).pushNamedAndRemoveUntil(

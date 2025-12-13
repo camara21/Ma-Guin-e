@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -41,6 +42,18 @@ import 'supabase_client.dart';
 const String kAnnoncesBox = 'annonces_box';
 
 String? _lastRoutePushed;
+
+/// ✅ Transitions fluides globales (style iOS) pour TOUTE l’app
+const PageTransitionsTheme _kSmoothTransitions = PageTransitionsTheme(
+  builders: <TargetPlatform, PageTransitionsBuilder>{
+    TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+  },
+);
 
 /// Navigation centralisée avec protection contre les doubles push.
 /// Si le navigator n'est pas encore prêt, on replanifie automatiquement.
@@ -109,7 +122,6 @@ Map<String, dynamic> _normalizeIncomingData(Map<String, dynamic>? raw) {
 }
 
 // ------------------ Background handler top-level ------------------
-// IMPORTANT: fonction top-level et marquée vm:entry-point
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -254,13 +266,10 @@ bool _isRecoveryUrl(Uri uri) {
 /// Bootstrap global: charge l’utilisateur, démarre heartbeat + notifs, etc.
 Future<void> _bootstrap(UserProvider userProvider) async {
   try {
-    // WEB : si on arrive directement sur l’URL de recovery
     if (kIsWeb && _isRecoveryUrl(Uri.base)) {
       RecoveryGuard.activate();
-      // La navigation vers ResetPasswordPage est gérée dans MyApp.onGenerateInitialRoutes
     }
 
-    // Charger utilisateur côté app
     await userProvider.chargerUtilisateurConnecte();
     final session = Supabase.instance.client.auth.currentSession;
     final user = session?.user;
@@ -271,63 +280,45 @@ Future<void> _bootstrap(UserProvider userProvider) async {
       unawaited(_startHeartbeat());
       _askPushOnce();
 
-      // Pré-chargement annonces pour session déjà connectée
       unawaited(AnnoncesPage.preload());
 
       if (!RecoveryGuard.isActive) {
         await _goHomeBasedOnRole(userProvider);
       }
     } else {
-      // Pas connecté → on va sur l’écran de connexion
       if (!RecoveryGuard.isActive) {
         _pushUnique(AppRoutes.welcome);
       }
     }
 
-    // Affiche popup admin stockée si on a démarré depuis une notif admin
     await PushService.instance.showLaunchAdminIfPending();
 
-    // ============================================================
-    //   LISTENER AUTH GLOBAL (login / logout / recovery)
-    // ============================================================
     Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
       final session = event.session;
       debugPrint('[auth] event=${event.event} user=${session?.user.id}');
 
-      // 1) Lien de réinitialisation ouvert (mobile ou web)
       if (event.event == AuthChangeEvent.passwordRecovery) {
         RecoveryGuard.activate();
-
-        // Mobile → on pousse explicitement la page de nouveau mot de passe
         if (!kIsWeb) {
           _pushUnique(AppRoutes.resetPassword);
         }
-
-        // Web → ResetPassword est déjà l’initialRoute via _isRecoveryUrl
         return;
       }
 
-      // 2) Déconnexion (manuelle ou après reset de mot de passe)
       if (event.event == AuthChangeEvent.signedOut) {
         _unsubscribeUserNotifications();
         _unsubscribeAdminKick();
         await _stopHeartbeat();
 
-        // On sort systématiquement du mode recovery
         RecoveryGuard.deactivate();
-
-        // Sécurité : après n’importe quelle déconnexion,
-        // on revient sur l’écran de connexion/accueil.
         _pushUnique(AppRoutes.welcome);
         return;
       }
 
-      // 3) Pendant le flow recovery, on ignore les signedIn intermédiaires
       if (RecoveryGuard.isActive && event.event == AuthChangeEvent.signedIn) {
         return;
       }
 
-      // 4) Utilisateur connecté (login normal)
       if (session?.user != null) {
         final uid = session!.user.id;
         _subscribeUserNotifications(uid);
@@ -337,7 +328,6 @@ Future<void> _bootstrap(UserProvider userProvider) async {
         await userProvider.chargerUtilisateurConnecte();
         _askPushOnce();
 
-        // Pré-chargement annonces au moment du login
         unawaited(AnnoncesPage.preload());
 
         if (!RecoveryGuard.isActive) {
@@ -373,9 +363,6 @@ Future<void> main() async {
     );
   }
 
-  // =======================
-  //   INIT SUPABASE
-  // =======================
   await initSupabase();
 
   final userProvider = UserProvider();
@@ -393,7 +380,6 @@ Future<void> main() async {
     ),
   );
 
-  // On lance le bootstrap une fois que l'arbre est monté
   WidgetsBinding.instance.addPostFrameCallback((_) {
     _bootstrap(userProvider);
   });
@@ -404,49 +390,57 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF0175C2),
-      child: MaterialApp(
-        navigatorKey: navKey,
-        debugShowCheckedModeBanner: false,
-        onGenerateInitialRoutes: (_) {
-          // WEB → si on a une URL de recovery, on démarre directement sur ResetPasswordPage
-          if (kIsWeb && _isRecoveryUrl(Uri.base)) {
-            return [
-              MaterialPageRoute(
-                settings: const RouteSettings(name: AppRoutes.resetPassword),
-                builder: (_) => const ResetPasswordPage(),
-              ),
-            ];
-          }
+    final light =
+        AppTheme.light.copyWith(pageTransitionsTheme: _kSmoothTransitions);
+    final dark =
+        AppTheme.dark.copyWith(pageTransitionsTheme: _kSmoothTransitions);
+
+    return MaterialApp(
+      navigatorKey: navKey,
+      debugShowCheckedModeBanner: false,
+
+      onGenerateInitialRoutes: (_) {
+        if (kIsWeb && _isRecoveryUrl(Uri.base)) {
           return [
-            MaterialPageRoute(
-              settings: const RouteSettings(name: AppRoutes.splash),
-              builder: (_) => const SplashScreen(),
+            CupertinoPageRoute(
+              settings: const RouteSettings(name: AppRoutes.resetPassword),
+              builder: (_) => const ResetPasswordPage(),
             ),
           ];
-        },
-        onGenerateRoute: AppRoutes.generateRoute,
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.light,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        supportedLocales: const [
-          Locale('fr'),
-          Locale('en'),
-        ],
-        locale: const Locale('fr'),
-        builder: (context, child) {
-          return ColoredBox(
-            color: const Color(0xFF0175C2),
-            child: child ?? const SizedBox.shrink(),
-          );
-        },
-      ),
+        }
+        return [
+          CupertinoPageRoute(
+            settings: const RouteSettings(name: AppRoutes.splash),
+            builder: (_) => const SplashScreen(),
+          ),
+        ];
+      },
+
+      onGenerateRoute: AppRoutes.generateRoute,
+
+      theme: light,
+      darkTheme: dark,
+      themeMode: ThemeMode.light,
+
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('fr'),
+        Locale('en'),
+      ],
+      locale: const Locale('fr'),
+
+      // ✅ IMPORTANT : évite les flashs (fond derrière les routes = background du thème)
+      builder: (context, child) {
+        final bg = Theme.of(context).scaffoldBackgroundColor;
+        return ColoredBox(
+          color: bg,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
