@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,14 +16,10 @@ import 'annonce_detail_page.dart';
 class AnnoncesPage extends StatefulWidget {
   const AnnoncesPage({Key? key}) : super(key: key);
 
-  /// ---------------------------------------------------------
-  ///  PRÉ-CHARGEMENT GLOBAL (à appeler dès la connexion)
-  /// ---------------------------------------------------------
-  ///
-  /// Exemple d’utilisation après login / au démarrage :
-  ///
-  ///   await AnnoncesPage.preload();
-  ///
+  /// Taille page (anti scroll infini)
+  static const int pageSize = 24;
+
+  /// Préchargement : 1 page max
   static Future<void> preload() async {
     try {
       final supa = Supabase.instance.client;
@@ -32,25 +30,19 @@ class AnnoncesPage extends StatefulWidget {
               id, prenom, nom, photo_url,
               annonces:annonces!annonces_user_id_fkey ( count )
             )
-          ''').order('date_creation', ascending: false);
+          ''').order('date_creation', ascending: false).range(0, pageSize - 1);
 
       final list = (raw as List).cast<Map<String, dynamic>>();
 
-      // met en cache mémoire pour toutes les instances
       _AnnoncesPageState.setGlobalCache(list);
 
-      // Sauvegarde disque (si la box est déjà ouverte)
       try {
         if (Hive.isBoxOpen('annonces_box')) {
           final box = Hive.box('annonces_box');
           await box.put('annonces', list);
         }
-      } catch (_) {
-        // pas grave si Hive n'est pas prêt, c'est du confort
-      }
-    } catch (_) {
-      // silencieux : c'est du pré-chargement en arrière-plan
-    }
+      } catch (_) {}
+    } catch (_) {}
   }
 
   @override
@@ -71,23 +63,19 @@ class _AnnoncesPageState extends State<AnnoncesPage>
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
-  // Cache global en mémoire pour toute l'app (instantané au retour)
+  // Cache global mémoire
   static List<Map<String, dynamic>> _cacheAnnonces = [];
-
-  /// Permet au `preload()` statique de pousser des données dans le cache
   static void setGlobalCache(List<Map<String, dynamic>> list) {
     _cacheAnnonces = List<Map<String, dynamic>>.from(list);
   }
 
-  // données
+  // data
   List<Map<String, dynamic>> _allAnnonces = [];
   bool _loading = true;
   String? _error;
-
-  // Pour éviter le "flash" Aucune annonce trouvée avant la fin du 1er appel réseau
   bool _initialFetchDone = false;
 
-  // favoris (cache local)
+  // favoris
   final Set<String> _favIds = <String>{};
   bool _favLoaded = false;
 
@@ -116,12 +104,26 @@ class _AnnoncesPageState extends State<AnnoncesPage>
   int? _selectedCatId;
   String _selectedLabel = 'Tous';
 
+  // pagination (anti scroll infini)
+  static const int _pageSize = AnnoncesPage.pageSize;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+
+  // retour en haut
+  bool _showToTopFab = false;
+  static const double _kFabShowAfterPx = 520;
+
+  // debounce
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
     _allCats = [_catTous, ..._cats];
 
-    // 1) Essayer de charger depuis le cache disque (Hive) -> ouverture app instantanée
+    _scrollCtrl.addListener(_onScrollChanged);
+
+    // cache disque
     try {
       if (Hive.isBoxOpen('annonces_box')) {
         final box = Hive.box('annonces_box');
@@ -135,26 +137,52 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           _loading = false;
         }
       }
-    } catch (_) {
-      // ignore, on tombera sur le cache mémoire ou réseau
-    }
+    } catch (_) {}
 
-    // 2) Si pas de cache disque mais cache mémoire dispo (même session / preload)
+    // cache mémoire
     if (_allAnnonces.isEmpty && _cacheAnnonces.isNotEmpty) {
       _allAnnonces = List<Map<String, dynamic>>.from(_cacheAnnonces);
       _loading = false;
     }
 
-    // 3) Requête réseau en arrière-plan pour rafraîchir
-    _loadAnnonces();
-
+    _reloadAll();
     _preloadFavoris();
-    _searchCtrl.addListener(() => setState(() {}));
+
+    _searchCtrl.addListener(_onSearchChanged);
+  }
+
+  void _onScrollChanged() {
+    if (!_scrollCtrl.hasClients) return;
+    final px = _scrollCtrl.position.pixels;
+    final shouldShow = px >= _kFabShowAfterPx;
+    if (shouldShow != _showToTopFab) {
+      setState(() => _showToTopFab = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      _reloadAll();
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
+    _scrollCtrl.removeListener(_onScrollChanged);
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -162,48 +190,81 @@ class _AnnoncesPageState extends State<AnnoncesPage>
   @override
   bool get wantKeepAlive => true;
 
-  // ========= DATA =========
-  Future<void> _loadAnnonces() async {
-    // si on n'a rien du tout, on déclenche un vrai état "chargement"
-    if (_allAnnonces.isEmpty && _cacheAnnonces.isEmpty) {
+  // ===================== DATA (Server-side) =====================
+
+  String _sanitizeForOr(String s) {
+    var x = s.trim();
+    if (x.isEmpty) return '';
+    x = x.replaceAll(RegExp(r'[(),]'), ' ');
+    x = x.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return x;
+  }
+
+  /// ✅ FIX: on met `_selectedCatId` dans une variable locale (promotion non-null).
+  PostgrestFilterBuilder _buildBaseQuery(SupabaseClient supa) {
+    final PostgrestFilterBuilder q = supa.from('annonces').select('''
+        *,
+        proprietaire:utilisateurs!annonces_user_id_fkey (
+          id, prenom, nom, photo_url,
+          annonces:annonces!annonces_user_id_fkey ( count )
+        )
+      ''');
+
+    // Catégorie (server-side)
+    final catId = _selectedCatId; // <-- local
+    if (catId != null) {
+      q.eq('categorie_id', catId);
+    }
+
+    // Recherche (server-side)
+    final f = _sanitizeForOr(_searchCtrl.text);
+    if (f.isNotEmpty) {
+      final pat = '%$f%';
+      q.or('titre.ilike.$pat,description.ilike.$pat');
+    }
+
+    q.order('date_creation', ascending: false);
+    return q;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPage({required int offset}) async {
+    final supa = Supabase.instance.client;
+    final from = offset;
+    final to = offset + _pageSize - 1;
+
+    final raw = await _buildBaseQuery(supa).range(from, to);
+    return (raw as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> _reloadAll() async {
+    if (mounted) {
       setState(() {
         _loading = true;
         _error = null;
+        _hasMore = true;
       });
-    } else {
-      // on a déjà quelque chose à l'écran (cache), on rafraîchit en silence
-      _loading = true;
-      _error = null;
     }
 
     try {
-      final supa = Supabase.instance.client;
-      final raw = await supa.from('annonces').select('''
-            *,
-            proprietaire:utilisateurs!annonces_user_id_fkey (
-              id, prenom, nom, photo_url,
-              annonces:annonces!annonces_user_id_fkey ( count )
-            )
-          ''').order('date_creation', ascending: false);
+      final first = await _fetchPage(offset: 0);
 
-      final list = (raw as List).cast<Map<String, dynamic>>();
+      final isDefaultFeed =
+          _selectedCatId == null && _searchCtrl.text.trim().isEmpty;
 
-      // Met à jour le cache mémoire (global)
-      _cacheAnnonces = List<Map<String, dynamic>>.from(list);
-
-      // Sauvegarde sur disque (Hive) pour les prochains lancements
-      try {
-        if (Hive.isBoxOpen('annonces_box')) {
-          final box = Hive.box('annonces_box');
-          await box.put('annonces', list);
-        }
-      } catch (_) {
-        // si Hive pas prêt -> on ne casse pas l'affichage
+      if (isDefaultFeed) {
+        _cacheAnnonces = List<Map<String, dynamic>>.from(first);
+        try {
+          if (Hive.isBoxOpen('annonces_box')) {
+            final box = Hive.box('annonces_box');
+            await box.put('annonces', first);
+          }
+        } catch (_) {}
       }
 
       if (!mounted) return;
       setState(() {
-        _allAnnonces = list;
+        _allAnnonces = first;
+        _hasMore = first.length == _pageSize;
         _loading = false;
         _error = null;
         _initialFetchDone = true;
@@ -218,6 +279,32 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     }
   }
 
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading || !_hasMore) return;
+
+    setState(() => _loadingMore = true);
+    try {
+      final next = await _fetchPage(offset: _allAnnonces.length);
+
+      final existingIds =
+          _allAnnonces.map((e) => (e['id'] ?? '').toString()).toSet();
+      final dedup = next
+          .where((e) => !existingIds.contains((e['id'] ?? '').toString()))
+          .toList(growable: false);
+
+      if (!mounted) return;
+      setState(() {
+        _allAnnonces.addAll(dedup);
+        _hasMore = next.length == _pageSize;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
   Future<void> _preloadFavoris() async {
     try {
       final user = Supabase.instance.client.auth.currentUser;
@@ -229,9 +316,11 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           .from('favoris')
           .select('annonce_id')
           .eq('utilisateur_id', user.id);
+
       final ids = (data as List)
           .map((e) => (e['annonce_id'] ?? '').toString())
           .where((id) => id.isNotEmpty);
+
       setState(() {
         _favIds
           ..clear()
@@ -246,6 +335,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
   Future<void> _toggleFavori(String annonceId) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
+
     final wasFav = _favIds.contains(annonceId);
     setState(() {
       wasFav ? _favIds.remove(annonceId) : _favIds.add(annonceId);
@@ -273,22 +363,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     }
   }
 
-  // ========= FILTRES =========
-  List<Map<String, dynamic>> _filtered() {
-    final cat = _selectedCatId;
-    final f = _searchCtrl.text.trim().toLowerCase();
-    Iterable<Map<String, dynamic>> it = _allAnnonces;
-    if (cat != null) it = it.where((a) => a['categorie_id'] == cat);
-    if (f.isNotEmpty) {
-      it = it.where((a) {
-        final t = (a['titre'] ?? '').toString().toLowerCase();
-        final d = (a['description'] ?? '').toString().toLowerCase();
-        return t.contains(f) || d.contains(f);
-      });
-    }
-    return it.toList();
-  }
-
   String _fmtGNF(dynamic value) {
     if (value == null) return '0';
     final num n = (value is num) ? value : num.tryParse(value.toString()) ?? 0;
@@ -297,13 +371,19 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     return s.replaceAll(',', '.');
   }
 
-  // ========= UI HELPERS =========
+  // ===================== UI =====================
+
+  void _onSelectCategory(Map<String, dynamic> cat) {
+    setState(() {
+      _selectedCatId = cat['id'] as int?;
+      _selectedLabel = cat['label'] as String;
+    });
+    _reloadAll();
+  }
+
   Widget _categoryChip(Map<String, dynamic> cat, bool selected) {
     return GestureDetector(
-      onTap: () => setState(() {
-        _selectedCatId = cat['id'] as int?;
-        _selectedLabel = cat['label'] as String;
-      }),
+      onTap: () => _onSelectCategory(cat),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -393,7 +473,144 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     );
   }
 
-  /// ======== CARD ANNONCE — compacte & pro ========
+  Widget _bottomFooter({required int shownCount}) {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_hasMore) {
+      return Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _loadMore,
+              icon: const Icon(Icons.expand_more),
+              label: const Text(
+                "Charger plus",
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "$shownCount annonce${shownCount > 1 ? 's' : ''} affichée${shownCount > 1 ? 's' : ''}",
+            style: const TextStyle(color: _textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _reloadAll,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text("Rafraîchir"),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _textPrimary,
+                    side: const BorderSide(color: _stroke),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: _scrollToTop,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _textPrimary,
+                  side: const BorderSide(color: _stroke),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Icon(Icons.keyboard_arrow_up),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _stroke),
+      ),
+      child: Column(
+        children: [
+          const Text(
+            "— Fin de la liste —",
+            style: TextStyle(
+              color: _textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _reloadAll,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Rafraîchir"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _textPrimary,
+                  side: const BorderSide(color: _stroke),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CreateAnnoncePage()),
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text("Déposer"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _brandRed,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _scrollToTop,
+                icon: const Icon(Icons.keyboard_arrow_up),
+                label: const Text("Haut"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _textPrimary,
+                  side: const BorderSide(color: _stroke),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _annonceCard(Map<String, dynamic> data) {
     final images = List<String>.from(data['images'] ?? const []);
     final prix = data['prix'] ?? 0;
@@ -414,7 +631,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     }
     final dateText = DateFormat('dd/MM/yyyy').format(date);
 
-    // --------- infos vendeur (SANS cast Map<String,dynamic>) ----------
     final Map? owner = data['proprietaire'] as Map?;
 
     final String sellerName = () {
@@ -436,7 +652,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
       return (first is int) ? first : int.tryParse(first.toString()) ?? 0;
     }();
 
-    // id pour favoris
     final String annonceId = (data['id'] ?? '').toString();
     final bool isFav = annonceId.isNotEmpty && _favIds.contains(annonceId);
 
@@ -449,13 +664,11 @@ class _AnnoncesPageState extends State<AnnoncesPage>
       ),
       clipBehavior: Clip.hardEdge,
       child: InkWell(
-        // tap instantané : pas d'await
         onTap: () {
           final enriched = Map<String, dynamic>.from(data);
           enriched['seller_name'] = sellerName;
           final annonce = AnnonceModel.fromJson(enriched);
 
-          // precache en arrière-plan (ne bloque pas la navigation)
           if (images.isNotEmpty) {
             precacheImage(NetworkImage(images.first), context);
           }
@@ -472,7 +685,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // IMAGE : ratio plus haut pour montrer davantage la photo + cœur favoris
             AspectRatio(
               aspectRatio: 4 / 3,
               child: Stack(
@@ -502,9 +714,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                         child: Material(
                           color: Colors.white.withOpacity(0.92),
                           child: InkWell(
-                            onTap: () {
-                              _toggleFavori(annonceId);
-                            },
+                            onTap: () => _toggleFavori(annonceId),
                             child: Padding(
                               padding: const EdgeInsets.all(6),
                               child: Icon(
@@ -520,8 +730,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                 ],
               ),
             ),
-
-            // Corps : plus compact
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
@@ -635,7 +843,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     );
   }
 
-  /// Skeleton de carte pour chargement (placeholder gris)
   Widget _annonceSkeletonCard() {
     return Card(
       color: _cardBg,
@@ -706,25 +913,21 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     );
   }
 
-  // ======== RESPONSIVE GRID ========
   int _columnsForWidth(double w) {
-    if (w >= 1600) return 6; // très grand écran
-    if (w >= 1400) return 5; // xl desktop
-    if (w >= 1100) return 4; // desktop
-    if (w >= 800) return 3; // tablette
-    return 2; // mobile
+    if (w >= 1600) return 6;
+    if (w >= 1400) return 5;
+    if (w >= 1100) return 4;
+    if (w >= 800) return 3;
+    return 2;
   }
 
-  /// Calcule un `childAspectRatio` ajusté (évite overflow avec une carte plus compacte)
   double _ratioFor(
       double screenWidth, int cols, double spacing, double paddingH) {
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
     final itemWidth = usableWidth / cols;
 
-    // Hauteur image (fixe par ratio 4/3 pour montrer plus la photo)
     final imageH = itemWidth * (3 / 4);
 
-    // Hauteur “texte + vendeur”.
     double infoH;
     if (itemWidth < 220) {
       infoH = 134;
@@ -737,8 +940,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     }
 
     final totalH = imageH + infoH;
-    final ratio = itemWidth / totalH;
-    return ratio;
+    return itemWidth / totalH;
   }
 
   @override
@@ -751,10 +953,9 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     const double gridSpacing = 4.0;
     const double gridHPadding = 6.0;
 
-    final annonces = _filtered();
+    final annonces = _allAnnonces;
     final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
 
-    // Skeleton uniquement si on charge ET qu'on n'a pas encore de données
     final bool showSkeleton = !_initialFetchDone &&
         _loading &&
         _allAnnonces.isEmpty &&
@@ -807,14 +1008,13 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Catégories
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   child: LayoutBuilder(
                     builder: (_, c) {
                       final isMobile = c.maxWidth < 600;
-                      final chips = [_catTous, ..._cats].map((cat) {
+                      final chips = _allCats.map((cat) {
                         final sel = _selectedLabel == cat['label'];
                         return _categoryChip(cat, sel);
                       }).toList();
@@ -837,72 +1037,114 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                     },
                   ),
                 ),
-
-                // Contenu
                 Expanded(
-                  child: CustomScrollView(
-                    controller: _scrollCtrl,
-                    slivers: [
-                      SliverToBoxAdapter(child: _sellBanner()),
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.only(left: 16, bottom: 4, top: 4),
-                          child: Text(
-                            'Annonces récentes',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16.5,
-                              color: _textSecondary,
+                  child: RefreshIndicator(
+                    onRefresh: _reloadAll,
+                    child: CustomScrollView(
+                      controller: _scrollCtrl,
+                      cacheExtent: 1400,
+                      slivers: [
+                        SliverToBoxAdapter(child: _sellBanner()),
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding:
+                                EdgeInsets.only(left: 16, bottom: 4, top: 4),
+                            child: Text(
+                              'Annonces récentes',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16.5,
+                                color: _textSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      if (showSkeleton)
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: gridHPadding, vertical: 4),
-                          sliver: SliverGrid(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: gridCols,
-                              crossAxisSpacing: gridSpacing,
-                              mainAxisSpacing: gridSpacing,
-                              childAspectRatio: ratio,
+                        if (showSkeleton)
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: gridHPadding, vertical: 4),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: gridCols,
+                                crossAxisSpacing: gridSpacing,
+                                mainAxisSpacing: gridSpacing,
+                                childAspectRatio: ratio,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => _annonceSkeletonCard(),
+                                childCount: 6,
+                              ),
                             ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _annonceSkeletonCard(),
-                              childCount: 6, // cartes fantômes
+                          )
+                        else if (!_loading && annonces.isEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 24),
+                              child: Column(
+                                children: [
+                                  const Text('Aucune annonce trouvée.',
+                                      style: TextStyle(
+                                          color: _textSecondary,
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 12),
+                                  _bottomFooter(shownCount: 0),
+                                ],
+                              ),
+                            ),
+                          )
+                        else ...[
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: gridHPadding, vertical: 4),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: gridCols,
+                                crossAxisSpacing: gridSpacing,
+                                mainAxisSpacing: gridSpacing,
+                                childAspectRatio: ratio,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) =>
+                                    _annonceCard(annonces[index]),
+                                childCount: annonces.length,
+                              ),
                             ),
                           ),
-                        )
-                      else if (!_loading && annonces.isEmpty)
-                        const SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(child: Text('Aucune annonce trouvée.')),
-                        )
-                      else
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: gridHPadding, vertical: 4),
-                          sliver: SliverGrid(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: gridCols,
-                              crossAxisSpacing: gridSpacing,
-                              mainAxisSpacing: gridSpacing,
-                              childAspectRatio: ratio,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _annonceCard(annonces[index]),
-                              childCount: annonces.length,
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(10, 10, 10, 24),
+                              child: _bottomFooter(shownCount: annonces.length),
                             ),
                           ),
-                        ),
-                    ],
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
+      floatingActionButton: IgnorePointer(
+        ignoring: !_showToTopFab,
+        child: AnimatedOpacity(
+          opacity: _showToTopFab ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: AnimatedScale(
+            scale: _showToTopFab ? 1 : 0.95,
+            duration: const Duration(milliseconds: 180),
+            child: FloatingActionButton(
+              heroTag: 'annoncesToTop',
+              backgroundColor: _brandRed,
+              foregroundColor: Colors.white,
+              onPressed: _scrollToTop,
+              child: const Icon(Icons.keyboard_arrow_up_rounded, size: 30),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
