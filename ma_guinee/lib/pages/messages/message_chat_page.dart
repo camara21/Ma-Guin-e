@@ -10,6 +10,12 @@ import '../../pages/logement/logement_detail_page.dart';
 import '../../services/message_service.dart';
 import '../../widgets/message_bubble.dart';
 
+// ✅ Couleurs app (même que Splash/Login)
+const Color kAppPrimary = Color(0xFF0175C2);
+const Color kAppSecondary = Color(0xFF8ECBF2);
+const Color kAppBg = Color(0xFFF8F8F8);
+const Color kAppFieldBg = Color(0xFFF3F7FC);
+
 class MessageChatPage extends StatefulWidget {
   const MessageChatPage({
     super.key,
@@ -406,30 +412,28 @@ class _MessageChatPageState extends State<MessageChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    const bleu = Color(0xFF113CFC);
-    const fond = Color(0xFFF8F8FB);
-
+    // ✅ Remplacement couleurs hardcodées (bleu/fond) par palette app
     return Scaffold(
-      backgroundColor: fond,
+      backgroundColor: kAppBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: bleu),
+          icon: const Icon(Icons.arrow_back, color: kAppPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           widget.logementTitre,
           style: const TextStyle(
-            color: bleu,
+            color: kAppPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
-        iconTheme: const IconThemeData(color: bleu),
+        iconTheme: const IconThemeData(color: kAppPrimary),
         actions: [
           IconButton(
             tooltip: 'Supprimer la conversation',
-            icon: const Icon(Icons.delete_outline, color: bleu),
+            icon: const Icon(Icons.delete_outline, color: kAppPrimary),
             onPressed: _deleteWholeConversation,
           ),
         ],
@@ -552,8 +556,11 @@ class _MessageChatPageState extends State<MessageChatPage> {
                           Expanded(
                             child: Container(
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF3F5FA),
+                                color: kAppFieldBg,
                                 borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color: kAppSecondary.withOpacity(0.55),
+                                ),
                               ),
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 14),
@@ -574,7 +581,7 @@ class _MessageChatPageState extends State<MessageChatPage> {
                           ElevatedButton(
                             onPressed: _send,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: bleu,
+                              backgroundColor: kAppPrimary,
                               shape: const CircleBorder(),
                               padding: const EdgeInsets.all(14),
                             ),
@@ -601,7 +608,8 @@ class _OfferMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = Theme.of(context).colorScheme.surfaceVariant;
+    // ✅ unifie le style de carte avec la palette app
+    final bg = kAppFieldBg;
     final fg = Theme.of(context).colorScheme.onSurface;
 
     return InkWell(
@@ -616,6 +624,7 @@ class _OfferMessageBubble extends StatelessWidget {
             bottomLeft: Radius.circular(4),
             bottomRight: Radius.circular(14),
           ),
+          border: Border.all(color: kAppSecondary.withOpacity(0.45)),
         ),
         clipBehavior: Clip.antiAlias,
         child: Row(
@@ -650,8 +659,8 @@ class _OfferMessageBubble extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         offer.prixLabel!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
+                        style: const TextStyle(
+                          color: kAppPrimary,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -671,7 +680,7 @@ class _OfferMessageBubble extends StatelessWidget {
             const SizedBox(width: 6),
             const Padding(
               padding: EdgeInsets.only(right: 8),
-              child: Icon(Icons.chevron_right_rounded),
+              child: Icon(Icons.chevron_right_rounded, color: kAppPrimary),
             ),
           ],
         ),
@@ -726,14 +735,16 @@ class _DateChip extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.grey.shade300,
+              color: kAppSecondary.withOpacity(0.22),
+              border: Border.all(color: kAppSecondary.withOpacity(0.35)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Colors.black87,
+                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

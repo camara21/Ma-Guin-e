@@ -1,5 +1,7 @@
 // lib/pages/prestataire_detail_page.dart
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -48,11 +50,20 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   String? _ownerId; // prestataires.utilisateur_id
   bool _ownerResolved = false;
 
+  bool get _canSendAvis =>
+      !_sendingAvis &&
+      _noteUtilisateur > 0 &&
+      _avisController.text.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
     _resolveOwner();
     _loadAvis();
+
+    _avisController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -61,8 +72,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     super.dispose();
   }
 
-  void _snack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   bool get _isOwner {
     final me = _client.auth.currentUser;
@@ -148,7 +161,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
       final list = List<Map<String, dynamic>>.from(res);
 
-      // moyenne
       final notes = list
           .map<double>((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0)
           .where((n) => n > 0)
@@ -157,11 +169,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       final moyenne =
           notes.isEmpty ? 0.0 : notes.reduce((a, b) => a + b) / notes.length;
 
-      // deja noté
       final me = _client.auth.currentUser;
       final deja = me != null && list.any((a) => a['auteur_id'] == me.id);
 
-      // profils
       final ids = list
           .map((e) => e['auteur_id'])
           .where((v) => v != null)
@@ -198,9 +208,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     } catch (_) {}
   }
 
-  // -----------------------------------------------------
-  // AVIS : upsert
-  // -----------------------------------------------------
   Future<void> _ajouterOuModifierAvis({
     required String prestataireId,
     required String utilisateurId,
@@ -242,7 +249,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         commentaire: commentaire,
       );
 
-      // ✅ ferme clavier + reset
       FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
@@ -252,7 +258,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       });
 
       await _loadAvis();
-
       if (mounted) _snack("Merci pour votre avis !");
     } catch (e) {
       _snack("Erreur lors de l'envoi de l'avis : $e");
@@ -280,16 +285,16 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     if (onlyDigits.isEmpty) return _snack("Numéro non disponible");
 
     String normalized = onlyDigits;
-    if (normalized.startsWith('+')) {
-      // ok
-    } else if (normalized.startsWith('224')) {
-      normalized = '+$normalized';
-    } else if (normalized.startsWith('0')) {
-      normalized = '+224${normalized.replaceFirst(RegExp(r'^0+'), '')}';
-    } else if (normalized.length == 8 || normalized.length == 9) {
-      normalized = '+224$normalized';
-    } else {
-      normalized = '+$normalized';
+    if (!normalized.startsWith('+')) {
+      if (normalized.startsWith('224')) {
+        normalized = '+$normalized';
+      } else if (normalized.startsWith('0')) {
+        normalized = '+224${normalized.replaceFirst(RegExp(r'^0+'), '')}';
+      } else if (normalized.length == 8 || normalized.length == 9) {
+        normalized = '+224$normalized';
+      } else {
+        normalized = '+$normalized';
+      }
     }
 
     final uri = Uri(scheme: 'tel', path: normalized);
@@ -434,8 +439,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                         foregroundColor: prestatairesOnPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: _sendingReport
                           ? null
@@ -474,7 +478,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         'owner_id': _ownerId,
         'reported_by': me.id,
         'reason': reason,
-        'details': details,
+        'details': details.isNotEmpty ? details : null,
         'ville': widget.data['ville']?.toString(),
         'metier': widget.data['metier']?.toString(),
         'nom': widget.data['nom']?.toString(),
@@ -507,18 +511,23 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
   }
 
-  // -----------------------------------------------------
+  void _openPhotoFullScreen(String imageUrl, String heroTag) {
+    if (imageUrl.trim().isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FullscreenImagePage(url: imageUrl, heroTag: heroTag),
+      ),
+    );
+  }
+
   // UI helpers
-  // -----------------------------------------------------
   Widget _starsStatic(double avg, {double size = 16}) {
     final full = avg.floor().clamp(0, 5);
     final half = (avg - full) >= 0.5;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full) {
-          return Icon(Icons.star, size: size, color: Colors.amber);
-        }
+        if (i < full) return Icon(Icons.star, size: size, color: Colors.amber);
         if (i == full && half) {
           return Icon(Icons.star_half, size: size, color: Colors.amber);
         }
@@ -550,11 +559,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
         5,
-        (i) => Icon(
-          i < v ? Icons.star : Icons.star_border,
-          size: 14,
-          color: Colors.amber,
-        ),
+        (i) => Icon(i < v ? Icons.star : Icons.star_border,
+            size: 14, color: Colors.amber),
       ),
     );
   }
@@ -568,10 +574,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _neutralBorder),
         ),
-        child: const Text(
-          "Aucun avis pour le moment",
-          style: TextStyle(color: Colors.black54),
-        ),
+        child: const Text("Aucun avis pour le moment",
+            style: TextStyle(color: Colors.black54)),
       );
     }
 
@@ -586,10 +590,8 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         children: [
           _starsStatic(_noteMoyenne, size: 16),
           const SizedBox(width: 8),
-          Text(
-            '${_noteMoyenne.toStringAsFixed(1)} / 5',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
+          Text('${_noteMoyenne.toStringAsFixed(1)} / 5',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(width: 8),
           Text('(${_avis.length})',
               style: const TextStyle(color: Colors.black54)),
@@ -665,10 +667,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 ],
                 if (dateStr.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(
-                    dateStr,
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
+                  Text(dateStr,
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.black54)),
                 ],
               ],
             ),
@@ -678,9 +679,6 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
-  // -----------------------------------------------------
-  // Build
-  // -----------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
@@ -699,9 +697,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     final String? rawPhoto = d['photo_url']?.toString();
     final photo = _publicUrl(_avatarBucket, rawPhoto) ?? (rawPhoto ?? '');
 
-    final canSend = !_sendingAvis &&
-        _noteUtilisateur > 0 &&
-        _avisController.text.trim().isNotEmpty;
+    final heroTag = 'prest_photo_${d['id'] ?? fullName}';
 
     return Scaffold(
       backgroundColor: _neutralBg,
@@ -712,9 +708,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         title: Text(
           fullName.isNotEmpty ? fullName : 'Prestataire',
           style: const TextStyle(
-            color: prestatairesPrimary,
-            fontWeight: FontWeight.bold,
-          ),
+              color: prestatairesPrimary, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
@@ -724,23 +718,18 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
               PopupMenuItem(
                 value: 'share',
                 child: ListTile(
-                  leading: Icon(Icons.share),
-                  title: Text('Partager'),
-                ),
+                    leading: Icon(Icons.share), title: Text('Partager')),
               ),
               PopupMenuItem(
                 value: 'report',
                 child: ListTile(
-                  leading: Icon(Icons.report_gmailerrorred),
-                  title: Text('Signaler'),
-                ),
+                    leading: Icon(Icons.report_gmailerrorred),
+                    title: Text('Signaler')),
               ),
             ],
           ),
         ],
       ),
-
-      // ✅ Tap partout = ferme le clavier
       body: Listener(
         onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         child: Center(
@@ -749,51 +738,47 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 130),
               children: [
-                // Photo
-                if (photo.trim().isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: CachedNetworkImage(
-                      imageUrl: photo,
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(height: 200, color: Colors.grey.shade200),
-                      errorWidget: (_, __, ___) => Container(
-                        height: 200,
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.person,
-                            size: 48, color: Colors.grey),
-                      ),
-                    ),
-                  )
-                else
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      height: 200,
-                      color: Colors.grey.shade200,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.person,
-                          size: 48, color: Colors.grey),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: GestureDetector(
+                    onTap: photo.trim().isEmpty
+                        ? null
+                        : () => _openPhotoFullScreen(photo, heroTag),
+                    child: Hero(
+                      tag: heroTag,
+                      child: photo.trim().isEmpty
+                          ? Container(
+                              height: 200,
+                              width: double.infinity,
+                              color: Colors.grey.shade200,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.person,
+                                  size: 48, color: Colors.grey),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: photo.trim(),
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(
+                                  height: 200, color: Colors.grey.shade200),
+                              errorWidget: (_, __, ___) => Container(
+                                height: 200,
+                                color: Colors.grey.shade200,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.person,
+                                    size: 48, color: Colors.grey),
+                              ),
+                            ),
                     ),
                   ),
-
+                ),
                 const SizedBox(height: 16),
-
-                // Métier
                 if (metier.isNotEmpty)
-                  Text(
-                    metier,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-
+                  Text(metier,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-
-                // ✅ Ville (corrigé : plus de followedBy)
                 if (ville.isNotEmpty)
                   Row(
                     children: [
@@ -809,26 +794,17 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                       ),
                     ],
                   ),
-
                 const SizedBox(height: 14),
-
-                // Description
                 if (description.isNotEmpty) ...[
-                  const Text(
-                    "Description",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
+                  const Text("Description",
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 6),
                   Text(description),
                 ],
-
-                // ✅ Carte moyenne SOUS description (comme les autres)
                 const SizedBox(height: 12),
                 _ratingSummaryCard(),
-
                 const SizedBox(height: 18),
-
-                // Actions (Message/Contacter)
                 if (_ownerResolved && !_isOwner)
                   Padding(
                     padding: const EdgeInsets.only(top: 8, bottom: 16),
@@ -842,17 +818,15 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                             label: const Text(
                               "Message",
                               style: TextStyle(
-                                color: prestatairesPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                                  color: prestatairesPrimary,
+                                  fontWeight: FontWeight.w600),
                             ),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(
                                   color: prestatairesPrimary, width: 1.5),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ),
@@ -864,16 +838,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                             label: const Text(
                               "Contacter",
                               style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: prestatairesPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                           ),
@@ -881,29 +853,20 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                       ],
                     ),
                   ),
-
                 const Divider(height: 30, color: _divider),
-
-                // ✅ Avis (cards) AU-DESSUS de "Votre avis"
-                const Text(
-                  "Avis des utilisateurs",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                const Text("Avis des utilisateurs",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 10),
-
                 if (_avis.isEmpty)
                   const Text("Aucun avis pour le moment.")
                 else
                   ..._avis.map(_reviewCard),
-
                 const SizedBox(height: 10),
                 const Divider(height: 30, color: _divider),
-
-                // ✅ "Votre avis" TOUT EN BAS
-                const Text(
-                  "Votre avis",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                const Text("Votre avis",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 if (_dejaNote)
                   const Padding(
                     padding: EdgeInsets.only(top: 6, bottom: 6),
@@ -912,17 +875,17 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                       style: TextStyle(fontSize: 12, color: Colors.black54),
                     ),
                   ),
-
                 _starsInput(),
                 const SizedBox(height: 6),
-
                 TextField(
                   controller: _avisController,
                   maxLines: 3,
-                  textInputAction: TextInputAction.send, // ✅ clavier “Envoyer”
-                  onSubmitted: (_) => _envoyerAvis(), // ✅ envoi clavier
-                  onChanged: (_) =>
-                      setState(() {}), // ✅ active/désactive bouton
+                  textInputAction: _canSendAvis
+                      ? TextInputAction.send
+                      : TextInputAction.newline,
+                  onSubmitted: (_) {
+                    if (_canSendAvis) _envoyerAvis();
+                  },
                   decoration: InputDecoration(
                     hintText: "Votre avis",
                     filled: true,
@@ -942,13 +905,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton.icon(
-                    onPressed: canSend ? _envoyerAvis : null,
+                    onPressed: _canSendAvis ? _envoyerAvis : null,
                     icon: const Icon(Icons.send, size: 18),
                     label: Text(_dejaNote ? "Mettre à jour" : "Envoyer"),
                     style: ElevatedButton.styleFrom(
@@ -962,12 +923,84 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Plein écran image (mobile only lock + zoom)
+class _FullscreenImagePage extends StatefulWidget {
+  final String url;
+  final String heroTag;
+  const _FullscreenImagePage({required this.url, required this.heroTag});
+
+  @override
+  State<_FullscreenImagePage> createState() => _FullscreenImagePageState();
+}
+
+class _FullscreenImagePageState extends State<_FullscreenImagePage> {
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ Sur PC/Web : ne rien forcer (évite comportements/bugs)
+    if (_isMobilePlatform) {
+      try {
+        SystemChrome.setPreferredOrientations(
+            const [DeviceOrientation.portraitUp]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_isMobilePlatform) {
+      try {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      } catch (_) {}
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+      ),
+      body: SizedBox.expand(
+        child: Hero(
+          tag: widget.heroTag,
+          child: InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 4.0,
+            child: CachedNetworkImage(
+              imageUrl: widget.url,
+              fit: BoxFit.contain,
+              placeholder: (_, __) =>
+                  const SizedBox.expand(child: ColoredBox(color: Colors.black)),
+              errorWidget: (_, __, ___) => const Center(
+                child:
+                    Icon(Icons.broken_image, color: Colors.white70, size: 64),
+              ),
             ),
           ),
         ),

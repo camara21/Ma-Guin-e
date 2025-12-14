@@ -313,16 +313,16 @@ class _HotelPageState extends State<HotelPage>
     return 2;
   }
 
-  // ✅ carte “tight” : image 16/11 + zone texte compacte (comme RestoPage)
+  // ✅✅✅ IMPORTANT : on aligne la carte Hôtel sur Restaurants => image 4/3
   double _ratioFor(
       double screenWidth, int cols, double spacing, double paddingH) {
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
     final itemWidth = usableWidth / cols;
 
-    // image 16/11
-    final imageH = itemWidth * (11 / 16);
+    // ✅ image 4/3 (même forme que Restaurants)
+    final imageH = itemWidth * (3 / 4);
 
-    // hauteur zone texte (compacte) : même philosophie que restaurants
+    // hauteur zone texte (compacte) : inchangé
     double infoH;
     if (itemWidth < 220) {
       infoH = 134;
@@ -642,7 +642,7 @@ class _HotelPageState extends State<HotelPage>
                             ),
                           ),
 
-                        // Grille (✅ carte même taille que Restaurants, plus de overflow)
+                        // Grille
                         Expanded(
                           child: filteredHotels.isEmpty
                               ? const Center(child: Text("Aucun hôtel trouvé."))
@@ -706,7 +706,7 @@ class _HotelPageState extends State<HotelPage>
   }
 }
 
-// ======================== Carte Tight (même “taille” que Restaurants) ===========================
+// ======================== Carte Tight (même “forme” que Restaurants) ===========================
 class _HotelCardTight extends StatelessWidget {
   final Map<String, dynamic> hotel;
   final String imageUrl;
@@ -751,13 +751,14 @@ class _HotelCardTight extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           side: const BorderSide(color: neutralBorder),
         ),
-        clipBehavior: Clip.antiAlias,
+        // ✅✅✅ comme Restaurants (clip net)
+        clipBehavior: Clip.hardEdge,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ Image fixe 16/11 (comme tes cartes “pro”)
+            // ✅✅✅ Image 4/3 (même forme que Restaurants) -> plus de déformation
             AspectRatio(
-              aspectRatio: 16 / 11,
+              aspectRatio: 4 / 3,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -816,7 +817,7 @@ class _HotelCardTight extends StatelessWidget {
               ),
             ),
 
-            // ✅ Texte compact (même structure que Restaurants => plus d’overflow)
+            // ✅ Texte compact (inchangé)
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
@@ -835,8 +836,6 @@ class _HotelCardTight extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-
-                    // Ville + distance (1 ligne)
                     Row(
                       children: [
                         Expanded(
@@ -866,8 +865,6 @@ class _HotelCardTight extends StatelessWidget {
                         ],
                       ],
                     ),
-
-                    // Prix (optionnel)
                     if (priceLabel != null) ...[
                       const SizedBox(height: 3),
                       Text(
@@ -882,10 +879,7 @@ class _HotelCardTight extends StatelessWidget {
                         ),
                       ),
                     ],
-
                     const Spacer(),
-
-                    // ⭐️ étoiles + note (1 ligne, bas de carte)
                     Row(
                       children: [
                         _HotelStars(avg: avg),
@@ -953,7 +947,7 @@ class _HotelCachedImage extends StatelessWidget {
       useOldImageOnUrlChange: true,
       imageBuilder: (_, provider) => Image(
         image: provider,
-        fit: BoxFit.cover,
+        fit: BoxFit.cover, // ✅ cover (pas de déformation)
         gaplessPlayback: true,
         filterQuality: FilterQuality.high,
       ),
@@ -993,20 +987,6 @@ class _HotelStars extends StatelessWidget {
 class _HotelSkeletonCardTight extends StatelessWidget {
   const _HotelSkeletonCardTight();
 
-  Widget _ph() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.35, end: 0.60),
-      duration: const Duration(milliseconds: 900),
-      curve: Curves.easeInOut,
-      builder: (_, v, __) {
-        return Container(
-          color:
-              Color.lerp(const Color(0xFFE5E7EB), const Color(0xFFF3F4F6), v),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -1017,13 +997,14 @@ class _HotelSkeletonCardTight extends StatelessWidget {
         side: const BorderSide(color: _HotelPageState.neutralBorder),
       ),
       elevation: 1.0,
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AspectRatio(
-            aspectRatio: 16 / 11,
-            child: ColoredBox(color: Color(0xFFE5E7EB)),
+          // ✅✅✅ Skeleton aligné sur 4/3 (comme Restaurants)
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: Container(color: const Color(0xFFE5E7EB)),
           ),
           Expanded(
             child: Padding(

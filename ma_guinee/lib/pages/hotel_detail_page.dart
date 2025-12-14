@@ -8,6 +8,16 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'hotel_reservation_page.dart';
 
+/// =======================
+/// Palette Hôtels (TOP-LEVEL const => safe dans const widgets)
+/// =======================
+const Color kHotelsPrimary = Color(0xFF264653);
+const Color kHotelsSecondary = Color(0xFF2A9D8F);
+const Color kHotelsOnPrimary = Color(0xFFFFFFFF);
+const Color kNeutralBorder = Color(0xFFE5E7EB);
+const Color kNeutralBg = Color(0xFFF7F7F9);
+const Color kNeutralSurface = Color(0xFFFFFFFF);
+
 class HotelDetailPage extends StatefulWidget {
   final dynamic hotelId;
   const HotelDetailPage({super.key, required this.hotelId});
@@ -18,14 +28,6 @@ class HotelDetailPage extends StatefulWidget {
 
 class _HotelDetailPageState extends State<HotelDetailPage> {
   final _sb = Supabase.instance.client;
-
-  static const Color hotelsPrimary = Color(0xFF264653);
-  static const Color hotelsSecondary = Color(0xFF2A9D8F);
-  static const Color onPrimary = Color(0xFFFFFFFF);
-  static const Color neutralBorder = Color(0xFFE5E7EB);
-
-  static const Color _neutralBg = Color(0xFFF7F7F9);
-  static const Color _neutralSurface = Color(0xFFFFFFFF);
 
   Map<String, dynamic>? hotel;
   bool loading = true;
@@ -41,6 +43,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
   int _currentIndex = 0;
 
   String get _id => widget.hotelId.toString();
+
   bool _isUuid(String id) => RegExp(
           r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
       .hasMatch(id);
@@ -59,11 +62,17 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     super.dispose();
   }
 
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   String _formatGNF(dynamic value) {
     if (value == null) return '—';
     final n = (value is num)
         ? value.toInt()
         : int.tryParse(value.toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
     final s = n.toString();
     final buf = StringBuffer();
     for (int i = 0; i < s.length; i++) {
@@ -95,6 +104,17 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       setState(() {
         hotel = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
+        _currentIndex = 0;
+      });
+
+      // Si la pageview a déjà des clients, on revient à 0 proprement
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_pageController.hasClients) {
+          try {
+            _pageController.jumpToPage(0);
+          } catch (_) {}
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -117,9 +137,13 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
       double moyenne = 0.0;
       if (list.isNotEmpty) {
-        final notes =
-            list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        moyenne = notes.fold<double>(0.0, (a, b) => a + b) / notes.length;
+        final notes = list
+            .map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0)
+            .where((v) => v > 0)
+            .toList();
+        if (notes.isNotEmpty) {
+          moyenne = notes.fold<double>(0.0, (a, b) => a + b) / notes.length;
+        }
       }
 
       final ids = list
@@ -130,10 +154,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           .toList();
 
       final Map<String, Map<String, dynamic>> fetched = {};
-
       if (ids.isNotEmpty) {
         final orFilter = ids.map((id) => 'id.eq.$id').join(',');
-
         final profs = await _sb
             .from('utilisateurs')
             .select('id, nom, prenom, photo_url')
@@ -158,37 +180,20 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           ..addAll(fetched);
       });
     } catch (_) {
-      // silencieux comme avant
+      // silencieux
     }
   }
 
   Future<void> _envoyerAvis() async {
     final commentaire = _avisController.text.trim();
     if (_noteUtilisateur == 0 || commentaire.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Veuillez noter et écrire un commentaire.")),
-      );
-      return;
+      return _snack("Veuillez noter et écrire un commentaire.");
     }
 
     final user = _sb.auth.currentUser;
-    if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
-      );
-      return;
-    }
+    if (user == null) return _snack("Connectez-vous pour laisser un avis.");
 
-    if (!_isUuid(_id)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur : ID hôtel invalide.")),
-      );
-      return;
-    }
+    if (!_isUuid(_id)) return _snack("Erreur : ID hôtel invalide.");
 
     try {
       await _sb.from('avis_hotels').upsert(
@@ -202,21 +207,13 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       );
 
       FocusManager.instance.primaryFocus?.unfocus();
-
       _avisController.clear();
       setState(() => _noteUtilisateur = 0);
 
       await _loadAvisBloc();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Avis envoyé.")),
-      );
+      _snack("Avis envoyé.");
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur envoi avis : $e")),
-      );
+      _snack("Erreur envoi avis : $e");
     }
   }
 
@@ -239,9 +236,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final lon = (hotel?['longitude'] as num?)?.toDouble();
     if (lat == null || lon == null) return;
 
-    final uri = Uri.parse(
-      "https://www.google.com/maps/search/?api=1&query=$lat,$lon",
-    );
+    final uri =
+        Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
 
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -256,9 +252,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         .where((s) => s.isNotEmpty)
         .toList();
 
-    if (raw is List && raw.isNotEmpty) {
-      return normalize(raw);
-    }
+    if (raw is List && raw.isNotEmpty) return normalize(raw);
 
     if (raw is String) {
       final s = raw.trim();
@@ -282,15 +276,14 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
-  void _openFullScreenGallery(List<String> images, int index) {
+  void _openFullScreenGallery(List<String> images, int initialIndex) {
     if (images.isEmpty) return;
-
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FullscreenGalleryPage(
           images: images,
-          initialIndex: index,
-          heroPrefix: 'hotel_${_id}_',
+          initialIndex: initialIndex,
+          title: (hotel?['nom'] ?? 'Hôtel').toString(),
         ),
       ),
     );
@@ -303,9 +296,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full) {
-          return Icon(Icons.star, size: size, color: Colors.amber);
-        }
+        if (i < full) return Icon(Icons.star, size: size, color: Colors.amber);
         if (i == full && half) {
           return Icon(Icons.star_half, size: size, color: Colors.amber);
         }
@@ -333,35 +324,31 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     final title = (hotel?['nom'] ?? 'Hôtel').toString();
 
     return Scaffold(
-      backgroundColor: _neutralBg,
+      backgroundColor: kNeutralBg,
       appBar: AppBar(
         title: Text(title),
-        backgroundColor: _neutralSurface,
+        backgroundColor: kNeutralSurface,
         titleTextStyle: const TextStyle(
-          color: hotelsPrimary,
+          color: kHotelsPrimary,
           fontWeight: FontWeight.bold,
           fontSize: 20,
         ),
-        iconTheme: const IconThemeData(color: hotelsPrimary),
+        iconTheme: const IconThemeData(color: kHotelsPrimary),
         elevation: 1,
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(3),
-          child: SizedBox(
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
             height: 3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [hotelsPrimary, hotelsSecondary],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [kHotelsPrimary, kHotelsSecondary],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
               ),
             ),
           ),
         ),
       ),
-
-      // ✅ Tap partout = ferme le clavier (sans casser le scroll)
       body: Listener(
         onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         child: loading
@@ -374,7 +361,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   )
                 : _buildDetailBody()),
       ),
-
       bottomNavigationBar:
           (!loading && hotel != null) ? _buildBottomBar() : null,
     );
@@ -413,6 +399,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
   Widget _buildDetailBody() {
     final images = _imagesFromHotel();
+    final safeIndex =
+        images.isEmpty ? 0 : _currentIndex.clamp(0, images.length - 1);
 
     final nom = (hotel?['nom'] ?? 'Hôtel').toString();
     final ville = (hotel?['ville'] ?? 'Non précisé').toString();
@@ -427,27 +415,28 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1) Galerie
+          // Galerie
           if (images.isNotEmpty) ...[
-            _buildProGallery(images, nom),
+            _buildProGallery(images, safeIndex),
             const SizedBox(height: 14),
           ] else
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 240,
-                color: Colors.grey.shade300,
-                child: const Center(
-                  child: Icon(Icons.image_not_supported, size: 60),
+              child: SizedBox(
+                height: 230,
+                width: double.infinity,
+                child: Container(
+                  color: Colors.grey.shade300,
+                  child: const Center(
+                      child: Icon(Icons.image_not_supported, size: 60)),
                 ),
               ),
             ),
 
-          // 2) Titre + ville
-          Text(
-            nom,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
+          // Infos
+          Text(nom,
+              style:
+                  const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -466,7 +455,6 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
           const SizedBox(height: 12),
 
-          // 3) Prix
           Text(
             "Prix moyen : ${_formatGNF(prix)} GNF / nuit",
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -474,20 +462,17 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
           const SizedBox(height: 10),
 
-          // 4) Description
-          Text(
-            "Description :\n$desc",
-            style: const TextStyle(height: 1.35),
-          ),
+          Text("Description :\n$desc", style: const TextStyle(height: 1.35)),
 
-          // 5) ✅ Bar note moyenne SOUS la description
           const SizedBox(height: 12),
+
+          // Note moyenne
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: neutralBorder),
+              border: Border.all(color: kNeutralBorder),
             ),
             child: Row(
               children: [
@@ -501,18 +486,14 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            '(${_avis.length})',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
+                          Text('(${_avis.length})',
+                              style: const TextStyle(color: Colors.black54)),
                         ],
                       )
-                    : const Text(
-                        "Aucun avis pour le moment",
-                        style: TextStyle(color: Colors.black54),
-                      ),
+                    : const Text("Aucun avis pour le moment",
+                        style: TextStyle(color: Colors.black54)),
                 const Spacer(),
-                const Icon(Icons.verified, size: 18, color: hotelsSecondary),
+                const Icon(Icons.verified, size: 18, color: kHotelsSecondary),
               ],
             ),
           ),
@@ -520,33 +501,28 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           const SizedBox(height: 18),
           const Divider(height: 24),
 
-          // 6) Localisation (bouton)
-          const Text(
-            "Localisation",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
+          // Localisation
+          const Text("Localisation",
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 10),
           ElevatedButton.icon(
             onPressed: _localiser,
             icon: const Icon(Icons.map),
             label: const Text("Localiser"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: hotelsSecondary,
-              foregroundColor: onPrimary,
+              backgroundColor: kHotelsSecondary,
+              foregroundColor: kHotelsOnPrimary,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
 
           const SizedBox(height: 22),
           const Divider(height: 24),
 
-          // 7) ✅ Avis des utilisateurs (AU-DESSUS de “Votre avis”)
-          const Text(
-            "Avis des utilisateurs",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
+          // Avis utilisateurs
+          const Text("Avis des utilisateurs",
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 10),
 
           if (_avis.isEmpty)
@@ -576,7 +552,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: neutralBorder),
+                    border: Border.all(color: kNeutralBorder),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.03),
@@ -607,8 +583,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                                   child: Text(
                                     fullName,
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                        fontWeight: FontWeight.w700),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -619,18 +594,14 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                             ),
                             if (commentaire.isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Text(
-                                commentaire,
-                                style: const TextStyle(height: 1.3),
-                              ),
+                              Text(commentaire,
+                                  style: const TextStyle(height: 1.3)),
                             ],
                             if (dateStr.isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Text(
-                                dateStr,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.black54),
-                              ),
+                              Text(dateStr,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.black54)),
                             ],
                           ],
                         ),
@@ -644,11 +615,9 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           const SizedBox(height: 22),
           const Divider(height: 24),
 
-          // 8) ✅ Votre avis (TOUT EN BAS)
-          const Text(
-            "Votre avis",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
+          // Votre avis
+          const Text("Votre avis",
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 8),
 
           _starsPick(_noteUtilisateur,
@@ -668,11 +637,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               contentPadding: const EdgeInsets.all(12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: neutralBorder),
+                borderSide: const BorderSide(color: kNeutralBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: neutralBorder),
+                borderSide: const BorderSide(color: kNeutralBorder),
               ),
             ),
           ),
@@ -686,15 +655,14 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               icon: const Icon(Icons.send_rounded, size: 18),
               label: const Text("Envoyer"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: hotelsSecondary,
-                foregroundColor: onPrimary,
-                disabledBackgroundColor: hotelsSecondary.withOpacity(0.35),
-                disabledForegroundColor: onPrimary.withOpacity(0.8),
+                backgroundColor: kHotelsSecondary,
+                foregroundColor: kHotelsOnPrimary,
+                disabledBackgroundColor: kHotelsSecondary.withOpacity(0.35),
+                disabledForegroundColor: kHotelsOnPrimary.withOpacity(0.8),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
@@ -703,9 +671,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     );
   }
 
-  Widget _buildProGallery(List<String> images, String title) {
-    final heroPrefix = 'hotel_${_id}_';
-
+  /// ✅ Galerie corrigée: même comportement que Tourisme => image jamais déformée
+  /// - hauteur fixe 230
+  /// - BoxFit.cover
+  /// - pas de memCacheHeight/memCacheWidth (qui peut provoquer du stretch)
+  Widget _buildProGallery(List<String> images, int safeIndex) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -714,37 +684,31 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           child: Stack(
             children: [
               SizedBox(
-                height: 240,
+                height: 230,
                 width: double.infinity,
                 child: PageView.builder(
                   controller: _pageController,
                   itemCount: images.length,
                   onPageChanged: (i) => setState(() => _currentIndex = i),
                   itemBuilder: (context, index) {
-                    final url = images[index];
+                    final url = images[index].trim();
                     return GestureDetector(
                       onTap: () => _openFullScreenGallery(images, index),
-                      child: Hero(
-                        tag: '${heroPrefix}$index',
-                        child: CachedNetworkImage(
-                          imageUrl: url,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            color: Colors.grey.shade200,
-                            child: const Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              ),
+                      child: CachedNetworkImage(
+                        imageUrl: url,
+                        fit: BoxFit.cover,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (_, __) => const SizedBox.expand(
+                          child: ColoredBox(color: Color(0xFFE5E7EB)),
+                        ),
+                        errorWidget: (_, __, ___) => const SizedBox.expand(
+                          child: ColoredBox(
+                            color: Color(0xFFE5E7EB),
+                            child: Center(
+                              child: Icon(Icons.broken_image,
+                                  color: Colors.black26, size: 42),
                             ),
-                          ),
-                          errorWidget: (_, __, ___) => Container(
-                            color: Colors.grey.shade200,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.broken_image,
-                                color: Colors.black26, size: 42),
                           ),
                         ),
                       ),
@@ -753,44 +717,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 ),
               ),
 
-              // Gradient overlay bas + titre
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 28, 12, 10),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.black.withOpacity(0.0),
-                        Colors.black.withOpacity(0.55),
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      _buildDots(images.length, _currentIndex),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Compteur top-right
+              // Compteur
               Positioned(
                 right: 10,
                 top: 10,
@@ -803,10 +730,18 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     border: Border.all(color: Colors.white.withOpacity(0.18)),
                   ),
                   child: Text(
-                    '${_currentIndex + 1}/${images.length}',
+                    '${safeIndex + 1}/${images.length}',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ),
+              ),
+
+              // Dots
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 10,
+                child: Center(child: _buildDots(images.length, safeIndex)),
               ),
             ],
           ),
@@ -822,10 +757,18 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               itemCount: images.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
-                final isActive = index == _currentIndex;
+                final isActive = index == safeIndex;
+                final url = images[index].trim();
+
                 return GestureDetector(
                   onTap: () {
-                    _pageController.jumpToPage(index);
+                    if (_pageController.hasClients) {
+                      _pageController.animateToPage(
+                        index,
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOut,
+                      );
+                    }
                     setState(() => _currentIndex = index);
                   },
                   child: AnimatedContainer(
@@ -834,7 +777,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isActive ? hotelsPrimary : Colors.transparent,
+                        color: isActive ? kHotelsPrimary : Colors.transparent,
                         width: 2,
                       ),
                       boxShadow: [
@@ -847,7 +790,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: CachedNetworkImage(
-                      imageUrl: images[index],
+                      imageUrl: url,
                       fit: BoxFit.cover,
                       placeholder: (_, __) =>
                           Container(color: Colors.grey.shade200),
@@ -875,7 +818,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         final active = i == index;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          margin: const EdgeInsets.only(left: 5),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
           width: active ? 14 : 6,
           height: 6,
           decoration: BoxDecoration(
@@ -901,7 +844,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         decoration: BoxDecoration(
-          color: _neutralSurface,
+          color: kNeutralSurface,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.06),
@@ -918,12 +861,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 icon: const Icon(Icons.chat),
                 label: const Text("Contacter"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: hotelsSecondary,
-                  foregroundColor: onPrimary,
+                  backgroundColor: kHotelsSecondary,
+                  foregroundColor: kHotelsOnPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -939,12 +881,11 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                 icon: const Icon(Icons.calendar_today),
                 label: const Text("Réserver"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: hotelsPrimary,
-                  foregroundColor: onPrimary,
+                  backgroundColor: kHotelsPrimary,
+                  foregroundColor: kHotelsOnPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -969,26 +910,25 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
           phone: telRaw.isEmpty ? null : telRaw,
           address: address.isEmpty ? null : address,
           coverImage: images.isNotEmpty ? images.first : null,
-          primaryColor: hotelsPrimary,
+          primaryColor: kHotelsPrimary,
         ),
       ),
     );
   }
 }
 
-/* ===========================
-   FULLSCREEN VIEWER (OK)
-   =========================== */
-
+/// =======================================================
+/// Viewer plein écran (comme Resto, stable sur Desktop/Web)
+/// =======================================================
 class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
-  final String heroPrefix; // ex: 'hotel_<id>_'
+  final String title;
 
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
-    required this.heroPrefix,
+    required this.title,
   });
 
   @override
@@ -996,15 +936,14 @@ class _FullscreenGalleryPage extends StatefulWidget {
 }
 
 class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
-  late final PageController _ctrl =
-      PageController(initialPage: widget.initialIndex);
-
-  int _index = 0;
+  late final PageController _ctrl;
+  late int _index;
 
   @override
   void initState() {
     super.initState();
-    _index = widget.initialIndex;
+    _index = widget.initialIndex.clamp(0, widget.images.length - 1);
+    _ctrl = PageController(initialPage: _index);
   }
 
   @override
@@ -1022,33 +961,39 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
         title: Text(
           '${_index + 1}/$total',
           style: const TextStyle(color: Colors.white),
         ),
       ),
-      body: PageView.builder(
-        controller: _ctrl,
-        itemCount: total,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemBuilder: (_, i) {
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}$i',
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 4,
+      body: SizedBox.expand(
+        child: PageView.builder(
+          controller: _ctrl,
+          itemCount: total,
+          onPageChanged: (i) => setState(() => _index = i),
+          itemBuilder: (_, i) {
+            final url = widget.images[i].trim();
+            return InteractiveViewer(
+              minScale: 1.0,
+              maxScale: 4.0,
+              child: Center(
                 child: CachedNetworkImage(
-                  imageUrl: widget.images[i],
+                  imageUrl: url,
                   fit: BoxFit.contain,
-                  placeholder: (_, __) => Container(color: Colors.black),
-                  errorWidget: (_, __, ___) =>
-                      const Icon(Icons.broken_image, color: Colors.white),
+                  placeholder: (_, __) => const SizedBox.expand(
+                    child: ColoredBox(color: Colors.black),
+                  ),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white70,
+                    size: 64,
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

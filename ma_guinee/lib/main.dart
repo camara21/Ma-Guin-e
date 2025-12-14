@@ -1,4 +1,4 @@
-// lib/main.dart — PROD (Realtime + Heartbeat + FCM + RecoveryGuard)
+// lib/main.dart — PROD (Realtime + Heartbeat + FCM + RecoveryGuard + Offline UX)
 import 'dart:async';
 import 'dart:convert';
 
@@ -15,6 +15,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
+
+// ✅ Détection réseau
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'firebase_options.dart';
 import 'routes.dart';
@@ -54,6 +57,79 @@ const PageTransitionsTheme _kSmoothTransitions = PageTransitionsTheme(
     TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
   },
 );
+
+/// =========================
+/// ✅ OFFLINE / CONNECTIVITY
+/// =========================
+final ValueNotifier<bool> _isOffline = ValueNotifier<bool>(false);
+final Connectivity _connectivity = Connectivity();
+StreamSubscription? _connSub;
+bool _connInited = false;
+
+/// Normalise ConnectivityResult (v5) et List<ConnectivityResult> (v6)
+bool _offlineFromConnectivity(dynamic result) {
+  try {
+    if (result is ConnectivityResult) {
+      return result == ConnectivityResult.none;
+    }
+    if (result is List<ConnectivityResult>) {
+      if (result.isEmpty) return true;
+      return result.every((r) => r == ConnectivityResult.none);
+    }
+  } catch (_) {}
+  return false;
+}
+
+void _setOffline(dynamic connectivityResult) {
+  final off = _offlineFromConnectivity(connectivityResult);
+  if (_isOffline.value != off) _isOffline.value = off;
+}
+
+/// Side-effects réseau: stop/start heartbeat + channels
+void _applyNetworkSideEffects() {
+  try {
+    final uid = Supabase.instance.client.auth.currentSession?.user.id;
+    if (_isOffline.value) {
+      _unsubscribeUserNotifications();
+      _unsubscribeAdminKick();
+      unawaited(_stopHeartbeat());
+    } else {
+      if (uid != null) {
+        _subscribeUserNotifications(uid);
+        _subscribeAdminKick(uid);
+        unawaited(_startHeartbeat());
+        _askPushOnce();
+        unawaited(AnnoncesPage.preload());
+        unawaited(PushService.instance.showLaunchAdminIfPending());
+      }
+    }
+  } catch (_) {}
+}
+
+Future<void> _initConnectivityWatch() async {
+  if (_connInited) return;
+  _connInited = true;
+
+  try {
+    final initial = await _connectivity.checkConnectivity();
+    _setOffline(initial);
+
+    _connSub = _connectivity.onConnectivityChanged.listen((result) {
+      _setOffline(result);
+      _applyNetworkSideEffects();
+    });
+  } catch (_) {
+    // silencieux
+  }
+}
+
+Future<bool> _checkOfflineNow() async {
+  try {
+    final r = await _connectivity.checkConnectivity();
+    _setOffline(r);
+  } catch (_) {}
+  return _isOffline.value;
+}
 
 /// Navigation centralisée avec protection contre les doubles push.
 /// Si le navigator n'est pas encore prêt, on replanifie automatiquement.
@@ -264,23 +340,36 @@ bool _isRecoveryUrl(Uri uri) {
 }
 
 /// Bootstrap global: charge l’utilisateur, démarre heartbeat + notifs, etc.
+/// ✅ Offline-safe : si pas de réseau, on navigue quand même (session locale)
 Future<void> _bootstrap(UserProvider userProvider) async {
   try {
     if (kIsWeb && _isRecoveryUrl(Uri.base)) {
       RecoveryGuard.activate();
     }
 
-    await userProvider.chargerUtilisateurConnecte();
+    final offline = await _checkOfflineNow();
+
+    // ✅ Si offline, on tente juste un "best effort" (pas de blocage long)
+    try {
+      await userProvider
+          .chargerUtilisateurConnecte()
+          .timeout(Duration(seconds: offline ? 2 : 10));
+    } catch (_) {
+      // silencieux: l’objectif est de ne jamais bloquer l’app
+    }
+
     final session = Supabase.instance.client.auth.currentSession;
     final user = session?.user;
 
     if (user != null) {
-      _subscribeUserNotifications(user.id);
-      _subscribeAdminKick(user.id);
-      unawaited(_startHeartbeat());
-      _askPushOnce();
+      if (!offline) {
+        _subscribeUserNotifications(user.id);
+        _subscribeAdminKick(user.id);
+        unawaited(_startHeartbeat());
+        _askPushOnce();
 
-      unawaited(AnnoncesPage.preload());
+        unawaited(AnnoncesPage.preload());
+      }
 
       if (!RecoveryGuard.isActive) {
         await _goHomeBasedOnRole(userProvider);
@@ -291,7 +380,9 @@ Future<void> _bootstrap(UserProvider userProvider) async {
       }
     }
 
-    await PushService.instance.showLaunchAdminIfPending();
+    if (!offline) {
+      await PushService.instance.showLaunchAdminIfPending();
+    }
 
     Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
       final session = event.session;
@@ -319,22 +410,33 @@ Future<void> _bootstrap(UserProvider userProvider) async {
         return;
       }
 
+      final offlineNow = _isOffline.value;
+
       if (session?.user != null) {
         final uid = session!.user.id;
-        _subscribeUserNotifications(uid);
-        _subscribeAdminKick(uid);
-        await _startHeartbeat();
 
-        await userProvider.chargerUtilisateurConnecte();
-        _askPushOnce();
+        if (!offlineNow) {
+          _subscribeUserNotifications(uid);
+          _subscribeAdminKick(uid);
+          await _startHeartbeat();
+          _askPushOnce();
 
-        unawaited(AnnoncesPage.preload());
+          unawaited(AnnoncesPage.preload());
+        }
+
+        try {
+          await userProvider
+              .chargerUtilisateurConnecte()
+              .timeout(Duration(seconds: offlineNow ? 2 : 10));
+        } catch (_) {}
 
         if (!RecoveryGuard.isActive) {
           await _goHomeBasedOnRole(userProvider);
         }
 
-        await PushService.instance.showLaunchAdminIfPending();
+        if (!offlineNow) {
+          await PushService.instance.showLaunchAdminIfPending();
+        }
       }
     });
   } catch (e) {
@@ -368,6 +470,9 @@ Future<void> main() async {
   }
 
   await initSupabase();
+
+  // ✅ Démarre la surveillance réseau après init Supabase
+  await _initConnectivityWatch();
 
   final userProvider = UserProvider();
 
@@ -437,12 +542,61 @@ class MyApp extends StatelessWidget {
       ],
       locale: const Locale('fr'),
 
-      // ✅ IMPORTANT : évite les flashs (fond derrière les routes = background du thème)
+      // ✅ IMPORTANT : évite les flashs + affiche un message hors-ligne clair
       builder: (context, child) {
         final bg = Theme.of(context).scaffoldBackgroundColor;
+
         return ColoredBox(
           color: bg,
-          child: child ?? const SizedBox.shrink(),
+          child: Stack(
+            children: [
+              child ?? const SizedBox.shrink(),
+
+              // ✅ Bannière hors-ligne globale (ne bloque pas l’UI)
+              ValueListenableBuilder<bool>(
+                valueListenable: _isOffline,
+                builder: (_, offline, __) {
+                  if (!offline) return const SizedBox.shrink();
+
+                  return Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: SafeArea(
+                      top: false,
+                      child: Material(
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(14),
+                        color: Colors.black.withOpacity(.86),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: const [
+                              Icon(Icons.wifi_off,
+                                  color: Colors.white, size: 18),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  "Connexion internet indisponible. Activez le Wi-Fi ou les données mobiles, ou vérifiez votre réseau.",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    height: 1.15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         );
       },
     );

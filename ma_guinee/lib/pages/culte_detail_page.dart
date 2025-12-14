@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ✅ orientation lock
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -194,6 +195,9 @@ class CulteDetailPage extends StatelessWidget {
     final String nom = (lieu['nom'] ?? 'Lieu de culte').toString();
     final String ville = (lieu['ville'] ?? 'Ville inconnue').toString();
 
+    // ✅ prefix stable (id si dispo) → évite les tags “fragiles”
+    final heroPrefix = 'culte_${lieu['id'] ?? nom}';
+
     // images: supporte `images: []` OU `photo_url: "..."`.
     final List<String> images = (lieu['images'] is List &&
             (lieu['images'] as List).isNotEmpty)
@@ -242,12 +246,12 @@ class CulteDetailPage extends StatelessWidget {
                           builder: (_) => _FullscreenGalleryPage(
                             images: images,
                             initialIndex: index,
-                            heroPrefix: 'culte_$nom',
+                            heroPrefix: heroPrefix,
                           ),
                         ),
                       );
                     },
-                    heroPrefix: 'culte_$nom',
+                    heroPrefix: heroPrefix,
                   )
                 else
                   ClipRRect(
@@ -263,24 +267,15 @@ class CulteDetailPage extends StatelessWidget {
                       ),
                     ),
                   ),
-
                 const SizedBox(height: 16),
-
-                // Ville
-                Text(
-                  ville,
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
-                ),
-
-                // Description
+                Text(ville,
+                    style:
+                        const TextStyle(fontSize: 16, color: Colors.black87)),
                 if (description != null && description.trim().isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const Text(
                     "Description :",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -289,17 +284,12 @@ class CulteDetailPage extends StatelessWidget {
                     style: const TextStyle(fontSize: 15, height: 1.45),
                   ),
                 ],
-
                 const SizedBox(height: 20),
                 const Text(
                   "Localisation :",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 10),
-
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -344,10 +334,7 @@ class CulteDetailPage extends StatelessWidget {
                     ],
                   ),
                 ),
-
-                // Section Don
                 _donationSection(context),
-
                 const SizedBox(height: 18),
                 Center(
                   child: ElevatedButton.icon(
@@ -426,7 +413,6 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ✅ Image principale + compteur (ratio stable => pas “déformé”)
         Stack(
           children: [
             ClipRRect(
@@ -461,11 +447,13 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                             fadeOutDuration: Duration.zero,
                             placeholderFadeInDuration: Duration.zero,
                             useOldImageOnUrlChange: true,
-                            imageBuilder: (_, provider) => Image(
-                              image: provider,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              filterQuality: FilterQuality.high,
+                            imageBuilder: (_, provider) => SizedBox.expand(
+                              child: Image(
+                                image: provider,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.high,
+                              ),
                             ),
                             placeholder: (_, __) => _premiumPlaceholder(),
                             errorWidget: (_, __, ___) => Container(
@@ -481,8 +469,6 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                 ),
               ),
             ),
-
-            // Compteur en haut à droite
             Positioned(
               right: 10,
               top: 10,
@@ -504,10 +490,7 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
             ),
           ],
         ),
-
         const SizedBox(height: 10),
-
-        // Miniatures
         SizedBox(
           height: 70,
           child: ListView.separated(
@@ -566,15 +549,16 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                         fadeOutDuration: Duration.zero,
                         placeholderFadeInDuration: Duration.zero,
                         useOldImageOnUrlChange: true,
-                        imageBuilder: (_, provider) => Image(
-                          image: provider,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          filterQuality: FilterQuality.high,
+                        imageBuilder: (_, provider) => SizedBox.expand(
+                          child: Image(
+                            image: provider,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            filterQuality: FilterQuality.high,
+                          ),
                         ),
-                        placeholder: (_, __) => Container(
-                          color: const Color(0xFFE5E7EB),
-                        ),
+                        placeholder: (_, __) =>
+                            Container(color: const Color(0xFFE5E7EB)),
                         errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFFE5E7EB),
                           alignment: Alignment.center,
@@ -641,33 +625,45 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
           style: const TextStyle(color: Colors.white),
         ),
       ),
-      body: PageView.builder(
-        controller: _ctrl,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemCount: widget.images.length,
-        itemBuilder: (_, i) {
-          final url = widget.images[i];
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}_$i',
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  placeholderFadeInDuration: Duration.zero,
-                  placeholder: (_, __) => Container(color: Colors.black),
-                  errorWidget: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white,
-                    size: 64,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return PageView.builder(
+            controller: _ctrl,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemCount: total,
+            itemBuilder: (_, i) {
+              final url = widget.images[i];
+
+              return SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: Hero(
+                  tag: '${widget.heroPrefix}_$i',
+                  child: InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: SizedBox.expand(
+                      child: CachedNetworkImage(
+                        imageUrl: url,
+                        fit: BoxFit.contain,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholderFadeInDuration: Duration.zero,
+                        placeholder: (_, __) =>
+                            const ColoredBox(color: Colors.black),
+                        errorWidget: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            color: Colors.white70,
+                            size: 64,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),

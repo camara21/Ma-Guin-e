@@ -969,29 +969,44 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
           style: const TextStyle(color: Colors.white),
         ),
       ),
-      body: PageView.builder(
-        controller: _ctrl,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemCount: widget.images.length,
-        itemBuilder: (_, i) {
-          final url = widget.images[i];
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}_$i',
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white70,
-                    size: 64,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return PageView.builder(
+            controller: _ctrl,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemCount: total,
+            itemBuilder: (_, i) {
+              final url = widget.images[i];
+
+              return SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: Hero(
+                  tag: '${widget.heroPrefix}_$i',
+                  child: InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: SizedBox.expand(
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (ctx, child, ev) {
+                          if (ev == null) return child;
+                          return const ColoredBox(color: Colors.black);
+                        },
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            color: Colors.white70,
+                            size: 64,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),

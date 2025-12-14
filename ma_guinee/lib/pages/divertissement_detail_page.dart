@@ -1,5 +1,7 @@
+// lib/pages/divertissement/divertissement_detail_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ✅ orientation lock (si tu l’utilises après)
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -38,11 +40,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   final PageController _pageController = PageController();
   int _currentImage = 0;
 
-  bool get _canSubmitAvis {
-    return !_submittingAvis &&
-        _note > 0 &&
-        _avisController.text.trim().isNotEmpty;
-  }
+  bool get _canSubmitAvis =>
+      !_submittingAvis && _note > 0 && _avisController.text.trim().isNotEmpty;
 
   Future<void> _precacheAll(BuildContext context, List<String> urls) async {
     for (final u in urls) {
@@ -63,7 +62,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     _loadAvisStats();
     _loadAvisCommentaires();
 
-    // ✅ pour activer/désactiver le bouton en temps réel
     _avisController.addListener(() {
       if (mounted) setState(() {});
     });
@@ -174,6 +172,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   }
 
   Future<void> _submitAvis() async {
+    if (_submittingAvis) return;
+
     final userId = _sb.auth.currentUser?.id;
     final lieuId = widget.lieu['id']?.toString();
     final commentaire = _avisController.text.trim();
@@ -188,8 +188,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
           .showSnackBar(const SnackBar(content: Text("Lieu invalide.")));
       return;
     }
-
-    // ✅ règles demandées : étoiles + commentaire obligatoires
     if (_note <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text("Choisissez une note (au moins 1 étoile).")));
@@ -201,24 +199,19 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       return;
     }
 
-    if (_submittingAvis) return;
-
     try {
       if (mounted) setState(() => _submittingAvis = true);
 
-      final payload = {
-        'lieu_id': lieuId,
-        'auteur_id': userId,
-        'etoiles': _note,
-        'commentaire': commentaire, // ✅ plus de null
-      };
-
       await _sb.from('avis_lieux').upsert(
-            payload,
-            onConflict: 'lieu_id,auteur_id',
-          );
+        {
+          'lieu_id': lieuId,
+          'auteur_id': userId,
+          'etoiles': _note,
+          'commentaire': commentaire,
+        },
+        onConflict: 'lieu_id,auteur_id',
+      );
 
-      // ✅ ferme clavier
       FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
@@ -278,10 +271,14 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
   // ----------------- Images -----------------
   List<String> _images(Map<String, dynamic> lieu) {
-    if (lieu['images'] is List && (lieu['images'] as List).isNotEmpty) {
-      return (lieu['images'] as List).map((e) => e.toString()).toList();
+    final raw = lieu['images'];
+    if (raw is List && raw.isNotEmpty) {
+      return raw
+          .map((e) => (e ?? '').toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
-    final p = lieu['photo_url']?.toString() ?? '';
+    final p = (lieu['photo_url']?.toString() ?? '').trim();
     return p.isNotEmpty ? [p] : [];
   }
 
@@ -306,9 +303,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full) {
-          return Icon(Icons.star, color: Colors.amber, size: size);
-        }
+        if (i < full) return Icon(Icons.star, color: Colors.amber, size: size);
         if (i == full && half) {
           return Icon(Icons.star_half, color: Colors.amber, size: size);
         }
@@ -385,7 +380,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final String horaires = (lieu['horaires'] ?? "Non renseigné").toString();
     final String description = (lieu['description'] ?? '').toString().trim();
 
-    // clamp léger
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
     final heroPrefix = 'divert_${lieu['id'] ?? nom}';
@@ -401,8 +395,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
           elevation: 0.8,
           iconTheme: const IconThemeData(color: Colors.white),
         ),
-
-        // Actions bas
         bottomNavigationBar: SafeArea(
           top: false,
           child: Container(
@@ -466,8 +458,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             ),
           ),
         ),
-
-        // ✅ Tap partout = ferme clavier
         body: Listener(
           onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
           child: SingleChildScrollView(
@@ -475,26 +465,30 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ---------- Galerie ----------
+                // ✅ GALERIE (comme Tourisme: contraintes stables + crop propre)
                 if (images.isNotEmpty) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(13),
+                    clipBehavior: Clip.hardEdge,
                     child: Stack(
                       children: [
                         SizedBox(
-                          height: 200,
+                          height: 230, // ✅ même philosophie tourisme
                           width: double.infinity,
                           child: PageView.builder(
                             controller: _pageController,
                             itemCount: images.length,
                             onPageChanged: (i) =>
                                 setState(() => _currentImage = i),
-                            itemBuilder: (context, index) =>
-                                _FadeInNetworkImage(
-                              url: images[index],
-                              heroTag: '${heroPrefix}_$index',
+                            itemBuilder: (context, index) => GestureDetector(
                               onTap: () =>
                                   _openFullScreenGallery(images, index),
+                              child: Hero(
+                                tag: '${heroPrefix}_$index',
+                                child: _FadeInNetworkImage(
+                                  url: images[index],
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -520,6 +514,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
+
+                  // ✅ Miniatures
                   if (images.length > 1)
                     SizedBox(
                       height: 68,
@@ -529,6 +525,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
                         itemBuilder: (context, index) {
                           final isActive = index == _currentImage;
+
                           return GestureDetector(
                             onTap: () {
                               _pageController.animateToPage(
@@ -550,12 +547,16 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                                 ),
                               ),
                               clipBehavior: Clip.hardEdge,
-                              child: Image.network(
-                                images[index],
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  color: Colors.grey[200],
-                                  child: const Icon(Icons.broken_image),
+                              child: SizedBox.expand(
+                                child: Image.network(
+                                  images[index],
+                                  fit: BoxFit.cover,
+                                  gaplessPlayback: true,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Colors.grey[200],
+                                    alignment: Alignment.center,
+                                    child: const Icon(Icons.broken_image),
+                                  ),
                                 ),
                               ),
                             ),
@@ -567,7 +568,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(13),
                     child: Container(
-                      height: 200,
+                      height: 230,
                       color: Colors.grey.shade300,
                       child: const Center(
                         child: Icon(Icons.image_not_supported, size: 60),
@@ -576,8 +577,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
 
                 const SizedBox(height: 20),
-
-                // ---------- Infos ----------
                 Text(
                   nom,
                   style: const TextStyle(
@@ -591,7 +590,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
                 ],
                 const SizedBox(height: 14),
-
                 Row(
                   children: [
                     const Icon(Icons.location_on, color: kPrimary, size: 21),
@@ -607,9 +605,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 12),
-
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -621,8 +617,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     ),
                   ],
                 ),
-
-                // ✅ DESCRIPTION (si dispo)
                 if (description.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -630,14 +624,10 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     style: const TextStyle(fontSize: 15, height: 1.35),
                   ),
                 ],
-
-                // ✅ BAR NOTE MOYENNE SOUS DESCRIPTION
                 const SizedBox(height: 12),
                 _avgRatingBar(),
 
                 const Divider(height: 30),
-
-                // ✅ AVIS UTILISATEURS AU-DESSUS
                 const Text(
                   "Avis des utilisateurs",
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -753,8 +743,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
 
                 const Divider(height: 32),
-
-                // ✅ VOTRE AVIS EN BAS DE PAGE
                 const Text(
                   "Votre avis",
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -785,15 +773,17 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   decoration: InputDecoration(
                     hintText: "Écrivez votre avis ici...",
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: _neutralBorder)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _neutralBorder),
+                    ),
                     enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: _neutralBorder)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _neutralBorder),
+                    ),
                     focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide:
-                            const BorderSide(color: kPrimary, width: 1.3)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: kPrimary, width: 1.3),
+                    ),
                     fillColor: Colors.grey[100],
                     filled: true,
                   ),
@@ -802,7 +792,6 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton.icon(
-                    // ✅ Désactivé tant que étoiles + commentaire pas remplis
                     onPressed: _canSubmitAvis ? _submitAvis : null,
                     icon: _submittingAvis
                         ? const SizedBox(
@@ -823,7 +812,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                       padding: const EdgeInsets.symmetric(
                           vertical: 11, horizontal: 18),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       elevation: 0,
                     ),
                   ),
@@ -837,12 +827,15 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   }
 }
 
-// ----------------- Widgets images avec fade-in (sans spinner) -----------------
+// ------------------------------------------------------------
+// ✅ Image stable (comme “Tourisme”)
+// - SizedBox.expand => contraintes claires
+// - BoxFit.cover => pas de déformation
+// - placeholder propre
+// ------------------------------------------------------------
 class _FadeInNetworkImage extends StatefulWidget {
   final String url;
-  final String? heroTag;
-  final VoidCallback? onTap;
-  const _FadeInNetworkImage({required this.url, this.heroTag, this.onTap});
+  const _FadeInNetworkImage({required this.url});
 
   @override
   State<_FadeInNetworkImage> createState() => _FadeInNetworkImageState();
@@ -871,35 +864,37 @@ class _FadeInNetworkImageState extends State<_FadeInNetworkImage>
 
   @override
   Widget build(BuildContext context) {
-    final img = Image.network(
-      widget.url,
-      fit: BoxFit.cover,
-      loadingBuilder: (ctx, child, ev) {
-        if (ev == null) {
-          _ctrl.forward();
-          return FadeTransition(opacity: _fade, child: child);
-        }
-        return const _ImagePlaceholder();
-      },
-      errorBuilder: (_, __, ___) =>
-          const Center(child: Icon(Icons.broken_image, size: 40)),
+    return SizedBox.expand(
+      child: Image.network(
+        widget.url,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        loadingBuilder: (ctx, child, ev) {
+          if (ev == null) {
+            _ctrl.forward();
+            return FadeTransition(opacity: _fade, child: child);
+          }
+          return const _ImagePlaceholder();
+        },
+        errorBuilder: (_, __, ___) => const ColoredBox(
+          color: Color(0xFFE5E7EB),
+          child: Center(
+              child: Icon(Icons.broken_image, size: 44, color: Colors.black26)),
+        ),
+      ),
     );
-
-    final child =
-        widget.heroTag != null ? Hero(tag: widget.heroTag!, child: img) : img;
-
-    return GestureDetector(onTap: widget.onTap, child: child);
   }
 }
 
 class _ImagePlaceholder extends StatelessWidget {
   const _ImagePlaceholder();
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.grey.shade200,
-      alignment: Alignment.center,
-      child: const Icon(Icons.image, size: 40, color: Colors.grey),
+    return const ColoredBox(
+      color: Color(0xFFE5E7EB),
+      child: Center(child: Icon(Icons.image, size: 40, color: Colors.black26)),
     );
   }
 }
@@ -927,7 +922,7 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
   @override
   void initState() {
     super.initState();
-    _index = widget.initialIndex;
+    _index = widget.initialIndex.clamp(0, widget.images.length - 1);
     _ctrl = PageController(initialPage: _index);
   }
 
@@ -955,9 +950,9 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
       body: PageView.builder(
         controller: _ctrl,
         onPageChanged: (i) => setState(() => _index = i),
-        itemCount: widget.images.length,
+        itemCount: total,
         itemBuilder: (_, i) {
-          final url = widget.images[i];
+          final url = widget.images[i].trim();
           return Center(
             child: Hero(
               tag: '${widget.heroPrefix}_$i',
@@ -967,6 +962,10 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
                 child: Image.network(
                   url,
                   fit: BoxFit.contain,
+                  loadingBuilder: (ctx, child, ev) {
+                    if (ev == null) return child;
+                    return const ColoredBox(color: Colors.black);
+                  },
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image,
                     color: Colors.white70,

@@ -25,6 +25,9 @@ dependencies:
   google_maps_flutter: ^2.7.0
   google_maps_flutter_web: ^0.5.7
 
+  # Réseau / connectivité (offline banner)
+  connectivity_plus: ^6.1.0
+
   # Requêtes HTTP
   http: ^1.2.1
 
