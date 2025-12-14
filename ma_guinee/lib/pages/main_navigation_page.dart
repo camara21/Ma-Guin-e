@@ -71,44 +71,43 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   void dispose() {
-    // Si un jour tu veux fermer les StreamController de MessageService :
     // _messageService.disposeService();
     super.dispose();
   }
 
-  /// Stream qui rafraîchit périodiquement le nombre de messages non lus
-  /// pour l'utilisateur connecté.
-  ///
-  /// Ici : toutes les 1 seconde.
-  /// Tu peux passer à 2 ou 3 secondes si tu veux alléger la charge.
   Stream<int> _buildUnreadStream(String userId) {
     return Stream.periodic(const Duration(seconds: 3))
         .asyncMap((_) => _messageService.getUnreadMessagesCount(userId))
         .distinct();
   }
 
+  double _extraBottomPaddingForIOS(BuildContext context) {
+    // Sur iOS (surtout Web/PWA), on ajoute un petit “air gap”
+    // pour éviter que le texte soit collé / masqué par le home indicator.
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS) return 8.0;
+    return 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().utilisateur;
 
-    // Tant que le user n'est pas chargé
     if (user == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    // On crée le stream UNE SEULE FOIS, quand on a enfin un user
     _unreadStream ??= _buildUnreadStream(user.id);
 
     final pages = <Widget>[
       const HomePage(),
       const CartePage(),
       const MessagesPage(),
-      ProfilePage(user: user), // on ne touche pas
+      ProfilePage(user: user),
     ];
 
-    // fallback : si pour une raison quelconque le stream est null
     final unreadStream = _unreadStream ?? Stream<int>.value(0);
 
     return WillPopScope(
@@ -121,52 +120,56 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       },
       child: Scaffold(
         body: pages[_currentIndex],
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          currentIndex: _currentIndex,
-          selectedItemColor: kBleu,
-          unselectedItemColor: Colors.grey,
-          onTap: (i) => setState(() => _currentIndex = i),
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: 'Accueil',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: 'Carte',
-            ),
 
-            // ---------------------------------------------------------
-            // Onglet Messages avec badge "polling" (rafraîchi en continu)
-            // ---------------------------------------------------------
-            BottomNavigationBarItem(
-              label: 'Messages',
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.forum_rounded),
-                  Positioned(
-                    right: -6,
-                    top: -6,
-                    child: StreamBuilder<int>(
-                      stream: unreadStream,
-                      initialData: 0,
-                      builder: (context, snapshot) {
-                        final unread = snapshot.data ?? 0;
-                        return Badge(count: unread, size: 18);
-                      },
-                    ),
+        // ✅ Fix iOS: SafeArea + padding supplémentaire
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding:
+                EdgeInsets.only(bottom: _extraBottomPaddingForIOS(context)),
+            child: BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: _currentIndex,
+              selectedItemColor: kBleu,
+              unselectedItemColor: Colors.grey,
+              onTap: (i) => setState(() => _currentIndex = i),
+              items: [
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.home),
+                  label: 'Accueil',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.map),
+                  label: 'Carte',
+                ),
+                BottomNavigationBarItem(
+                  label: 'Messages',
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.forum_rounded),
+                      Positioned(
+                        right: -6,
+                        top: -6,
+                        child: StreamBuilder<int>(
+                          stream: unreadStream,
+                          initialData: 0,
+                          builder: (context, snapshot) {
+                            final unread = snapshot.data ?? 0;
+                            return Badge(count: unread, size: 18);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.person),
+                  label: 'Profil',
+                ),
+              ],
             ),
-
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Profil',
-            ),
-          ],
+          ),
         ),
       ),
     );

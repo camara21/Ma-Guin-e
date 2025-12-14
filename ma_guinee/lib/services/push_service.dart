@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../navigation/push_nav.dart';
 import '../navigation/nav_key.dart';
@@ -18,40 +19,87 @@ class PushService {
   final SupabaseClient _sb = Supabase.instance.client;
   final FirebaseMessaging _fm = FirebaseMessaging.instance;
 
-  // Local notifications (internal)
+  // Local notifications (mobile uniquement)
   final FlutterLocalNotificationsPlugin _localNotif =
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
-  String? _lastToken;
 
-  // If app launched from an "admin" notification while terminated
+  String? _lastToken;
+  String? _lastSavedUserId;
+
   Map<String, dynamic>? _launchAdminData;
   String? _launchAdminTitle;
   String? _launchAdminBody;
 
-  // Android channel id
   static const String _androidChannelId = 'messages_channel';
 
-  // Bannière in-app (foreground)
   OverlayEntry? _bannerEntry;
   Timer? _bannerTimer;
 
-  /// Appelé depuis main.dart APRÈS runApp, et après login (onAuthStateChange).
-  Future<void> initAndRegister() async {
-    if (kIsWeb) {
-      debugPrint('[PushService] Ignoré sur Web.');
-      return;
-    }
+  // --------------------------
+  // Opt-in utilisateur (app)
+  // --------------------------
+  static const String _optInPrefKey = 'notif_opt_in';
 
+  Future<bool> _isOptedIn() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_optInPrefKey) ?? false; // défaut OFF
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // =========================================================
+  // WEB (FCM)
+  // =========================================================
+  static const String _webVapidKey = String.fromEnvironment(
+    'WEB_VAPID_KEY',
+    defaultValue: '',
+  );
+
+  bool get _isWebIosLike {
+    if (!kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  // ---------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------
+
+  /// Appelé depuis main.dart après login.
+  /// IMPORTANT: respecte le consentement utilisateur (notif_opt_in).
+  Future<void> initAndRegister() async {
     final user = _sb.auth.currentUser;
     if (user == null) {
       debugPrint('[PushService] init ignoré → utilisateur NON connecté.');
       return;
     }
 
+    // ✅ Garde-fou légal : si l’utilisateur n’a pas opt-in, on ne fait RIEN.
+    final optedIn = await _isOptedIn();
+    if (!optedIn) {
+      debugPrint(
+          '[PushService] opt-in = false → push désactivé (pas d’enregistrement).');
+      // On coupe auto-init pour éviter recréation silencieuse
+      try {
+        await _fm.setAutoInitEnabled(false);
+      } catch (_) {}
+      return;
+    }
+
+    // ---------------- WEB ----------------
+    if (kIsWeb) {
+      _initialized = true;
+      debugPrint('[PushService] Web détecté → init web soft (sans prompt).');
+      await _refreshWebTokenSilentlyIfGranted();
+      return;
+    }
+
+    // -------------- MOBILE --------------
     if (_initialized) {
-      debugPrint('[PushService] déjà initialisé → refresh token.');
+      debugPrint('[PushService] déjà initialisé → refresh token/save.');
       await _refreshTokenAndSave();
       return;
     }
@@ -59,10 +107,9 @@ class PushService {
 
     debugPrint('[PushService] Initialisation FCM (utilisateur connecté)...');
 
-    // initialise le plugin local (idempotent)
     await _initLocalNotifications();
 
-    // iOS : permission
+    // ✅ Permission : ici c’est OK car opt-in déjà donné
     final settings = await _fm.requestPermission(
       alert: true,
       badge: true,
@@ -75,33 +122,150 @@ class PushService {
       return;
     }
 
+    await _fm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    await _fm.setAutoInitEnabled(true);
+
     await _refreshTokenAndSave();
 
-    // token refresh listener
     FirebaseMessaging.instance.onTokenRefresh.listen((token) {
       debugPrint('[PushService] Nouveau token FCM = $token');
       _lastToken = token;
-      unawaited(_saveTokenToSupabase(token));
+
+      unawaited(_saveTokenToSupabase(token).then((_) {
+        final uid = _sb.auth.currentUser?.id;
+        if (uid != null) _lastSavedUserId = uid;
+      }));
     });
 
-    // listeners message
     _setupForegroundListener();
     _setupClickRouting();
   }
 
-  // -------------------------
-  // Notifications locales
-  // -------------------------
+  /// À appeler quand l’utilisateur désactive (switch OFF)
+  /// => coupe local + serveur.
+  Future<void> disableForCurrentUser() async {
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // 1) Récupérer token courant si possible (pour disable côté serveur)
+      final token = kIsWeb
+          ? await _fm.getToken(
+              vapidKey: _webVapidKey.isEmpty ? null : _webVapidKey)
+          : await _fm.getToken();
+
+      // 2) Supprimer token local
+      await _fm.deleteToken();
+
+      // 3) Couper auto-init (évite recréation au refresh)
+      await _fm.setAutoInitEnabled(false);
+
+      // 4) Désactiver côté serveur (important)
+      if (token != null && token.trim().isNotEmpty) {
+        await _disableTokenServerSide(token.trim());
+      } else {
+        // fallback : désactive par user_id si possible (selon RLS / RPC)
+        await _disableUserServerSide(user.id);
+      }
+    } catch (e) {
+      debugPrint('[PushService] disableForCurrentUser error: $e');
+    } finally {
+      _lastSavedUserId = null;
+      _lastToken = null;
+      _initialized = false;
+    }
+  }
+
+  /// WEB : à appeler depuis un bouton "Activer notifications"
+  /// (uniquement si opt-in true côté app).
+  Future<bool> requestWebPermissionAndRegister() async {
+    if (!kIsWeb) return false;
+
+    final user = _sb.auth.currentUser;
+    if (user == null) {
+      debugPrint(
+          '[PushService] Web register ignoré → utilisateur NON connecté.');
+      return false;
+    }
+
+    final optedIn = await _isOptedIn();
+    if (!optedIn) {
+      debugPrint('[PushService] opt-in = false → refuse register web.');
+      return false;
+    }
+
+    if (_isWebIosLike) {
+      debugPrint(
+          '[PushService] Safari iOS détecté → FCM Web Push non supporté.');
+      return false;
+    }
+
+    if (_webVapidKey.trim().isEmpty) {
+      debugPrint(
+          '[PushService] WEB_VAPID_KEY manquant → getToken web impossible.');
+      return false;
+    }
+
+    try {
+      final settings = await _fm.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint(
+          '[PushService] web permission = ${settings.authorizationStatus}');
+
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        debugPrint('[PushService] Web permission refusée.');
+        return false;
+      }
+
+      await _fm.setAutoInitEnabled(true);
+
+      final token = await _fm.getToken(vapidKey: _webVapidKey);
+      if (token == null || token.trim().isEmpty) {
+        debugPrint('[PushService] Web getToken() a renvoyé null/vide.');
+        return false;
+      }
+
+      _lastToken = token;
+      await _saveTokenToSupabase(token, forcePlatform: 'web');
+      _lastSavedUserId = user.id;
+
+      debugPrint('[PushService] Web token enregistré ✔️');
+      return true;
+    } catch (e) {
+      debugPrint('[PushService] Web permission/register error: $e');
+      return false;
+    }
+  }
+
+  Future<void> onLogoutCleanup() async {
+    // Logout ≠ opt-out. On ne touche pas au consentement ici.
+    _lastSavedUserId = null;
+    _lastToken = null;
+    _initialized = false;
+  }
+
+  // ---------------------------------------------------------
+  // Local notifications (mobile)
+  // ---------------------------------------------------------
+
   Future<void> _initLocalNotifications() async {
+    if (kIsWeb) return;
+
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iOS = DarwinInitializationSettings();
-
     const settings = InitializationSettings(android: android, iOS: iOS);
 
     await _localNotif.initialize(
       settings,
       onDidReceiveNotificationResponse: (NotificationResponse resp) {
-        // On ne traite QUE le clic sur la notification
         if (resp.notificationResponseType !=
             NotificationResponseType.selectedNotification) {
           return;
@@ -109,8 +273,10 @@ class PushService {
 
         final payload = resp.payload;
         if (payload == null || payload.isEmpty) return;
+
         try {
           final Map<String, dynamic> data = jsonDecode(payload);
+
           if ((data['kind'] == 'message' || data['type'] == 'message')) {
             PushNav.openMessageFromData(data);
           } else if (PushNav.isAdminPayload(data)) {
@@ -126,7 +292,6 @@ class PushService {
       },
     );
 
-    // create channel (idempotent)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       _androidChannelId,
       'Messages',
@@ -140,288 +305,40 @@ class PushService {
         ?.createNotificationChannel(channel);
   }
 
-  /// Méthode publique pour afficher une notif locale depuis ton code.
-  /// Pour `kind == "message"`, si l'app est en foreground → on NE fait rien.
-  void showLocalNotification(String? title, String? body,
-      {Map<String, dynamic>? payload}) {
+  void showLocalNotification(
+    String? title,
+    String? body, {
+    Map<String, dynamic>? payload,
+  }) {
+    if (kIsWeb) return;
+
     final kind =
         (payload?['kind'] ?? payload?['type'])?.toString().toLowerCase();
 
     if (kind == 'message') {
       final state = WidgetsBinding.instance.lifecycleState;
       final isForeground = state == AppLifecycleState.resumed;
-
-      if (isForeground) {
-        debugPrint(
-            '[PushService] showLocalNotification(message) ignoré (app en foreground)');
-        // pas de bannière, pas de notif système
-        return;
-      }
-      // App en arrière-plan → on laisse une vraie notif dans la barre
+      if (isForeground) return;
     }
 
-    // Si titre ET corps sont vides → on ne montre rien (évite la notif vide)
     final t = title?.trim() ?? '';
     final b = body?.trim() ?? '';
-    if (t.isEmpty && b.isEmpty) {
-      debugPrint(
-          '[PushService] showLocalNotification ignoré (titre + corps vides)');
-      return;
-    }
+    if (t.isEmpty && b.isEmpty) return;
 
     _showLocalNotificationInternal(title, body, payload: payload);
   }
 
-  // -------------------------
-  // Token management
-  // -------------------------
-  Future<void> _refreshTokenAndSave() async {
-    final user = _sb.auth.currentUser;
-    if (user == null) {
-      debugPrint('[PushService] refresh ignoré → pas de user.');
-      return;
-    }
-
-    final token = await _fm.getToken();
-    if (token == null) {
-      debugPrint('[PushService] getToken() a renvoyé null.');
-      return;
-    }
-
-    if (token == _lastToken) {
-      debugPrint('[PushService] Token FCM inchangé.');
-      return;
-    }
-
-    debugPrint('[PushService] Token FCM = $token');
-    _lastToken = token;
-
-    await _saveTokenToSupabase(token);
-  }
-
-  Future<void> _saveTokenToSupabase(String token) async {
-    final user = _sb.auth.currentUser;
-    if (user == null) return;
-    final uid = user.id;
-
-    try {
-      debugPrint('[PushService] Enregistrement du token pour user=$uid');
-
-      // un device par user (simple)
-      await _sb.from('push_devices').delete().eq('user_id', uid);
-
-      String platform;
-      switch (defaultTargetPlatform) {
-        case TargetPlatform.iOS:
-        case TargetPlatform.macOS:
-          platform = 'ios';
-          break;
-        case TargetPlatform.android:
-          platform = 'android';
-          break;
-        default:
-          platform = 'other';
-      }
-
-      // locale dynamique si possible
-      String locale = 'fr_FR';
-      try {
-        locale = WidgetsBinding.instance.window.locale.toLanguageTag();
-      } catch (_) {}
-
-      await _sb.from('push_devices').insert({
-        'user_id': uid,
-        'token': token,
-        'platform': platform,
-        'enabled': true,
-        'locale': locale,
-      });
-
-      debugPrint('[PushService] token enregistré en BDD (unique) ✔️');
-    } catch (e) {
-      debugPrint('[PushService] ERREUR token: $e');
-    }
-  }
-
-  // -------------------------
-  // Bannière in-app (foreground)
-  // -------------------------
-  void _showInAppMessageBanner(
-    String title,
-    String body, {
-    required Map<String, dynamic> payload,
+  void _showLocalNotificationInternal(
+    String? title,
+    String? body, {
+    Map<String, dynamic>? payload,
   }) {
+    if (kIsWeb) return;
+
     try {
-      _bannerTimer?.cancel();
-      _bannerEntry?.remove();
-      _bannerTimer = null;
-      _bannerEntry = null;
-
-      final ctx =
-          navKey.currentState?.overlay?.context ?? navKey.currentContext;
-      if (ctx == null) {
-        _showLocalNotificationInternal(title, body, payload: payload);
-        return;
-      }
-
-      final overlay = Overlay.of(ctx);
-      if (overlay == null) {
-        _showLocalNotificationInternal(title, body, payload: payload);
-        return;
-      }
-
-      final entry = OverlayEntry(
-        builder: (context) {
-          final mq = MediaQuery.of(context);
-          final top = mq.padding.top + 8.0;
-
-          return Positioned(
-            top: top,
-            left: 12,
-            right: 12,
-            child: Material(
-              color: Colors.transparent,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 200),
-                builder: (context, value, child) =>
-                    Opacity(opacity: value, child: child),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x22000000),
-                        blurRadius: 10,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.chat_bubble_outline,
-                        color: Color(0xFF113CFC),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            if (body.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  body,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.black54,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
-
-      overlay.insert(entry);
-      _bannerEntry = entry;
-
-      _bannerTimer = Timer(const Duration(seconds: 4), () {
-        _bannerEntry?.remove();
-        _bannerEntry = null;
-      });
-    } catch (e) {
-      debugPrint('[PushService] banner error: $e');
-      _showLocalNotificationInternal(title, body, payload: payload);
-    }
-  }
-
-  // -------------------------
-  // FOREGROUND listener
-  // -------------------------
-  void _setupForegroundListener() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      debugPrint('════════ FOREGROUND FCM ════════');
-      debugPrint('data = ${message.data}');
-      debugPrint('notif = ${message.notification}');
-      debugPrint('════════════════════════════════');
-
-      final data = _normalizeIncomingData(message.data);
-      final kind = (data['kind'] ?? data['type'] ?? '').toString();
-
-      // 1) message chat → on NE fait rien (pas de bannière, pas de notif)
-      if (kind == 'message') {
-        debugPrint(
-            '[PushService] FCM "message" foreground → aucune notif (ignoré)');
-        return;
-      }
-
-      // 2) admin payload -> popup overlay
-      final isAdmin = PushNav.isAdminPayload(data);
-      if (isAdmin) {
-        final title =
-            data['title'] ?? message.notification?.title ?? 'Notification';
-        final body = data['body'] ?? message.notification?.body ?? '';
-
-        debugPrint('[PushService] → Popup admin (foreground)');
-        await PushNav.showAdminDialog(
-          title: title.toString(),
-          body: body.toString(),
-          data: data,
-        );
-        return;
-      }
-
-      // 3) others -> show local notification
-      final title =
-          data['title'] ?? message.notification?.title ?? 'Notification';
-      final body = data['body'] ?? message.notification?.body ?? '';
-      _showLocalNotificationInternal(
-        title.toString(),
-        body.toString(),
-        payload: data.isEmpty ? null : data,
-      );
-    });
-  }
-
-  // Internal local notif helper used inside service (keeps try/catch)
-  void _showLocalNotificationInternal(String? title, String? body,
-      {Map<String, dynamic>? payload}) {
-    try {
-      // Garde-fou global : si titre ET corps vides → ne rien afficher
       final t = title?.trim() ?? '';
       final b = body?.trim() ?? '';
-      if (t.isEmpty && b.isEmpty) {
-        debugPrint(
-            '[PushService] _showLocalNotificationInternal ignoré (titre + corps vides)');
-        return;
-      }
+      if (t.isEmpty && b.isEmpty) return;
 
       _localNotif.show(
         DateTime.now().millisecondsSinceEpoch ~/ 1000,
@@ -448,43 +365,187 @@ class PushService {
     }
   }
 
-  // -------------------------
-  // BACKGROUND / CLICK routing
-  // -------------------------
+  // ---------------------------------------------------------
+  // Token management
+  // ---------------------------------------------------------
+
+  Future<void> _refreshTokenAndSave() async {
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    final uid = user.id;
+
+    final token = await _fm.getToken();
+    if (token == null || token.trim().isEmpty) return;
+
+    final sameToken = token == _lastToken;
+    final sameUser = uid == _lastSavedUserId;
+
+    if (sameToken && sameUser) return;
+
+    _lastToken = token;
+
+    await _saveTokenToSupabase(token);
+    _lastSavedUserId = uid;
+  }
+
+  Future<void> _saveTokenToSupabase(
+    String token, {
+    String? forcePlatform,
+  }) async {
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      String platform;
+      if (forcePlatform != null) {
+        platform = forcePlatform;
+      } else {
+        switch (defaultTargetPlatform) {
+          case TargetPlatform.iOS:
+          case TargetPlatform.macOS:
+            platform = 'ios';
+            break;
+          case TargetPlatform.android:
+            platform = 'android';
+            break;
+          default:
+            platform = 'other';
+        }
+      }
+
+      String locale = 'fr-FR';
+      try {
+        locale =
+            WidgetsBinding.instance.platformDispatcher.locale.toLanguageTag();
+      } catch (_) {}
+
+      await _sb.rpc('register_push_device', params: {
+        'p_token': token,
+        'p_platform': platform,
+        'p_locale': locale,
+      });
+
+      debugPrint('[PushService] token enregistré via RPC ✔️');
+    } catch (e) {
+      debugPrint('[PushService] ERREUR token RPC: $e');
+    }
+  }
+
+  Future<void> _disableTokenServerSide(String token) async {
+    // Recommande un RPC SECURITY DEFINER (voir SQL plus bas)
+    try {
+      await _sb.rpc('disable_push_device', params: {'p_token': token});
+      return;
+    } catch (_) {}
+
+    // fallback (si RLS le permet)
+    try {
+      await _sb.from('push_devices').update({
+        'enabled': false,
+        'updated_at': DateTime.now().toIso8601String()
+      }).eq('token', token);
+    } catch (_) {}
+  }
+
+  Future<void> _disableUserServerSide(String uid) async {
+    try {
+      await _sb.from('push_devices').update({
+        'enabled': false,
+        'updated_at': DateTime.now().toIso8601String()
+      }).eq('user_id', uid);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshWebTokenSilentlyIfGranted() async {
+    if (!kIsWeb) return;
+
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    final optedIn = await _isOptedIn();
+    if (!optedIn) return;
+
+    if (_isWebIosLike) return;
+    if (_webVapidKey.trim().isEmpty) return;
+
+    try {
+      final token = await _fm.getToken(vapidKey: _webVapidKey);
+      if (token == null || token.trim().isEmpty) return;
+
+      final uid = user.id;
+      final sameToken = token == _lastToken;
+      final sameUser = uid == _lastSavedUserId;
+      if (sameToken && sameUser) return;
+
+      _lastToken = token;
+      await _saveTokenToSupabase(token, forcePlatform: 'web');
+      _lastSavedUserId = uid;
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------
+  // FCM listeners
+  // ---------------------------------------------------------
+
+  void _setupForegroundListener() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      final data = _normalizeIncomingData(message.data);
+      final kind = (data['kind'] ?? data['type'] ?? '').toString();
+
+      if (kind == 'message') return;
+
+      if (PushNav.isAdminPayload(data)) {
+        final title =
+            data['title'] ?? message.notification?.title ?? 'Notification';
+        final body = data['body'] ?? message.notification?.body ?? '';
+        await PushNav.showAdminDialog(
+          title: title.toString(),
+          body: body.toString(),
+          data: data,
+        );
+        return;
+      }
+
+      final title =
+          data['title'] ?? message.notification?.title ?? 'Notification';
+      final body = data['body'] ?? message.notification?.body ?? '';
+      _showLocalNotificationInternal(
+        title.toString(),
+        body.toString(),
+        payload: data.isEmpty ? null : data,
+      );
+    });
+  }
+
   void _setupClickRouting() {
-    // App in background -> user taps a notification
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
       try {
         final data = _normalizeIncomingData(message.data);
 
-        // admin?
         if (PushNav.isAdminPayload(data)) {
           final title =
               data['title'] ?? message.notification?.title ?? 'Notification';
           final body = data['body'] ?? message.notification?.body ?? '';
           await PushNav.showAdminDialog(
-              title: title.toString(), body: body.toString(), data: data);
+            title: title.toString(),
+            body: body.toString(),
+            data: data,
+          );
           return;
         }
 
-        // otherwise open message/chat
-        debugPrint('[PushService] onMessageOpenedApp → openMessageFromData');
         PushNav.openMessageFromData(data);
-      } catch (e) {
-        debugPrint('[PushService] onMessageOpenedApp error: $e');
-      }
+      } catch (_) {}
     });
 
-    // App launched from terminated via notification
     _fm.getInitialMessage().then((RemoteMessage? message) async {
       if (message == null) return;
 
       try {
         final data = _normalizeIncomingData(message.data);
 
-        // If admin payload, save for delayed popup after UI is ready
         if (PushNav.isAdminPayload(data)) {
-          debugPrint('[PushService] Notif admin (terminated launch) → stockée');
           _launchAdminData = data;
           _launchAdminTitle =
               data['title'] ?? message.notification?.title ?? 'Notification';
@@ -493,52 +554,40 @@ class PushService {
           return;
         }
 
-        // otherwise open message
-        debugPrint('[PushService] Launch from "message" notif (terminated)');
         PushNav.openMessageFromData(data);
-      } catch (e) {
-        debugPrint('[PushService] getInitialMessage handling error: $e');
-      }
+      } catch (_) {}
     });
   }
 
-  /// Call from main.dart AFTER Home/Welcome are visible.
   Future<void> showLaunchAdminIfPending() async {
     if (_launchAdminData == null) return;
+
     final data = _launchAdminData!;
     final title = _launchAdminTitle ?? 'Notification';
     final body = _launchAdminBody ?? '';
 
-    // reset
     _launchAdminData = null;
     _launchAdminTitle = null;
     _launchAdminBody = null;
 
-    debugPrint('[PushService] → Affichage popup admin retardé (launch)');
     await PushNav.showAdminDialog(title: title, body: body, data: data);
   }
 
-  // -------------------------
-  // Helpers
-  // -------------------------
-  /// Normalise incoming data: decode JSON strings, flatten nested "data" maps/strings.
   Map<String, dynamic> _normalizeIncomingData(Map<String, dynamic>? raw) {
     final Map<String, dynamic> out = {};
     if (raw == null) return out;
 
     raw.forEach((k, v) {
       if (v == null) return;
+
       if (v is String) {
         final s = v.trim();
         if ((s.startsWith('{') && s.endsWith('}')) ||
             (s.startsWith('[') && s.endsWith(']'))) {
           try {
-            final decoded = jsonDecode(s);
-            out[k] = decoded;
+            out[k] = jsonDecode(s);
             return;
-          } catch (_) {
-            // ignore parse error, keep string
-          }
+          } catch (_) {}
         }
       }
       out[k] = v;
@@ -554,15 +603,14 @@ class PushService {
               if (!out.containsKey(nk)) out[nk] = nv;
             });
           }
-        } catch (_) {
-          // ignore
-        }
+        } catch (_) {}
       } else if (nested is Map) {
         (nested as Map).forEach((nk, nv) {
           if (!out.containsKey(nk)) out[nk] = nv;
         });
       }
     }
+
     return out;
   }
 }

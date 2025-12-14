@@ -1,12 +1,14 @@
 import 'dart:async'; // TimeoutException
 import 'dart:io'; // SocketException
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../routes.dart';
 import '../providers/user_provider.dart';
+import '../services/push_service.dart'; // ✅ AJOUT
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -44,7 +46,13 @@ class _LoginPageState extends State<LoginPage> {
         throw const AuthException('Email ou mot de passe incorrect.');
       }
 
+      // ✅ Charger profil / provider
       await context.read<UserProvider>().chargerUtilisateurConnecte();
+
+      // ✅ IMPORTANT : associer le token push au user connecté
+      // (sinon si tu changes de compte sur le même téléphone,
+      //  le token peut rester attaché à l’ancien user)
+      await PushService.instance.initAndRegister();
 
       String dest = AppRoutes.mainNav;
 
@@ -381,7 +389,7 @@ class _ServiceDialMinimal extends StatelessWidget {
                 child: Icon(
                   icons[i],
                   size: 18,
-                  color: const Color(0xFF0175C2), // 🔵 même bleu que _primary
+                  color: const Color(0xFF0175C2),
                 ),
               ),
             );

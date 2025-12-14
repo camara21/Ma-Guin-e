@@ -28,6 +28,9 @@ import 'reservations/mes_reservations_hub.dart';
 // ✅ Compression (ton module)
 import 'package:ma_guinee/utils/image_compressor/image_compressor.dart';
 
+// ✅ AJOUT : correction déconnexion (push cleanup)
+import '../services/push_service.dart';
+
 class ProfilePage extends StatefulWidget {
   final UtilisateurModel user;
   const ProfilePage({super.key, required this.user});
@@ -589,7 +592,7 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           ),
 
-          // DECONNEXION
+          // DECONNEXION (✅ seul changement: cleanup push avant signOut)
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Se déconnecter',
@@ -615,6 +618,13 @@ class _ProfilePageState extends State<ProfilePage> {
               );
 
               if (confirm == true) {
+                // ✅ Correction : nettoyer/désactiver le device push AVANT le signOut
+                try {
+                  await PushService.instance.onLogoutCleanup();
+                } catch (_) {
+                  // ne bloque pas la déconnexion si le cleanup échoue
+                }
+
                 await Supabase.instance.client.auth.signOut();
                 if (!context.mounted) return;
                 Navigator.pushNamedAndRemoveUntil(

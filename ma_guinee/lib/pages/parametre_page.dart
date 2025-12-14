@@ -20,12 +20,22 @@ class ParametrePage extends StatefulWidget {
   State<ParametrePage> createState() => _ParametrePageState();
 }
 
-class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserver {
-  bool _notifEnabled = false;
+class _ParametrePageState extends State<ParametrePage>
+    with WidgetsBindingObserver {
   bool _busy = false;
+
+  // ✅ Choix utilisateur (consentement app)
+  bool _optIn = false;
+
+  // ✅ Permission OS (réalité système)
+  bool _systemAllowed = false;
+
+  static const String _prefKey = 'notif_opt_in';
 
   static const String _vapidKey =
       'BNEG_lKXVJrvVDLYkI5ZJbLQSyfxZpLtaTDPgCMKOCnoisvDiqtCfS_tF5f57oGCa92obijXr6AYe-_QcAkOe2c';
+
+  bool get _effectiveEnabled => _optIn && _systemAllowed;
 
   @override
   void initState() {
@@ -49,68 +59,70 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
   }
 
   Future<void> _bootstrap() async {
-    // 1) Charger la préférence locale (au cas où)
-    await _loadNotifPref();
-    // 2) Mais la vérité vient du système : on synchronise pour que le switch
-    //    reflète exactement l'autorisation OS + état FCM.
+    await _loadOptInPref();
     await _syncWithSystemPermission();
+    // ⚠️ IMPORTANT: on ne force JAMAIS opt-in à true ici.
+    // On ne fait qu’appliquer l’état final.
+    await _applyEffectiveStateSilently();
   }
 
-  Future<void> _loadNotifPref() async {
+  Future<void> _loadOptInPref() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _notifEnabled = prefs.getBool('notif_enabled') ?? false;
+      _optIn =
+          prefs.getBool(_prefKey) ?? false; // par défaut OFF (consentement)
     });
   }
 
-  Future<void> _saveNotifPref(bool value) async {
+  Future<void> _saveOptInPref(bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notif_enabled', value);
+    await prefs.setBool(_prefKey, value);
   }
 
-  /// Lit l’état système (autorisation OS) et aligne le switch + FCM.
+  /// Lit l’état système (autorisation OS) et met à jour _systemAllowed.
+  /// Ne touche PAS au consentement utilisateur (_optIn).
   Future<void> _syncWithSystemPermission() async {
     try {
-      final settings = await FirebaseMessaging.instance.getNotificationSettings();
-      final systemAllowed = settings.authorizationStatus == AuthorizationStatus.authorized
-          || settings.authorizationStatus == AuthorizationStatus.provisional;
+      final settings =
+          await FirebaseMessaging.instance.getNotificationSettings();
 
-      // Si le système autorise, on s'assure que FCM est prêt; sinon on coupe.
-      if (systemAllowed) {
-        await FirebaseMessaging.instance.setAutoInitEnabled(true);
-        // On ne force pas de getToken ici pour éviter de réafficher une popup.
-        setState(() => _notifEnabled = true);
-        await _saveNotifPref(true);
-      } else {
-        await _disablePush(); // coupe token + auto-init si besoin
-        setState(() => _notifEnabled = false);
-        await _saveNotifPref(false);
-      }
+      final allowed =
+          settings.authorizationStatus == AuthorizationStatus.authorized ||
+              settings.authorizationStatus == AuthorizationStatus.provisional;
+
+      if (!mounted) return;
+      setState(() => _systemAllowed = allowed);
     } catch (_) {
-      // en cas d'erreur, on ne casse rien
+      // On laisse l'état existant
     }
   }
 
-  Future<void> _onToggleNotifications(bool value) async {
+  Future<void> _onToggleNotifications(bool wantEnable) async {
     if (_busy) return;
     setState(() => _busy = true);
 
     try {
-      if (value) {
-        final ok = await _enablePush();
+      if (wantEnable) {
+        // L’utilisateur donne son consentement => on enregistre d’abord
+        _optIn = true;
+        await _saveOptInPref(true);
+
+        final ok = await _enablePushWithPromptIfNeeded();
         if (!ok) {
-          // Autorisation refusée → rester décoché
-          setState(() => _notifEnabled = false);
-          await _saveNotifPref(false);
+          // Permission refusée => on revient OFF + consentement OFF
+          _optIn = false;
+          await _saveOptInPref(false);
+          if (mounted) setState(() {});
           return;
         }
-        setState(() => _notifEnabled = true);
-        await _saveNotifPref(true);
       } else {
+        // L’utilisateur retire son consentement => OFF durable
+        _optIn = false;
+        await _saveOptInPref(false);
         await _disablePush();
-        setState(() => _notifEnabled = false);
-        await _saveNotifPref(false);
       }
+
+      if (mounted) setState(() {});
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -136,17 +148,50 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
     } catch (_) {}
   }
 
-  /// Active les notifications après geste utilisateur (switch ON)
-  Future<bool> _enablePush() async {
+  /// Applique l'état final sans afficher de popup :
+  /// - si (_optIn && _systemAllowed) => auto-init ON + token si possible
+  /// - sinon => auto-init OFF (et pas de recréation)
+  Future<void> _applyEffectiveStateSilently() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
-      // Vérifier l'état actuel avant de demander à nouveau
+      if (_effectiveEnabled) {
+        await messaging.setAutoInitEnabled(true);
+
+        // Pas de requestPermission ici (pas de prompt).
+        final token = kIsWeb
+            ? await messaging.getToken(vapidKey: _vapidKey)
+            : await messaging.getToken();
+
+        if (token != null && token.isNotEmpty) {
+          await _upsertUserToken(token);
+        }
+
+        // iOS: affichage foreground
+        await messaging.setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+      } else {
+        // Le point clé: si l’utilisateur a OFF, on ne remet pas ON au refresh.
+        await messaging.setAutoInitEnabled(false);
+        // Optionnel: ne supprime pas systématiquement token ici,
+        // on le fait seulement au OFF explicite (switch).
+      }
+    } catch (_) {}
+  }
+
+  /// Active les notifications après geste utilisateur (switch ON)
+  Future<bool> _enablePushWithPromptIfNeeded() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // On redemande l'état système
       NotificationSettings settings = await messaging.getNotificationSettings();
 
       if (settings.authorizationStatus != AuthorizationStatus.authorized &&
           settings.authorizationStatus != AuthorizationStatus.provisional) {
-        // Demande d'autorisation si non encore accordée
         settings = await messaging.requestPermission(
           alert: true,
           sound: true,
@@ -155,50 +200,49 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
         );
       }
 
-      final allowed = settings.authorizationStatus == AuthorizationStatus.authorized
-          || settings.authorizationStatus == AuthorizationStatus.provisional;
+      final allowed =
+          settings.authorizationStatus == AuthorizationStatus.authorized ||
+              settings.authorizationStatus == AuthorizationStatus.provisional;
 
-      if (!allowed) return false;
+      if (!allowed) {
+        if (mounted) setState(() => _systemAllowed = false);
+        return false;
+      }
 
-      // Activer l'auto-init pour générer/régénérer un token si besoin
+      if (mounted) setState(() => _systemAllowed = true);
+
       await messaging.setAutoInitEnabled(true);
 
-      // Récupérer le token (web: VAPID)
       final String? token = kIsWeb
           ? await messaging.getToken(vapidKey: _vapidKey)
           : await messaging.getToken();
 
-      if (token == null) return false;
+      if (token == null || token.isEmpty) return false;
 
-      // iOS: autoriser l'affichage au premier plan
-      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      await messaging.setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,
         sound: true,
       );
 
-      // Enregistrer côté serveur (facultatif)
       await _upsertUserToken(token);
-
-      // Pas de SnackBars : on reste silencieux comme demandé
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  /// Désactive les notifications (switch OFF)
+  /// Désactive les notifications (switch OFF) — consentement respecté durablement
   Future<void> _disablePush() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
-      // Nettoyage serveur (optionnel)
       await _deleteUserTokens();
 
-      // Supprimer le token local
+      // Supprimer token local pour couper net
       await messaging.deleteToken();
 
-      // Couper l'auto-init pour éviter recréation
+      // Couper auto-init pour éviter recréation au refresh
       await messaging.setAutoInitEnabled(false);
     } catch (_) {}
   }
@@ -206,6 +250,17 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final isLoading = _busy;
+
+    String subtitle;
+    if (isLoading) {
+      subtitle = 'Activation en cours…';
+    } else if (!_systemAllowed) {
+      subtitle = 'Désactivées (permission système refusée)';
+    } else {
+      subtitle = _effectiveEnabled
+          ? 'Notifications activées'
+          : 'Notifications désactivées';
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -217,10 +272,15 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [
-          // Bouton discret pour resynchroniser manuellement si besoin
           IconButton(
             tooltip: 'Resynchroniser',
-            onPressed: isLoading ? null : _syncWithSystemPermission,
+            onPressed: isLoading
+                ? null
+                : () async {
+                    await _syncWithSystemPermission();
+                    await _applyEffectiveStateSilently();
+                    if (mounted) setState(() {});
+                  },
             icon: const Icon(Icons.sync),
           ),
         ],
@@ -230,27 +290,25 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
         children: [
           Card(
             elevation: 0.5,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Column(
               children: [
-                // --- Toggle Notifications push ---
                 SwitchListTile.adaptive(
-                  secondary:
-                      const Icon(Icons.notifications_active, color: Colors.teal),
+                  secondary: const Icon(Icons.notifications_active,
+                      color: Colors.teal),
                   title: const Text('Notifications push'),
-                  // Sous-titre simple, sans messages de "prêt"
-                  subtitle: Text(
-                    isLoading
-                        ? 'Activation en cours…'
-                        : _notifEnabled
-                            ? 'Notifications activées'
-                            : 'Notifications désactivées',
-                  ),
-                  value: _notifEnabled,
+                  subtitle: Text(subtitle),
+
+                  // ✅ Le switch reflète l'état FINAL (OS && consentement).
+                  value: _effectiveEnabled,
+
+                  // ✅ L’utilisateur peut toujours tenter ON (ça demandera la permission si nécessaire).
+                  // OFF reste OFF et ne se réactive plus au refresh.
                   onChanged: isLoading ? null : _onToggleNotifications,
                 ),
                 const Divider(height: 0),
-
                 ListTile(
                   leading: const Icon(Icons.person, color: Colors.blue),
                   title: const Text('Modifier mon profil'),
@@ -269,7 +327,6 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
                   },
                 ),
                 const Divider(height: 0),
-
                 ListTile(
                   leading: const Icon(Icons.lock_reset, color: Colors.orange),
                   title: const Text('Mot de passe oublié ?'),
@@ -282,7 +339,6 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
                   },
                 ),
                 const Divider(height: 0),
-
                 ListTile(
                   leading: const Icon(Icons.delete_forever,
                       color: Colors.red, size: 28),
@@ -318,17 +374,15 @@ class _ParametrePageState extends State<ParametrePage> with WidgetsBindingObserv
                             .delete()
                             .eq('id', widget.user.id);
 
-                        // ⚠️ nécessite Service Role côté serveur.
                         await Supabase.instance.client.auth.admin
                             .deleteUser(widget.user.id);
 
                         await Supabase.instance.client.auth.signOut();
                         if (!mounted) return;
-                        Navigator.of(context).popUntil((route) => route.isFirst);
-                        // Pas de SnackBar — on reste discret comme demandé
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
                       } catch (e) {
                         if (!mounted) return;
-                        // On peut garder un feedback d'erreur minimal si tu préfères le silence total, supprime aussi ceci
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Erreur: $e')),
                         );
