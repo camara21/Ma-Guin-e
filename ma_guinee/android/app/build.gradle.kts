@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,6 +7,13 @@ plugins {
 
     // Firebase Google Services plugin
     id("com.google.gms.google-services")
+}
+
+// ✅ Charge android/key.properties
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
 
 android {
@@ -30,10 +39,20 @@ android {
         versionName = flutter.versionName
     }
 
+    // ✅ Signature RELEASE (Play Store + APK release signé)
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"]?.toString()
+            keyPassword = keystoreProperties["keyPassword"]?.toString()
+            storePassword = keystoreProperties["storePassword"]?.toString()
+            storeFile = file(keystoreProperties["storeFile"]?.toString() ?: "")
+        }
+    }
+
     buildTypes {
         release {
-            // signature debug pour tester rapidement en --release
-            signingConfig = signingConfigs.getByName("debug")
+            // ✅ au lieu de debug, on signe en release avec ton keystore
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
