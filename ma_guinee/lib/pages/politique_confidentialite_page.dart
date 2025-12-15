@@ -17,7 +17,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 18,
-              color: kAppPrimary, // titre en bleu appli
+              color: kAppPrimary,
             ),
           ),
         );
@@ -51,6 +51,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text("Politique de confidentialité"),
         backgroundColor: kAppPrimary,
+        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -77,9 +78,13 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
                 // 1. Présentation
                 title("1. Qui sommes-nous ?"),
                 p(
-                  "Soneya est une entreprise numérique guinéenne fondée par Mohamed Camara. "
-                  "Nous éditons l’application mobile et web « Soneya », destinée à faciliter le quotidien "
-                  "des citoyens guinéens.",
+                  "Soneya est une application mobile et web destinée à faciliter le quotidien des citoyens guinéens. "
+                  "Elle regroupe plusieurs services (annonces, logements, hôtels, billetterie, prestataires, lieux, avis, "
+                  "messagerie, etc.).",
+                ),
+                p(
+                  "Éditeur / Responsable de publication : Soneya (projet). "
+                  "Contact : soneya.signaler@gmail.com.",
                 ),
                 p(
                   "L’application regroupe plusieurs services, notamment : ANP, Annonces, Prestataires, "
@@ -137,9 +142,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
 
                 // 5. Base légale
                 title("5. Base légale du traitement"),
-                p(
-                  "En fonction du contexte, le traitement de vos données repose sur :",
-                ),
+                p("En fonction du contexte, le traitement de vos données repose sur :"),
                 p(
                   "• L’exécution du contrat : fourniture des services Soneya, gestion du compte, des annonces et des réservations ;\n"
                   "• Votre consentement : géolocalisation, notifications push, certaines communications ;\n"
@@ -149,9 +152,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
 
                 // 6. Partage
                 title("6. Avec qui vos données peuvent-elles être partagées ?"),
-                p(
-                  "Vos données peuvent être partagées uniquement dans les cas suivants :",
-                ),
+                p("Vos données peuvent être partagées uniquement dans les cas suivants :"),
                 p(
                   "• Prestataires techniques : hébergement (Supabase), notifications (Firebase), services de paiement sécurisés, "
                   "et autres sous-traitants techniques indispensables au fonctionnement de l’application ;\n"
@@ -160,7 +161,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
                   "• Autorités administratives ou judiciaires : lorsque la loi l’exige ou en cas d’enquête liée à des activités illégales.",
                 ),
                 small(
-                  "Dans tous les cas, seules les données strictement nécessaires sont transmises et aucun partage n’est effectué à des fins de revente de fichiers.",
+                  "Dans tous les cas, seules les données strictement nécessaires sont transmises et aucun partage n’est effectué à des fins de revente.",
                 ),
 
                 // 7. Hébergement & sécurité
@@ -175,7 +176,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
                   "la perte, la modification ou la divulgation non autorisée.",
                 ),
                 small(
-                  "Malgré ces efforts, aucun système n’est totalement invulnérable. L’utilisateur est également responsable de la sécurité de son appareil et de ses identifiants.",
+                  "Aucun système n’est totalement invulnérable. L’utilisateur est également responsable de la sécurité de son appareil et de ses identifiants.",
                 ),
 
                 // 8. Durée de conservation
@@ -190,9 +191,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
 
                 // 9. Droits
                 title("9. Vos droits sur vos données"),
-                p(
-                  "Conformément aux lois applicables, vous disposez notamment des droits suivants :",
-                ),
+                p("Conformément aux lois applicables, vous disposez notamment des droits suivants :"),
                 p(
                   "• Droit d’accès : obtenir une copie des données personnelles vous concernant ;\n"
                   "• Droit de rectification : corriger les données inexactes ou incomplètes ;\n"
@@ -213,18 +212,18 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
                   "la suppression ou l’anonymisation de vos données, sous réserve de nos obligations légales.",
                 ),
 
-                // 11. Mineurs
+                // 11. Mineurs (corrigé pour 18+)
                 title("11. Protection des mineurs"),
                 p(
-                  "L’application Soneya est accessible au public dès 7 ans. "
-                  "Les utilisateurs de moins de 18 ans doivent utiliser l’application sous la responsabilité d’un parent ou d’un tuteur légal.",
+                  "L’application Soneya est destinée à un public âgé de 18 ans et plus. "
+                  "Nous ne cherchons pas à collecter volontairement des données personnelles concernant des mineurs.",
                 ),
                 p(
-                  "Soneya interdit strictement toute publication ou diffusion de contenus à caractère sexuel, violent, choquant, "
-                  "discriminatoire ou inadapté aux mineurs.",
+                  "Si nous constatons qu’un compte est utilisé par une personne n’ayant pas l’âge requis, "
+                  "nous pouvons suspendre ou supprimer ce compte et prendre les mesures appropriées, conformément aux règles applicables.",
                 ),
                 small(
-                  "Tout contenu inapproprié pourra être supprimé et son auteur sanctionné (jusqu’à la suppression définitive du compte).",
+                  "Si vous êtes parent/tuteur et pensez qu’un mineur nous a transmis des données, contactez-nous : soneya.signaler@gmail.com.",
                 ),
 
                 // 12. Notifications
@@ -266,7 +265,7 @@ class PolitiqueConfidentialitePage extends StatelessWidget {
                 title("15. Contact"),
                 p("Pour toute question relative à vos données personnelles ou à cette politique :"),
                 p("📧 E-mail : soneya.signaler@gmail.com"),
-                p("📍 Siège : Dubréka (Kaléma), République de Guinée"),
+                p("📍 Localisation : Dubréka (Kaléma), République de Guinée"),
                 p("👤 Responsable : Mohamed Camara"),
 
                 const SizedBox(height: 30),

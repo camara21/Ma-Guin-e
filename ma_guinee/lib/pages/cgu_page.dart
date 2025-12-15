@@ -70,11 +70,15 @@ class CGUPage extends StatelessWidget {
                   "Dernière mise à jour : $currentYear\n"
                   "Version 1.0 – République de Guinée",
                 ),
+
                 title("1. Présentation de l’application"),
                 p(
-                  "Soneya est une entreprise numérique guinéenne fondée par Mohamed Camara. "
-                  "Elle développe et exploite l’application mobile et web « Soneya », un ensemble "
-                  "de services destinés à faciliter la vie quotidienne des citoyens guinéens.",
+                  "Soneya est une application mobile et web destinée à faciliter la vie quotidienne des citoyens guinéens. "
+                  "Elle regroupe un ensemble de services accessibles depuis une seule plateforme.",
+                ),
+                p(
+                  "Éditeur / Responsable de publication : Soneya (projet). "
+                  "Contact : soneya.signaler@gmail.com.",
                 ),
                 p(
                   "L’application propose : annonces, logement, emplois, restauration, tourismes, "
@@ -83,20 +87,24 @@ class CGUPage extends StatelessWidget {
                 small(
                   "Toute utilisation de Soneya implique l’acceptation pleine et entière des présentes CGU.",
                 ),
+
                 title("2. Objet et champ d’application"),
                 p(
                   "Les présentes CGU définissent les règles d’utilisation, les droits et les obligations "
                   "applicables entre Soneya et toute personne utilisant l’application, qu’elle soit "
                   "visiteuse ou inscrite.",
                 ),
+
                 title("3. Accès et disponibilité"),
                 p(
                   "L’accès à l’application Soneya est gratuit. Certaines fonctionnalités nécessitent la création "
                   "d’un compte ou un paiement sécurisé.",
                 ),
                 small(
-                  "Soneya peut suspendre temporairement l’accès au service pour maintenance sans indemnisation.",
+                  "Soneya peut suspendre temporairement l’accès au service pour maintenance, mise à jour ou raison de sécurité, "
+                  "sans indemnisation.",
                 ),
+
                 title("4. Création de compte"),
                 p(
                   "Pour accéder à certaines fonctionnalités, l’utilisateur doit créer un compte personnel "
@@ -106,7 +114,9 @@ class CGUPage extends StatelessWidget {
                   "Les identifiants de connexion sont strictement personnels et ne doivent pas être partagés.",
                 ),
                 small(
-                    "Soneya peut suspendre tout compte suspect, frauduleux ou non conforme."),
+                  "Soneya peut suspendre tout compte suspect, frauduleux ou non conforme.",
+                ),
+
                 title("5. Comportement et obligations des utilisateurs"),
                 p(
                   "Les utilisateurs doivent respecter les lois guinéennes et adopter un comportement responsable et respectueux.",
@@ -119,7 +129,9 @@ class CGUPage extends StatelessWidget {
                 p("• Usurper une identité ou créer de faux comptes."),
                 p("• Tenter d’accéder illégalement aux systèmes ou serveurs de Soneya."),
                 small(
-                    "Toute infraction pourra entraîner la suppression du compte et des poursuites judiciaires."),
+                  "Toute infraction pourra entraîner la suppression du compte et des poursuites judiciaires.",
+                ),
+
                 title("6. Contenus et publications"),
                 p(
                   "Chaque utilisateur est entièrement responsable du contenu qu’il publie dans l’application "
@@ -129,86 +141,107 @@ class CGUPage extends StatelessWidget {
                   "Soneya se réserve le droit de retirer tout contenu jugé inapproprié, illégal ou contraire à l’éthique.",
                 ),
                 small(
-                    "L’utilisateur garantit que ses contenus ne violent aucun droit d’auteur ni droit à l’image."),
-                title("7. Protection des mineurs"),
+                  "L’utilisateur garantit que ses contenus ne violent aucun droit d’auteur ni droit à l’image.",
+                ),
+
+                // ✅ MIS À JOUR (aligné 18+)
+                title("7. Âge requis et protection des mineurs"),
                 p(
-                  "L’application Soneya est accessible au public dès 7 ans. "
-                  "Les utilisateurs de moins de 18 ans doivent utiliser l’application sous la supervision "
-                  "d’un parent ou tuteur légal.",
+                  "L’application Soneya est destinée à un public âgé de 18 ans et plus. "
+                  "En créant un compte et en utilisant l’application, l’utilisateur déclare avoir l’âge requis.",
                 ),
                 p(
-                  "Soneya interdit strictement toute publication, diffusion ou mise en avant de contenus "
-                  "à caractère sexuel, violent, choquant, discriminatoire ou inadapté aux mineurs.",
+                  "Nous ne cherchons pas à collecter volontairement des données personnelles concernant des mineurs. "
+                  "Si nous constatons qu’un compte est utilisé par une personne n’ayant pas l’âge requis, "
+                  "nous pouvons suspendre ou supprimer ce compte et prendre les mesures appropriées.",
                 ),
                 small(
-                    "Toute violation entraînera des sanctions immédiates, pouvant inclure la suppression du compte."),
+                  "Si vous êtes parent/tuteur et pensez qu’un mineur a créé un compte, contactez-nous : soneya.signaler@gmail.com.",
+                ),
+
                 title("8. Données personnelles et confidentialité"),
                 p(
                   "Soneya accorde une importance primordiale à la confidentialité des données. "
                   "Les informations collectées servent uniquement à assurer les services de l’application.",
                 ),
-                p("Les données peuvent inclure : nom, email, photo, numéro, localisation, etc."),
+                p("Les données peuvent inclure : nom, e-mail, photo, numéro, localisation, etc."),
                 p("Elles sont stockées de manière sécurisée et ne sont jamais revendues sans consentement."),
                 small(
-                    "Pour toute demande de suppression de données : soneya.signaler@gmail.com"),
+                  "Pour toute demande liée à vos données : soneya.signaler@gmail.com",
+                ),
+
                 title("9. Paiements et transactions"),
                 p(
                   "Certaines fonctionnalités peuvent nécessiter un paiement sécurisé via des prestataires "
                   "accrédités. Soneya ne stocke aucune donnée bancaire.",
                 ),
                 small(
-                    "En cas de litige entre utilisateurs, Soneya peut intervenir comme médiateur sans obligation."),
+                  "En cas de litige entre utilisateurs, Soneya peut intervenir comme médiateur sans obligation.",
+                ),
+
                 title("10. Publicités et partenariats"),
                 p(
                   "L’application peut afficher des publicités et contenus sponsorisés. "
                   "Aucune donnée personnelle n’est partagée sans accord explicite.",
                 ),
+
                 title("11. Propriété intellectuelle"),
                 p(
                   "Le logo, l'interface, les textes, les images, le code source et la base de données "
                   "sont la propriété exclusive de Soneya et protégés par les lois sur la propriété intellectuelle.",
                 ),
                 small("Toute reproduction non autorisée est interdite."),
+
                 title("12. Responsabilité de Soneya"),
                 p("Soneya ne peut être tenue responsable des éléments suivants :"),
                 p("• interruptions temporaires du service ;"),
                 p("• bugs, erreurs techniques ou pertes de données ;"),
                 p("• transactions réalisées entre utilisateurs."),
                 small(
-                    "L’utilisation de l’application relève de la seule responsabilité de l’utilisateur."),
+                  "L’utilisation de l’application relève de la seule responsabilité de l’utilisateur.",
+                ),
+
                 title("13. Sécurité, piratage et fraude"),
                 p(
                   "Toute tentative de piratage, fraude, intrusion ou manipulation entraînera la "
                   "suspension immédiate du compte et un signalement aux autorités compétentes.",
                 ),
+
                 title("14. Force majeure"),
                 p(
                   "Soneya ne pourra être tenue responsable d'un manquement dû à un événement de force majeure "
                   "(catastrophe naturelle, coupure réseau, grève, décision gouvernementale, etc.).",
                 ),
+
                 title("15. Suspension ou résiliation de compte"),
                 p(
                   "Soneya peut suspendre ou supprimer un compte en cas de non-respect des CGU, "
                   "de comportement abusif ou d'activité frauduleuse.",
                 ),
                 small(
-                    "Aucune compensation ne sera accordée en cas de suppression pour non-respect des règles."),
+                  "Aucune compensation ne sera accordée en cas de suppression pour non-respect des règles.",
+                ),
+
                 title("16. Évolution des conditions"),
                 p(
                   "Soneya peut mettre à jour les présentes CGU. Toute modification importante sera notifiée "
                   "aux utilisateurs via l’application.",
                 ),
                 small(
-                    "L'utilisation continue vaut acceptation des nouvelles conditions."),
+                  "L'utilisation continue vaut acceptation des nouvelles conditions.",
+                ),
+
                 title("17. Droit applicable et juridiction compétente"),
                 p(
                   "Les présentes CGU sont régies par le droit guinéen. En cas de litige, les tribunaux compétents "
                   "de la République de Guinée seront saisis.",
                 ),
+
                 title("18. Contact et informations légales"),
                 p("📧 E-mail : soneya.signaler@gmail.com"),
                 p("📍 Siège : Dubréka (Kaléma), République de Guinée"),
                 p("👤 Propriétaire et éditeur : Mohamed Camara"),
+
                 const SizedBox(height: 30),
                 Center(
                   child: Text(
