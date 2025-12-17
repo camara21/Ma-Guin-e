@@ -58,10 +58,14 @@ class _HomePageState extends State<HomePage> {
 
     _verifierCGU();
     _ecouterNotificationsAdminOnly();
-    _chargerMessagesNonLus();
-
-    // ⬇️ Enregistrement push centralisé (permissions + token + upsert + refresh)
+    _chargerMessagesNonLus(); // ⬇️ Enregistrement push centralisé (permissions + token + upsert + refresh)
     PushService.instance.initAndRegister();
+
+// ✅ Permission notifications :
+// - Mobile: la popup peut s’afficher directement
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PushService.instance.ensurePermissionOnHome();
+    });
 
     // ⬇️ Pré-chargement des annonces dès l’arrivée sur Home
     _preloadAnnonces();
@@ -120,10 +124,18 @@ class _HomePageState extends State<HomePage> {
     _notifSub?.cancel();
 
     _notifSub = Supabase.instance.client
-        .from('notifications:utilisateur_id=eq.${user.id}&type=neq.message')
+        .from('notifications')
         .stream(primaryKey: ['id']).listen((rows) {
       if (!mounted) return;
-      final nonLues = rows.where((n) => _estNonLue(n)).length;
+
+      // Filtre côté Dart (compatible avec toutes versions)
+      final filtered = rows.where((n) {
+        final uid = (n['utilisateur_id'] ?? n['user_id'])?.toString();
+        final type = (n['type'] ?? '').toString();
+        return uid == user.id && type != 'message';
+      });
+
+      final nonLues = filtered.where((n) => _estNonLue(n)).length;
       setState(() => _notificationsNonLues = nonLues);
     });
   }
@@ -230,15 +242,34 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ========== UI helpers ==========
+  bool _isTablet(BuildContext context) {
+    final mq = MediaBox.of(context);
+    return mq.size.shortestSide >= 600;
+  }
+
+  double _tileSide(BuildContext context) {
+    final mq = MediaBox.of(context);
+    final w = mq.size.width;
+    final shortest = mq.size.shortestSide;
+
+    // Téléphone (inchangé)
+    if (w < 360) return 84.0;
+    if (shortest < 600) return 92.0;
+
+    // Tablette : plus grand pour éviter l'effet "petit au milieu"
+    if (w >= 1000) return 112.0;
+    return 104.0;
+  }
+
   double _adaptiveIconSize(BuildContext context) {
-    final w = MediaBox.of(context).size.width;
-    if (w < 360) return 44;
-    return 51;
+    final side = _tileSide(context);
+    // 92 -> ~51 comme avant; 104 -> ~58; 112 -> ~63
+    final icon = side * 0.56;
+    return icon.clamp(44.0, 66.0);
   }
 
   Widget _iconCard(Widget child) {
-    final w = MediaBox.of(context).size.width;
-    final side = w < 360 ? 84.0 : 92.0;
+    final side = _tileSide(context);
     return Container(
       width: side,
       height: side,
@@ -259,9 +290,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _smallBadge(Color bgColor, IconData icon) {
+    final tablet = _isTablet(context);
+    final s = tablet ? 18.0 : 16.0;
+    final isz = tablet ? 10.0 : 9.0;
+
     return Container(
-      width: 16,
-      height: 16,
+      width: s,
+      height: s,
       decoration: BoxDecoration(
         color: bgColor.withOpacity(0.95),
         shape: BoxShape.circle,
@@ -274,7 +309,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      child: Icon(icon, size: 9, color: Colors.white),
+      child: Icon(icon, size: isz, color: Colors.white),
     );
   }
 
@@ -422,7 +457,7 @@ class _HomePageState extends State<HomePage> {
   /// mais étendue sur toute la largeur de la dernière ligne.
   Widget _wontanaraIcon(BuildContext context) {
     final mq = MediaBox.of(context);
-    final side = mq.size.width < 360 ? 84.0 : 92.0;
+    final side = _tileSide(context);
     final baseIconSize = _adaptiveIconSize(context);
 
     const dark = Color(0xFF0F172A);
@@ -519,7 +554,21 @@ class _HomePageState extends State<HomePage> {
     final width = mq.size.width;
     final textScale = mq.textScaleFactor;
 
-    int crossAxisCount = width > 600 ? 6 : 3;
+    final isTablet = mq.size.shortestSide >= 600;
+
+    // ✅ Tablette: on garde l'idée "plus de colonnes", mais pas trop pour éviter les items minuscules
+    int crossAxisCount;
+    if (!isTablet) {
+      crossAxisCount = 3;
+    } else {
+      if (width >= 1000) {
+        crossAxisCount = 6;
+      } else if (width >= 820) {
+        crossAxisCount = 5;
+      } else {
+        crossAxisCount = 4;
+      }
+    }
 
     double childAspectRatio;
     if (width < 360 || textScale > 1.1) {
@@ -527,10 +576,10 @@ class _HomePageState extends State<HomePage> {
     } else if (width < 420) {
       childAspectRatio = 0.92;
     } else {
-      childAspectRatio = 1.05;
+      childAspectRatio = isTablet ? 1.00 : 1.05;
     }
 
-    double spacing = width > 600 ? 10 : 6;
+    double spacing = isTablet ? 12 : (width > 600 ? 10 : 6);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -593,7 +642,10 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: EdgeInsets.symmetric(
+          horizontal: isTablet ? 24 : 16,
+          vertical: 12,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -845,8 +897,20 @@ class _ServiceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaBox.of(context).size.width;
-    final iconZone = w < 360 ? 84.0 : 92.0;
+    final mq = MediaBox.of(context);
+    final w = mq.size.width;
+    final shortest = mq.size.shortestSide;
+
+    // Téléphone (inchangé)
+    double iconZone;
+    if (w < 360) {
+      iconZone = 84.0;
+    } else if (shortest < 600) {
+      iconZone = 92.0;
+    } else {
+      // Tablette
+      iconZone = (w >= 1000) ? 112.0 : 104.0;
+    }
 
     return InkWell(
       onTap: onTap,

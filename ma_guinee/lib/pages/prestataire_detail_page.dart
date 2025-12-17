@@ -1,5 +1,6 @@
 // lib/pages/prestataire_detail_page.dart
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -54,6 +55,15 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       !_sendingAvis &&
       _noteUtilisateur > 0 &&
       _avisController.text.trim().isNotEmpty;
+
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  /// Hero sûr uniquement sur mobile (évite flash rouge desktop/web)
+  bool get _enableHero => _isMobilePlatform;
 
   @override
   void initState() {
@@ -270,8 +280,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   // Actions
   // -----------------------------------------------------
   Future<void> _call(String? input) async {
-    if (_isOwner)
+    if (_isOwner) {
       return _snack("Action non autorisée pour votre propre fiche.");
+    }
 
     final raw = (input ??
             widget.data['telephone'] ??
@@ -679,6 +690,55 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
+  Widget _photoWidget({
+    required String photo,
+    required String heroTag,
+  }) {
+    final child = photo.trim().isEmpty
+        ? Container(
+            height: 200,
+            width: double.infinity,
+            color: Colors.grey.shade200,
+            alignment: Alignment.center,
+            child: const Icon(Icons.person, size: 48, color: Colors.grey),
+          )
+        : CachedNetworkImage(
+            imageUrl: photo.trim(),
+            height: 200,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            placeholder: (_, __) =>
+                Container(height: 200, color: Colors.grey.shade200),
+            errorWidget: (_, __, ___) => Container(
+              height: 200,
+              color: Colors.grey.shade200,
+              alignment: Alignment.center,
+              child: const Icon(Icons.person, size: 48, color: Colors.grey),
+            ),
+          );
+
+    // ✅ Sur desktop/web : pas de Hero pour éviter RenderBox not laid out au retour
+    if (!_enableHero) return child;
+
+    return Hero(
+      tag: heroTag,
+      transitionOnUserGestures: true,
+      placeholderBuilder: (_, __, child) {
+        // ✅ garde une taille fixe pendant le vol Hero (évite layout transient)
+        return SizedBox(height: 200, width: double.infinity, child: child);
+      },
+      flightShuttleBuilder:
+          (flightContext, animation, direction, fromCtx, toCtx) {
+        // ✅ enveloppe Material pour éviter glitches pendant la transition
+        return Material(
+          color: Colors.transparent,
+          child: toCtx.widget,
+        );
+      },
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
@@ -697,7 +757,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     final String? rawPhoto = d['photo_url']?.toString();
     final photo = _publicUrl(_avatarBucket, rawPhoto) ?? (rawPhoto ?? '');
 
-    final heroTag = 'prest_photo_${d['id'] ?? fullName}';
+    // ✅ Tag 100% stable : uniquement sur ID (sinon pas de Hero)
+    final prestId = (d['id'] ?? '').toString().trim();
+    final heroTag =
+        prestId.isNotEmpty ? 'prest_photo_$prestId' : 'prest_photo_nohero';
 
     return Scaffold(
       backgroundColor: _neutralBg,
@@ -741,36 +804,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: GestureDetector(
-                    onTap: photo.trim().isEmpty
+                    onTap: (photo.trim().isEmpty || prestId.isEmpty)
                         ? null
                         : () => _openPhotoFullScreen(photo, heroTag),
-                    child: Hero(
-                      tag: heroTag,
-                      child: photo.trim().isEmpty
-                          ? Container(
-                              height: 200,
-                              width: double.infinity,
-                              color: Colors.grey.shade200,
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.person,
-                                  size: 48, color: Colors.grey),
-                            )
-                          : CachedNetworkImage(
-                              imageUrl: photo.trim(),
-                              height: 200,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(
-                                  height: 200, color: Colors.grey.shade200),
-                              errorWidget: (_, __, ___) => Container(
-                                height: 200,
-                                color: Colors.grey.shade200,
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.person,
-                                    size: 48, color: Colors.grey),
-                              ),
-                            ),
-                    ),
+                    child: _photoWidget(photo: photo, heroTag: heroTag),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -979,6 +1016,16 @@ class _FullscreenImagePageState extends State<_FullscreenImagePage> {
 
   @override
   Widget build(BuildContext context) {
+    final img = CachedNetworkImage(
+      imageUrl: widget.url,
+      fit: BoxFit.contain,
+      placeholder: (_, __) =>
+          const SizedBox.expand(child: ColoredBox(color: Colors.black)),
+      errorWidget: (_, __, ___) => const Center(
+        child: Icon(Icons.broken_image, color: Colors.white70, size: 64),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -987,23 +1034,20 @@ class _FullscreenImagePageState extends State<_FullscreenImagePage> {
         elevation: 0,
       ),
       body: SizedBox.expand(
-        child: Hero(
-          tag: widget.heroTag,
-          child: InteractiveViewer(
-            minScale: 1.0,
-            maxScale: 4.0,
-            child: CachedNetworkImage(
-              imageUrl: widget.url,
-              fit: BoxFit.contain,
-              placeholder: (_, __) =>
-                  const SizedBox.expand(child: ColoredBox(color: Colors.black)),
-              errorWidget: (_, __, ___) => const Center(
-                child:
-                    Icon(Icons.broken_image, color: Colors.white70, size: 64),
+        child: _isMobilePlatform
+            ? Hero(
+                tag: widget.heroTag,
+                child: InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: img,
+                ),
+              )
+            : InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 4.0,
+                child: img,
               ),
-            ),
-          ),
-        ),
       ),
     );
   }

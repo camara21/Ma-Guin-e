@@ -33,6 +33,13 @@ class _InscriptionPrestatairePageState
   // Champs
   String? _selectedCategory; // domaine (ex: Technologies & Digital)
   String? _selectedJob; // métier (ex: Ingénieur logiciel)
+
+  // ✅ Controllers (pour conserver les valeurs en modification)
+  final TextEditingController _cityCtrl = TextEditingController();
+  final TextEditingController _descCtrl = TextEditingController();
+  final TextEditingController _phoneCtrl = TextEditingController();
+
+  // On garde ces variables (compat logique existante)
   String _city = '';
   String _description = '';
 
@@ -151,6 +158,14 @@ class _InscriptionPrestatairePageState
     _loadExisting();
   }
 
+  @override
+  void dispose() {
+    _cityCtrl.dispose();
+    _descCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
+
   String _categoryForJob(String? job) {
     if (job == null) return '';
     for (final e in _categories.entries) {
@@ -167,6 +182,43 @@ class _InscriptionPrestatairePageState
     final dot = filename.lastIndexOf('.');
     if (dot <= 0) return filename;
     return filename.substring(0, dot);
+  }
+
+  // ✅ Normalisation téléphone :
+  // - l'utilisateur peut saisir: 6xxxxxxx, 62 xx xx xx, +2246..., 002246...
+  // - si pas d'indicatif, on suppose GN et on préfixe +224
+  String _normalizePhoneInput(String input) {
+    final raw = input.trim();
+    if (raw.isEmpty) return '';
+
+    final compact = raw.replaceAll(RegExp(r'[\s\-]'), '');
+    if (compact.startsWith('+')) {
+      return '+${compact.substring(1).replaceAll(RegExp(r'\D'), '')}';
+    }
+    if (compact.startsWith('00')) {
+      return '+${compact.substring(2).replaceAll(RegExp(r'\D'), '')}';
+    }
+
+    final digits = compact.replaceAll(RegExp(r'\D'), '');
+
+    // Si l'utilisateur tape 224xxxx..., on ajoute le +
+    if (digits.startsWith('224') && digits.length >= 11) {
+      return '+$digits';
+    }
+
+    // Sinon, on considère que c'est un numéro national GN
+    return '$kDialCode$digits';
+  }
+
+  // ✅ affichage sympa en modification : si DB = +224xxxx, on montre sans indicatif
+  String _displayPhone(String dbPhone) {
+    final p = dbPhone.trim();
+    if (p.isEmpty) return '';
+    final compact = p.replaceAll(RegExp(r'[\s\-]'), '');
+    if (compact.startsWith('+224')) return compact.substring(4);
+    if (compact.startsWith('224')) return compact.substring(3);
+    if (compact.startsWith('00224')) return compact.substring(5);
+    return p;
   }
 
   Future<void> _pickImage() async {
@@ -279,16 +331,18 @@ class _InscriptionPrestatairePageState
           _city = (row['ville'] ?? '').toString();
           _description = (row['description'] ?? '').toString();
 
+          // ✅ Controllers gardent toujours les infos en modification
+          _cityCtrl.text = _city;
+          _descCtrl.text = _description;
+
           final existingPhone = (row['phone'] ?? '').toString();
           _prestatairePhone = existingPhone;
 
-          if (existingPhone.startsWith(kDialCode)) {
-            _nationalNumber = existingPhone
-                .substring(kDialCode.length)
-                .replaceAll(RegExp(r'\D'), '');
-          } else {
-            _nationalNumber = existingPhone.replaceAll(RegExp(r'\D'), '');
-          }
+          // ✅ on affiche sans +224, mais on conserve la valeur DB
+          final shown = _displayPhone(existingPhone);
+          _phoneCtrl.text = shown;
+
+          _nationalNumber = shown.replaceAll(RegExp(r'\D'), '');
 
           _uploadedImageUrl = (row['photo_url'] ?? '').toString().isEmpty
               ? null
@@ -304,8 +358,15 @@ class _InscriptionPrestatairePageState
     final user = context.read<UserProvider>().utilisateur!;
     final supa = Supabase.instance.client;
 
-    final digits = _nationalNumber.replaceAll(RegExp(r'\D'), '');
-    final normalizedPhone = '$kDialCode$digits';
+    // ✅ Prend toujours les valeurs des controllers (pas de perte en update)
+    _city = _cityCtrl.text;
+    _description = _descCtrl.text;
+
+    final inputPhone = _phoneCtrl.text;
+    final normalizedPhone = _normalizePhoneInput(inputPhone);
+
+    // garde aussi la variable existante (compat)
+    _nationalNumber = inputPhone;
 
     final row = {
       'utilisateur_id': user.id,
@@ -599,9 +660,9 @@ class _InscriptionPrestatairePageState
                   ),
                   const SizedBox(height: 12),
 
-                  // Ville
+                  // Ville (✅ controller)
                   TextFormField(
-                    initialValue: _city.isEmpty ? null : _city,
+                    controller: _cityCtrl,
                     decoration: _inputDecoration('Ville'),
                     onChanged: (v) => _city = v,
                     validator: (v) =>
@@ -609,35 +670,34 @@ class _InscriptionPrestatairePageState
                   ),
                   const SizedBox(height: 13),
 
-                  // Téléphone prestataire (+224 fixe)
+                  // Téléphone prestataire (✅ plus de +224 par défaut)
                   TextFormField(
-                    initialValue:
-                        _nationalNumber.isEmpty ? null : _nationalNumber,
+                    controller: _phoneCtrl,
                     keyboardType: TextInputType.phone,
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(
-                        RegExp(r'[0-9\s\-]'),
+                        RegExp(r'[0-9\s\-\+]'),
                       ),
                     ],
                     decoration: _inputDecoration(
-                            'Numéro du prestataire (ex: 6x xx xx xx)')
-                        .copyWith(
-                      prefixText: '$kDialCode ',
-                      prefixStyle: const TextStyle(fontWeight: FontWeight.w600),
+                      'Numéro du prestataire (ex: 6x xx xx xx ou +224...)',
                     ),
                     onChanged: (v) => _nationalNumber = v,
                     validator: (v) {
-                      final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                      if (digits.isEmpty) return 'Téléphone requis';
+                      final raw = (v ?? '').trim();
+                      if (raw.isEmpty) return 'Téléphone requis';
+
+                      // validation simple : minimum 8 chiffres
+                      final digits = raw.replaceAll(RegExp(r'\D'), '');
                       if (digits.length < 8) return 'Numéro trop court';
                       return null;
                     },
                   ),
                   const SizedBox(height: 13),
 
-                  // Description
+                  // Description (✅ controller)
                   TextFormField(
-                    initialValue: _description.isEmpty ? null : _description,
+                    controller: _descCtrl,
                     maxLines: 3,
                     decoration:
                         _inputDecoration('Description de votre activité'),

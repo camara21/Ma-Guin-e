@@ -589,20 +589,27 @@ class _AnpHomePageState extends State<AnpHomePage> {
   }
 
   Widget _buildTopBar() {
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: EdgeInsets.symmetric(
+        horizontal: isTablet ? 24 : 16,
+        vertical: isTablet ? 12 : 10,
+      ),
       child: Row(
         children: [
           InkWell(
             onTap: () => _scaffoldKey.currentState?.openDrawer(),
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              width: 40,
-              height: 40,
+              width: isTablet ? 48 : 40,
+              height: isTablet ? 48 : 40,
               decoration: _hudButtonDecoration(),
-              child: const Icon(
+              child: Icon(
                 Icons.menu,
                 color: Colors.white,
+                size: isTablet ? 24 : 22,
               ),
             ),
           ),
@@ -613,11 +620,14 @@ class _AnpHomePageState extends State<AnpHomePage> {
   }
 
   Widget _buildSearchBar() {
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+
     return GestureDetector(
       onTap: _ouvrirFenetreRecherche,
       child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
+        height: isTablet ? 60 : 52,
+        padding: EdgeInsets.symmetric(horizontal: isTablet ? 22 : 18),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(14),
@@ -635,13 +645,17 @@ class _AnpHomePageState extends State<AnpHomePage> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.search, color: Colors.white70, size: 20),
-            const SizedBox(width: 10),
+            Icon(
+              Icons.search,
+              color: Colors.white70,
+              size: isTablet ? 22 : 20,
+            ),
+            SizedBox(width: isTablet ? 12 : 10),
             Text(
               "recherche anp",
               style: TextStyle(
                 color: Colors.white.withOpacity(0.70),
-                fontSize: 15,
+                fontSize: isTablet ? 16 : 15,
               ),
             ),
           ],
@@ -653,6 +667,9 @@ class _AnpHomePageState extends State<AnpHomePage> {
   // --------- CARTE SCAN ANP (style image + anneaux) ---------
 
   Widget _buildScanCard() {
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+
     return GestureDetector(
       onTap: () async {
         final codeScanne = await Navigator.push(
@@ -662,7 +679,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
         if (codeScanne != null) await _rechercherAnpOuAdresse(codeScanne);
       },
       child: Container(
-        height: 164,
+        height: isTablet ? 200 : 164,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [
@@ -676,24 +693,24 @@ class _AnpHomePageState extends State<AnpHomePage> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Color(0xFF0066FF).withOpacity(0.45),
+              color: const Color(0xFF0066FF).withOpacity(0.45),
               blurRadius: 32,
               offset: const Offset(0, 14),
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: EdgeInsets.symmetric(horizontal: isTablet ? 30 : 24),
         child: Row(
           children: [
             SizedBox(
-              width: 100,
-              height: 100,
+              width: isTablet ? 120 : 100,
+              height: isTablet ? 120 : 100,
               child: CustomPaint(
                 painter: ScanRingPainter(),
                 child: Center(
                   child: Container(
-                    width: 68,
-                    height: 68,
+                    width: isTablet ? 80 : 68,
+                    height: isTablet ? 80 : 68,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withOpacity(0.16),
@@ -702,12 +719,12 @@ class _AnpHomePageState extends State<AnpHomePage> {
                         width: 2,
                       ),
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         "SCAN",
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 14,
+                          fontSize: isTablet ? 15 : 14,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 1.6,
                         ),
@@ -717,8 +734,8 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 22),
-            const Expanded(
+            SizedBox(width: isTablet ? 26 : 22),
+            Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -727,17 +744,17 @@ class _AnpHomePageState extends State<AnpHomePage> {
                     "ANP",
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 36,
+                      fontSize: isTablet ? 44 : 36,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.4,
                     ),
                   ),
-                  SizedBox(height: 6),
+                  SizedBox(height: isTablet ? 8 : 6),
                   Text(
                     "Adresse Numérique presonnelle",
                     style: TextStyle(
                       color: Colors.white70,
-                      fontSize: 13,
+                      fontSize: isTablet ? 15 : 13,
                     ),
                   ),
                 ],
@@ -752,8 +769,11 @@ class _AnpHomePageState extends State<AnpHomePage> {
   // --------- CARTE GUINÉE HOLOGRAPHIQUE ---------
 
   Widget _buildGuineaCard(bool hasResult) {
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+
     return Container(
-      height: 300, // étiré vers le bas
+      height: isTablet ? 440 : 300, // étiré vers le bas
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(28),
@@ -773,12 +793,15 @@ class _AnpHomePageState extends State<AnpHomePage> {
         borderRadius: BorderRadius.circular(28),
         child: Stack(
           children: [
+            // image de fond
             Positioned.fill(
               child: Image.asset(
                 'assets/anp/guinee_holo.png',
                 fit: BoxFit.cover,
               ),
             ),
+
+            // overlay gradient
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
@@ -798,13 +821,17 @@ class _AnpHomePageState extends State<AnpHomePage> {
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 35, left: 24, right: 24),
-                child: const Text(
+                padding: EdgeInsets.only(
+                  bottom: isTablet ? 44 : 35,
+                  left: isTablet ? 28 : 24,
+                  right: isTablet ? 28 : 24,
+                ),
+                child: Text(
                   "On peut vous rejoindre partout en Guinée\navec votre ANP",
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 15,
+                    fontSize: isTablet ? 17 : 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -814,23 +841,23 @@ class _AnpHomePageState extends State<AnpHomePage> {
             // bouton démarrer si on a une destination
             if (hasResult)
               Positioned(
-                bottom: 20,
-                right: 20,
+                bottom: isTablet ? 26 : 20,
+                right: isTablet ? 26 : 20,
                 child: ElevatedButton.icon(
                   onPressed: _demarrerNavigation,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primaryBlue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isTablet ? 26 : 20,
+                      vertical: isTablet ? 14 : 12,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),
                     elevation: 6,
                   ),
-                  icon: const Icon(Icons.navigation),
+                  icon: Icon(Icons.navigation, size: isTablet ? 22 : 20),
                   label: const Text(
                     "Démarrer",
                     style: TextStyle(
@@ -1008,31 +1035,42 @@ class _AnpHomePageState extends State<AnpHomePage> {
   Widget _buildMainContent(BuildContext context) {
     final hasResult = _searchedPoint != null;
 
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+
+    final double hPad = isTablet ? 24 : 16;
+    final double topGap = isTablet ? 8 : 4;
+    final double afterSearchGap = isTablet ? 34 : 28;
+    final double afterScanGap = isTablet ? 30 : 26;
+    final double afterLineGap = isTablet ? 18 : 16;
+    final double scrollVPad = isTablet ? 12 : 8;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 4),
+        SizedBox(height: topGap),
         _buildTopBar(),
-        const SizedBox(height: 4),
+        SizedBox(height: topGap),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: hPad),
           child: _buildSearchBar(),
         ),
-        const SizedBox(height: 28),
+        SizedBox(height: afterSearchGap),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: hPad),
           child: _buildScanCard(),
         ),
-        const SizedBox(height: 26),
+        SizedBox(height: afterScanGap),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: hPad),
           child: _buildGuineaCard(hasResult),
         ),
         _buildMyAnpLine(),
-        const SizedBox(height: 16),
+        SizedBox(height: afterLineGap),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding:
+                EdgeInsets.symmetric(horizontal: hPad, vertical: scrollVPad),
             child: _buildSearchResultArea(hasResult),
           ),
         ),

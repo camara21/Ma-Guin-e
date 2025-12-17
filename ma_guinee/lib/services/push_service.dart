@@ -1,4 +1,3 @@
-// lib/services/push_service.dart
 import 'dart:async';
 import 'dart:convert';
 
@@ -67,6 +66,61 @@ class PushService {
   // ---------------------------------------------------------
   // Public API
   // ---------------------------------------------------------
+
+  // ✅ évite d’insister au retour Home dans une même session
+  bool _askedPermissionThisSession = false;
+
+  /// ✅ À appeler sur Home.
+  /// Comportement "ancien" : on TENTE de demander la permission dès l’arrivée
+  /// (Web + Mobile). Le système n'affichera rien si déjà refusé/accepté.
+  Future<void> ensurePermissionOnHome() async {
+    final user = _sb.auth.currentUser;
+    if (user == null) return;
+
+    if (_askedPermissionThisSession) return;
+    _askedPermissionThisSession = true;
+
+    try {
+      // ✅ Tentative directe (comme ton ancien comportement)
+      final req = await _fm.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint(
+          '[PushService] ensurePermissionOnHome -> ${req.authorizationStatus}');
+
+      // ✅ WEB : si autorisé ET opt-in=true, on peut enregistrer un token (sinon on ne touche pas)
+      if (kIsWeb) {
+        if (_isWebIosLike) return;
+
+        final optedIn = await _isOptedIn();
+        if (!optedIn) return;
+
+        if (_webVapidKey.trim().isEmpty) {
+          debugPrint(
+              '[PushService] WEB_VAPID_KEY manquant (web token impossible).');
+          return;
+        }
+
+        if (req.authorizationStatus == AuthorizationStatus.authorized ||
+            req.authorizationStatus == AuthorizationStatus.provisional) {
+          await _fm.setAutoInitEnabled(true);
+
+          final token = await _fm.getToken(vapidKey: _webVapidKey);
+          if (token != null && token.trim().isNotEmpty) {
+            _lastToken = token;
+            await _saveTokenToSupabase(token, forcePlatform: 'web');
+            _lastSavedUserId = user.id;
+            debugPrint(
+                '[PushService] Web token enregistré via ensurePermissionOnHome ✔️');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[PushService] ensurePermissionOnHome error: $e');
+    }
+  }
 
   /// Appelé depuis main.dart après login.
   /// IMPORTANT: respecte le consentement utilisateur (notif_opt_in).
@@ -250,6 +304,9 @@ class PushService {
     _lastSavedUserId = null;
     _lastToken = null;
     _initialized = false;
+
+    // ✅ reset session : après reconnexion, on pourra reproposer UNE fois
+    _askedPermissionThisSession = false;
   }
 
   // ---------------------------------------------------------
@@ -433,13 +490,11 @@ class PushService {
   }
 
   Future<void> _disableTokenServerSide(String token) async {
-    // Recommande un RPC SECURITY DEFINER (voir SQL plus bas)
     try {
       await _sb.rpc('disable_push_device', params: {'p_token': token});
       return;
     } catch (_) {}
 
-    // fallback (si RLS le permet)
     try {
       await _sb.from('push_devices').update({
         'enabled': false,

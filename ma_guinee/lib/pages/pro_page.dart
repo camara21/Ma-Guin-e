@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -511,6 +513,7 @@ class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
                                   final count = _countByPrestataireId[id] ?? 0;
 
                                   return _ProCard(
+                                    prestataireId: id,
                                     name: p.metier,
                                     category: cat,
                                     city: p.ville,
@@ -745,6 +748,7 @@ class _JobChips extends StatelessWidget {
 }
 
 class _ProCard extends StatelessWidget {
+  final String prestataireId;
   final String name;
   final String category;
   final String city;
@@ -754,6 +758,7 @@ class _ProCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ProCard({
+    required this.prestataireId,
     required this.name,
     required this.category,
     required this.city,
@@ -762,6 +767,18 @@ class _ProCard extends StatelessWidget {
     required this.ratingCount,
     required this.onTap,
   });
+
+  bool get _enableHero {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  String get _heroTag {
+    final id = prestataireId.trim();
+    if (id.isEmpty) return '';
+    return 'prest_photo_$id';
+  }
 
   Widget _imagePremiumPlaceholder() {
     return TweenAnimationBuilder<double>(
@@ -842,6 +859,8 @@ class _ProCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canHero = _enableHero && _heroTag.isNotEmpty;
+
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: onTap,
@@ -871,7 +890,25 @@ class _ProCard extends StatelessWidget {
                 children: [
                   AspectRatio(
                     aspectRatio: 16 / 11,
-                    child: _premiumImage(context, photoUrl),
+                    child: canHero
+                        ? Hero(
+                            tag: _heroTag,
+                            transitionOnUserGestures: true,
+                            placeholderBuilder: (_, __, child) {
+                              // ✅ Garantit une taille pendant la transition
+                              return SizedBox.expand(child: child);
+                            },
+                            flightShuttleBuilder: (flightContext, animation,
+                                direction, fromCtx, toCtx) {
+                              // ✅ Évite certains glitches de layout
+                              return Material(
+                                color: Colors.transparent,
+                                child: toCtx.widget,
+                              );
+                            },
+                            child: _premiumImage(context, photoUrl),
+                          )
+                        : _premiumImage(context, photoUrl),
                   ),
                   Positioned.fill(
                     child: DecoratedBox(

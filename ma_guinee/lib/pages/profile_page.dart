@@ -116,6 +116,113 @@ class _ProfilePageState extends State<ProfilePage> {
     await _refreshUser();
   }
 
+  // =========================
+  // ✅ AJOUT : SUPPRESSION PHOTO PROFIL (DB + Bucket)
+  // =========================
+  static const String _kProfileBucket = 'profile-photos';
+
+  /// Convertit une URL publique Supabase Storage en "objectPath" (chemin dans le bucket).
+  /// Exemple:
+  /// .../storage/v1/object/public/profile-photos/u/<uid>/profile_123.jpg
+  /// => u/<uid>/profile_123.jpg
+  String? _extractObjectPathFromPublicUrl(String url,
+      {required String bucket}) {
+    try {
+      final uri = Uri.parse(url);
+      final seg = uri.pathSegments; // segments décodés
+      final idx = seg.indexOf(bucket);
+      if (idx == -1) return null;
+      if (idx + 1 >= seg.length) return null;
+      return seg.sublist(idx + 1).join('/');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _confirmDeleteProfilePhoto() async {
+    if (_isUploading) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer la photo ?'),
+        content: const Text(
+          'La photo sera supprimée du profil et du stockage.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Supprimer',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await _deleteProfilePhotoEverywhere();
+    }
+  }
+
+  Future<void> _deleteProfilePhotoEverywhere() async {
+    if (_isUploading) return;
+
+    final prov = context.read<UserProvider>();
+    final u = prov.utilisateur ?? widget.user;
+
+    final String? avatar = _avatarUrl(u);
+    if (avatar == null || avatar.trim().isEmpty) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final sb = Supabase.instance.client;
+
+      final userId = prov.utilisateur?.id ?? widget.user.id;
+
+      // 1) supprimer le fichier dans le bucket (si on retrouve le path)
+      final objectPath =
+          _extractObjectPathFromPublicUrl(avatar, bucket: _kProfileBucket);
+
+      if (objectPath != null && objectPath.isNotEmpty) {
+        // Si la policy storage autorise DELETE, ceci supprime vraiment le fichier
+        await sb.storage.from(_kProfileBucket).remove([objectPath]);
+      }
+
+      // 2) vider la colonne en base
+      await sb
+          .from('utilisateurs')
+          .update({'photo_url': null}).eq('id', userId);
+
+      // 3) UI
+      if (!mounted) return;
+      setState(() {
+        _photoUrl = null;
+        _isUploading = false;
+      });
+
+      await _refreshUser();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo de profil supprimée.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur suppression : $e')),
+      );
+    }
+  }
+
   // ----------------------------
   //   POPUP PHOTO (30% haut, bord à bord)
   // ----------------------------
@@ -182,7 +289,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
                   const SizedBox(height: 14),
 
-                  // ✅ actions
+                  // ✅ actions (Modifier + Supprimer)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
@@ -202,6 +309,30 @@ class _ProfilePageState extends State<ProfilePage> {
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(30)),
                               elevation: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: (avatar == null || _isUploading)
+                                ? null
+                                : () {
+                                    Navigator.pop(context);
+                                    _confirmDeleteProfilePhoto();
+                                  },
+                            icon: const Icon(Icons.delete_outline,
+                                color: Colors.red),
+                            label: const Text(
+                              "Supprimer",
+                              style: TextStyle(color: Colors.red),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
                             ),
                           ),
                         ),
