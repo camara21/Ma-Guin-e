@@ -1,9 +1,15 @@
 // lib/pages/divertissement/divertissement_detail_page.dart
 import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // ✅ orientation lock (si tu l’utilises après)
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
 
 class DivertissementDetailPage extends StatefulWidget {
   final Map<String, dynamic> lieu;
@@ -20,6 +26,15 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
   static const Color _neutralSurface = Colors.white;
 
   final _sb = Supabase.instance.client;
+
+  // ✅ Anti-flash : Hero uniquement sur mobile (Android/iOS)
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  bool get _enableHero => _isMobilePlatform;
 
   // Avis (édition)
   int _note = 0;
@@ -42,6 +57,17 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
   bool get _canSubmitAvis =>
       !_submittingAvis && _note > 0 && _avisController.text.trim().isNotEmpty;
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _handleError(Object e, StackTrace st, {String? fallbackSnack}) {
+    // ✅ Centralisation + message FR
+    SoneyaErrorCenter.showException(e, st);
+    _snack(fallbackSnack ?? frMessageFromError(e, st));
+  }
 
   Future<void> _precacheAll(BuildContext context, List<String> urls) async {
     for (final u in urls) {
@@ -104,12 +130,18 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
         _noteMoyenne =
             _nbAvis == 0 ? null : notes.reduce((a, b) => a + b) / _nbAvis;
       }
-    } on PostgrestException catch (e) {
+
+      // ✅ réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur avis: ${e.message}')));
       _noteMoyenne = null;
       _nbAvis = 0;
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible de charger les avis. Veuillez réessayer.",
+      );
     } finally {
       if (mounted) setState(() => _loadingAvis = false);
     }
@@ -161,11 +193,18 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                 (r['commentaire']?.toString().trim().isNotEmpty ?? false))
             .toList();
       }
-    } on PostgrestException catch (e) {
+
+      // ✅ réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur commentaires: ${e.message}')));
       _avisList = [];
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack:
+            "Impossible de charger les commentaires. Veuillez réessayer.",
+      );
     } finally {
       if (mounted) setState(() => _loadingCommentaires = false);
     }
@@ -179,23 +218,19 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final commentaire = _avisController.text.trim();
 
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Veuillez vous connecter pour laisser un avis.")));
+      _snack("Veuillez vous connecter pour laisser un avis.");
       return;
     }
     if (lieuId == null || lieuId.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Lieu invalide.")));
+      _snack("Lieu invalide.");
       return;
     }
     if (_note <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Choisissez une note (au moins 1 étoile).")));
+      _snack("Choisissez une note (au moins 1 étoile).");
       return;
     }
     if (commentaire.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Écrivez un commentaire avant d’envoyer.")));
+      _snack("Écrivez un commentaire avant d’envoyer.");
       return;
     }
 
@@ -215,8 +250,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
       FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Merci pour votre avis !')));
+      _snack('Merci pour votre avis !');
 
       setState(() {
         _note = 0;
@@ -225,10 +259,16 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
       await _loadAvisStats();
       await _loadAvisCommentaires();
-    } on PostgrestException catch (e) {
+
+      // ✅ réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur avis: ${e.message}')));
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible d’envoyer votre avis. Veuillez réessayer.",
+      );
     } finally {
       if (mounted) setState(() => _submittingAvis = false);
     }
@@ -241,15 +281,19 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     final phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (phone.isNotEmpty) {
       final uri = Uri.parse('tel:$phone');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      try {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          SoneyaErrorCenter.reportNetworkSuccess();
+          return;
+        }
+      } catch (e, st) {
+        _handleError(e as Object, st, fallbackSnack: "Impossible d'appeler.");
         return;
       }
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Numéro non disponible ou invalide")),
-    );
+    _snack("Numéro non disponible ou invalide");
   }
 
   void _openMap() async {
@@ -258,15 +302,23 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     if (lat != null && lon != null) {
       final uri = Uri.parse(
           "https://www.google.com/maps/search/?api=1&query=$lat,$lon");
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      try {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          SoneyaErrorCenter.reportNetworkSuccess();
+          return;
+        }
+      } catch (e, st) {
+        _handleError(
+          e as Object,
+          st,
+          fallbackSnack: "Impossible d'ouvrir Google Maps.",
+        );
         return;
       }
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Coordonnées GPS non disponibles")),
-    );
+    _snack("Coordonnées GPS non disponibles");
   }
 
   // ----------------- Images -----------------
@@ -282,15 +334,20 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
     return p.isNotEmpty ? [p] : [];
   }
 
+  // ✅ Anti-flash : route instantanée (pas d’animation) + Hero seulement mobile
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     final heroPrefix =
         'divert_${widget.lieu['id'] ?? (widget.lieu['nom'] ?? '')}';
+
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _FullscreenGalleryPage(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => _FullscreenGalleryPage(
           images: images,
           initialIndex: initialIndex,
           heroPrefix: heroPrefix,
+          enableHero: _enableHero,
         ),
       ),
     );
@@ -382,6 +439,8 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 
     final media = MediaQuery.of(context);
     final mf = media.textScaleFactor.clamp(1.0, 1.15);
+
+    // ✅ tags stables + uniques
     final heroPrefix = 'divert_${lieu['id'] ?? nom}';
 
     return MediaQuery(
@@ -465,7 +524,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ GALERIE (comme Tourisme: contraintes stables + crop propre)
+                // ✅ GALERIE (anti-flash : Hero mobile only)
                 if (images.isNotEmpty) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(13),
@@ -473,23 +532,28 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                     child: Stack(
                       children: [
                         SizedBox(
-                          height: 230, // ✅ même philosophie tourisme
+                          height: 230,
                           width: double.infinity,
                           child: PageView.builder(
                             controller: _pageController,
                             itemCount: images.length,
                             onPageChanged: (i) =>
                                 setState(() => _currentImage = i),
-                            itemBuilder: (context, index) => GestureDetector(
-                              onTap: () =>
-                                  _openFullScreenGallery(images, index),
-                              child: Hero(
+                            itemBuilder: (context, index) {
+                              final child = GestureDetector(
+                                onTap: () =>
+                                    _openFullScreenGallery(images, index),
+                                child: _FadeInNetworkImage(url: images[index]),
+                              );
+
+                              if (!_enableHero) return child;
+
+                              return Hero(
                                 tag: '${heroPrefix}_$index',
-                                child: _FadeInNetworkImage(
-                                  url: images[index],
-                                ),
-                              ),
-                            ),
+                                transitionOnUserGestures: true,
+                                child: child,
+                              );
+                            },
                           ),
                         ),
                         if (images.length > 1)
@@ -515,7 +579,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
                   ),
                   const SizedBox(height: 8),
 
-                  // ✅ Miniatures
+                  // Miniatures
                   if (images.length > 1)
                     SizedBox(
                       height: 68,
@@ -828,10 +892,7 @@ class _DivertissementDetailPageState extends State<DivertissementDetailPage> {
 }
 
 // ------------------------------------------------------------
-// ✅ Image stable (comme “Tourisme”)
-// - SizedBox.expand => contraintes claires
-// - BoxFit.cover => pas de déformation
-// - placeholder propre
+// Image stable (comme Tourisme)
 // ------------------------------------------------------------
 class _FadeInNetworkImage extends StatefulWidget {
   final String url;
@@ -904,11 +965,13 @@ class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+  final bool enableHero;
 
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -953,27 +1016,32 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
         itemCount: total,
         itemBuilder: (_, i) {
           final url = widget.images[i].trim();
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}_$i',
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (ctx, child, ev) {
-                    if (ev == null) return child;
-                    return const ColoredBox(color: Colors.black);
-                  },
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white70,
-                    size: 64,
-                  ),
+
+          final content = Center(
+            child: InteractiveViewer(
+              minScale: 1.0,
+              maxScale: 4.0,
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                loadingBuilder: (ctx, child, ev) {
+                  if (ev == null) return child;
+                  return const ColoredBox(color: Colors.black);
+                },
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white70,
+                  size: 64,
                 ),
               ),
             ),
+          );
+
+          if (!widget.enableHero) return content;
+
+          return Hero(
+            tag: '${widget.heroPrefix}_$i',
+            child: content,
           );
         },
       ),

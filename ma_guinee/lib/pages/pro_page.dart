@@ -16,6 +16,9 @@ import '../providers/prestataires_provider.dart';
 import 'inscription_prestataire_page.dart';
 import 'prestataire_detail_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 /// === Palette Prestataires (donnée par l'utilisateur) ===
 const Color prestatairesPrimary = Color(0xFF0F766E);
 const Color prestatairesSecondary = Color(0xFF14B8A6);
@@ -293,7 +296,13 @@ class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
           _countByPrestataireId[id] = c;
         }
       });
-    } catch (_) {}
+
+      // ✅ succès réseau
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // notes = secondaire => on centralise mais sans casser l’UI
+      SoneyaErrorCenter.showException(e, st);
+    }
   }
 
   Widget _imagePremiumPlaceholder() {
@@ -349,6 +358,83 @@ class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
                   Container(height: 10, width: 90, color: Colors.grey.shade200),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ Navigation safe : évite les erreurs pendant la transition + centralise en FR
+  Future<void> _openDetail(PrestataireModel p) async {
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PrestataireDetailPage(data: p.toJson()),
+        ),
+      );
+      // Rien à faire au retour : la page reste stable (pas de setState forcé)
+    } catch (e, st) {
+      SoneyaErrorCenter.showException(e, st);
+    }
+  }
+
+  // dans _ProPageState
+  String? _lastOverlayErrorKey;
+
+  Widget _errorState(PrestatairesProvider prov) {
+    // ✅ prov.error peut être null => on force un Object non-null
+    final Object errObj = (prov.error == null)
+        ? Exception('Erreur inconnue')
+        : (prov.error as Object);
+
+    final String msg = frMessageFromError(errObj, StackTrace.current);
+
+    // ✅ Déclenche l’overlay UNE SEULE fois par erreur (évite spam/rebuild)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final key = '${errObj.runtimeType}:${errObj.toString()}';
+      if (_lastOverlayErrorKey == key) return;
+      _lastOverlayErrorKey = key;
+
+      SoneyaErrorCenter.showException(errObj, StackTrace.current);
+    });
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: prestatairesPrimary.withOpacity(.85),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: prestatairesPrimary,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () {
+                // ✅ reset clé overlay pour pouvoir réafficher si re-erreur
+                _lastOverlayErrorKey = null;
+                prov.loadPrestataires();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -457,8 +543,10 @@ class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
         iconTheme: const IconThemeData(color: prestatairesPrimary),
         actions: const <Widget>[],
       ),
+
+      // ✅ Avant : Center(Text('Erreur: ${prov.error}')) => maintenant centralisé + FR
       body: prov.error != null
-          ? Center(child: Text('Erreur: ${prov.error}'))
+          ? _errorState(prov)
           : Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
               child: Column(
@@ -520,15 +608,7 @@ class _ProPageState extends State<ProPage> with AutomaticKeepAliveClientMixin {
                                     photoUrl: p.photoUrl,
                                     rating: rating,
                                     ratingCount: count,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => PrestataireDetailPage(
-                                              data: p.toJson()),
-                                        ),
-                                      );
-                                    },
+                                    onTap: () => _openDetail(p),
                                   );
                                 },
                               )),
@@ -768,11 +848,9 @@ class _ProCard extends StatelessWidget {
     required this.onTap,
   });
 
-  bool get _enableHero {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-  }
+  // ✅ Fix “écran rouge flash” au retour :
+  // on désactive Hero sur cette page (la transition Hero est la cause la plus fréquente).
+  bool get _enableHero => false;
 
   String get _heroTag {
     final id = prestataireId.trim();
@@ -895,12 +973,10 @@ class _ProCard extends StatelessWidget {
                             tag: _heroTag,
                             transitionOnUserGestures: true,
                             placeholderBuilder: (_, __, child) {
-                              // ✅ Garantit une taille pendant la transition
                               return SizedBox.expand(child: child);
                             },
                             flightShuttleBuilder: (flightContext, animation,
                                 direction, fromCtx, toCtx) {
-                              // ✅ Évite certains glitches de layout
                               return Material(
                                 color: Colors.transparent,
                                 child: toCtx.widget,

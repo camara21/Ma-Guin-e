@@ -19,6 +19,9 @@ import '../../models/utilisateur_model.dart';
 import 'favoris_page.dart';
 import 'mes_annonces_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class LogementHomePage extends StatefulWidget {
   const LogementHomePage({super.key});
 
@@ -245,10 +248,16 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
       _cacheFeed = List<LogementModel>.from(pageItems);
       await _saveFeedToDisk(pageItems);
-    } catch (e) {
+
+      // ✅ succès réseau
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ Centralise l’erreur (overlay global) + message FR sans URL dans la page
+      SoneyaErrorCenter.showException(e, st);
+
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = frMessageFromError(e, st);
         _loading = false;
       });
     }
@@ -280,9 +289,17 @@ class _LogementHomePageState extends State<LogementHomePage> {
 
       _cacheFeed = List<LogementModel>.from(_feed);
       await _saveFeedToDisk(_feed);
-    } catch (e) {
+
+      // ✅ succès réseau
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      _snack('Erreur chargement : $e');
+
+      // ✅ Centralisation
+      SoneyaErrorCenter.showException(e, st);
+
+      // Optionnel : petit snack en FR (sans URL), sans casser ta logique existante
+      _snack(frMessageFromError(e, st));
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -413,8 +430,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
           'logement_id': logementId,
         });
       }
-    } catch (e) {
+
+      // ✅ succès réseau
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
+
       setState(() {
         if (wasFav) {
           _favIds.add(logementId);
@@ -422,7 +443,12 @@ class _LogementHomePageState extends State<LogementHomePage> {
           _favIds.remove(logementId);
         }
       });
-      _snack('Erreur favoris : $e');
+
+      // ✅ Centralisation
+      SoneyaErrorCenter.showException(e, st);
+
+      // Message court FR sans URL
+      _snack("Impossible de mettre à jour les favoris. Veuillez réessayer.");
     }
   }
 
@@ -1335,6 +1361,7 @@ class _CatItem {
 }
 
 // ======================== Carte logement : LUXE ===========================
+// (Aucune modification ci-dessous : UI intacte)
 class _BienCardLuxury extends StatelessWidget {
   final LogementModel bien;
   final bool isFav;
@@ -1348,7 +1375,6 @@ class _BienCardLuxury extends StatelessWidget {
 
   static const _accent = Color(0xFFE0006D);
 
-  // Nettoyage robuste : enlève \n/\r + espaces multiples (souvent présent dans les seeds SQL)
   static String _clean(String s) {
     return s
         .replaceAll(RegExp(r'[\r\n]+'), ' ')
@@ -1401,12 +1427,10 @@ class _BienCardLuxury extends StatelessWidget {
             borderRadius: BorderRadius.circular(28),
             child: LayoutBuilder(
               builder: (ctx, c) {
-                // ✅ CORRECTION DEFINITIVE : plus d’espace pour le texte (même si titre long)
                 final ts = MediaQuery.textScaleFactorOf(context);
                 final panelH = min(
                   c.maxHeight,
-                  max(c.maxHeight * 0.48,
-                      190.0 * ts), // panel plus haut + min garanti
+                  max(c.maxHeight * 0.48, 190.0 * ts),
                 );
 
                 return Stack(
@@ -1756,7 +1780,6 @@ class _SkeletonBienCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (_, c) {
-          // ✅ identique au vrai panel : évite les sauts visuels
           final ts = MediaQuery.textScaleFactorOf(context);
           final panelH = min(c.maxHeight, max(c.maxHeight * 0.48, 190.0 * ts));
 

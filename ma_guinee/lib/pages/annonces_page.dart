@@ -12,6 +12,9 @@ import 'package:ma_guinee/models/annonce_model.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 import 'favoris_page.dart';
 import 'create_annonce_page.dart';
 import 'annonce_detail_page.dart';
@@ -45,7 +48,9 @@ class AnnoncesPage extends StatefulWidget {
           await box.put('annonces', list);
         }
       } catch (_) {}
-    } catch (_) {}
+    } catch (_) {
+      // preload silencieux (ne doit pas spam l’UI au démarrage)
+    }
   }
 
   @override
@@ -248,10 +253,16 @@ class _AnnoncesPageState extends State<AnnoncesPage>
         _initialFetchDone = true;
         _resetVisible();
       });
-    } catch (e) {
+
+      // ✅ si un appel réussit, on considère que le réseau est OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ CENTRALISATION : overlay global + message FR sans URL dans la page
+      SoneyaErrorCenter.showException(e, st);
+
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = frMessageFromError(e, st);
         _loading = false;
         _initialFetchDone = true;
       });
@@ -350,7 +361,13 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           'date_ajout': DateTime.now().toIso8601String(),
         });
       }
-    } catch (_) {
+
+      // ✅ action réussie => réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ CENTRALISATION : overlay global (pas d’erreur brute)
+      SoneyaErrorCenter.showException(e, st);
+
       if (!mounted) return;
       setState(() {
         wasFav ? _favIds.add(annonceId) : _favIds.remove(annonceId);
@@ -427,7 +444,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           hintText: 'Rechercher une annonce...',
           hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13.2),
           filled: true,
-          fillColor: _cardBg, // ✅ comme les filtres (pas gris)
+          fillColor: _cardBg,
           prefixIcon: const Icon(Icons.search, color: _textSecondary, size: 20),
           suffixIcon: ValueListenableBuilder<TextEditingValue>(
             valueListenable: _searchCtrl,
@@ -437,7 +454,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                 tooltip: 'Effacer',
                 icon: const Icon(Icons.close, size: 18, color: _textSecondary),
                 onPressed: () {
-                  _searchCtrl.clear(); // déclenche listener + resetVisible
+                  _searchCtrl.clear();
                   FocusScope.of(context).unfocus();
                 },
               );
@@ -516,7 +533,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                   CupertinoPageRoute(builder: (_) => const CreateAnnoncePage()),
                 );
                 if (!mounted) return;
-                await _reloadAll(); // refresh après dépôt
+                await _reloadAll();
               },
             ),
           ],
@@ -953,42 +970,24 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    height: 10,
-                    width: double.infinity,
-                    color: Colors.grey.shade300,
-                  ),
+                      height: 10,
+                      width: double.infinity,
+                      color: Colors.grey.shade300),
                   const SizedBox(height: 6),
-                  Container(
-                    height: 10,
-                    width: 80,
-                    color: Colors.grey.shade300,
-                  ),
+                  Container(height: 10, width: 80, color: Colors.grey.shade300),
                   const SizedBox(height: 6),
-                  Container(
-                    height: 8,
-                    width: 60,
-                    color: Colors.grey.shade300,
-                  ),
+                  Container(height: 8, width: 60, color: Colors.grey.shade300),
                   const SizedBox(height: 4),
-                  Container(
-                    height: 8,
-                    width: 100,
-                    color: Colors.grey.shade300,
-                  ),
+                  Container(height: 8, width: 100, color: Colors.grey.shade300),
                   const Spacer(),
                   Row(
                     children: [
                       CircleAvatar(
-                        radius: 12,
-                        backgroundColor: Colors.grey.shade300,
-                      ),
+                          radius: 12, backgroundColor: Colors.grey.shade300),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Container(
-                          height: 8,
-                          color: Colors.grey.shade300,
-                        ),
-                      ),
+                          child: Container(
+                              height: 8, color: Colors.grey.shade300)),
                     ],
                   ),
                 ],
@@ -1040,10 +1039,7 @@ class _AnnoncesPageState extends State<AnnoncesPage>
     const double gridSpacing = 4.0;
     const double gridHPadding = 6.0;
 
-    // ✅ ancien code : filtrage local
     final filtered = _filtered();
-
-    // ✅ affichage progressif (pagination locale)
     final shown = filtered.take(_visibleCount).toList(growable: false);
 
     final ratio = _ratioFor(screenW, gridCols, gridSpacing, gridHPadding);
@@ -1087,12 +1083,48 @@ class _AnnoncesPageState extends State<AnnoncesPage>
           ),
         ],
       ),
+
+      // ✅ Avant : affichage "Erreur : $e" (brut) => maintenant message FR + bouton
       body: _error != null
-          ? Center(child: Text('Erreur : $_error'))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    ElevatedButton(
+                      onPressed: _reloadAll,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _brandRed,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                      ),
+                      child: const Text(
+                        "Réessayer",
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ Filtres sous la barre du haut
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1122,7 +1154,6 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                     },
                   ),
                 ),
-
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: _reloadAll,
@@ -1152,7 +1183,9 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                         if (showSkeleton)
                           SliverPadding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: gridHPadding, vertical: 4),
+                              horizontal: gridHPadding,
+                              vertical: 4,
+                            ),
                             sliver: SliverGrid(
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
@@ -1193,7 +1226,9 @@ class _AnnoncesPageState extends State<AnnoncesPage>
                         else ...[
                           SliverPadding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: gridHPadding, vertical: 4),
+                              horizontal: gridHPadding,
+                              vertical: 4,
+                            ),
                             sliver: SliverGrid(
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(

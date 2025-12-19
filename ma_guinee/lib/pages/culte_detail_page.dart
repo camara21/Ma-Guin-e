@@ -1,9 +1,14 @@
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ orientation lock
+import 'package:flutter/services.dart'; // ✅ orientation lock (si tu l’utilises après)
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
 
 class CulteDetailPage extends StatelessWidget {
   final Map<String, dynamic> lieu;
@@ -63,11 +68,31 @@ class CulteDetailPage extends StatelessWidget {
     return s.contains('eglise') || s.contains('cathedrale');
   }
 
-  Future<void> _ouvrirDansGoogleMaps(double lat, double lng) async {
+  bool _enableHero() {
+    // ✅ Anti flash : Hero seulement sur mobile Android/iOS
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  void _snack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _ouvrirDansGoogleMaps(
+      BuildContext context, double lat, double lng) async {
     final Uri uri =
         Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        SoneyaErrorCenter.reportNetworkSuccess();
+      } else {
+        _snack(context, "Impossible d’ouvrir Google Maps.");
+      }
+    } catch (e, st) {
+      SoneyaErrorCenter.showException(e as Object, st);
+      _snack(context, frMessageFromError(e as Object, st));
     }
   }
 
@@ -213,6 +238,8 @@ class CulteDetailPage extends StatelessWidget {
     final double latitude = ((lieu['latitude'] as num?) ?? 0).toDouble();
     final double longitude = ((lieu['longitude'] as num?) ?? 0).toDouble();
 
+    final bool heroEnabled = _enableHero();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -241,17 +268,22 @@ class CulteDetailPage extends StatelessWidget {
                   _ImagesCarouselWithThumbs(
                     images: images,
                     onOpenFull: (index) {
+                      // ✅ Anti flash : route instantanée (pas d’animation)
                       Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => _FullscreenGalleryPage(
+                        PageRouteBuilder(
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                          pageBuilder: (_, __, ___) => _FullscreenGalleryPage(
                             images: images,
                             initialIndex: index,
                             heroPrefix: heroPrefix,
+                            enableHero: heroEnabled,
                           ),
                         ),
                       );
                     },
                     heroPrefix: heroPrefix,
+                    enableHero: heroEnabled,
                   )
                 else
                   ClipRRect(
@@ -338,7 +370,8 @@ class CulteDetailPage extends StatelessWidget {
                 const SizedBox(height: 18),
                 Center(
                   child: ElevatedButton.icon(
-                    onPressed: () => _ouvrirDansGoogleMaps(latitude, longitude),
+                    onPressed: () =>
+                        _ouvrirDansGoogleMaps(context, latitude, longitude),
                     icon: const Icon(Icons.map),
                     label: const Text("Ouvrir dans Google Maps"),
                     style: ElevatedButton.styleFrom(
@@ -370,11 +403,13 @@ class _ImagesCarouselWithThumbs extends StatefulWidget {
   final List<String> images;
   final void Function(int index)? onOpenFull;
   final String heroPrefix;
+  final bool enableHero;
 
   const _ImagesCarouselWithThumbs({
     required this.images,
     this.onOpenFull,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -423,49 +458,58 @@ class _ImagesCarouselWithThumbsState extends State<_ImagesCarouselWithThumbs> {
                   controller: _pageCtrl,
                   itemCount: widget.images.length,
                   onPageChanged: (i) => setState(() => _current = i),
-                  itemBuilder: (_, i) => GestureDetector(
-                    onTap: () => widget.onOpenFull?.call(i),
-                    child: Hero(
+                  itemBuilder: (_, i) {
+                    final img = LayoutBuilder(
+                      builder: (ctx, cons) {
+                        final dpr = MediaQuery.of(ctx).devicePixelRatio;
+                        final w = cons.maxWidth;
+                        final h = cons.maxHeight;
+
+                        final memW =
+                            (w.isFinite && w > 0) ? (w * dpr).round() : null;
+                        final memH =
+                            (h.isFinite && h > 0) ? (h * dpr).round() : null;
+
+                        return CachedNetworkImage(
+                          imageUrl: widget.images[i],
+                          cacheKey: widget.images[i],
+                          memCacheWidth: memW,
+                          memCacheHeight: memH,
+                          fadeInDuration: Duration.zero,
+                          fadeOutDuration: Duration.zero,
+                          placeholderFadeInDuration: Duration.zero,
+                          useOldImageOnUrlChange: true,
+                          imageBuilder: (_, provider) => SizedBox.expand(
+                            child: Image(
+                              image: provider,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.high,
+                            ),
+                          ),
+                          placeholder: (_, __) => _premiumPlaceholder(),
+                          errorWidget: (_, __, ___) => Container(
+                            color: const Color(0xFFE5E7EB),
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.broken_image, size: 44),
+                          ),
+                        );
+                      },
+                    );
+
+                    final child = GestureDetector(
+                      onTap: () => widget.onOpenFull?.call(i),
+                      child: img,
+                    );
+
+                    if (!widget.enableHero) return child;
+
+                    return Hero(
                       tag: '${widget.heroPrefix}_$i',
-                      child: LayoutBuilder(
-                        builder: (ctx, cons) {
-                          final dpr = MediaQuery.of(ctx).devicePixelRatio;
-                          final w = cons.maxWidth;
-                          final h = cons.maxHeight;
-
-                          final memW =
-                              (w.isFinite && w > 0) ? (w * dpr).round() : null;
-                          final memH =
-                              (h.isFinite && h > 0) ? (h * dpr).round() : null;
-
-                          return CachedNetworkImage(
-                            imageUrl: widget.images[i],
-                            cacheKey: widget.images[i],
-                            memCacheWidth: memW,
-                            memCacheHeight: memH,
-                            fadeInDuration: Duration.zero,
-                            fadeOutDuration: Duration.zero,
-                            placeholderFadeInDuration: Duration.zero,
-                            useOldImageOnUrlChange: true,
-                            imageBuilder: (_, provider) => SizedBox.expand(
-                              child: Image(
-                                image: provider,
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                                filterQuality: FilterQuality.high,
-                              ),
-                            ),
-                            placeholder: (_, __) => _premiumPlaceholder(),
-                            errorWidget: (_, __, ___) => Container(
-                              color: const Color(0xFFE5E7EB),
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.broken_image, size: 44),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
+                      transitionOnUserGestures: true,
+                      child: child,
+                    );
+                  },
                 ),
               ),
             ),
@@ -582,11 +626,13 @@ class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+  final bool enableHero;
 
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -634,34 +680,39 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
             itemBuilder: (_, i) {
               final url = widget.images[i];
 
-              return SizedBox(
+              final content = SizedBox(
                 width: constraints.maxWidth,
                 height: constraints.maxHeight,
-                child: Hero(
-                  tag: '${widget.heroPrefix}_$i',
-                  child: InteractiveViewer(
-                    minScale: 1.0,
-                    maxScale: 4.0,
-                    child: SizedBox.expand(
-                      child: CachedNetworkImage(
-                        imageUrl: url,
-                        fit: BoxFit.contain,
-                        fadeInDuration: Duration.zero,
-                        fadeOutDuration: Duration.zero,
-                        placeholderFadeInDuration: Duration.zero,
-                        placeholder: (_, __) =>
-                            const ColoredBox(color: Colors.black),
-                        errorWidget: (_, __, ___) => const Center(
-                          child: Icon(
-                            Icons.broken_image,
-                            color: Colors.white70,
-                            size: 64,
-                          ),
+                child: InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: SizedBox.expand(
+                    child: CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.contain,
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                      placeholderFadeInDuration: Duration.zero,
+                      placeholder: (_, __) =>
+                          const ColoredBox(color: Colors.black),
+                      errorWidget: (_, __, ___) => const Center(
+                        child: Icon(
+                          Icons.broken_image,
+                          color: Colors.white70,
+                          size: 64,
                         ),
                       ),
                     ),
                   ),
                 ),
+              );
+
+              // ✅ Anti flash : Hero désactivé sur web/desktop
+              if (!widget.enableHero) return content;
+
+              return Hero(
+                tag: '${widget.heroPrefix}_$i',
+                child: content,
               );
             },
           );

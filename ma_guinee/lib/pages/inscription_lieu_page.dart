@@ -60,13 +60,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   final List<String> _typesLieu = ['divertissement', 'culte', 'tourisme'];
   final Map<String, List<String>> sousCategoriesParType = {
     'divertissement': [
-      'Boîte de nuit',
-      'Bar',
       'Salle de jeux',
       'Cinéma',
       'Parc d’attractions',
-      'Club',
-      'Plage privée'
+      'Autre'
     ],
     'culte': ['Mosquée', 'Église', 'Temple', 'Sanctuaire', 'Chapelle'],
     'tourisme': [

@@ -66,6 +66,73 @@ class _DivertissementPageState extends State<DivertissementPage>
   String? _villeGPS;
   bool _locationDenied = false;
 
+  // ---------------------------------------------------------------------------
+  // ✅ EXCLUSION : Bar / Boîte de nuit / Club
+  // ---------------------------------------------------------------------------
+  String _norm(String s) {
+    var x = s.toLowerCase().trim();
+    // normalisation simple (accents les plus courants)
+    x = x
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ç', 'c');
+    return x;
+  }
+
+  bool _isExcludedLieux(Map<String, dynamic> l) {
+    final catRaw = (l['categorie'] ?? l['type'] ?? '').toString();
+    final nameRaw = (l['nom'] ?? '').toString();
+
+    final cat = _norm(catRaw);
+    final name = _norm(nameRaw);
+
+    // tokens (évite un peu les faux positifs)
+    List<String> tokens(String s) =>
+        s.split(RegExp(r'[^a-z0-9]+')).where((t) => t.isNotEmpty).toList();
+
+    final ct = tokens(cat);
+    final nt = tokens(name);
+
+    final hasBar = ct.contains('bar') ||
+        nt.contains('bar') ||
+        cat.contains(' bar ') ||
+        name.contains(' bar ');
+    final hasClub = ct.contains('club') ||
+        nt.contains('club') ||
+        ct.contains('clubs') ||
+        nt.contains('clubs');
+
+    // boite de nuit / discothèque (variantes)
+    final hasBoiteNuit = (cat.contains('boite') && cat.contains('nuit')) ||
+        (name.contains('boite') && name.contains('nuit')) ||
+        cat.contains('boite de nuit') ||
+        name.contains('boite de nuit');
+
+    final hasDisco = cat.contains('discotheque') ||
+        name.contains('discotheque') ||
+        cat.contains('discotheque') ||
+        name.contains('discotheque');
+
+    return hasBar || hasClub || hasBoiteNuit || hasDisco;
+  }
+
+  List<Map<String, dynamic>> _removeExcluded(List<Map<String, dynamic>> list) {
+    final out = list.where((l) => !_isExcludedLieux(l)).toList();
+    return out;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -308,9 +375,13 @@ class _DivertissementPageState extends State<DivertissementPage>
       if (!_hasAnyCache) {
         final hiveSnap = _readHiveSnapshot();
         if (hiveSnap != null && hiveSnap.isNotEmpty) {
-          _lieux = hiveSnap.map((e) => Map<String, dynamic>.from(e)).toList();
+          final cleaned = _removeExcluded(
+            hiveSnap.map((e) => Map<String, dynamic>.from(e)).toList(),
+          );
+
+          _lieux = cleaned;
           _memoryCache =
-              _lieux.map((e) => Map<String, dynamic>.from(e)).toList();
+              cleaned.map((e) => Map<String, dynamic>.from(e)).toList();
           _applyFilter(_searchCtrl.text, setStateNow: false);
           _hasAnyCache = true;
           _loading = false;
@@ -329,9 +400,13 @@ class _DivertissementPageState extends State<DivertissementPage>
         final snapshot = mem ?? disk;
 
         if (snapshot != null && snapshot.isNotEmpty) {
-          _lieux = snapshot.map((e) => Map<String, dynamic>.from(e)).toList();
+          final cleaned = _removeExcluded(
+            snapshot.map((e) => Map<String, dynamic>.from(e)).toList(),
+          );
+
+          _lieux = cleaned;
           _memoryCache =
-              _lieux.map((e) => Map<String, dynamic>.from(e)).toList();
+              cleaned.map((e) => Map<String, dynamic>.from(e)).toList();
           _applyFilter(_searchCtrl.text, setStateNow: false);
           _hasAnyCache = true;
           _loading = false;
@@ -355,7 +430,9 @@ class _DivertissementPageState extends State<DivertissementPage>
         images, latitude, longitude, adresse, created_at
       ''').eq('type', 'divertissement').order('nom', ascending: true);
 
-      final list = List<Map<String, dynamic>>.from(response);
+      // ✅ suppression bar/boîte/club dès le fetch
+      final listRaw = List<Map<String, dynamic>>.from(response);
+      final list = _removeExcluded(listRaw);
 
       // distance + tri si position dispo
       if (_position != null) {
@@ -503,7 +580,7 @@ class _DivertissementPageState extends State<DivertissementPage>
           useOldImageOnUrlChange: true,
           imageBuilder: (_, provider) => Image(
             image: provider,
-            fit: BoxFit.cover, // ✅ pas déformé
+            fit: BoxFit.cover,
             gaplessPlayback: true,
             filterQuality: FilterQuality.low,
           ),
@@ -614,7 +691,7 @@ class _DivertissementPageState extends State<DivertissementPage>
         ),
         body: Column(
           children: [
-            // ✅ Bandeau (sans overflow)
+            // ✅ Bandeau (texte mis à jour : plus “bar/club/boîte”)
             Padding(
               padding: const EdgeInsets.only(
                   left: 12, right: 12, top: 12, bottom: 8),
@@ -631,7 +708,7 @@ class _DivertissementPageState extends State<DivertissementPage>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text(
-                        "Bars, clubs, lounges et sorties en Guinée",
+                        "Lieux de divertissement et loisirs en Guinée",
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -771,7 +848,6 @@ class _DivertissementPageState extends State<DivertissementPage>
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        // ✅✅✅ MÊME CARTE : image 4/3 (pas déformée)
                                         AspectRatio(
                                           aspectRatio: 4 / 3,
                                           child: Stack(
@@ -838,8 +914,6 @@ class _DivertissementPageState extends State<DivertissementPage>
                                             ],
                                           ),
                                         ),
-
-                                        // Infos
                                         Expanded(
                                           child: Padding(
                                             padding: const EdgeInsets.fromLTRB(
@@ -861,8 +935,6 @@ class _DivertissementPageState extends State<DivertissementPage>
                                                   ),
                                                 ),
                                                 const SizedBox(height: 4),
-
-                                                // Note
                                                 Row(
                                                   children: [
                                                     _stars(avg ?? 0.0),
@@ -896,10 +968,7 @@ class _DivertissementPageState extends State<DivertissementPage>
                                                     ],
                                                   ],
                                                 ),
-
                                                 const SizedBox(height: 4),
-
-                                                // Ville + distance
                                                 Row(
                                                   children: [
                                                     Expanded(
@@ -932,8 +1001,6 @@ class _DivertissementPageState extends State<DivertissementPage>
                                                     ],
                                                   ],
                                                 ),
-
-                                                // Catégorie
                                                 if (cat.isNotEmpty) ...[
                                                   const SizedBox(height: 3),
                                                   Text(
@@ -970,7 +1037,7 @@ class _DivertissementPageState extends State<DivertissementPage>
   }
 }
 
-// ------------------ Skeleton Card (même format que Santé/Tourisme) --------------------
+// ------------------ Skeleton Card --------------------
 class _SkeletonCard extends StatelessWidget {
   const _SkeletonCard();
 

@@ -1,4 +1,8 @@
+// lib/pages/resto_detail_page.dart
 import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -7,6 +11,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'restaurant_reservation_page.dart';
+
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
 
 class RestoDetailPage extends StatefulWidget {
   final String restoId; // UUID du restaurant
@@ -33,7 +40,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   Map<String, dynamic>? resto;
   bool loading = true;
   bool _syncing = false;
-  String? _error;
+  String? _error; // message FR uniquement (pas de technique)
 
   // Avis
   List<Map<String, dynamic>> _avis = [];
@@ -57,6 +64,31 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
   String get _id => widget.restoId;
 
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  /// ✅ Hero seulement sur mobile (stabilité : évite flashes/erreurs sur web/desktop)
+  bool get _enableHero => _isMobilePlatform;
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _handleError(Object e, StackTrace st, {String? fallbackSnack}) {
+    // ✅ Overlay centralisé (anti-spam + offline confirmé seulement)
+    SoneyaErrorCenter.showException(e, st);
+
+    // ✅ Snack FR propre (optionnel)
+    final msg = (fallbackSnack != null && fallbackSnack.trim().isNotEmpty)
+        ? fallbackSnack
+        : frMessageFromError(e, st);
+    _snack(msg);
+  }
+
   bool _isUuid(String id) {
     final r = RegExp(
         r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
@@ -70,17 +102,32 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return '${two(dt.day)}/${two(dt.month)}/${dt.year} • ${two(dt.hour)}:${two(dt.minute)}';
   }
 
+  bool _validUrl(String? s) {
+    if (s == null || s.trim().isEmpty) return false;
+    final u = Uri.tryParse(s.trim());
+    return u != null && (u.isScheme('http') || u.isScheme('https'));
+  }
+
   @override
   void initState() {
     super.initState();
     _loadResto();
     _loadAvisBloc();
+
+    _avisController.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _pageController.dispose();
     _avisController.dispose();
+    // ✅ évite callbacks map après fermeture
+    try {
+      _mapController.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -88,21 +135,23 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   List<String> _imagesFrom(dynamic raw) {
     if (raw is List && raw.isNotEmpty) {
       return raw
-          .map((e) => e.toString())
-          .where((s) => s.trim().isNotEmpty)
+          .map((e) => e?.toString() ?? '')
+          .where((s) => _validUrl(s))
           .toList();
     }
     final p = (raw ?? '').toString().trim();
-    return p.isNotEmpty ? [p] : [];
+    return _validUrl(p) ? [p] : [];
   }
 
   // ------- RESTO -------
   Future<void> _loadResto() async {
+    if (!mounted) return;
     setState(() {
       if (resto == null) loading = true;
       _syncing = resto != null;
       _error = null;
     });
+
     try {
       final data = await _sb
           .from('restaurants')
@@ -117,25 +166,32 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         resto = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
         _syncing = false;
+        _error = null;
       });
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
 
       // Dès que les coordonnées arrivent → repositionner la carte
       final lat = (resto?['latitude'] as num?)?.toDouble();
       final lng = (resto?['longitude'] as num?)?.toDouble();
       if (lat != null && lng != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _mapController.move(LatLng(lat, lng), 15);
+          // ✅ évite crash/flash si retour rapide
+          if (!mounted) return;
+          try {
+            _mapController.move(LatLng(lat, lng), 15);
+          } catch (_) {}
         });
       }
-    } catch (e) {
+    } catch (e, st) {
       if (!mounted) return;
       setState(() {
         loading = false;
         _syncing = false;
-        _error = 'Erreur de chargement: $e';
+        _error = frMessageFromError(e as Object, st);
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_error!)));
+      _handleError(e as Object, st);
     }
   }
 
@@ -154,7 +210,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       if (list.isNotEmpty) {
         final notes =
             list.map((e) => (e['etoiles'] as num?)?.toDouble() ?? 0.0).toList();
-        moyenne = notes.fold<double>(0.0, (a, b) => a + b) / notes.length;
+        final denom = notes.isEmpty ? 1 : notes.length;
+        moyenne = notes.fold<double>(0.0, (a, b) => a + b) / denom;
       }
 
       final user = _sb.auth.currentUser;
@@ -162,7 +219,8 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
 
       final ids = list
           .map((e) => e['auteur_id'])
-          .whereType<String>()
+          .where((v) => v != null)
+          .map((v) => v.toString())
           .where(_isUuid)
           .toSet()
           .toList();
@@ -194,32 +252,30 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ..clear()
           ..addAll(fetched);
       });
-    } catch (e) {
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement avis: $e')),
-      );
+      // ✅ pas d’erreur brute
+      SoneyaErrorCenter.showException(e as Object, st);
+      // Si tu veux un snack (sinon tu peux le retirer)
+      _snack(frMessageFromError(e as Object, st));
     }
   }
 
   Future<void> _envoyerAvis() async {
     final user = _sb.auth.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Connectez-vous pour laisser un avis.")),
-      );
+      _snack("Connectez-vous pour laisser un avis.");
       return;
     }
     if (_noteUtilisateur == 0 || _avisController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Veuillez noter et commenter.")),
-      );
+      _snack("Veuillez noter et commenter.");
       return;
     }
     if (!_isUuid(_id)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur : ID du restaurant invalide.")),
-      );
+      _snack("Erreur : ID du restaurant invalide.");
       return;
     }
 
@@ -237,6 +293,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       // ferme clavier
       FocusManager.instance.primaryFocus?.unfocus();
 
+      if (!mounted) return;
       setState(() {
         _noteUtilisateur = 0;
         _avisController.clear();
@@ -246,13 +303,16 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
       await _loadAvisBloc();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Avis enregistré.")),
-      );
-    } catch (e) {
+      _snack("Avis enregistré.");
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'envoi de l'avis: $e")),
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Erreur lors de l'envoi de l'avis. Veuillez réessayer.",
       );
     }
   }
@@ -285,18 +345,19 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         (resto?['tel'] ?? resto?['telephone'] ?? '').toString().trim();
     final tel = telRaw.replaceAll(RegExp(r'[^0-9+]'), '');
     if (tel.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Numéro indisponible.")));
+      _snack("Numéro indisponible.");
       return;
     }
     final uri = Uri(scheme: 'tel', path: tel);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Impossible d'appeler $tel")));
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        _snack("Impossible d'appeler.");
+      }
+    } catch (e, st) {
+      _handleError(e as Object, st, fallbackSnack: "Impossible d'appeler.");
     }
   }
 
@@ -324,8 +385,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        if (i < full)
+        if (i < full) {
           return Icon(Icons.star, size: size, color: _restoSecondary);
+        }
         if (i == full && half) {
           return Icon(Icons.star_half, size: size, color: _restoSecondary);
         }
@@ -335,7 +397,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
   }
 
   Widget _avgBar() {
-    // ✅ Barre note moyenne sous la description
     if (_avis.isEmpty || _noteMoyenne <= 0) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -389,6 +450,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           images: images,
           initialIndex: initialIndex,
           heroPrefix: heroPrefix,
+          enableHero: _enableHero, // ✅
         ),
       ),
     );
@@ -449,7 +511,9 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     final lng = (resto!['longitude'] as num?)?.toDouble();
 
     const fallback = 'https://via.placeholder.com/1200x800.png?text=Restaurant';
-    final heroPrefix = 'resto_${resto!['id'] ?? nom}';
+
+    // ✅ Tag stable : basé uniquement sur l'ID (pas sur nom)
+    final heroPrefix = 'resto_${(resto!['id'] ?? _id).toString()}';
 
     final trueCenter = (lat != null && lng != null) ? LatLng(lat, lng) : null;
 
@@ -470,29 +534,41 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                 child: PageView.builder(
                   controller: _pageController,
                   itemCount: images.isEmpty ? 1 : images.length,
-                  onPageChanged: (i) => setState(() => _currentIndex = i),
+                  onPageChanged: (i) {
+                    if (!mounted) return;
+                    setState(() => _currentIndex = i);
+                  },
                   itemBuilder: (context, index) {
                     final url = images.isEmpty ? fallback : images[index];
-                    return GestureDetector(
+
+                    final img = CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(color: Colors.grey[200]),
+                      errorWidget: (_, __, ___) => Container(
+                        color: Colors.grey[200],
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image,
+                            color: Colors.grey, size: 36),
+                      ),
+                    );
+
+                    final child = GestureDetector(
                       onTap: images.isEmpty
                           ? null
                           : () =>
                               _openFullScreenGallery(images, index, heroPrefix),
-                      child: Hero(
-                        tag: '${heroPrefix}_$index',
-                        child: CachedNetworkImage(
-                          imageUrl: url,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.grey[200]),
-                          errorWidget: (_, __, ___) => Container(
-                            color: Colors.grey[200],
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.image,
-                                color: Colors.grey, size: 36),
-                          ),
-                        ),
-                      ),
+                      child: img,
+                    );
+
+                    // ✅ Hero seulement mobile, et seulement si images réelles
+                    if (!_enableHero || images.isEmpty) return child;
+
+                    return Hero(
+                      tag: '${heroPrefix}_$index',
+                      transitionOnUserGestures: true,
+                      child: child,
                     );
                   },
                 ),
@@ -566,7 +642,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           ),
         ],
 
-        // 4) Note moyenne (sous description)
+        // 4) Note moyenne
         const SizedBox(height: 12),
         _avgBar(),
 
@@ -615,8 +691,14 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               : () async {
                   final uri = Uri.parse(
                       "https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  try {
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri,
+                          mode: LaunchMode.externalApplication);
+                    }
+                  } catch (e, st) {
+                    _handleError(e as Object, st,
+                        fallbackSnack: "Impossible d'ouvrir Google Maps.");
                   }
                 },
           icon: const Icon(Icons.map),
@@ -630,7 +712,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         const SizedBox(height: 18),
         const Divider(height: 30),
 
-        // 6) Avis des utilisateurs (AVANT votre avis)
+        // 6) Avis des utilisateurs
         const Text("Avis des utilisateurs",
             style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
@@ -673,11 +755,12 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
                   children: [
                     CircleAvatar(
                       radius: 18,
-                      backgroundImage:
-                          (photo.isNotEmpty) ? NetworkImage(photo) : null,
-                      child: photo.isEmpty
-                          ? const Icon(Icons.person, size: 18)
+                      backgroundImage: (photo.isNotEmpty && _validUrl(photo))
+                          ? NetworkImage(photo)
                           : null,
+                      child: (photo.isNotEmpty && _validUrl(photo))
+                          ? null
+                          : const Icon(Icons.person, size: 18),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -724,7 +807,7 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
         const SizedBox(height: 18),
         const Divider(height: 30),
 
-        // 7) Votre avis (TOUT EN BAS)
+        // 7) Votre avis
         const Text("Votre avis", style: TextStyle(fontWeight: FontWeight.bold)),
         if (_dejaNote)
           const Padding(
@@ -740,9 +823,11 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
           controller: _avisController,
           minLines: 3,
           maxLines: 3,
-          textInputAction: TextInputAction.send,
-          onSubmitted: (_) => _envoyerAvis(),
-          onChanged: (_) => setState(() {}),
+          textInputAction:
+              canSend ? TextInputAction.send : TextInputAction.newline,
+          onSubmitted: (_) {
+            if (canSend) _envoyerAvis();
+          },
           decoration: InputDecoration(
             hintText: "Votre commentaire",
             filled: true,
@@ -797,7 +882,6 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
     );
 
     final titreAppBar = (resto?['nom'] ?? 'Restaurant').toString();
-
     final showSkeleton = loading && resto == null;
     final showNotFound = !loading && resto == null;
 
@@ -851,10 +935,15 @@ class _RestoDetailPageState extends State<RestoDetailPage> {
               child: showSkeleton
                   ? _buildSkeletonContent()
                   : (showNotFound
-                      ? const Center(
+                      ? Center(
                           child: Padding(
-                            padding: EdgeInsets.only(top: 80),
-                            child: Text("Restaurant introuvable"),
+                            padding: const EdgeInsets.only(top: 80),
+                            child: Text(
+                              _error?.isNotEmpty == true
+                                  ? _error!
+                                  : "Restaurant introuvable",
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         )
                       : _buildRestoContent()),
@@ -926,11 +1015,13 @@ class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+  final bool enableHero;
 
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -973,38 +1064,46 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
         builder: (context, constraints) {
           return PageView.builder(
             controller: _ctrl,
-            onPageChanged: (i) => setState(() => _index = i),
+            onPageChanged: (i) {
+              if (!mounted) return;
+              setState(() => _index = i);
+            },
             itemCount: total,
             itemBuilder: (_, i) {
               final url = widget.images[i];
 
-              return SizedBox(
+              final content = SizedBox(
                 width: constraints.maxWidth,
                 height: constraints.maxHeight,
-                child: Hero(
-                  tag: '${widget.heroPrefix}_$i',
-                  child: InteractiveViewer(
-                    minScale: 1.0,
-                    maxScale: 4.0,
-                    child: SizedBox.expand(
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.contain,
-                        loadingBuilder: (ctx, child, ev) {
-                          if (ev == null) return child;
-                          return const ColoredBox(color: Colors.black);
-                        },
-                        errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(
-                            Icons.broken_image,
-                            color: Colors.white70,
-                            size: 64,
-                          ),
+                child: InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: SizedBox.expand(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (ctx, child, ev) {
+                        if (ev == null) return child;
+                        return const ColoredBox(color: Colors.black);
+                      },
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(
+                          Icons.broken_image,
+                          color: Colors.white70,
+                          size: 64,
                         ),
                       ),
                     ),
                   ),
                 ),
+              );
+
+              // ✅ Hero seulement mobile
+              if (!widget.enableHero) return content;
+
+              return Hero(
+                tag: '${widget.heroPrefix}_$i',
+                child: content,
               );
             },
           );

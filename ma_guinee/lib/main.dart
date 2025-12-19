@@ -49,6 +49,9 @@ const String kAnnoncesBox = 'annonces_box';
 
 String? _lastRoutePushed;
 
+/// ✅ NEW: indicateur fiable “on a quitté le Splash”
+bool _bootNavigationDone = false;
+
 /// ✅ Transitions fluides globales (style iOS) pour TOUTE l’app
 const PageTransitionsTheme _kSmoothTransitions = PageTransitionsTheme(
   builders: <TargetPlatform, PageTransitionsBuilder>{
@@ -68,6 +71,12 @@ final ValueNotifier<bool> _isOffline = ValueNotifier<bool>(false);
 final Connectivity _connectivity = Connectivity();
 StreamSubscription? _connSub;
 bool _connInited = false;
+
+// ✅ référence globale du UserProvider (pour relancer bootstrap au retour réseau)
+UserProvider? _userProviderRef;
+
+// ✅ garde anti double bootstrap
+bool _bootstrapRunning = false;
 
 /// Normalise ConnectivityResult (v5) et List<ConnectivityResult> (v6)
 bool _offlineFromConnectivity(dynamic result) {
@@ -93,23 +102,54 @@ void _setOffline(dynamic connectivityResult) {
   });
 }
 
+/// ✅ NEW: reprise bootstrap robuste (sans dépendre du nom de route)
+void _resumeBootstrapIfNeeded() {
+  try {
+    if (_isOffline.value) return;
+    if (_bootstrapRunning) return;
+
+    final userProv = _userProviderRef;
+    if (userProv == null) return;
+
+    // Tant qu’on n’a pas quitté Splash, on doit pouvoir reprendre
+    if (_bootNavigationDone) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isOffline.value) return;
+      if (_bootstrapRunning) return;
+      if (_bootNavigationDone) return;
+      unawaited(_bootstrap(userProv));
+    });
+  } catch (_) {}
+}
+
 /// Side-effects réseau: stop/start heartbeat + channels
-void _applyNetworkSideEffects() {
+void _applyNetworkSideEffects({required bool becameOnline}) {
   try {
     final uid = Supabase.instance.client.auth.currentSession?.user.id;
+
     if (_isOffline.value) {
       _unsubscribeUserNotifications();
       _unsubscribeAdminKick();
       unawaited(_stopHeartbeat());
-    } else {
-      if (uid != null) {
-        _subscribeUserNotifications(uid);
-        _subscribeAdminKick(uid);
-        unawaited(_startHeartbeat());
-        _askPushOnce();
-        unawaited(AnnoncesPage.preload());
-        unawaited(PushService.instance.showLaunchAdminIfPending());
-      }
+      return;
+    }
+
+    // ✅ On est online
+    SoneyaErrorCenter.reportNetworkSuccess();
+
+    if (uid != null) {
+      _subscribeUserNotifications(uid);
+      _subscribeAdminKick(uid);
+      unawaited(_startHeartbeat());
+      _askPushOnce();
+      unawaited(AnnoncesPage.preload());
+      unawaited(PushService.instance.showLaunchAdminIfPending());
+    }
+
+    // ✅ IMPORTANT: si on revient online après un démarrage offline, on reprend le bootstrap
+    if (becameOnline) {
+      _resumeBootstrapIfNeeded();
     }
   } catch (_) {}
 }
@@ -123,8 +163,11 @@ Future<void> _initConnectivityWatch() async {
     _setOffline(initial);
 
     _connSub = _connectivity.onConnectivityChanged.listen((result) {
+      final wasOffline = _isOffline.value;
       _setOffline(result);
-      _applyNetworkSideEffects();
+      final becameOnline = wasOffline && !_isOffline.value;
+
+      _applyNetworkSideEffects(becameOnline: becameOnline);
     });
   } catch (_) {}
 }
@@ -132,7 +175,12 @@ Future<void> _initConnectivityWatch() async {
 Future<bool> _checkOfflineNow() async {
   try {
     final r = await _connectivity.checkConnectivity();
+    final wasOffline = _isOffline.value;
     _setOffline(r);
+    final becameOnline = wasOffline && !_isOffline.value;
+
+    // ✅ si l’utilisateur clique “réessayer” et que ça redevient online → reprise
+    _applyNetworkSideEffects(becameOnline: becameOnline);
   } catch (_) {}
   return _isOffline.value;
 }
@@ -151,6 +199,12 @@ void _pushUnique(String routeName) {
   }
 
   _lastRoutePushed = routeName;
+
+  // ✅ NEW: dès qu’on pousse autre chose que Splash, on considère que le boot est fait
+  if (routeName != AppRoutes.splash) {
+    _bootNavigationDone = true;
+  }
+
   state.pushNamedAndRemoveUntil(routeName, (_) => false);
 }
 
@@ -324,22 +378,6 @@ void _unsubscribeAdminKick() {
   _kicksChan = null;
 }
 
-Future<bool> isCurrentUserAdmin() async {
-  final uid = Supabase.instance.client.auth.currentUser?.id;
-  if (uid == null) return false;
-  try {
-    final data = await Supabase.instance.client
-        .from('utilisateurs')
-        .select('role')
-        .eq('id', uid)
-        .maybeSingle();
-    final role = data?['role']?.toLowerCase();
-    return role == 'admin' || role == 'owner';
-  } catch (_) {
-    return false;
-  }
-}
-
 Future<void> _goHomeBasedOnRole(UserProvider userProv) async {
   final role = userProv.utilisateur?.role?.toLowerCase() ?? '';
   final dest = (role == 'admin' || role == 'owner')
@@ -358,6 +396,9 @@ bool _isRecoveryUrl(Uri uri) {
 
 /// Bootstrap global
 Future<void> _bootstrap(UserProvider userProvider) async {
+  if (_bootstrapRunning) return;
+  _bootstrapRunning = true;
+
   try {
     if (kIsWeb && _isRecoveryUrl(Uri.base)) {
       RecoveryGuard.activate();
@@ -399,7 +440,6 @@ Future<void> _bootstrap(UserProvider userProvider) async {
 
     Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
       final session = event.session;
-      debugPrint('[auth] event=${event.event} user=${session?.user.id}');
 
       if (event.event == AuthChangeEvent.passwordRecovery) {
         RecoveryGuard.activate();
@@ -453,21 +493,19 @@ Future<void> _bootstrap(UserProvider userProvider) async {
       }
     });
   } catch (e, st) {
-    debugPrint('[main] init error: $e');
     SoneyaErrorCenter.showException(e, st);
+  } finally {
+    _bootstrapRunning = false;
   }
 }
 
 Future<void> main() async {
   await SoneyaErrorCenter.runZoned(() async {
-    // ✅ important : ensureInitialized dans la même zone (réduit zone mismatch)
     WidgetsFlutterBinding.ensureInitialized();
 
-    // ✅ guards + démarrage (pas de popup au boot)
     SoneyaErrorCenter.installGlobalGuards();
     SoneyaErrorCenter.markAppStartedNow();
 
-    // ✅ évite les gros widgets d’erreur techniques
     ErrorWidget.builder = (FlutterErrorDetails details) {
       SoneyaErrorCenter.showException(details.exception, details.stack);
       return const SizedBox.shrink();
@@ -499,6 +537,9 @@ Future<void> main() async {
     await _initConnectivityWatch();
 
     final userProvider = UserProvider();
+
+    // ✅ on stocke la ref pour pouvoir relancer le bootstrap au retour réseau
+    _userProviderRef = userProvider;
 
     runApp(
       MultiProvider(

@@ -16,6 +16,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../services/geoloc_service.dart';
 import 'tourisme_detail_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 const Color tourismePrimary = Color(0xFFDAA520);
 const Color tourismeSecondary = Color(0xFFFFD700);
 const Color neutralBg = Color(0xFFF7F7F9);
@@ -51,7 +54,9 @@ class TourismePage extends StatefulWidget {
           await Hive.box('tourisme_box').put('lieux', list);
         }
       } catch (_) {}
-    } catch (_) {}
+    } catch (_) {
+      // preload silencieux
+    }
   }
 
   @override
@@ -149,6 +154,11 @@ class _TourismePageState extends State<TourismePage>
 
   @override
   bool get wantKeepAlive => true;
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   // -------------------- Cache instant (Hive -> mémoire) --------------------
   void _loadCacheInstant() {
@@ -277,19 +287,30 @@ class _TourismePageState extends State<TourismePage>
         _initialFetchDone = true;
       });
 
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+
       // après affichage : tri distance/ville en fond si position dispo
       _resortByDistanceInBackground();
 
       // relance precache/ratings
       _didPrecache = false;
       _afterFirstPaint();
-    } catch (_) {
+    } catch (e, st) {
+      // ✅ centralisation erreurs (pas d’erreur brute)
+      SoneyaErrorCenter.showException(e as Object, st);
+
       if (!mounted) return;
       setState(() {
         _loading = false;
         _syncing = false;
         _initialFetchDone = true;
       });
+
+      // ✅ Si aucun cache affiché : message FR simple
+      if (_allLieux.isEmpty) {
+        _snack(frMessageFromError(e as Object, st));
+      }
     }
   }
 
@@ -388,7 +409,13 @@ class _TourismePageState extends State<TourismePage>
           _countByLieuId[id] = c;
         }
       });
-    } catch (_) {}
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ centralisation (silencieux côté UI)
+      SoneyaErrorCenter.showException(e as Object, st);
+    }
   }
 
   // Post-affichage : pré-cache images + charger notes
@@ -397,6 +424,8 @@ class _TourismePageState extends State<TourismePage>
     _didPrecache = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
       // precache 8 premières images
       for (final l in _filteredLieux.take(8)) {
         final url = _bestImage(l);
@@ -662,14 +691,20 @@ class _TourismePageState extends State<TourismePage>
                             final count = _countByLieuId[id] ?? 0;
 
                             return InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        TourismeDetailPage(lieu: lieu),
-                                  ),
-                                );
+                              onTap: () async {
+                                try {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          TourismeDetailPage(lieu: lieu),
+                                    ),
+                                  );
+                                } catch (e, st) {
+                                  SoneyaErrorCenter.showException(
+                                      e as Object, st);
+                                  _snack(frMessageFromError(e as Object, st));
+                                }
                               },
                               child: Card(
                                 margin: EdgeInsets.zero,
@@ -683,7 +718,6 @@ class _TourismePageState extends State<TourismePage>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // ✅ MÊME CARTE : image 4/3 (pas déformée)
                                     AspectRatio(
                                       aspectRatio: 4 / 3,
                                       child: Stack(
@@ -743,8 +777,6 @@ class _TourismePageState extends State<TourismePage>
                                         ],
                                       ),
                                     ),
-
-                                    // Infos (densité type Annonces)
                                     Expanded(
                                       child: Padding(
                                         padding: const EdgeInsets.fromLTRB(

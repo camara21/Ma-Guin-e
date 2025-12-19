@@ -14,6 +14,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../routes.dart';
 import '../services/geoloc_service.dart'; // centralisation envoi position
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class RestoPage extends StatefulWidget {
   const RestoPage({super.key});
 
@@ -41,7 +44,9 @@ class RestoPage extends StatefulWidget {
           await box.put('restaurants', list);
         }
       } catch (_) {}
-    } catch (_) {}
+    } catch (_) {
+      // preload silencieux (pas de spam)
+    }
   }
 
   @override
@@ -328,17 +333,26 @@ class _RestoPageState extends State<RestoPage> {
       });
 
       _applyFilter(_searchCtrl.text);
-    } catch (e) {
-      // si on avait déjà du cache affiché, on ne casse pas l’UI
+
+      // ✅ réseau OK => reset offline éventuel
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ Centralise l’erreur (pas d’URL, pas de spam)
+      SoneyaErrorCenter.showException(e as Object, st);
+
       if (!mounted) return;
       setState(() {
         _loading = false;
         _syncing = false;
         _initialFetchDone = true;
       });
+
+      // ✅ si on a du cache affiché : ne pas casser l’UI (silencieux)
+      // ✅ si rien du tout : on montre un message FR simple
       if (_restos.isEmpty) {
+        final msg = frMessageFromError(e as Object, st);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur réseau restos: $e')),
+          SnackBar(content: Text(msg)),
         );
       }
     }
@@ -437,6 +451,25 @@ class _RestoPageState extends State<RestoPage> {
 
     final totalH = imageH + infoH;
     return itemWidth / totalH;
+  }
+
+  // ✅ Navigation safe (évite crash/flash si exception navigation)
+  Future<void> _openDetail(Map<String, dynamic> r) async {
+    try {
+      final String restoId = r['id'].toString();
+      await Navigator.pushNamed(
+        context,
+        AppRoutes.restoDetail,
+        arguments: restoId,
+      );
+      // Pas de setState forcé au retour => stabilité
+    } catch (e, st) {
+      SoneyaErrorCenter.showException(e as Object, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(frMessageFromError(e as Object, st))),
+      );
+    }
   }
 
   @override
@@ -662,14 +695,7 @@ class _RestoPageState extends State<RestoPage> {
                                       : null);
 
                               return InkWell(
-                                onTap: () {
-                                  final String restoId = r['id'].toString();
-                                  Navigator.pushNamed(
-                                    context,
-                                    AppRoutes.restoDetail,
-                                    arguments: restoId,
-                                  );
-                                },
+                                onTap: () => _openDetail(r),
                                 child: Card(
                                   margin: EdgeInsets.zero,
                                   color: _neutralSurface,
@@ -818,7 +844,7 @@ class _RestoPageState extends State<RestoPage> {
 
                                               const Spacer(),
 
-                                              // ✅✅✅ étoiles remontées un peu
+                                              // ✅ étoiles remontées un peu
                                               if (avgInt != null)
                                                 Padding(
                                                   padding:
@@ -869,7 +895,6 @@ class _SkeletonRestoCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              // ✅ aligné visuellement avec la carte
               padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -882,8 +907,6 @@ class _SkeletonRestoCard extends StatelessWidget {
                   Container(
                       height: 10, width: 120, color: Colors.grey.shade200),
                   const Spacer(),
-
-                  // ✅✅✅ même “remontée” que la vraie carte
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Container(

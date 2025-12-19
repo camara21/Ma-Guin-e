@@ -12,6 +12,9 @@ import '../services/app_cache.dart';
 import '../services/geoloc_service.dart';
 import 'culte_detail_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class CultePage extends StatefulWidget {
   const CultePage({super.key});
 
@@ -52,6 +55,11 @@ class _CultePageState extends State<CultePage>
   String? _villeGPS;
   bool _locationDenied = false;
   bool _resorting = false;
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   @override
   void initState() {
@@ -292,9 +300,17 @@ class _CultePageState extends State<CultePage>
 
       AppCache.I.setList(_CACHE_KEY, toCache, persist: true);
       unawaited(_writeHiveSnapshot(toCache));
-    } catch (_) {
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ Centralisation
+      SoneyaErrorCenter.showException(e as Object, st);
+
+      // ✅ Si aucun cache affiché, on montre un message FR
       if (mounted && !_hasAnyCache) {
         setState(() => _loading = false);
+        _snack(frMessageFromError(e as Object, st));
       }
     } finally {
       if (mounted) setState(() => _syncing = false);

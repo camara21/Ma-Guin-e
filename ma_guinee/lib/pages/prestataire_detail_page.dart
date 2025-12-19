@@ -11,6 +11,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'messages_prestataire_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 /// === Palette Prestataires ===
 const Color prestatairesPrimary = Color(0xFF0F766E);
 const Color prestatairesSecondary = Color(0xFF14B8A6);
@@ -62,7 +65,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         defaultTargetPlatform == TargetPlatform.iOS;
   }
 
-  /// Hero sûr uniquement sur mobile (évite flash rouge desktop/web)
+  /// ✅ Hero sûr uniquement sur mobile (évite flash rouge desktop/web)
   bool get _enableHero => _isMobilePlatform;
 
   @override
@@ -85,6 +88,16 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _handleError(Object e, StackTrace st, {String? fallbackSnack}) {
+    // ✅ overlay global + message FR
+    SoneyaErrorCenter.showException(e, st);
+    if (fallbackSnack != null && fallbackSnack.trim().isNotEmpty) {
+      _snack(fallbackSnack);
+    } else {
+      _snack(frMessageFromError(e, st));
+    }
   }
 
   bool get _isOwner {
@@ -150,8 +163,11 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         _ownerId = row?['utilisateur_id']?.toString();
         _ownerResolved = true;
       });
-    } catch (_) {
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (mounted) setState(() => _ownerResolved = true);
+      _handleError(e as Object, st);
     }
   }
 
@@ -215,7 +231,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
         _noteMoyenne = moyenne;
         _dejaNote = deja;
       });
-    } catch (_) {}
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // Pas de spam d’UI : on centralise et on garde la page utilisable
+      _handleError(e as Object, st);
+    }
   }
 
   Future<void> _ajouterOuModifierAvis({
@@ -269,8 +290,14 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
       await _loadAvis();
       if (mounted) _snack("Merci pour votre avis !");
-    } catch (e) {
-      _snack("Erreur lors de l'envoi de l'avis : $e");
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Erreur lors de l'envoi de l'avis. Veuillez réessayer.",
+      );
     } finally {
       if (mounted) setState(() => _sendingAvis = false);
     }
@@ -309,8 +336,12 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     }
 
     final uri = Uri(scheme: 'tel', path: normalized);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _snack("Impossible de lancer l'appel");
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) _snack("Impossible de lancer l'appel");
+    } catch (e, st) {
+      _handleError(e as Object, st,
+          fallbackSnack: "Impossible de lancer l'appel");
     }
   }
 
@@ -347,17 +378,21 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
   void _onMenu(String value) async {
     switch (value) {
       case 'share':
-        final metier = widget.data['metier']?.toString() ?? 'Prestataire';
-        final ville = widget.data['ville']?.toString() ?? '';
-        final prenom = widget.data['prenom']?.toString() ?? '';
-        final nom = widget.data['nom']?.toString() ?? '';
-        final fullName = ('$prenom $nom').trim();
-        final txt = [
-          if (fullName.isNotEmpty) 'Prestataire : $fullName',
-          'Métier : $metier',
-          if (ville.isNotEmpty) 'Ville : $ville',
-        ].join('\n');
-        await Share.share(txt);
+        try {
+          final metier = widget.data['metier']?.toString() ?? 'Prestataire';
+          final ville = widget.data['ville']?.toString() ?? '';
+          final prenom = widget.data['prenom']?.toString() ?? '';
+          final nom = widget.data['nom']?.toString() ?? '';
+          final fullName = ('$prenom $nom').trim();
+          final txt = [
+            if (fullName.isNotEmpty) 'Prestataire : $fullName',
+            'Métier : $metier',
+            if (ville.isNotEmpty) 'Ville : $ville',
+          ].join('\n');
+          await Share.share(txt);
+        } catch (e, st) {
+          _handleError(e as Object, st);
+        }
         break;
 
       case 'report':
@@ -481,7 +516,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
 
     try {
       final me = _client.auth.currentUser;
-      if (me == null) throw 'Utilisateur non connecté.';
+      if (me == null) throw Exception('Utilisateur non connecté.');
 
       final body = {
         'context': 'prestataire',
@@ -503,22 +538,32 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) setState(() => _sendingReport = false);
       if (mounted) _snack('Signalement envoyé. Merci.');
-    } on PostgrestException catch (e) {
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } on PostgrestException catch (e, st) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) setState(() => _sendingReport = false);
 
-      final msg = (e.message ?? '').toLowerCase();
-      if (e.code == '23505' || msg.contains('duplicate')) {
+      final msgLower = (e.message ?? '').toLowerCase();
+      if (e.code == '23505' || msgLower.contains('duplicate')) {
         _snack('Vous avez déjà signalé cette fiche.');
       } else if (e.code == '42501') {
         _snack("Accès refusé : vérifiez les règles RLS/policies.");
       } else {
-        _snack('Erreur serveur: ${e.message ?? e.toString()}');
+        _handleError(
+          e,
+          st,
+          fallbackSnack: "Erreur lors de l'envoi du signalement. Réessayez.",
+        );
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) setState(() => _sendingReport = false);
-      if (mounted) _snack("Impossible d'envoyer le signalement ($e)");
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible d'envoyer le signalement. Réessayez.",
+      );
     }
   }
 
@@ -690,6 +735,10 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     );
   }
 
+  /// ✅ Hero stable :
+  /// - activé uniquement sur mobile
+  /// - tag stable (basé sur ID)
+  /// - pas de hero si photo vide ou tag invalide
   Widget _photoWidget({
     required String photo,
     required String heroTag,
@@ -717,8 +766,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
             ),
           );
 
-    // ✅ Sur desktop/web : pas de Hero pour éviter RenderBox not laid out au retour
     if (!_enableHero) return child;
+    if (heroTag.isEmpty) return child;
+    if (photo.trim().isEmpty) return child;
 
     return Hero(
       tag: heroTag,
@@ -757,10 +807,9 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
     final String? rawPhoto = d['photo_url']?.toString();
     final photo = _publicUrl(_avatarBucket, rawPhoto) ?? (rawPhoto ?? '');
 
-    // ✅ Tag 100% stable : uniquement sur ID (sinon pas de Hero)
+    // ✅ Tag 100% stable : uniquement sur ID
     final prestId = (d['id'] ?? '').toString().trim();
-    final heroTag =
-        prestId.isNotEmpty ? 'prest_photo_$prestId' : 'prest_photo_nohero';
+    final heroTag = prestId.isNotEmpty ? 'prest_photo_$prestId' : '';
 
     return Scaffold(
       backgroundColor: _neutralBg,
@@ -804,7 +853,7 @@ class _PrestataireDetailPageState extends State<PrestataireDetailPage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: GestureDetector(
-                    onTap: (photo.trim().isEmpty || prestId.isEmpty)
+                    onTap: (photo.trim().isEmpty || heroTag.isEmpty)
                         ? null
                         : () => _openPhotoFullScreen(photo, heroTag),
                     child: _photoWidget(photo: photo, heroTag: heroTag),
@@ -1034,7 +1083,7 @@ class _FullscreenImagePageState extends State<_FullscreenImagePage> {
         elevation: 0,
       ),
       body: SizedBox.expand(
-        child: _isMobilePlatform
+        child: _isMobilePlatform && widget.heroTag.isNotEmpty
             ? Hero(
                 tag: widget.heroTag,
                 child: InteractiveViewer(

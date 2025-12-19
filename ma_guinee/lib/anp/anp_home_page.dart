@@ -547,8 +547,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
       });
 
       // 🔵 Construction de l'entrée historique (même pour adresse libre)
-      final historyCode =
-          _lastSearchedCode ?? value; // pour Nominatim, on garde le texte saisi
+      final historyCode = _lastSearchedCode ?? value;
       final historyLabel = _lastSearchedNiceName ?? _lastSearchedLabel ?? label;
 
       // 🔵 Mise à jour de la liste + sauvegarde
@@ -766,14 +765,23 @@ class _AnpHomePageState extends State<AnpHomePage> {
     );
   }
 
-  // --------- CARTE GUINÉE HOLOGRAPHIQUE ---------
+  // --------- CARTE GUINÉE HOLOGRAPHIQUE (✅ ADAPTÉE TABLETTE / TOUS ÉCRANS) ---------
 
   Widget _buildGuineaCard(bool hasResult) {
     final mq = MediaQuery.of(context);
     final isTablet = mq.size.shortestSide >= 600;
 
+    // ✅ hauteur responsive basée sur la largeur : évite le "crop" et reste cohérent tablette/web
+    final w = mq.size.width;
+    final rawH = isTablet ? (w * 0.42) : (w * 0.62);
+    final cardH =
+        rawH.clamp(isTablet ? 340.0 : 260.0, isTablet ? 560.0 : 430.0);
+
+    final bottomTextPad = isTablet ? 44.0 : 35.0;
+    final sidePad = isTablet ? 28.0 : 24.0;
+
     return Container(
-      height: isTablet ? 440 : 300, // étiré vers le bas
+      height: cardH,
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(28),
@@ -793,33 +801,64 @@ class _AnpHomePageState extends State<AnpHomePage> {
         borderRadius: BorderRadius.circular(28),
         child: Stack(
           children: [
+            // ✅ fond léger (cover) pour éviter zones vides si l'image contient des marges
             Positioned.fill(
-              child: Image.asset(
-                'assets/anp/guinee_holo.png',
-                fit: BoxFit.cover,
+              child: Opacity(
+                opacity: 0.16,
+                child: Image.asset(
+                  'assets/anp/guinee_holo.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
+
+            // ✅ image principale en "contain" => on voit toute la carte sur tablette/desktop
             Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withOpacity(0.55),
-                      Colors.black.withOpacity(0.15),
-                    ],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: isTablet ? 18 : 14,
+                  right: isTablet ? 18 : 14,
+                  top: isTablet ? 14 : 12,
+                  bottom:
+                      hasResult ? (isTablet ? 98 : 90) : (isTablet ? 84 : 76),
+                ),
+                child: Image.asset(
+                  'assets/anp/guinee_holo.png',
+                  fit: BoxFit.contain,
+                  alignment: Alignment.center,
+                ),
+              ),
+            ),
+
+            // ✅ gradient bas uniquement (améliore lisibilité texte sans masquer la carte)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: isTablet ? 150 : 135,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(0.70),
+                        Colors.black.withOpacity(0.10),
+                      ],
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                    ),
                   ),
                 ),
               ),
             ),
+
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: EdgeInsets.only(
-                  bottom: isTablet ? 44 : 35,
-                  left: isTablet ? 28 : 24,
-                  right: isTablet ? 28 : 24,
+                  bottom: bottomTextPad,
+                  left: sidePad,
+                  right: sidePad,
                 ),
                 child: Text(
                   "On peut vous rejoindre partout en Guinée\navec votre ANP",
@@ -832,6 +871,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
+
             if (hasResult)
               Positioned(
                 bottom: isTablet ? 26 : 20,
@@ -1048,35 +1088,26 @@ class _AnpHomePageState extends State<AnpHomePage> {
                   SizedBox(height: topGap),
                   _buildTopBar(),
                   SizedBox(height: topGap),
-
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
                     child: _buildSearchBar(),
                   ),
-
                   SizedBox(height: afterSearchGap),
-
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
                     child: _buildScanCard(),
                   ),
-
                   SizedBox(height: afterScanGap),
-
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
                     child: _buildGuineaCard(hasResult),
                   ),
-
                   _buildMyAnpLine(),
                   SizedBox(height: afterLineGap),
-
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
                     child: _buildSearchResultArea(hasResult),
                   ),
-
-                  // petit espace bas, et garde l’intrinsicHeight propre
                   SizedBox(height: isTablet ? 18 : 14),
                 ],
               ),

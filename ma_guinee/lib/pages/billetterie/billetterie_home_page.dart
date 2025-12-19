@@ -8,6 +8,9 @@ import 'mes_billets_page.dart';
 import 'pro_evenements_page.dart';
 import 'pro_inscription_organisateur_page.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class BilletterieHomePage extends StatefulWidget {
   const BilletterieHomePage({super.key});
 
@@ -25,7 +28,9 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
   // Données
   List<Map<String, dynamic>> _allEvents = [];
   bool _loading = true;
-  String? _error;
+
+  /// ✅ Message FR uniquement (pas d’erreur brute Supabase)
+  String? _errorMessage;
 
   // Filtres
   final _qCtrl = TextEditingController();
@@ -54,11 +59,17 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
     super.dispose();
   }
 
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
-      _error = null;
+      _errorMessage = null;
     });
+
     try {
       final raw = await _sb
           .from('evenements_card_info')
@@ -69,9 +80,15 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
           .eq('is_published', true)
           .eq('is_cancelled', false)
           .order('date_debut');
+
       _allEvents = (raw as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      _error = '$e';
+
+      // ✅ réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ Centraliser + message FR (pas d’URL/stack)
+      SoneyaErrorCenter.showException(e as Object, st);
+      _errorMessage = frMessageFromError(e as Object, st);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -80,9 +97,7 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
   Future<void> _openOrganisateurFlow() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez vous connecter.')),
-      );
+      _snack('Veuillez vous connecter.');
       return;
     }
     try {
@@ -91,26 +106,36 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
           .select('id')
           .eq('user_id', uid)
           .limit(1);
+
       final exists = rows is List && rows.isNotEmpty;
       if (!mounted) return;
+
       if (exists) {
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProEvenementsPage()),
+        );
       } else {
         final created = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
-              builder: (_) => const ProInscriptionOrganisateurPage()),
+            builder: (_) => const ProInscriptionOrganisateurPage(),
+          ),
         );
         if (created == true && mounted) {
-          Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const ProEvenementsPage()));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProEvenementsPage()),
+          );
         }
       }
-    } catch (e) {
+
+      // ✅ réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      SoneyaErrorCenter.showException(e as Object, st);
+      _snack(frMessageFromError(e as Object, st));
     }
   }
 
@@ -118,10 +143,12 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
     final f = _qCtrl.text.trim().toLowerCase();
     final c = _selectedCat.toLowerCase();
     Iterable<Map<String, dynamic>> it = _allEvents;
+
     if (c.isNotEmpty && c != 'toutes') {
       it =
           it.where((e) => (e['categorie'] ?? '').toString().toLowerCase() == c);
     }
+
     if (f.isNotEmpty) {
       it = it.where((e) {
         final t = (e['titre'] ?? '').toString().toLowerCase();
@@ -131,6 +158,7 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
         return t.contains(f) || d.contains(f) || l.contains(f) || v.contains(f);
       });
     }
+
     return it.toList();
   }
 
@@ -141,7 +169,7 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
     final isPhone = w < 600;
 
     return Scaffold(
-      backgroundColor: Colors.white, // ⬅️ fond blanc
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: _kEventPrimary,
         foregroundColor: _kOnPrimary,
@@ -152,8 +180,10 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
             onSelected: (v) {
               if (v == 'pro') _openOrganisateurFlow();
               if (v == 'tickets') {
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const MesBilletsPage()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MesBilletsPage()),
+                );
               }
             },
             itemBuilder: (_) => [
@@ -166,9 +196,7 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                     SizedBox(width: 10),
                     Text('Mes billets'),
                     Spacer(),
-                    _Badge(
-                        label: 'BILLETS',
-                        color: Color(0xFF4CAF50)), // ⬅️ badge remis
+                    _Badge(label: 'BILLETS', color: Color(0xFF4CAF50)),
                   ],
                 ),
               ),
@@ -182,9 +210,7 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                     SizedBox(width: 10),
                     Text('Espace organisateur'),
                     Spacer(),
-                    _Badge(
-                        label: 'PRO',
-                        color: Color(0xFF7B2CBF)), // ⬅️ badge remis
+                    _Badge(label: 'PRO', color: Color(0xFF7B2CBF)),
                   ],
                 ),
               ),
@@ -194,13 +220,15 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Text('Erreur: $_error',
-                      style: const TextStyle(color: Colors.black87)))
+          : (_errorMessage != null)
+              ? _ErrorState(
+                  message: _errorMessage!,
+                  primary: _kEventPrimary,
+                  onRetry: _load,
+                )
               : CustomScrollView(
                   slivers: [
-                    // Barre de recherche + chips (sur fond blanc)
+                    // Barre de recherche + chips
                     SliverToBoxAdapter(
                       child: Column(
                         children: [
@@ -280,13 +308,15 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
                       ),
                     ),
 
-                    // Liste (une seule image par événement)
+                    // Liste
                     if (items.isEmpty)
                       const SliverFillRemaining(
                         hasScrollBody: false,
                         child: Center(
-                          child: Text('Aucun événement disponible.',
-                              style: TextStyle(color: Colors.black45)),
+                          child: Text(
+                            'Aucun événement disponible.',
+                            style: TextStyle(color: Colors.black45),
+                          ),
                         ),
                       )
                     else
@@ -332,6 +362,80 @@ class _BilletterieHomePageState extends State<BilletterieHomePage> {
   }
 }
 
+/// ✅ État erreur propre : pas d’erreur Supabase brute, bouton réessayer visible
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final Color primary;
+  final VoidCallback onRetry;
+
+  const _ErrorState({
+    required this.message,
+    required this.primary,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.black12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.05),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off_rounded, color: primary, size: 44),
+              const SizedBox(height: 10),
+              const Text(
+                'Problème de connexion',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black87, height: 1.25),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Réessayer'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// —————————————————————————————————————————————————————————————
 /// Carte "NEO" : affiche XL, prix & tickets si présents (vue)
 /// —————————————————————————————————————————————————————————————
@@ -355,7 +459,7 @@ class _EventCardNeo extends StatelessWidget {
       case '€':
         return '$amount €';
       case 'USD':
-      case '\$':
+      case r'$':
         return '\$$amount';
       default:
         return '$amount GNF';
@@ -387,7 +491,6 @@ class _EventCardNeo extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       child: Stack(
         children: [
-          // Image
           Positioned.fill(
             child: imageUrl != null
                 ? Image.network(
@@ -407,7 +510,6 @@ class _EventCardNeo extends StatelessWidget {
                         size: 54, color: Colors.white54),
                   ),
           ),
-          // Dégradé
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -424,10 +526,8 @@ class _EventCardNeo extends StatelessWidget {
               ),
             ),
           ),
-          // Ruban catégorie
           Positioned(
               left: 0, top: 18, child: _Ribbon(label: cat.toUpperCase())),
-          // Badge tickets
           if (ticketsRestants != null)
             Positioned(
               right: 14,
@@ -455,7 +555,6 @@ class _EventCardNeo extends StatelessWidget {
                 ),
               ),
             ),
-          // Panneau infos + prix
           Positioned(
             left: 16,
             right: 16,
@@ -464,25 +563,27 @@ class _EventCardNeo extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Infos
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(titre,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              height: 1.1,
-                              letterSpacing: -.2,
-                            )),
+                        Text(
+                          titre,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            height: 1.1,
+                            letterSpacing: -.2,
+                          ),
+                        ),
                         const SizedBox(height: 10),
                         _MetaLine(
-                            icon: Icons.schedule,
-                            text: dateFmt.isEmpty ? 'Date à venir' : dateFmt),
+                          icon: Icons.schedule,
+                          text: dateFmt.isEmpty ? 'Date à venir' : dateFmt,
+                        ),
                         const SizedBox(height: 6),
                         _MetaLine(icon: Icons.place, text: '$lieu • $ville'),
                       ],
@@ -495,23 +596,30 @@ class _EventCardNeo extends StatelessWidget {
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                            colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
+                          colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)],
+                        ),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('à partir de',
-                              style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600)),
-                          Text(prixTxt,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900)),
+                          const Text(
+                            'à partir de',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            prixTxt,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -530,8 +638,7 @@ class _EventCardNeo extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-              color: Colors.black12, width: 1), // contour léger sur fond blanc
+          border: Border.all(color: Colors.black12, width: 1),
         ),
         child: card,
       ),
@@ -543,6 +650,7 @@ class _MetaLine extends StatelessWidget {
   final IconData icon;
   final String text;
   const _MetaLine({required this.icon, required this.text});
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -550,10 +658,12 @@ class _MetaLine extends StatelessWidget {
         Icon(icon, size: 16, color: Colors.white.withOpacity(.95)),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.white.withOpacity(.95))),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.white.withOpacity(.95)),
+          ),
         ),
       ],
     );
@@ -563,6 +673,7 @@ class _MetaLine extends StatelessWidget {
 class _GlassPanel extends StatelessWidget {
   final Widget child;
   const _GlassPanel({required this.child});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -580,6 +691,7 @@ class _GlassPanel extends StatelessWidget {
 class _Ribbon extends StatelessWidget {
   final String label;
   const _Ribbon({required this.label});
+
   @override
   Widget build(BuildContext context) {
     return Transform.rotate(
@@ -588,15 +700,19 @@ class _Ribbon extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-              colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)]),
+            colors: [Color(0xFF7B2CBF), Color(0xFF9D4EDD)],
+          ),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(label,
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                letterSpacing: .6,
-                fontSize: 12)),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: .6,
+            fontSize: 12,
+          ),
+        ),
       ),
     );
   }
@@ -606,18 +722,22 @@ class _Badge extends StatelessWidget {
   final String label;
   final Color color;
   const _Badge({required this.label, required this.color});
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration:
           BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-      child: Text(label,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: .4)),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .4,
+        ),
+      ),
     );
   }
 }

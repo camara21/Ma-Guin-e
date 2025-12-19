@@ -1,9 +1,15 @@
+// lib/pages/sante_detail_page.dart
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'sante_rdv_page.dart';
+
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
 
 const kHealthYellow = Color(0xFFFCD116);
 const kHealthGreen = Color(0xFF009460);
@@ -24,6 +30,25 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  // ✅ Hero uniquement sur mobile (anti flash web/desktop)
+  bool get _enableHero => _isMobilePlatform;
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _handleError(Object e, StackTrace st, {String? fallbackSnack}) {
+    SoneyaErrorCenter.showException(e, st);
+    _snack(fallbackSnack ?? frMessageFromError(e, st));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -40,9 +65,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     if (idForQuery == null) {
       if (!mounted) return;
       setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ID de clinique invalide.')),
-      );
+      _snack('ID de clinique invalide.');
       return;
     }
 
@@ -58,11 +81,17 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
         clinique = (data == null) ? null : Map<String, dynamic>.from(data);
         loading = false;
       });
-    } catch (e) {
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
       if (!mounted) return;
       setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur réseau lors du chargement : $e')),
+
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible de charger le centre. Veuillez réessayer.",
       );
     }
   }
@@ -100,9 +129,15 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     );
   }
 
-  // ---------- CORRIGÉ : transition instantanée ----------
+  // ---------- transition instantanée + Hero safe ----------
   void _openFullScreenGallery(List<String> images, int initialIndex) {
     if (images.isEmpty) return;
+
+    final int? cliniqueIdInt = (widget.cliniqueId is num)
+        ? (widget.cliniqueId as num).toInt()
+        : int.tryParse(widget.cliniqueId.toString());
+
+    final heroPrefix = 'clinique_${cliniqueIdInt ?? (clinique?['id'] ?? 'x')}';
 
     Navigator.of(context).push(
       PageRouteBuilder(
@@ -111,7 +146,8 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
         pageBuilder: (_, __, ___) => _FullscreenGalleryPage(
           images: images,
           initialIndex: initialIndex,
-          heroPrefix: 'clinique',
+          heroPrefix: heroPrefix,
+          enableHero: _enableHero,
         ),
       ),
     );
@@ -120,15 +156,21 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
   Future<void> _contacterCentre(String numero) async {
     final cleaned = numero.replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleaned.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro indisponible.")),
-      );
+      _snack("Numéro indisponible.");
       return;
     }
+
     final uri = Uri(scheme: 'tel', path: cleaned);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        SoneyaErrorCenter.reportNetworkSuccess();
+      } else {
+        _snack("Impossible d'appeler.");
+      }
+    } catch (e, st) {
+      _handleError(e as Object, st, fallbackSnack: "Impossible d'appeler.");
     }
   }
 
@@ -136,20 +178,29 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
     final lat = (clinique?['latitude'] as num?)?.toDouble();
     final lng = (clinique?['longitude'] as num?)?.toDouble();
     if (lat == null || lng == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Coordonnées non disponibles.")),
-      );
+      _snack("Coordonnées non disponibles.");
       return;
     }
+
     final uri =
         Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        SoneyaErrorCenter.reportNetworkSuccess();
+      } else {
+        _snack("Impossible d'ouvrir Google Maps.");
+      }
+    } catch (e, st) {
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible d'ouvrir Google Maps.",
+      );
     }
   }
 
-  // ---------- CORRIGÉ : transition instantanée ----------
   void _ouvrirRdv() {
     final nom = (clinique?['nom'] ?? 'Centre médical').toString();
     final tel = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
@@ -162,9 +213,7 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
         : int.tryParse(widget.cliniqueId.toString());
 
     if (cliniqueIdInt == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ID de clinique invalide.')),
-      );
+      _snack('ID de clinique invalide.');
       return;
     }
 
@@ -198,43 +247,21 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
             ),
           ),
           const SizedBox(height: 16),
-          Container(
-            height: 24,
-            width: 220,
-            color: Colors.grey.shade200,
-          ),
+          Container(height: 24, width: 220, color: Colors.grey.shade200),
           const SizedBox(height: 8),
-          Container(
-            height: 14,
-            width: 120,
-            color: Colors.grey.shade200,
-          ),
+          Container(height: 14, width: 120, color: Colors.grey.shade200),
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 8),
-          Container(
-            height: 16,
-            width: 100,
-            color: Colors.grey.shade200,
-          ),
+          Container(height: 16, width: 100, color: Colors.grey.shade200),
           const SizedBox(height: 6),
           Container(
-            height: 50,
-            width: double.infinity,
-            color: Colors.grey.shade200,
-          ),
+              height: 50, width: double.infinity, color: Colors.grey.shade200),
           const SizedBox(height: 16),
-          Container(
-            height: 16,
-            width: 80,
-            color: Colors.grey.shade200,
-          ),
+          Container(height: 16, width: 80, color: Colors.grey.shade200),
           const SizedBox(height: 6),
           Container(
-            height: 50,
-            width: double.infinity,
-            color: Colors.grey.shade200,
-          ),
+              height: 50, width: double.infinity, color: Colors.grey.shade200),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -282,6 +309,11 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
           .toString();
       tel = (clinique?['tel'] ?? clinique?['telephone'] ?? '').toString();
     }
+
+    final int? cliniqueIdInt = (widget.cliniqueId is num)
+        ? (widget.cliniqueId as num).toInt()
+        : int.tryParse(widget.cliniqueId.toString());
+    final heroPrefix = 'clinique_${cliniqueIdInt ?? (clinique?['id'] ?? 'x')}';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -334,21 +366,29 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
                                     child: PageView.builder(
                                       controller: _pageController,
                                       itemCount: images.length,
-                                      onPageChanged: (i) =>
-                                          setState(() => _currentIndex = i),
-                                      itemBuilder: (context, index) =>
-                                          GestureDetector(
-                                        onTap: () => _openFullScreenGallery(
-                                            images, index),
-                                        child: Hero(
-                                          tag: 'clinique_$index',
+                                      onPageChanged: (i) {
+                                        if (!mounted) return;
+                                        setState(() => _currentIndex = i);
+                                      },
+                                      itemBuilder: (context, index) {
+                                        final child = GestureDetector(
+                                          onTap: () => _openFullScreenGallery(
+                                              images, index),
                                           child: _smartImage(
                                             images[index],
                                             fit: BoxFit.cover,
                                             width: double.infinity,
                                           ),
-                                        ),
-                                      ),
+                                        );
+
+                                        if (!_enableHero) return child;
+
+                                        return Hero(
+                                          tag: '${heroPrefix}_$index',
+                                          transitionOnUserGestures: true,
+                                          child: child,
+                                        );
+                                      },
                                     ),
                                   ),
                                   Positioned(
@@ -510,16 +550,19 @@ class _SanteDetailPageState extends State<SanteDetailPage> {
 }
 
 /// --------------------------------------------------------------
-///   GALLERIE PLEIN ÉCRAN AVEC TRANSITION INSTANTANÉE
+///   GALLERIE PLEIN ÉCRAN (Hero uniquement sur mobile)
 /// --------------------------------------------------------------
 class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+  final bool enableHero;
+
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -554,36 +597,44 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
       ),
       body: PageView.builder(
         controller: _ctrl,
-        onPageChanged: (i) => setState(() => _index = i),
+        onPageChanged: (i) {
+          if (!mounted) return;
+          setState(() => _index = i);
+        },
         itemCount: total,
         itemBuilder: (_, i) {
           final url = widget.images[i];
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}_$i',
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  errorWidget: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white70,
-                    size: 64,
-                  ),
-                  placeholder: (_, __) => Container(
-                    color: Colors.black,
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.image,
-                      color: Colors.white54,
-                      size: 48,
-                    ),
+
+          final content = Center(
+            child: InteractiveViewer(
+              minScale: 1.0,
+              maxScale: 4.0,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white70,
+                  size: 64,
+                ),
+                placeholder: (_, __) => Container(
+                  color: Colors.black,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.image,
+                    color: Colors.white54,
+                    size: 48,
                   ),
                 ),
               ),
             ),
+          );
+
+          if (!widget.enableHero) return content;
+
+          return Hero(
+            tag: '${widget.heroPrefix}_$i',
+            child: content,
           );
         },
       ),

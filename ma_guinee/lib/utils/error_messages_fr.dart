@@ -6,6 +6,7 @@ import 'dart:ui'; // ✅ pour PlatformDispatcher
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// ============================================================================
 /// 1) MESSAGES FR (Supabase + réseau + fallback) — sans afficher URLs/technique
@@ -30,7 +31,7 @@ String frMessageFromError(Object error, [StackTrace? st]) {
   if (error is StorageException)
     return "Erreur de stockage. Veuillez réessayer.";
 
-  // --- Détection offline à partir du texte
+  // --- Détection offline à partir du texte (fallback)
   final raw = error.toString();
   if (_looksLikeOffline(raw)) {
     return "Pas de connexion internet. Vérifiez votre réseau et réessayez.";
@@ -52,7 +53,10 @@ bool _looksLikeOffline(String raw) {
   if (s.contains('clientexception') && s.contains('socketexception'))
     return true;
   if (s.contains('network is unreachable')) return true;
-  if (s.contains('connection refused')) return true;
+
+  // ⚠️ "connection refused" n’est PAS toujours offline (peut être serveur)
+  // On ne le considère pas comme offline dur ici pour éviter faux positifs.
+  // if (s.contains('connection refused')) return true;
 
   // Realtime websocket offline
   if (s.contains('realtime') &&
@@ -127,8 +131,8 @@ String _frAuth(String raw) {
 }
 
 /// ============================================================================
-/// 2) OVERLAY GLOBAL — Centralisé ici (offline + erreurs + satellite asset)
-///    + Equilibre réseau Guinée + pas de popup au démarrage + bandeau rouge stable
+/// 2) OVERLAY GLOBAL — Centralisé ici
+///    Objectif : PAS de spam, et OFFLINE uniquement si internet réellement absent
 /// ============================================================================
 
 enum SoneyaErrorKind { offline, weakNetwork, auth, server, unknown }
@@ -177,20 +181,43 @@ class SoneyaErrorCenter {
   static Future<void>? _precachingFuture;
 
   // =============================
-  // Tuning réseau (Guinée)
+  // Tuning réseau (anti faux positifs)
   // =============================
-  static const Duration startupGrace =
-      Duration(seconds: 4); // ne rien afficher au boot
-  static const Duration offlineMinDelay =
-      Duration(seconds: 2); // ignore micro-coupures
-  static const Duration offlineAfterNoSuccess =
-      Duration(seconds: 10); // popup si aucun succès 10s
-  static const int offlineFailThreshold = 3; // 3 fails consécutifs
+
+  /// Ne rien afficher au boot (le temps que les providers / supabase se calent)
+  static const Duration startupGrace = Duration(seconds: 6);
+
+  /// Ignore les micro-coupures (DNS/wifi switch). On vérifie après un délai.
+  static const Duration offlineMinDelay = Duration(seconds: 5);
+
+  /// Si aucun succès réseau depuis X, on commence à considérer offline sérieux.
+  static const Duration offlineAfterNoSuccess = Duration(seconds: 25);
+
+  /// Nombre d’échecs consécutifs avant de suspecter offline (évite faux positifs).
+  static const int offlineFailThreshold = 6;
+
+  /// Timeout / réseau faible : on n’affiche que si ça insiste ET sans succès récent
+  static const int weakFailThreshold = 6;
+  static const Duration weakAfterNoSuccess = Duration(seconds: 25);
+
+  /// Cooldown global pour ne pas spammer la même erreur
+  static const Duration overlayCooldown = Duration(seconds: 12);
 
   static DateTime _appStartedAt = DateTime.now();
   static DateTime _lastNetworkSuccessAt = DateTime.now();
   static int _consecutiveNetworkFails = 0;
+  static int _consecutiveTimeoutFails = 0;
+
   static Timer? _offlineTimer;
+
+  // état offline confirmé (évite oscillations)
+  static bool _offlineConfirmed = false;
+
+  // évite plusieurs probes en parallèle
+  static bool _offlineProbeInFlight = false;
+
+  // last message shown key for offline
+  static String? _lastOfflineKey;
 
   // ✅ Méthodes attendues par main.dart
   static void markAppStartedNow() {
@@ -198,17 +225,29 @@ class SoneyaErrorCenter {
     _appStartedAt = now;
     _lastNetworkSuccessAt = now;
     _consecutiveNetworkFails = 0;
+    _consecutiveTimeoutFails = 0;
+    _offlineConfirmed = false;
+    _offlineTimer?.cancel();
+    _offlineTimer = null;
     if (_current.value?.kind == SoneyaErrorKind.offline) clear();
   }
 
   static void reportNetworkSuccess() {
     _lastNetworkSuccessAt = DateTime.now();
     _consecutiveNetworkFails = 0;
+    _consecutiveTimeoutFails = 0;
+    _offlineConfirmed = false;
+    _offlineTimer?.cancel();
+    _offlineTimer = null;
     if (_current.value?.kind == SoneyaErrorKind.offline) clear();
   }
 
   static void reportNetworkFailure() {
     _consecutiveNetworkFails += 1;
+  }
+
+  static void reportTimeoutFailure() {
+    _consecutiveTimeoutFails += 1;
   }
 
   static bool _inStartupGrace() {
@@ -263,6 +302,35 @@ class SoneyaErrorCenter {
     await _precachingFuture;
   }
 
+  /// ✅ Confirmation "pas d’internet" :
+  /// - si connectivity == none => très probable offline
+  /// - sinon (wifi/mobile) on fait un probe DNS rapide
+  static Future<bool> _confirmNoInternet() async {
+    try {
+      final result = await Connectivity().checkConnectivity();
+      if (result == ConnectivityResult.none) return true;
+
+      // Cas fréquent en Afrique : wifi présent mais pas d’internet -> DNS probe.
+      // On fait 2 tentatives très rapides pour éviter faux positifs.
+      for (int i = 0; i < 2; i++) {
+        try {
+          final lookup = await InternetAddress.lookup('example.com')
+              .timeout(const Duration(seconds: 2));
+          if (lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty) {
+            return false; // internet OK
+          }
+        } catch (_) {
+          // continue
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      return true;
+    } catch (_) {
+      // par prudence : ne pas conclure offline si on n’est pas sûr
+      return false;
+    }
+  }
+
   static void setOffline(bool offline, {Future<void> Function()? onRetry}) {
     if (_inStartupGrace()) {
       if (!offline && _current.value?.kind == SoneyaErrorKind.offline) clear();
@@ -272,32 +340,55 @@ class SoneyaErrorCenter {
     if (!offline) {
       _offlineTimer?.cancel();
       _offlineTimer = null;
+      _offlineConfirmed = false;
       if (_current.value?.kind == SoneyaErrorKind.offline) clear();
       return;
     }
 
+    // On ne montre pas immédiatement : on attend offlineMinDelay
     _offlineTimer?.cancel();
-    _offlineTimer = Timer(offlineMinDelay, () {
-      final now = DateTime.now();
-      final sinceSuccess = now.difference(_lastNetworkSuccessAt);
+    _offlineTimer = Timer(offlineMinDelay, () async {
+      if (_offlineProbeInFlight) return;
+      _offlineProbeInFlight = true;
 
-      final shouldShow = (_consecutiveNetworkFails >= offlineFailThreshold) ||
-          (sinceSuccess > offlineAfterNoSuccess);
+      try {
+        final now = DateTime.now();
+        final sinceSuccess = now.difference(_lastNetworkSuccessAt);
 
-      if (!shouldShow) return;
+        // d’abord : seuils d’échec & pas de succès récent
+        final suspectByFails = _consecutiveNetworkFails >= offlineFailThreshold;
+        final suspectByTime = sinceSuccess > offlineAfterNoSuccess;
 
-      _show(
-        SoneyaUiError(
-          kind: SoneyaErrorKind.offline,
-          title: "Une erreur s’est produite",
-          message: "Veuillez vérifier votre connexion internet et réessayez.",
-          actionLabel: "Veuillez réessayer",
-          dismissible: false,
-          onRetry: onRetry,
-        ),
-        fingerprint: "offline",
-        force: true,
-      );
+        if (!suspectByFails && !suspectByTime) return;
+
+        // ensuite : confirmation réelle (connectivity + DNS)
+        final noInternet = await _confirmNoInternet();
+        if (!noInternet) return;
+
+        _offlineConfirmed = true;
+
+        // évite de réafficher offline en boucle si déjà présent
+        final key =
+            'offline:${sinceSuccess.inSeconds}:${_consecutiveNetworkFails}';
+        if (_lastOfflineKey == key &&
+            _current.value?.kind == SoneyaErrorKind.offline) return;
+        _lastOfflineKey = key;
+
+        _show(
+          SoneyaUiError(
+            kind: SoneyaErrorKind.offline,
+            title: "Une erreur s’est produite",
+            message: "Veuillez vérifier votre connexion internet et réessayez.",
+            actionLabel: "Veuillez réessayer",
+            dismissible: false,
+            onRetry: onRetry,
+          ),
+          fingerprint: "offline_confirmed",
+          force: true,
+        );
+      } finally {
+        _offlineProbeInFlight = false;
+      }
     });
   }
 
@@ -306,15 +397,28 @@ class SoneyaErrorCenter {
 
     final raw = error.toString();
 
+    // OFFLINE suspected : on incrémente, puis on passe par la confirmation
     if (error is SocketException || _looksLikeOffline(raw)) {
       reportNetworkFailure();
       setOffline(true);
       return;
     }
 
+    // Timeout : ne pas spammer. On ne montre weakNetwork que si insisté
     if (error is TimeoutException) {
       reportNetworkFailure();
-      if (_consecutiveNetworkFails < offlineFailThreshold) return;
+      reportTimeoutFailure();
+
+      final sinceSuccess = DateTime.now().difference(_lastNetworkSuccessAt);
+      final shouldShowWeak = (_consecutiveTimeoutFails >= weakFailThreshold) ||
+          (sinceSuccess > weakAfterNoSuccess);
+
+      // Si pas assez de signaux => rien (les pages continuent d’utiliser leur cache)
+      if (!shouldShowWeak) return;
+
+      // Si offline déjà confirmé, ne pas remplacer l’écran offline
+      if (_current.value?.kind == SoneyaErrorKind.offline || _offlineConfirmed)
+        return;
 
       _show(
         const SoneyaUiError(
@@ -328,10 +432,12 @@ class SoneyaErrorCenter {
       return;
     }
 
+    // Erreurs “serveur/auth/unknown” : on évite d’écraser un offline confirmé
     final msg = frMessageFromError(error, st);
     final kind = _inferKind(error);
 
-    if (_current.value?.kind == SoneyaErrorKind.offline &&
+    if ((_current.value?.kind == SoneyaErrorKind.offline ||
+            _offlineConfirmed) &&
         kind != SoneyaErrorKind.offline) {
       return;
     }
@@ -364,9 +470,10 @@ class SoneyaErrorCenter {
     final now = DateTime.now();
 
     if (!force) {
+      // cooldown plus strict pour limiter le spam
       if (_lastFingerprint == fingerprint &&
           _lastShownAt != null &&
-          now.difference(_lastShownAt!).inSeconds < 2) {
+          now.difference(_lastShownAt!) < overlayCooldown) {
         return;
       }
     }
@@ -419,7 +526,6 @@ class SoneyaErrorCenter {
                     borderRadius: BorderRadius.circular(18),
                     clipBehavior: Clip.antiAlias,
                     child: ConstrainedBox(
-                      // un peu plus haut pour accueillir une image plus grande
                       constraints:
                           BoxConstraints(maxHeight: media.size.height * 0.62),
                       child: Padding(
@@ -454,7 +560,7 @@ class SoneyaErrorCenter {
                             ),
                             const SizedBox(height: 8),
 
-                            // ✅ Satellite plus grand (comme ta 2e image)
+                            // Satellite
                             SizedBox(
                               height: 170,
                               child: Center(
@@ -511,7 +617,6 @@ class SoneyaErrorCenter {
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  // ✅ Bouton à la couleur Soneya (bleu #1175F7)
                                   backgroundColor: soneyaBlue,
                                   foregroundColor: Colors.white,
                                   padding:
@@ -540,7 +645,7 @@ class SoneyaErrorCenter {
               ),
             ),
 
-            // ✅ Bandeau rouge haut stable
+            // Bandeau rouge haut (uniquement offline confirmé)
             if (err.kind == SoneyaErrorKind.offline)
               Positioned(
                 top: 0,

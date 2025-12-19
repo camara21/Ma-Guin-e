@@ -1,3 +1,6 @@
+// lib/pages/tourisme_detail_page.dart
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,6 +9,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'reservation_tourisme_page.dart';
+
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
 
 /// Palette Tourisme
 const Color tourismePrimary = Color(0xFFDAA520);
@@ -46,12 +52,37 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   LatLng _defaultCenter = const LatLng(9.6412, -13.5784);
   double _defaultZoom = 15;
 
-  bool _isUuid(String s) => RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(s);
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  // ✅ Hero uniquement sur mobile (évite flash rouge web/desktop)
+  bool get _enableHero => _isMobilePlatform;
+
+  String get _lieuId => (widget.lieu['id'] ?? '').toString();
+
+  bool _isUuid(String s) {
+    final r = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return r.hasMatch(s);
+  }
 
   bool _validUrl(String? s) {
     if (s == null || s.trim().isEmpty) return false;
     final u = Uri.tryParse(s.trim());
     return u != null && (u.isScheme('http') || u.isScheme('https'));
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _handleError(Object e, StackTrace st, {String? fallbackSnack}) {
+    SoneyaErrorCenter.showException(e, st);
+    _snack(fallbackSnack ?? frMessageFromError(e, st));
   }
 
   String _fmtDate(dynamic raw) {
@@ -79,7 +110,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   }
 
   Widget _avgBar() {
-    // ✅ Barre note moyenne (sous description)
     if (_avis.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -139,6 +169,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   void dispose() {
     _avisController.dispose();
     _pageController.dispose();
+    // ✅ évite callbacks carte après fermeture
+    try {
+      _mapController.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -176,10 +210,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   // Charger lieu
   // -----------------------------------------------------
   Future<void> _loadFullLieu() async {
-    final id = widget.lieu['id']?.toString();
-    if (id == null || !_isUuid(id)) return;
+    final id = _lieuId;
+    if (id.isEmpty || !_isUuid(id)) return;
 
-    setState(() => _loadingLieu = true);
+    if (mounted) setState(() => _loadingLieu = true);
 
     try {
       final rows = await _sb
@@ -190,7 +224,9 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           .limit(1);
 
       final list = List<Map<String, dynamic>>.from(rows);
-      if (list.isNotEmpty && mounted) {
+      if (!mounted) return;
+
+      if (list.isNotEmpty) {
         _fullLieu = list.first;
 
         final lat = (_fullLieu!['latitude'] as num?)?.toDouble();
@@ -198,14 +234,21 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
         if (lat != null && lon != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _mapController.move(LatLng(lat, lon), 15);
+            if (!mounted) return;
+            try {
+              _mapController.move(LatLng(lat, lon), 15);
+            } catch (_) {}
           });
         }
       }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Impossible de charger le détail: $e")),
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Impossible de charger le détail. Veuillez réessayer.",
       );
     } finally {
       if (mounted) setState(() => _loadingLieu = false);
@@ -217,8 +260,8 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   // -----------------------------------------------------
   Future<void> _loadAvisBloc() async {
     try {
-      final lieuId = widget.lieu['id']?.toString();
-      if (lieuId == null || !_isUuid(lieuId)) return;
+      final lieuId = _lieuId;
+      if (lieuId.isEmpty || !_isUuid(lieuId)) return;
 
       final rows = await _sb
           .from('avis_lieux')
@@ -241,7 +284,8 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
       final ids = list
           .map((e) => e['auteur_id'])
-          .whereType<String>()
+          .where((v) => v != null)
+          .map((v) => v.toString())
           .where(_isUuid)
           .toSet()
           .toList();
@@ -273,11 +317,14 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           ..clear()
           ..addAll(fetched);
       });
-    } catch (e) {
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ centralisation (pas d’erreur brute)
+      SoneyaErrorCenter.showException(e as Object, st);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement avis : $e')),
-      );
+      _snack(frMessageFromError(e as Object, st));
     }
   }
 
@@ -290,23 +337,17 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
     final me = _sb.auth.currentUser;
 
     if (me == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Connexion requise.")),
-      );
+      _snack("Connexion requise.");
       return;
     }
     if (note == 0 || commentaire.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merci de noter et d'écrire un avis.")),
-      );
+      _snack("Merci de noter et d'écrire un avis.");
       return;
     }
 
-    final lieuId = widget.lieu['id']?.toString() ?? '';
+    final lieuId = _lieuId;
     if (!_isUuid(lieuId)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("ID du lieu invalide.")),
-      );
+      _snack("ID du lieu invalide.");
       return;
     }
 
@@ -321,7 +362,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         onConflict: 'lieu_id,auteur_id',
       );
 
-      // ✅ ferme clavier + reset
       FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
@@ -333,15 +373,16 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
       await _loadAvisBloc();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Merci pour votre avis !")),
-        );
-      }
-    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur lors de l'envoi : $e")),
+      _snack("Merci pour votre avis !");
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleError(
+        e as Object,
+        st,
+        fallbackSnack: "Erreur lors de l'envoi. Veuillez réessayer.",
       );
     }
   }
@@ -352,35 +393,49 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
   Future<void> _contacterLieu(String numero) async {
     final num = numero.trim();
     if (num.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Numéro indisponible.")),
-      );
+      _snack("Numéro indisponible.");
       return;
     }
     final uri = Uri(scheme: 'tel', path: num);
-    if (!await canLaunchUrl(uri)) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    try {
+      if (!await canLaunchUrl(uri)) {
+        _snack("Impossible d'appeler.");
+        return;
+      }
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e, st) {
+      _handleError(e as Object, st, fallbackSnack: "Impossible d'appeler.");
+    }
   }
 
   Future<void> _ouvrirGoogleMaps(double lat, double lon) async {
     final uri =
         Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        _snack("Impossible d'ouvrir Google Maps.");
+      }
+    } catch (e, st) {
+      _handleError(e as Object, st,
+          fallbackSnack: "Impossible d'ouvrir Google Maps.");
     }
   }
 
   // -----------------------------------------------------
   // Plein écran
   // -----------------------------------------------------
-  void _openFullScreenGallery(List<String> images, int initialIndex) {
+  void _openFullScreenGallery(
+      List<String> images, int initialIndex, String heroPrefix) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FullscreenGalleryPage(
           images: images,
           initialIndex: initialIndex,
-          heroPrefix: 'tourisme',
+          heroPrefix: heroPrefix,
+          enableHero: _enableHero,
         ),
       ),
     );
@@ -404,6 +459,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 
     final mapCenter =
         (lat != null && lon != null) ? LatLng(lat, lon) : _defaultCenter;
+
+    // ✅ Hero prefix unique par lieu (évite collisions / flash au retour)
+    final heroPrefix =
+        'tourisme_${_lieuId.isNotEmpty ? _lieuId : nom.hashCode}';
 
     return Scaffold(
       appBar: AppBar(
@@ -431,7 +490,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
         iconTheme: const IconThemeData(color: tourismePrimary),
         elevation: 0.6,
       ),
-
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -504,8 +562,6 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
           ),
         ),
       ),
-
-      // ✅ Tap partout = ferme le clavier
       body: Listener(
         onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         child: ListView(
@@ -525,25 +581,38 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: images.length,
-                        onPageChanged: (i) => setState(() => _currentIndex = i),
-                        itemBuilder: (_, index) => GestureDetector(
-                          onTap: () => _openFullScreenGallery(images, index),
-                          child: Hero(
-                            tag: 'tourisme_$index',
-                            child: CachedNetworkImage(
-                              imageUrl: images[index],
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) =>
-                                  Container(color: Colors.grey.shade200),
-                              errorWidget: (_, __, ___) => Container(
-                                color: Colors.grey.shade200,
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.landscape,
-                                    size: 40, color: Colors.grey),
-                              ),
+                        onPageChanged: (i) {
+                          if (!mounted) return;
+                          setState(() => _currentIndex = i);
+                        },
+                        itemBuilder: (_, index) {
+                          final img = CachedNetworkImage(
+                            imageUrl: images[index],
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey.shade200),
+                            errorWidget: (_, __, ___) => Container(
+                              color: Colors.grey.shade200,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.landscape,
+                                  size: 40, color: Colors.grey),
                             ),
-                          ),
-                        ),
+                          );
+
+                          final child = GestureDetector(
+                            onTap: () => _openFullScreenGallery(
+                                images, index, heroPrefix),
+                            child: img,
+                          );
+
+                          if (!_enableHero) return child;
+
+                          return Hero(
+                            tag: '${heroPrefix}_$index',
+                            transitionOnUserGestures: true,
+                            child: child,
+                          );
+                        },
                       ),
                     ),
                     Positioned(
@@ -586,6 +655,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                             duration: const Duration(milliseconds: 280),
                             curve: Curves.easeOut,
                           );
+                          if (!mounted) return;
                           setState(() => _currentIndex = index);
                         },
                         child: AnimatedContainer(
@@ -627,10 +697,11 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                 ),
               ),
 
+            const SizedBox(height: 12),
+
             // -----------------------------------------------------
             // Texte
             // -----------------------------------------------------
-            const SizedBox(height: 12),
             Text(
               nom,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -652,13 +723,11 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
               ),
             ],
 
-            // ✅ DESCRIPTION
             if (description.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(description, style: const TextStyle(height: 1.35)),
             ],
 
-            // ✅ NOTE MOYENNE (SOUS DESCRIPTION)
             const SizedBox(height: 12),
             _avgBar(),
 
@@ -666,7 +735,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             const Divider(height: 28),
 
             // -----------------------------------------------------
-            // CARTE
+            // Carte
             // -----------------------------------------------------
             const Text("Localisation",
                 style: TextStyle(fontWeight: FontWeight.bold)),
@@ -725,7 +794,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             const Divider(height: 28),
 
             // -----------------------------------------------------
-            // ✅ AVIS DES VISITEURS (AU-DESSUS de "Votre avis")
+            // Avis des visiteurs
             // -----------------------------------------------------
             const Text(
               "Avis des visiteurs",
@@ -773,10 +842,12 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
                         CircleAvatar(
                           radius: 18,
                           backgroundImage:
-                              (photo.isNotEmpty) ? NetworkImage(photo) : null,
-                          child: photo.isEmpty
-                              ? const Icon(Icons.person, size: 18)
-                              : null,
+                              (photo.isNotEmpty && _validUrl(photo))
+                                  ? NetworkImage(photo)
+                                  : null,
+                          child: (photo.isNotEmpty && _validUrl(photo))
+                              ? null
+                              : const Icon(Icons.person, size: 18),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -826,7 +897,7 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
             const Divider(height: 28),
 
             // -----------------------------------------------------
-            // ✅ VOTRE AVIS (TOUT EN BAS)
+            // Votre avis
             // -----------------------------------------------------
             const Text("Votre avis",
                 style: TextStyle(fontWeight: FontWeight.bold)),
@@ -842,7 +913,10 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
               children: List.generate(5, (i) {
                 final active = i < _noteUtilisateur;
                 return IconButton(
-                  onPressed: () => setState(() => _noteUtilisateur = i + 1),
+                  onPressed: () {
+                    if (!mounted) return;
+                    setState(() => _noteUtilisateur = i + 1);
+                  },
                   icon: Icon(active ? Icons.star : Icons.star_border),
                   color: Colors.amber,
                 );
@@ -852,9 +926,15 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
               controller: _avisController,
               minLines: 3,
               maxLines: 3,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _envoyerAvis(),
-              onChanged: (_) => setState(() {}),
+              textInputAction:
+                  canSend ? TextInputAction.send : TextInputAction.newline,
+              onSubmitted: (_) {
+                if (canSend) _envoyerAvis();
+              },
+              onChanged: (_) {
+                if (!mounted) return;
+                setState(() {});
+              },
               decoration: InputDecoration(
                 hintText: "Votre avis…",
                 border:
@@ -899,17 +979,19 @@ class _TourismeDetailPageState extends State<TourismeDetailPage> {
 }
 
 /* =====================================================
-   GALERIE PLEIN ÉCRAN SANS SPINNER
+   GALERIE PLEIN ÉCRAN
    ===================================================== */
 class _FullscreenGalleryPage extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
   final String heroPrefix;
+  final bool enableHero;
 
   const _FullscreenGalleryPage({
     required this.images,
     required this.initialIndex,
     required this.heroPrefix,
+    required this.enableHero,
   });
 
   @override
@@ -944,28 +1026,36 @@ class _FullscreenGalleryPageState extends State<_FullscreenGalleryPage> {
       ),
       body: PageView.builder(
         controller: _ctrl,
-        onPageChanged: (i) => setState(() => _index = i),
+        onPageChanged: (i) {
+          if (!mounted) return;
+          setState(() => _index = i);
+        },
         itemCount: total,
         itemBuilder: (_, i) {
           final url = widget.images[i];
-          return Center(
-            child: Hero(
-              tag: '${widget.heroPrefix}_$i',
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 4,
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => Container(color: Colors.black),
-                  errorWidget: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    size: 60,
-                    color: Colors.white70,
-                  ),
+
+          final content = Center(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, __) => Container(color: Colors.black),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.broken_image,
+                  size: 60,
+                  color: Colors.white70,
                 ),
               ),
             ),
+          );
+
+          if (!widget.enableHero) return content;
+
+          return Hero(
+            tag: '${widget.heroPrefix}_$i',
+            child: content,
           );
         },
       ),

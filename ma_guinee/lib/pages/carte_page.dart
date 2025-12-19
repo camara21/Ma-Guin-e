@@ -14,6 +14,9 @@ import 'culte_detail_page.dart';
 import 'divertissement_detail_page.dart';
 import '../services/geoloc_service.dart'; // ✅ NEW: centraliser l’envoi localisation
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class CartePage extends StatefulWidget {
   const CartePage({super.key});
 
@@ -26,6 +29,9 @@ class _CartePageState extends State<CartePage> {
   String _categorieSelectionnee = 'tous';
   LatLng? _maPosition;
   bool _loading = true;
+
+  // ✅ Anti-spam: éviter d'afficher 6 snackbars si 6 requêtes échouent
+  bool _errorSnackShown = false;
 
   // Données en mémoire
   final Map<String, List<Map<String, dynamic>>> _data = {
@@ -44,7 +50,11 @@ class _CartePageState extends State<CartePage> {
   }
 
   Future<void> _init() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _errorSnackShown = false; // ✅ reset à chaque init
+    });
+
     await _getMaPosition();
 
     // Requêtes séparées, une par catégorie/table
@@ -80,18 +90,36 @@ class _CartePageState extends State<CartePage> {
           perm == LocationPermission.deniedForever) return;
 
       final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium);
+        desiredAccuracy: LocationAccuracy.medium,
+      );
 
       // ✅ NEW: envoi de la position de l’utilisateur à Supabase (comme ailleurs)
-      try { await GeolocService.reportPosition(pos); } catch (_) {}
+      try {
+        await GeolocService.reportPosition(pos);
+        SoneyaErrorCenter.reportNetworkSuccess();
+      } catch (_) {}
 
       _maPosition = LatLng(pos.latitude, pos.longitude);
-    } catch (_) {/* silencieux */}
+    } catch (_) {
+      // silencieux (pas de spam)
+    }
   }
 
   // ------------------- Récupérations séparées -------------------
-
   final _sb = Supabase.instance.client;
+
+  // ✅ Centralisation + anti-spam snackbar
+  void _handleLoadError(Object e, StackTrace st, {String? fallbackMessage}) {
+    // 1) Toujours centraliser
+    SoneyaErrorCenter.showException(e, st);
+
+    // 2) Afficher au maximum 1 snackbar (évite spam)
+    if (!_errorSnackShown && mounted) {
+      _errorSnackShown = true;
+      final msg = fallbackMessage ?? frMessageFromError(e, st);
+      _toast(msg);
+    }
+  }
 
   Future<void> _chargerHotels() async {
     try {
@@ -100,10 +128,19 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
+
+      if (!mounted) return;
       setState(
           () => _data['hotels'] = List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      _toast('Erreur hôtels : $e');
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleLoadError(
+        e as Object,
+        st,
+        fallbackMessage:
+            "Impossible de charger les hôtels. Vérifiez votre connexion.",
+      );
     }
   }
 
@@ -114,10 +151,19 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
+
+      if (!mounted) return;
       setState(
           () => _data['restos'] = List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      _toast('Erreur restaurants : $e');
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleLoadError(
+        e as Object,
+        st,
+        fallbackMessage:
+            "Impossible de charger les restaurants. Vérifiez votre connexion.",
+      );
     }
   }
 
@@ -128,10 +174,19 @@ class _CartePageState extends State<CartePage> {
           .select('*')
           .order('nom', ascending: true)
           .range(0, 99999);
+
+      if (!mounted) return;
       setState(
           () => _data['sante'] = List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      _toast('Erreur cliniques : $e');
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      _handleLoadError(
+        e as Object,
+        st,
+        fallbackMessage:
+            "Impossible de charger les cliniques. Vérifiez votre connexion.",
+      );
     }
   }
 
@@ -152,10 +207,15 @@ class _CartePageState extends State<CartePage> {
           )
           .order('nom', ascending: true)
           .range(0, 99999);
+
+      if (!mounted) return;
       setState(() =>
           _data['tourisme'] = List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      // si table absente, on ignore
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // si table absente, on ignore; sinon centraliser
+      SoneyaErrorCenter.showException(e as Object, st);
     }
   }
 
@@ -171,10 +231,15 @@ class _CartePageState extends State<CartePage> {
           )
           .order('nom', ascending: true)
           .range(0, 99999);
-    setState(
+
+      if (!mounted) return;
+      setState(
           () => _data['culte'] = List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      // ignore
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ignore si non critique, mais centraliser quand même (sans snackbar spam)
+      SoneyaErrorCenter.showException(e as Object, st);
     }
   }
 
@@ -190,10 +255,15 @@ class _CartePageState extends State<CartePage> {
           )
           .order('nom', ascending: true)
           .range(0, 99999);
+
+      if (!mounted) return;
       setState(() => _data['divertissement'] =
           List<Map<String, dynamic>>.from(res as List));
-    } catch (e) {
-      // ignore
+
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ignore si non critique, mais centraliser quand même (sans snackbar spam)
+      SoneyaErrorCenter.showException(e as Object, st);
     }
   }
 
@@ -376,9 +446,10 @@ class _CartePageState extends State<CartePage> {
                   shape: BoxShape.circle,
                   boxShadow: const [
                     BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 4,
-                        offset: Offset(0, 2))
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    )
                   ],
                 ),
                 child: CircleAvatar(
@@ -397,14 +468,16 @@ class _CartePageState extends State<CartePage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(10)),
+                  color: Colors.blueAccent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: Text(
                   userNom,
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -420,9 +493,10 @@ class _CartePageState extends State<CartePage> {
         title: const Text(
           "Carte interactive",
           style: TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.4),
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.4,
+          ),
         ),
         elevation: 1.2,
         backgroundColor: Colors.white,
@@ -432,10 +506,12 @@ class _CartePageState extends State<CartePage> {
             const Padding(
               padding: EdgeInsets.only(right: 12),
               child: Center(
-                  child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -452,7 +528,9 @@ class _CartePageState extends State<CartePage> {
                   icon: const Icon(Icons.expand_more, color: Colors.black),
                   dropdownColor: Colors.white,
                   style: const TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.w600),
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                  ),
                   items: const [
                     DropdownMenuItem(value: 'tous', child: Text("Tous")),
                     DropdownMenuItem(value: 'hotels', child: Text("Hôtels")),
@@ -533,23 +611,22 @@ class _CartePageState extends State<CartePage> {
   }
 
   // Couleurs par catégorie (alignées avec les pages)
-Color _getColorByCategorie(String categorie) {
-  switch (categorie) {
-    case 'hotels':
-      return const Color(0xFF264653); // Hôtels (teal sombre)
-    case 'restos':
-      return const Color(0xFFF4A261); // Restaurants (orange)
-    case 'sante':
-      return const Color(0xFF009460); // Santé (vert)
-    case 'tourisme':
-      return const Color(0xFFDAA520); // Tourisme (doré)
-    case 'culte':
-      return const Color(0xFF1E88E5); // Lieux de culte (bleu)
-    case 'divertissement':
-      return const Color(0xFF7E57C2); // Divertissement (violet)
-    default:
-      return Colors.grey;
+  Color _getColorByCategorie(String categorie) {
+    switch (categorie) {
+      case 'hotels':
+        return const Color(0xFF264653); // Hôtels (teal sombre)
+      case 'restos':
+        return const Color(0xFFF4A261); // Restaurants (orange)
+      case 'sante':
+        return const Color(0xFF009460); // Santé (vert)
+      case 'tourisme':
+        return const Color(0xFFDAA520); // Tourisme (doré)
+      case 'culte':
+        return const Color(0xFF1E88E5); // Lieux de culte (bleu)
+      case 'divertissement':
+        return const Color(0xFF7E57C2); // Divertissement (violet)
+      default:
+        return Colors.grey;
+    }
   }
-}
-
 }

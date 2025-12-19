@@ -12,6 +12,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'sante_detail_page.dart';
 import '../services/geoloc_service.dart';
 
+// ✅ Centralisation erreurs (offline/supabase/timeout + overlay anti-spam)
+import 'package:ma_guinee/utils/error_messages_fr.dart';
+
 class SantePage extends StatefulWidget {
   const SantePage({super.key});
 
@@ -36,7 +39,9 @@ class SantePage extends StatefulWidget {
           await box.put(_SantePageState._hiveKey, list);
         }
       } catch (_) {}
-    } catch (_) {}
+    } catch (_) {
+      // preload silencieux
+    }
   }
 
   @override
@@ -110,6 +115,11 @@ class _SantePageState extends State<SantePage>
             sin(dLon / 2) *
             sin(dLon / 2);
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---------- Localisation (non bloquante) ----------
@@ -294,13 +304,24 @@ class _SantePageState extends State<SantePage>
         _initialFetchDone = true;
       });
       _applyFilter(_searchCtrl.text);
-    } catch (_) {
+
+      // ✅ Réseau OK
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (e, st) {
+      // ✅ centralisation
+      SoneyaErrorCenter.showException(e as Object, st);
+
       if (!mounted) return;
       setState(() {
         _loading = false;
         _syncing = false;
         _initialFetchDone = true;
       });
+
+      // ✅ si aucun cache affiché, on informe en FR (sinon on reste silencieux)
+      if (_centres.isEmpty) {
+        _snack(frMessageFromError(e as Object, st));
+      }
     }
   }
 
@@ -383,7 +404,6 @@ class _SantePageState extends State<SantePage>
     return 2;
   }
 
-  // ✅ IMPORTANT : même ratio que AnnoncesPage / Resto corrigé (même taille de carte)
   double _ratioFor(
       double screenWidth, int cols, double spacing, double paddingH) {
     final usableWidth = screenWidth - paddingH * 2 - spacing * (cols - 1);
@@ -406,7 +426,6 @@ class _SantePageState extends State<SantePage>
     return itemWidth / totalH;
   }
 
-  // ✅ Bandeau SANS overflow
   Widget _heroBanner(String? subtitle) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
@@ -539,8 +558,6 @@ class _SantePageState extends State<SantePage>
         body: Column(
           children: [
             _heroBanner(subtitleInfo),
-
-            // Recherche
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: TextField(
@@ -568,9 +585,7 @@ class _SantePageState extends State<SantePage>
                 ),
               ),
             ),
-
             const SizedBox(height: 6),
-
             Expanded(
               child: showSkeleton
                   ? GridView.builder(
@@ -698,7 +713,6 @@ class _SantePageState extends State<SantePage>
                                     ),
                                     Expanded(
                                       child: Padding(
-                                        // ✅ même padding que Annonces/Resto corrigé
                                         padding: const EdgeInsets.fromLTRB(
                                             10, 6, 10, 6),
                                         child: Column(
@@ -806,7 +820,6 @@ class _SkeletonCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              // ✅ même padding que les cartes
               padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
