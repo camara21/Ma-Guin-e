@@ -21,6 +21,9 @@ import '../anp/anp_home_page.dart';
 // ✅ Annonces (pour pré-chargement)
 import 'annonces_page.dart';
 
+// ✅ Éducation
+import '../education/education_accueil_page.dart';
+
 /// --- Palette locale (indépendante) ---
 const _kMainPrimary = Color(0xFF0077B6);
 const _kMainSecondary = Color(0xFF00B4D8);
@@ -36,6 +39,7 @@ const _kNotifPrimary = Color(0xFFB91C1C);
 const _kMapPrimary = Color(0xFF2B6CB0);
 const _kAidePrimary = Color(0xFF475569);
 const _kCommercePrimary = Color(0xFF6B21A8);
+const _kEducationPrimary = Color(0xFF1D4ED8);
 
 // ✅ Couleur spéciale ANP
 const _kAnpPrimary = Color(0xFF2563EB);
@@ -61,8 +65,8 @@ class _HomePageState extends State<HomePage> {
     _chargerMessagesNonLus(); // ⬇️ Enregistrement push centralisé (permissions + token + upsert + refresh)
     PushService.instance.initAndRegister();
 
-// ✅ Permission notifications :
-// - Mobile: la popup peut s’afficher directement
+    // ✅ Permission notifications :
+    // - Mobile: la popup peut s’afficher directement
     WidgetsBinding.instance.addPostFrameCallback((_) {
       PushService.instance.ensurePermissionOnHome();
     });
@@ -168,7 +172,7 @@ class _HomePageState extends State<HomePage> {
     await _chargerMessagesNonLus(); // force sync du badge après lecture
   }
 
-  // ► Message “coming soon” Wontanara
+  // ► Message “coming soon” Wontanara (comportement inchangé)
   Future<void> _showWontanaraComingSoon() async {
     await showModalBottomSheet(
       context: context,
@@ -349,6 +353,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _educationIcon(BuildContext context) {
+    return _iconWithBadge(
+      main: Icons.school_rounded,
+      color: _kEducationPrimary,
+      badge: Icons.lightbulb_rounded,
+      context: context,
+    );
+  }
+
   Widget _logementIcon(BuildContext context) {
     final size = _adaptiveIconSize(context);
     const primary = _kMapPrimary;
@@ -453,87 +466,55 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// ✅ Icône futuriste Wontanara, même hauteur que les autres
-  /// mais étendue sur toute la largeur de la dernière ligne.
+  /// ✅ Wontanara : icône réduite (format normal comme les autres)
+  /// Comportement inchangé : onTap => _showWontanaraComingSoon
   Widget _wontanaraIcon(BuildContext context) {
-    final mq = MediaBox.of(context);
-    final side = _tileSide(context);
-    final baseIconSize = _adaptiveIconSize(context);
+    final size = _adaptiveIconSize(context);
 
     const dark = Color(0xFF0F172A);
     const c1 = Color(0xFF0E5A51);
     const c2 = Color(0xFF0FB8B3);
     const c3 = Color(0xFF00D4FF);
 
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        final width = constraints.maxWidth;
-
-        return Container(
-          width: width,
-          height: side, // même hauteur que les autres cartes
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
+    return _iconCard(
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Container(
+              width: size * 1.05,
+              height: size * 1.05,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: const LinearGradient(
+                  colors: [dark, c1, c2, c3],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: c2.withOpacity(0.28),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: const LinearGradient(
-                colors: [dark, c1, c2, c3],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
+              child: const Center(
+                child: Icon(
+                  Icons.hub_outlined,
+                  color: Colors.white,
+                  size: 34,
+                ),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Bloc gauche : hub + sparkles
-                Row(
-                  children: [
-                    Icon(
-                      Icons.hub_outlined,
-                      color: Colors.white,
-                      size: baseIconSize * 0.9,
-                    ),
-                    SizedBox(width: baseIconSize * 0.20),
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Colors.white70,
-                      size: baseIconSize * 0.7,
-                    ),
-                  ],
-                ),
-                // Bloc droite : data / techno
-                Row(
-                  children: [
-                    Icon(
-                      Icons.memory_outlined,
-                      color: Colors.white70,
-                      size: baseIconSize * 0.65,
-                    ),
-                    SizedBox(width: baseIconSize * 0.16),
-                    Icon(
-                      Icons.data_thresholding_rounded,
-                      color: Colors.white70,
-                      size: baseIconSize * 0.65,
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ),
-        );
-      },
+          Positioned(
+            right: 6,
+            bottom: 6,
+            child: _smallBadge(c2, Icons.auto_awesome_rounded),
+          ),
+        ],
+      ),
     );
   }
 
@@ -722,7 +703,8 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Grille principale (12 services)
+            // Grille principale (services)
+            // ✅ Ajout : Billetterie + Wontanara + Éducation dans la grille (3 icônes par ligne)
             GridView.count(
               crossAxisCount: crossAxisCount,
               childAspectRatio: childAspectRatio,
@@ -842,35 +824,35 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
-              ],
-            ),
 
-            const SizedBox(height: 10),
-
-            // Dernière ligne : Billetterie (1/3) + Wontanara (2/3)
-            Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: _ServiceTile(
-                    icon: _iconWithBadge(
-                      main: Icons.confirmation_num,
-                      color: _kEventSecondary,
-                      badge: Icons.lock_clock,
-                      context: context,
-                    ),
-                    label: "Billetterie",
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.billetterie),
+                // ✅ Billetterie (avant en bas)
+                _ServiceTile(
+                  icon: _iconWithBadge(
+                    main: Icons.confirmation_num,
+                    color: _kEventSecondary,
+                    badge: Icons.lock_clock,
+                    context: context,
                   ),
+                  label: "Billetterie",
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.billetterie),
                 ),
-                SizedBox(width: spacing),
-                Expanded(
-                  flex: 2,
-                  child: _ServiceTile(
-                    icon: _wontanaraIcon(context),
-                    label: "Wontanara",
-                    onTap: _showWontanaraComingSoon,
+
+                // ✅ Wontanara (même comportement, icône réduite)
+                _ServiceTile(
+                  icon: _wontanaraIcon(context),
+                  label: "Wontanara",
+                  onTap: _showWontanaraComingSoon,
+                ),
+
+                // ✅ Éducation
+                _ServiceTile(
+                  icon: _educationIcon(context),
+                  label: "Éducation",
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const EducationAccueilPage(),
+                    ),
                   ),
                 ),
               ],
@@ -935,7 +917,7 @@ class _ServiceTile extends StatelessWidget {
   }
 }
 
-// MediaQuery "safe"
+// MediaQuery "safe" (évite l’erreur MediaBox)
 class MediaBox {
   static MediaQueryData of(BuildContext context) =>
       MediaQuery.maybeOf(context) ?? const MediaQueryData();

@@ -92,6 +92,9 @@ dependencies:
   # Cache persistant simple (prefs)
   shared_preferences: ^2.2.3
 
+  # Voix-off (TTS)
+  flutter_tts: ^4.0.2
+
   # Cache disque structuré (annonces, etc.)
   hive: ^2.2.3
   hive_flutter: ^1.1.0
