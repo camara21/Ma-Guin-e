@@ -41,6 +41,9 @@ import 'pages/annonces_page.dart';
 // ✅ Supabase (helper centralisé)
 import 'supabase_client.dart';
 
+// ✅ Centre unique erreurs + overlay global
+import 'utils/error_messages_fr.dart';
+
 /// Hive boxes
 const String kAnnoncesBox = 'annonces_box';
 
@@ -83,6 +86,11 @@ bool _offlineFromConnectivity(dynamic result) {
 void _setOffline(dynamic connectivityResult) {
   final off = _offlineFromConnectivity(connectivityResult);
   if (_isOffline.value != off) _isOffline.value = off;
+
+  // ✅ Offline intelligent (géré dans error_messages_fr.dart)
+  SoneyaErrorCenter.setOffline(off, onRetry: () async {
+    await _checkOfflineNow();
+  });
 }
 
 /// Side-effects réseau: stop/start heartbeat + channels
@@ -118,9 +126,7 @@ Future<void> _initConnectivityWatch() async {
       _setOffline(result);
       _applyNetworkSideEffects();
     });
-  } catch (_) {
-    // silencieux
-  }
+  } catch (_) {}
 }
 
 Future<bool> _checkOfflineNow() async {
@@ -217,19 +223,31 @@ Timer? _heartbeatTimer;
 
 Future<void> _startHeartbeat() async {
   _heartbeatTimer?.cancel();
+
+  // Premier ping immédiat
   try {
     await Supabase.instance.client.rpc(
       'update_heartbeat',
       params: {'_device': kIsWeb ? 'web' : 'flutter'},
     );
-  } catch (_) {}
+    SoneyaErrorCenter.reportNetworkSuccess();
+  } catch (_) {
+    SoneyaErrorCenter.reportNetworkFailure();
+    SoneyaErrorCenter.setOffline(true, onRetry: () async => _checkOfflineNow());
+  }
+
   _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
     try {
       await Supabase.instance.client.rpc(
         'update_heartbeat',
         params: {'_device': kIsWeb ? 'web' : 'flutter'},
       );
-    } catch (_) {}
+      SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (_) {
+      SoneyaErrorCenter.reportNetworkFailure();
+      SoneyaErrorCenter.setOffline(true,
+          onRetry: () async => _checkOfflineNow());
+    }
   });
 }
 
@@ -256,7 +274,6 @@ void _subscribeUserNotifications(String userId) {
           final n = payload.newRecord;
           if (n == null) return;
 
-          // type "message" → push-send + FCM gèrent déjà, on évite les doublons
           if (n['type']?.toString() == 'message') return;
 
           PushService.instance.showLocalNotification(
@@ -339,8 +356,7 @@ bool _isRecoveryUrl(Uri uri) {
   return (hasCode && frag.contains('reset_password')) || hasRecovery;
 }
 
-/// Bootstrap global: charge l’utilisateur, démarre heartbeat + notifs, etc.
-/// ✅ Offline-safe : si pas de réseau, on navigue quand même (session locale)
+/// Bootstrap global
 Future<void> _bootstrap(UserProvider userProvider) async {
   try {
     if (kIsWeb && _isRecoveryUrl(Uri.base)) {
@@ -349,14 +365,12 @@ Future<void> _bootstrap(UserProvider userProvider) async {
 
     final offline = await _checkOfflineNow();
 
-    // ✅ Si offline, on tente juste un "best effort" (pas de blocage long)
     try {
       await userProvider
           .chargerUtilisateurConnecte()
           .timeout(Duration(seconds: offline ? 2 : 10));
-    } catch (_) {
-      // silencieux: l’objectif est de ne jamais bloquer l’app
-    }
+      if (!offline) SoneyaErrorCenter.reportNetworkSuccess();
+    } catch (_) {}
 
     final session = Supabase.instance.client.auth.currentSession;
     final user = session?.user;
@@ -367,7 +381,6 @@ Future<void> _bootstrap(UserProvider userProvider) async {
         _subscribeAdminKick(user.id);
         unawaited(_startHeartbeat());
         _askPushOnce();
-
         unawaited(AnnoncesPage.preload());
       }
 
@@ -420,7 +433,6 @@ Future<void> _bootstrap(UserProvider userProvider) async {
           _subscribeAdminKick(uid);
           await _startHeartbeat();
           _askPushOnce();
-
           unawaited(AnnoncesPage.preload());
         }
 
@@ -428,6 +440,7 @@ Future<void> _bootstrap(UserProvider userProvider) async {
           await userProvider
               .chargerUtilisateurConnecte()
               .timeout(Duration(seconds: offlineNow ? 2 : 10));
+          if (!offlineNow) SoneyaErrorCenter.reportNetworkSuccess();
         } catch (_) {}
 
         if (!RecoveryGuard.isActive) {
@@ -439,58 +452,71 @@ Future<void> _bootstrap(UserProvider userProvider) async {
         }
       }
     });
-  } catch (e) {
+  } catch (e, st) {
     debugPrint('[main] init error: $e');
+    SoneyaErrorCenter.showException(e, st);
   }
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  await SoneyaErrorCenter.runZoned(() async {
+    // ✅ important : ensureInitialized dans la même zone (réduit zone mismatch)
+    WidgetsFlutterBinding.ensureInitialized();
 
-  await Hive.initFlutter();
-  await Hive.openBox(kAnnoncesBox);
-  await Hive.openBox('hotels_box');
-  await Hive.openBox('logement_feed_box');
-  await Hive.openBox('logements_map_box_v1');
-  await Hive.openBox('sante_box');
-  await Hive.openBox('tourisme_box');
-  await Hive.openBox('prestataires_box');
-  await Hive.openBox('lieux_box');
+    // ✅ guards + démarrage (pas de popup au boot)
+    SoneyaErrorCenter.installGlobalGuards();
+    SoneyaErrorCenter.markAppStartedNow();
 
-  if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
+    // ✅ évite les gros widgets d’erreur techniques
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      SoneyaErrorCenter.showException(details.exception, details.stack);
+      return const SizedBox.shrink();
+    };
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+    await Hive.initFlutter();
+    await Hive.openBox(kAnnoncesBox);
+    await Hive.openBox('hotels_box');
+    await Hive.openBox('logement_feed_box');
+    await Hive.openBox('logements_map_box_v1');
+    await Hive.openBox('sante_box');
+    await Hive.openBox('tourisme_box');
+    await Hive.openBox('prestataires_box');
+    await Hive.openBox('lieux_box');
 
-  if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
+    if (kIsWeb) setUrlStrategy(const HashUrlStrategy());
+
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
     );
-  }
 
-  await initSupabase();
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+    }
 
-  // ✅ Démarre la surveillance réseau après init Supabase
-  await _initConnectivityWatch();
+    await initSupabase();
+    await _initConnectivityWatch();
 
-  final userProvider = UserProvider();
+    final userProvider = UserProvider();
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider<UserProvider>.value(value: userProvider),
-        ChangeNotifierProvider(create: (_) => FavorisProvider()..loadFavoris()),
-        ChangeNotifierProvider(
-          create: (_) => PrestatairesProvider()..loadPrestataires(),
-        ),
-      ],
-      child: const MyApp(),
-    ),
-  );
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<UserProvider>.value(value: userProvider),
+          ChangeNotifierProvider(
+              create: (_) => FavorisProvider()..loadFavoris()),
+          ChangeNotifierProvider(
+            create: (_) => PrestatairesProvider()..loadPrestataires(),
+          ),
+        ],
+        child: const MyApp(),
+      ),
+    );
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _bootstrap(userProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bootstrap(userProvider);
+    });
   });
 }
 
@@ -507,7 +533,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navKey,
       debugShowCheckedModeBanner: false,
-
       onGenerateInitialRoutes: (_) {
         if (kIsWeb && _isRecoveryUrl(Uri.base)) {
           return [
@@ -524,13 +549,10 @@ class MyApp extends StatelessWidget {
           ),
         ];
       },
-
       onGenerateRoute: AppRoutes.generateRoute,
-
       theme: light,
       darkTheme: dark,
       themeMode: ThemeMode.light,
-
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -541,8 +563,6 @@ class MyApp extends StatelessWidget {
         Locale('en'),
       ],
       locale: const Locale('fr'),
-
-      // ✅ IMPORTANT : évite les flashs + affiche un message hors-ligne clair
       builder: (context, child) {
         final bg = Theme.of(context).scaffoldBackgroundColor;
 
@@ -552,11 +572,16 @@ class MyApp extends StatelessWidget {
             children: [
               child ?? const SizedBox.shrink(),
 
-              // ✅ Bannière hors-ligne globale (ne bloque pas l’UI)
+              // ✅ Overlay global erreurs/offline
+              SoneyaErrorCenter.overlay(),
+
+              // ✅ Bannière offline du bas seulement si overlay pas affiché
               ValueListenableBuilder<bool>(
                 valueListenable: _isOffline,
                 builder: (_, offline, __) {
-                  if (!offline) return const SizedBox.shrink();
+                  if (!offline || SoneyaErrorCenter.isShowing) {
+                    return const SizedBox.shrink();
+                  }
 
                   return Positioned(
                     left: 12,

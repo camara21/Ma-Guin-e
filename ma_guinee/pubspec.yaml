@@ -139,6 +139,7 @@ flutter:
     - assets/carte_guinee.png
     - assets/anp/guinee_holo.png
     - assets/icons/soneya-1024.png
+    - assets/satelite_soneya.png
 
   fonts:
     - family: Inter

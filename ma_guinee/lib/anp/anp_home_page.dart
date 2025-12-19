@@ -793,15 +793,12 @@ class _AnpHomePageState extends State<AnpHomePage> {
         borderRadius: BorderRadius.circular(28),
         child: Stack(
           children: [
-            // image de fond
             Positioned.fill(
               child: Image.asset(
                 'assets/anp/guinee_holo.png',
                 fit: BoxFit.cover,
               ),
             ),
-
-            // overlay gradient
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
@@ -816,8 +813,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
-
-            // texte en bas à l'intérieur du rectangle
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
@@ -837,8 +832,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
-
-            // bouton démarrer si on a une destination
             if (hasResult)
               Positioned(
                 bottom: isTablet ? 26 : 20,
@@ -911,8 +904,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
             ),
           ],
           const SizedBox(height: 12),
-
-          // 🔵 Bouton annuler
           ElevatedButton(
             onPressed: () {
               setState(() {
@@ -942,7 +933,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
-
           const SizedBox(height: 16),
         ],
       );
@@ -971,7 +961,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
       );
     }
 
-    // 🔵 Si l'utilisateur n’a PAS d’ANP → AFFICHER BOUTON
     if (!_hasAnp) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1032,6 +1021,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
     );
   }
 
+  // ✅ CORRECTION : layout scrollable (anti overflow au resize web)
   Widget _buildMainContent(BuildContext context) {
     final hasResult = _searchedPoint != null;
 
@@ -1045,36 +1035,55 @@ class _AnpHomePageState extends State<AnpHomePage> {
     final double afterLineGap = isTablet ? 18 : 16;
     final double scrollVPad = isTablet ? 12 : 8;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(height: topGap),
-        _buildTopBar(),
-        SizedBox(height: topGap),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad),
-          child: _buildSearchBar(),
-        ),
-        SizedBox(height: afterSearchGap),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad),
-          child: _buildScanCard(),
-        ),
-        SizedBox(height: afterScanGap),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad),
-          child: _buildGuineaCard(hasResult),
-        ),
-        _buildMyAnpLine(),
-        SizedBox(height: afterLineGap),
-        Expanded(
-          child: SingleChildScrollView(
-            padding:
-                EdgeInsets.symmetric(horizontal: hPad, vertical: scrollVPad),
-            child: _buildSearchResultArea(hasResult),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(vertical: scrollVPad),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(height: topGap),
+                  _buildTopBar(),
+                  SizedBox(height: topGap),
+
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: _buildSearchBar(),
+                  ),
+
+                  SizedBox(height: afterSearchGap),
+
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: _buildScanCard(),
+                  ),
+
+                  SizedBox(height: afterScanGap),
+
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: _buildGuineaCard(hasResult),
+                  ),
+
+                  _buildMyAnpLine(),
+                  SizedBox(height: afterLineGap),
+
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: _buildSearchResultArea(hasResult),
+                  ),
+
+                  // petit espace bas, et garde l’intrinsicHeight propre
+                  SizedBox(height: isTablet ? 18 : 14),
+                ],
+              ),
+            ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -1249,7 +1258,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
         drawer: _buildDrawer(context),
         body: Stack(
           children: [
-            // fond dégradé
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -1262,7 +1270,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
-            // motif hexagonal / techno en code
             Positioned.fill(
               child: Opacity(
                 opacity: 0.22,
@@ -1271,7 +1278,6 @@ class _AnpHomePageState extends State<AnpHomePage> {
                 ),
               ),
             ),
-
             SafeArea(
               child: DefaultTextStyle(
                 style: const TextStyle(
@@ -1287,6 +1293,7 @@ class _AnpHomePageState extends State<AnpHomePage> {
     );
   }
 }
+
 // ---------------------- SEARCH SHEET -------------------------
 
 class _AnpSearchSheet extends StatefulWidget {
@@ -1361,8 +1368,6 @@ class _AnpSearchSheetState extends State<_AnpSearchSheet> {
           child: Column(
             children: [
               const SizedBox(height: 10),
-
-              // Barre du haut
               Container(
                 width: 40,
                 height: 4,
@@ -1371,10 +1376,7 @@ class _AnpSearchSheetState extends State<_AnpSearchSheet> {
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
-
               const SizedBox(height: 14),
-
-              // 🔍 Search field
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: TextField(
@@ -1406,15 +1408,11 @@ class _AnpSearchSheetState extends State<_AnpSearchSheet> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // 🔽 List items
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    // 🔵 Maison — ANP enregistré ou ANP utilisateur
                     _SearchListItem(
                       icon: Icons.home_outlined,
                       title: "Maison",
@@ -1429,8 +1427,6 @@ class _AnpSearchSheetState extends State<_AnpSearchSheet> {
                         Navigator.pop(context);
                       },
                     ),
-
-                    // 🔵 Travail si défini
                     if (widget.workAnpCode != null &&
                         widget.workAnpCode!.isNotEmpty)
                       _SearchListItem(
@@ -1442,8 +1438,6 @@ class _AnpSearchSheetState extends State<_AnpSearchSheet> {
                           Navigator.pop(context);
                         },
                       ),
-
-                    // 🔵 Historique des recherches
                     if (widget.recentRoutes.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Text(
