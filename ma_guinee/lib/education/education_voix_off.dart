@@ -1,5 +1,4 @@
 // lib/education/education_voix_off.dart
-
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -7,17 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'tts_text_normalizer.dart';
 
-/// Service Voix-Off (TTS)
-/// Règles :
-/// - Lire uniquement la question (jamais les réponses)
-/// - Lire l'explication uniquement si la réponse est fausse
-/// - Possibilité d'activer/désactiver (persisté)
-///
-/// Améliorations :
-/// - File d'attente pour éviter que certaines phrases ne soient "sautées"
-/// - Relire = stop + vider file + speak
-/// - Feedback motivant (phrases correctes aléatoires)
-/// - Normalisation FR (chiffres / symboles / ponctuation) via TtsTextNormalizer
 class EducationVoixOff {
   EducationVoixOff._();
   static final EducationVoixOff instance = EducationVoixOff._();
@@ -73,25 +61,34 @@ class EducationVoixOff {
         await _tts.awaitSpeakCompletion(true);
       }
 
-      // Paramètres (ajustables)
-      await _tts.setSpeechRate(0.50); // un peu plus naturel
-      await _tts.setPitch(1.0);
+      // ✅ Réglages plus "humains" (à ajuster si besoin)
+      // Trop lent => robot. Trop rapide => avale les mots.
+      await _tts.setSpeechRate(0.56);
+      await _tts.setPitch(1.03);
       await _tts.setVolume(1.0);
 
       await _setLangueFrFallback();
       await _choisirVoixFrSiPossible();
 
-      _tts.setCompletionHandler(() {
+      _tts.setCompletionHandler(() async {
         _isSpeaking = false;
+
+        // ✅ mini pause pour laisser la phrase "se poser"
+        await Future.delayed(const Duration(milliseconds: 180));
+
         _dequeueAndSpeak();
       });
-      _tts.setCancelHandler(() {
+
+      _tts.setCancelHandler(() async {
         _isSpeaking = false;
+        await Future.delayed(const Duration(milliseconds: 120));
         _dequeueAndSpeak();
       });
-      _tts.setErrorHandler((msg) {
+
+      _tts.setErrorHandler((msg) async {
         debugPrint('TTS error: $msg');
         _isSpeaking = false;
+        await Future.delayed(const Duration(milliseconds: 120));
         _dequeueAndSpeak();
       });
     } catch (e) {
@@ -144,17 +141,6 @@ class EducationVoixOff {
     _enqueue(t);
   }
 
-  /// Compat: ancien appel éventuel
-  Future<void> lireExplicationSiFaux({
-    required bool estCorrect,
-    required String explication,
-  }) async {
-    await feedback(
-      correct: estCorrect,
-      explicationSiFaux: estCorrect ? null : explication,
-    );
-  }
-
   /// Feedback après validation
   Future<void> feedback({
     required bool correct,
@@ -179,7 +165,12 @@ class EducationVoixOff {
   }
 
   void _enqueue(String texte) {
-    _queue.add(texte);
+    final t = texte.trim();
+    if (t.isEmpty) return;
+
+    _queue.add(t);
+
+    // ✅ Si rien ne parle, on démarre
     if (!_isSpeaking) _dequeueAndSpeak();
   }
 
@@ -192,9 +183,8 @@ class EducationVoixOff {
     _isSpeaking = true;
 
     try {
-      // Stop léger pour éviter superposition
-      await _tts.stop();
-      await Future.delayed(const Duration(milliseconds: 90));
+      // ❌ Avant: stop() ici => coupe la fin des phrases sur certains moteurs
+      // ✅ Maintenant: on laisse le moteur gérer correctement la fin.
       await _tts.speak(next);
     } catch (e) {
       debugPrint('TTS speak erreur: $e');
@@ -220,16 +210,26 @@ class EducationVoixOff {
       if (voices is! List) return;
 
       Map? chosen;
+
+      // 1) préférer une voix fr + "network/enhanced" si dispo
       for (final v in voices) {
-        if (v is Map) {
-          final locale =
-              (v['locale'] ?? v['language'] ?? '').toString().toLowerCase();
-          final name = (v['name'] ?? '').toString().toLowerCase();
-          if (locale.contains('fr') || name.contains('fr')) {
-            chosen = v;
-            break;
-          }
+        if (v is! Map) continue;
+        final locale = (v['locale'] ?? v['language'] ?? '').toString().toLowerCase();
+        final name = (v['name'] ?? '').toString().toLowerCase();
+
+        final isFr = locale.contains('fr') || name.contains('fr');
+        if (!isFr) continue;
+
+        // heuristique: certaines voix contiennent "enhanced"/"network"/"premium"
+        final qualityHint = name.contains('enhanced') ||
+            name.contains('network') ||
+            name.contains('premium');
+
+        if (qualityHint) {
+          chosen = v;
+          break;
         }
+        chosen ??= v;
       }
 
       if (chosen != null) {
@@ -249,8 +249,6 @@ class EducationVoixOff {
     return true;
   }
 
-  /// ✅ IMPORTANT : normalisation "naturelle" via ton fichier:
-  /// lib/education/tts_text_normalizer.dart
   String _normaliserPourTts(String input) {
     final t = input.trim();
     if (t.isEmpty) return '';

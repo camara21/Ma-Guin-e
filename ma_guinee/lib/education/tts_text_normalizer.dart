@@ -2,83 +2,89 @@
 //
 // Normalisation FR pour améliorer la prononciation TTS.
 // Objectifs:
-// - chiffres isolés => lecture plus naturelle
-// - dates / années / pourcentages / unités => plus clair
-// - symboles & ponctuation => pauses naturelles
-// - éviter la lecture "1 slash 2" ou "10 000" bizarre
+// - prosodie naturelle (pauses), sans "hachurer" le texte
+// - gestion symboles math (×, ÷, /, +, -) => lecture humaine
+// - décimales FR, milliers
+// - finir proprement les phrases
 
 class TtsTextNormalizer {
   static String normalizeFr(String input) {
     var s = input.trim();
+    if (s.isEmpty) return '';
 
     // espaces propres
     s = s.replaceAll(RegExp(r'\s+'), ' ');
 
-    // ponctuation: mettre des pauses
-    s = s
-        .replaceAll('?', ' ? ')
-        .replaceAll('!', ' ! ')
-        .replaceAll(':', ' : ')
-        .replaceAll(';', ' ; ')
-        .replaceAll(',', ' , ')
-        .replaceAll('.', ' . ');
+    // Unifier tirets
+    s = s.replaceAll('–', '-').replaceAll('—', '-');
 
-    // symboles courants
+    // Remplacer symboles monétaires & divers (en gardant une prosodie naturelle)
     s = s
         .replaceAll('%', ' pour cent')
         .replaceAll('€', ' euros')
         .replaceAll('\$', ' dollars')
         .replaceAll('&', ' et ')
-        .replaceAll('@', ' arobase ')
-        .replaceAll('=', ' égale ')
-        .replaceAll('+', ' plus ')
-        .replaceAll('–', '-') // tiret long
-        .replaceAll('—', '-');
+        .replaceAll('@', ' arobase ');
 
-    // fractions simples (1/2, 1/4, 3/4)
+    // Règles "math" plus naturelles
+    // (IMPORTANT: on fait avant la ponctuation)
+    s = s
+        .replaceAll('×', ' fois ')
+        .replaceAll('÷', ' divisé par ')
+        .replaceAllMapped(RegExp(r'(?<=\d)\s*\+\s*(?=\d)'), (_) => ' plus ')
+        .replaceAllMapped(RegExp(r'(?<=\d)\s*-\s*(?=\d)'), (_) => ' moins ')
+        .replaceAll('=', ' égale ');
+
+    // Fractions simples (1/2, 1/4, 3/4)
     s = s.replaceAllMapped(RegExp(r'\b1\s*/\s*2\b'), (_) => ' un demi ');
     s = s.replaceAllMapped(RegExp(r'\b1\s*/\s*4\b'), (_) => ' un quart ');
     s = s.replaceAllMapped(RegExp(r'\b3\s*/\s*4\b'), (_) => ' trois quarts ');
 
-    // 2e / 3e / 1er => "deuxième / troisième / premier"
+    // Slash d'unités (km/h, m/s, etc.) => "par"
     s = s.replaceAllMapped(
-        RegExp(r'\b1er\b', caseSensitive: false), (_) => ' premier ');
-    s = s.replaceAllMapped(RegExp(r'\b(\d+)\s*e\b', caseSensitive: false), (m) {
-      final n = m.group(1)!;
-      return ' $n ème ';
-    });
-
-    // Années (ex: 1958) => "dix-neuf cent cinquante-huit" souvent mieux
-    // Ici, on force une pause: "année 1958" peut aider.
-    // On ne convertit pas en lettres (trop long), mais on ajoute un contexte.
-    s = s.replaceAllMapped(RegExp(r'\b(19\d{2}|20\d{2})\b'), (m) {
-      return ' année ${m.group(1)} ';
-    });
-
-    // Séparateurs de milliers (10 000 / 10,000) => "10 000"
-    s = s.replaceAllMapped(RegExp(r'\b(\d{1,3})([ ,]\d{3})+\b'), (m) {
-      // normalise en espace
-      final txt = m.group(0)!.replaceAll(',', ' ');
-      return ' $txt ';
-    });
+      RegExp(r'\b([a-zA-Z]+)\s*/\s*([a-zA-Z]+)\b'),
+      (m) => ' ${m.group(1)} par ${m.group(2)} ',
+    );
 
     // Décimales françaises "3,5" => "3 virgule 5"
+    // (à faire avant la normalisation des milliers)
     s = s.replaceAllMapped(RegExp(r'\b(\d+),(\d+)\b'), (m) {
       return ' ${m.group(1)} virgule ${m.group(2)} ';
     });
 
-    // slash dans expressions (ex: km/h)
-    s = s.replaceAllMapped(RegExp(r'\bkm\s*/\s*h\b', caseSensitive: false),
-        (_) => ' kilomètres par heure ');
+    // Séparateurs de milliers (10 000 / 10,000) => garder l'espace
+    s = s.replaceAllMapped(RegExp(r'\b(\d{1,3})([ ,]\d{3})+\b'), (m) {
+      final txt = m.group(0)!.replaceAll(',', ' ');
+      return ' $txt ';
+    });
 
-    // Nettoyage final des espaces
-    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // Ordinaux 1er / 2e / 3e
+    s = s.replaceAllMapped(RegExp(r'\b1er\b', caseSensitive: false), (_) => ' premier ');
+    s = s.replaceAllMapped(RegExp(r'\b(\d+)\s*e\b', caseSensitive: false), (m) {
+      return ' ${m.group(1)} ème ';
+    });
 
-    // Rendre la lecture plus "naturelle": finir par un point si pas de ponctuation finale
-    if (!s.endsWith('.') && !s.endsWith('?') && !s.endsWith('!')) {
-      s = '$s.';
+    // Années 19xx / 20xx => ajouter contexte léger (plus naturel)
+    s = s.replaceAllMapped(RegExp(r'\b(19\d{2}|20\d{2})\b'), (m) {
+      return ' année ${m.group(1)} ';
+    });
+
+    // Ponctuation: on évite de la "séparer" en tokens (" . ")
+    // On harmonise juste les espaces avant/après, pour que le moteur marque des pauses.
+    s = s
+        .replaceAllMapped(RegExp(r'\s*([?!:;,])\s*'), (m) => '${m.group(1)} ')
+        .replaceAllMapped(RegExp(r'\s*\.\s*'), (_) => '. ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    // Finir proprement: si pas de ponctuation finale, ajouter un point + espace
+    if (!RegExp(r'[.!?]$').hasMatch(s)) {
+      s = '$s. ';
+    } else {
+      // Ajouter un petit espace final aide certains moteurs à "finir" proprement
+      s = '$s ';
     }
 
-    return s;
+    return s.trimRight();
   }
 }
