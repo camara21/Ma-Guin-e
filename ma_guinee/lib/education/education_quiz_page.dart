@@ -16,6 +16,8 @@ class EducationQuizPage extends StatefulWidget {
 class _EducationQuizPageState extends State<EducationQuizPage> {
   final Random _rng = Random();
 
+  static const int _sessionSize = 20;
+
   String? _categorieId;
   bool _demarre = false;
 
@@ -25,6 +27,8 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
 
   final Set<int> _selection = {};
   bool _validee = false;
+
+  List<QuestionQuiz> _pool = [];
 
   @override
   void initState() {
@@ -39,7 +43,6 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
 
   @override
   void dispose() {
-    // ✅ coupe la voix quand on quitte la page (important)
     EducationVoixOff.instance.arreter();
     super.dispose();
   }
@@ -61,16 +64,38 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
   void _commencer() {
     if (_categorieId == null) return;
     _demarre = true;
+    _resetPool();
     _chargerSession();
   }
 
-  void _chargerSession() {
+  void _resetPool() {
     final id = _categorieId!;
     final base = EducationDonnees.questionsParCategorie(id);
+    _pool = List<QuestionQuiz>.from(base)..shuffle(_rng);
+  }
 
-    // ✅ Aléatoire : on clone puis shuffle
-    _questions = List<QuestionQuiz>.from(base);
-    _questions.shuffle(_rng);
+  void _chargerSession() {
+    if (_categorieId == null) return;
+
+    if (_pool.isEmpty) {
+      _resetPool();
+    }
+
+    if (_pool.isEmpty) {
+      setState(() {
+        _questions = [];
+        _index = 0;
+        _score = 0;
+        _selection.clear();
+        _validee = false;
+      });
+      return;
+    }
+
+    final takeCount = _pool.length >= _sessionSize ? _sessionSize : _pool.length;
+
+    _questions = _pool.take(takeCount).toList(growable: false);
+    _pool.removeRange(0, takeCount);
 
     _index = 0;
     _score = 0;
@@ -126,7 +151,6 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
     if (_validee) return;
     if (_selection.isEmpty) return;
 
-    // ✅ stop lecture des choix dès validation
     await EducationVoixOff.instance.arreter();
 
     final parfaite = _q.selectionEstParfaite(_selection);
@@ -185,6 +209,7 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
     setState(() => _categorieId = selected);
 
     if (_demarre) {
+      _resetPool();
       _chargerSession();
     }
   }
@@ -200,7 +225,6 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
     return PopScope(
       canPop: true,
       onPopInvoked: (didPop) async {
-        // ✅ quand l’utilisateur revient en arrière
         if (didPop) {
           await _stopVoixAvantPop();
         }
@@ -209,7 +233,6 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
         appBar: AppBar(
           title: const Text('Quiz & Culture générale'),
           actions: [
-            // ✅ Toggle Voix : UNIQUEMENT en mode questionnaire
             if (_modeQuestionnaireActif)
               _VoixToggle(
                 value: EducationVoixOff.instance.actif,
@@ -248,11 +271,11 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
                           total: _questions.length,
                           onRejouer: _chargerSession,
                           onChangerCategorie: () async {
-                            // ✅ stop voix avant de sortir du questionnaire
                             await EducationVoixOff.instance.arreter();
                             setState(() {
                               _demarre = false;
                               _questions = [];
+                              _pool = [];
                               _index = 0;
                               _score = 0;
                               _selection.clear();
@@ -361,7 +384,6 @@ class _EducationQuizPageState extends State<EducationQuizPage> {
   }
 }
 
-/// ✅ Toggle Voix : label "Voix" + badge ON/OFF très visible + switch après
 class _VoixToggle extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -415,9 +437,6 @@ class _VoixToggle extends StatelessWidget {
   }
 }
 
-/// =======================
-///  Le reste UI (inchangé design)
-/// =======================
 class _VueChoixCategorieCards extends StatelessWidget {
   final List<CategorieQuiz> categories;
   final String? categorieId;
